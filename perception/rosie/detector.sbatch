@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="${REPO:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+REPO="${REPO:-${SLURM_SUBMIT_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}}"
 if [[ -f "$REPO/.t13-code-commit" ]]; then
   IFS= read -r FANUC_CODE_COMMIT < "$REPO/.t13-code-commit"
   export FANUC_CODE_COMMIT

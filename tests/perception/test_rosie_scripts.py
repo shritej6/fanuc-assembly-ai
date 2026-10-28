@@ -73,6 +73,26 @@ def test_runtime_scripts_load_the_archived_commit_identity() -> None:
         assert "FANUC_CODE_COMMIT" in content
 
 
+@pytest.mark.parametrize("script", ["detector.sbatch", "classifier.sbatch"])
+def test_slurm_launch_resolves_repo_from_submit_directory(
+    script: str,
+    tmp_path: Path,
+) -> None:
+    archived_repo = tmp_path / "fanuc-t13-code"
+    archived_repo.mkdir()
+
+    result = _run(
+        script,
+        tmp_path,
+        REPO="",
+        SLURM_SUBMIT_DIR=str(archived_repo),
+        SMOKE="1",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert str(archived_repo / "perception" / "configs") in result.stdout
+
+
 def test_preparation_plan_allows_native_only_only_for_smoke(tmp_path: Path) -> None:
     smoke = preparation_plan(tmp_path / "data", tmp_path / "smoke", REPO / "contracts/taxonomy.json", True)
     full = preparation_plan(tmp_path / "data", tmp_path / "full", REPO / "contracts/taxonomy.json", False)
