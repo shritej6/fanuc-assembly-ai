@@ -21,6 +21,10 @@ Newest first. One entry per finished task.
   0 errors, on Rosie at `~/fanuc-assembly-data/synthetic/C/`. Codex can start PatchCore (T14): train on scenes whose
   wrist target has `variant == "ok"`, keep the defect scenes as the test set.
 - Brev 2x L40S (`fa-render-l40s`) renders G, I, J with `sdg/brev/render_queue.sh`; deleted when done ($35 cap).
+- **Set H READY FOR TRAINING (2026-10-28 06:05)**: 24/24 chunks, 12,000 wrist images (classifier hard cases: rare
+  poses, a look-alike always present, off-centre / tilted / far views, hard look). Every chunk sample-checked, 0
+  errors; sample sheets checked by eye (no depth in H, so a blocked camera can only be seen): none blocked. Rosie copy
+  identical to Brev (36,048 files, same bytes).
 - **Set D READY FOR TRAINING again (2026-10-28 05:45)**: re-render with the resting fix done, 12/12 chunks, 3,000
   scenes (wrist + side). Every stored spec equals the current sampler's on both the GB10 and Rosie (0 stale scenes),
   every chunk sample-checked, 0 errors. Read `labels/` only: `superseded/` holds the old labels for the record.
