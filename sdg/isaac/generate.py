@@ -15,6 +15,7 @@ import math
 import os
 import sys
 import time
+import traceback
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -65,6 +66,7 @@ class Arm:
         ik.set_spread_axis(C.FINGER_SPREAD_AXIS)
         self.tool = tuple(np.array(C.TOOL_AXIS) * cell.tip_offset())
         self.park = np.deg2rad([C.CAPTURE_POSE_DEG[f"J{i}"] for i in range(1, 7)])
+        self.home = np.deg2rad([C.HOME_POSE_DEG[f"J{i}"] for i in range(1, 7)])
 
     def pose(self, arm: dict) -> None:
         q = self.park if arm["mode"] == "parked" else self._solve(arm["tcp_uf0"])
@@ -75,15 +77,21 @@ class Arm:
         self.art.set_joint_positions(full)
 
     def _solve(self, tcp: list[float]) -> np.ndarray:
-        """UF0 [x y z w p r] (mm/deg, FANUC fixed-XYZ) -> joints. Base frame = UF0 shifted down 330 mm, metres."""
+        """UF0 [x y z w p r] (mm/deg, FANUC fixed-XYZ) -> joints. Base frame = UF0 shifted down 330 mm, metres.
+
+        Damped least squares is local, so it is seeded facing the target (J1 = atan2(y, x)) before the park pose.
+        """
         x, y, z, w, p, r = tcp
         rot = _rz(r) @ _ry(p) @ _rx(w)
         target = np.array([x, y, z]) / 1000.0 + (0.0, 0.0, UF0_ABOVE_BASE_M)
-        q, ok = ik.solve(self.park, target, rot @ (0, 0, 1), self.limits, tool_offset=self.tool,
-                         spread_dir=rot @ (0, 1, 0))
-        if not ok:
-            raise RuntimeError(f"IK failed for TCP {tcp}")
-        return q
+        facing = self.home.copy()
+        facing[0] = math.atan2(y, x)
+        for seed in (facing, self.home, self.park):
+            q, ok = ik.solve(seed, target, rot @ (0, 0, 1), self.limits, tool_offset=self.tool,
+                             spread_dir=rot @ (0, 1, 0), iters=400)
+            if ok:
+                return q
+        raise RuntimeError(f"IK failed for TCP {tcp} from all seeds")
 
 
 def _rx(d):
@@ -163,6 +171,12 @@ def _save(path: Path, img, params=None) -> None:
         raise OSError(f"could not write {path}")
 
 
+def _deployed_commit() -> str:
+    """Commit the deploy step wrote next to the code (git archive copies have no .git)."""
+    path = REPO / "DEPLOYED_COMMIT"
+    return path.read_text().strip() if path.exists() else "unknown"
+
+
 def main() -> None:
     if (args.out / "_DONE.json").exists():
         print(f"[sdg] {args.out} already done")
@@ -189,13 +203,22 @@ def main() -> None:
     wall = time.time() - t0
     done = {"scenes": len(specs), "images_this_run": images, "wall_s": round(wall, 1),
             "s_per_image": round(wall / images, 3) if images else None, "rt_subframes": args.rt_subframes,
-            "container": os.environ.get("ISAAC_SIF", "unknown"), "limit": args.limit}
+            "container": os.environ.get("ISAAC_SIF", "unknown"), "limit": args.limit,
+            "code_commit": _deployed_commit()}
     if not args.limit:
         (args.out / "_DONE.json").write_text(json.dumps(done, indent=1))
     print(f"[sdg] {json.dumps(done)}")
 
 
+# SimulationApp.close() ends the process, which would swallow an exception raised in main(). Print it and leave
+# _FAILED.txt first, so an unattended run never fails silently.
 try:
     main()
+except Exception:  # noqa: BLE001 - process boundary: record every failure, then exit
+    trace = traceback.format_exc()
+    print(f"[sdg] FAILED\n{trace}", flush=True)
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "_FAILED.txt").write_text(trace)
 finally:
+    sys.stdout.flush()
     app.close()
