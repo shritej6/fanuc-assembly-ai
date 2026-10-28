@@ -191,6 +191,10 @@ def _flatten_detection_metrics(metrics: dict[str, Any], id2label: dict[int, str]
     return {key: round(value, 6) for key, value in measured.items()}
 
 
+def _detection_metric_options() -> dict[str, Any]:
+    return {"box_format": "xyxy", "class_metrics": True, "sync_on_compute": False}
+
+
 def metric_function(processor: Any, id2label: dict[int, str]):
     """Create the official threshold-zero TorchMetrics COCO evaluator."""
     from torchmetrics.detection.mean_ap import MeanAveragePrecision
@@ -199,7 +203,7 @@ def metric_function(processor: Any, id2label: dict[int, str]):
         prediction_batches, target_batches = evaluation_results.predictions, evaluation_results.label_ids
         image_sizes, targets = _targets_for_metrics(target_batches)
         predictions = _predictions_for_metrics(prediction_batches, image_sizes, processor)
-        metric = MeanAveragePrecision(box_format="xyxy", class_metrics=True)
+        metric = MeanAveragePrecision(**_detection_metric_options())
         metric.update(predictions, targets)
         return _flatten_detection_metrics(metric.compute(), id2label)
 

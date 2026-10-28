@@ -5,6 +5,7 @@ import pytest
 
 from perception.detector.train import (
     DetectorTrainError,
+    _detection_metric_options,
     _evaluate_scenarios,
     _flatten_detection_metrics,
     _validate_manifest_mode,
@@ -153,6 +154,14 @@ def test_undefined_torchmetrics_sentinels_are_not_reported_as_measurements() -> 
     invalid = {**metrics, "map": _MetricValue(float("nan"))}
     with pytest.raises(DetectorTrainError, match="non-finite"):
         _flatten_detection_metrics(invalid, {0: "F01", 1: "F02"})
+
+
+def test_detection_metric_does_not_resynchronize_trainer_gathered_predictions() -> None:
+    assert _detection_metric_options() == {
+        "box_format": "xyxy",
+        "class_metrics": True,
+        "sync_on_compute": False,
+    }
 
 
 def test_detector_production_requires_cosmos_manifest() -> None:
