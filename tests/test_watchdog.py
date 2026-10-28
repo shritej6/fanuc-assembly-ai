@@ -64,3 +64,18 @@ def test_a_failed_chunk_is_retried_at_most_three_times(tmp_path):
 
 def test_plan_lists_chunks_in_render_order():
     assert watchdog.parse_plan(["C:14-15", "D:0-1"]) == [("C", 14), ("C", 15), ("D", 0), ("D", 1)]
+
+
+def test_render_noise_is_flagged_only_on_quiet_sensor_scenes(tmp_path):
+    from sdg.qa import _check_render_noise
+
+    rng = np.random.default_rng(0)
+    seg = np.zeros((40, 60), dtype=np.uint16)
+    clean, noisy = tmp_path / "clean.png", tmp_path / "noisy.png"
+    Image.fromarray(np.full((40, 60, 3), 200, dtype=np.uint8)).save(clean)
+    Image.fromarray(rng.integers(120, 255, (40, 60, 3), dtype=np.uint8)).save(noisy)
+    quiet = {"post": {"motion_blur": False, "gaussian_noise_sigma": 0.001}}
+    loud = {"post": {"motion_blur": False, "gaussian_noise_sigma": 0.03}}
+    assert _check_render_noise("0", "wrist", clean, seg, quiet) == []
+    assert _check_render_noise("0", "wrist", noisy, seg, quiet)
+    assert _check_render_noise("0", "wrist", noisy, seg, loud) == []

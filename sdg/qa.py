@@ -19,6 +19,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 DEPTH_RANGE_MM = {"table": (400, 2000), "wrist": (60, 900)}   # plausible median depth per camera
+# Render noise: median |Laplacian| over background pixels. Measured 2026-10-28: denoised frames 0-7, frames rendered
+# without the RTX denoiser 9-77. Only judged on scenes whose own added sensor noise is small.
+RENDER_NOISE_MAX, QUIET_SENSOR_SIGMA = 8.0, 0.005
 COLOURS = {"base": (40, 140, 255), "part": (40, 220, 90), "trap": (255, 60, 60), "spare": (250, 200, 0),
            "reject": (220, 60, 220), "foreign": (255, 140, 0)}
 
@@ -37,6 +40,7 @@ def check_scene(chunk: Path, label_file: Path) -> list[str]:
             errors.append(f"{idx}/{cam}: rgb and seg sizes differ")
         if not boxes:
             errors.append(f"{idx}/{cam}: no labelled objects in view")
+        errors += _check_render_noise(idx, cam, rgb_path, seg, labels["spec"])
         for b in boxes:
             errors += _check_box(idx, cam, b, seg)
         errors += _check_depth(chunk, idx, cam, labels["spec"])
@@ -52,6 +56,23 @@ def _check_box(idx: str, cam: str, b: dict, seg: np.ndarray) -> list[str]:
     if len(xs) == 0 or [xs.min(), ys.min(), xs.max() + 1, ys.max() + 1] != [x0, y0, x1, y1]:
         return [f"{idx}/{cam}/{b['uid']}: box does not match its mask"]
     return []
+
+
+def render_noise(rgb_path: Path, seg: np.ndarray) -> float:
+    g = np.asarray(Image.open(rgb_path).convert("L"), dtype=np.float32)
+    lap = np.abs(4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:])
+    background = seg[1:-1, 1:-1] == 0
+    return float(np.median(lap[background])) if background.any() else 0.0
+
+
+def _check_render_noise(idx: str, cam: str, rgb_path: Path, seg: np.ndarray, spec: dict) -> list[str]:
+    """Catches a renderer whose denoiser did not run (every frame speckled). Skipped when the scene itself adds
+    visible sensor noise or blur, which raises the same measure on purpose."""
+    post = spec.get("post")
+    if not post or post["motion_blur"] or post["gaussian_noise_sigma"] >= QUIET_SENSOR_SIGMA:
+        return []
+    noise = render_noise(rgb_path, seg)
+    return [f"{idx}/{cam}: render noise {noise:.1f} > {RENDER_NOISE_MAX} (denoiser off?)"] if noise > RENDER_NOISE_MAX else []
 
 
 def _check_depth(chunk: Path, idx: str, cam: str, spec: dict) -> list[str]:
