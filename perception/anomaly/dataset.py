@@ -5,14 +5,21 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from PIL import Image, UnidentifiedImageError
 
 
 class DatasetBoundaryError(ValueError):
     """Raised when synthetic anomaly data cannot be proven safe to consume."""
+
+
+class DatasetPreparationError(DatasetBoundaryError):
+    """Raised when a discovered sample cannot be materialized reproducibly."""
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,25 @@ class PatchCoreSample:
     depth_path: Path
     segmentation_path: Path
     rgb_sha256: str
+
+
+@dataclass(frozen=True)
+class PatchCoreObjectCounts:
+    object_id: str
+    train_good: int
+    test_good: int
+    test_bad: int
+
+
+@dataclass(frozen=True)
+class PatchCorePreparationSummary:
+    object_ids: tuple[str, ...]
+    per_object: tuple[PatchCoreObjectCounts, ...]
+    total: int
+    train_good: int
+    test_good: int
+    test_bad: int
+    normal_test_modulus: int
 
 
 def _read_label(path: Path) -> Any:
@@ -146,3 +172,147 @@ def discover_patchcore_samples(synthetic_root: Path) -> tuple[PatchCoreSample, .
     if not samples:
         raise DatasetBoundaryError(f"no C/I anomaly labels found under {root}")
     return tuple(samples)
+
+
+def _assign_splits(
+    samples: Iterable[PatchCoreSample], modulus: int
+) -> list[tuple[PatchCoreSample, Literal["train/good", "test/good", "test/bad"]]]:
+    positions: defaultdict[str, int] = defaultdict(int)
+    assigned = []
+    ordered = sorted(samples, key=lambda item: (item.object_id, item.sample_id))
+    sample_ids = [sample.sample_id for sample in ordered]
+    if len(sample_ids) != len(set(sample_ids)):
+        raise DatasetPreparationError("duplicate sample ID in PatchCore preparation")
+    for sample in ordered:
+        expected = "train_eligible" if sample.variant == "ok" else "test_only"
+        if sample.eligibility != expected:
+            raise DatasetPreparationError(f"eligibility disagrees with variant: {sample.sample_id}")
+        if sample.variant != "ok":
+            split: Literal["train/good", "test/good", "test/bad"] = "test/bad"
+        else:
+            split = "test/good" if positions[sample.object_id] % modulus == 0 else "train/good"
+            positions[sample.object_id] += 1
+        assigned.append((sample, split))
+    return assigned
+
+
+def _validated_crop(sample: PatchCoreSample) -> tuple[int, int, int, int]:
+    value = sample.bbox_xyxy
+    if len(value) != 4 or any(type(item) is not int for item in value):
+        raise DatasetPreparationError(f"invalid crop coordinates: {sample.sample_id}")
+    x0, y0, x1, y1 = value
+    if not (0 <= x0 < x1 and 0 <= y0 < y1):
+        raise DatasetPreparationError(f"invalid crop coordinates: {sample.sample_id}")
+    return x0, y0, x1, y1
+
+
+def _crop_sample(sample: PatchCoreSample, destination: Path) -> str:
+    if _sha256(sample.rgb_path) != sample.rgb_sha256:
+        raise DatasetPreparationError(f"source RGB hash changed: {sample.sample_id}")
+    try:
+        with Image.open(sample.rgb_path) as source:
+            image = source.convert("RGB")
+    except (OSError, UnidentifiedImageError) as exc:
+        raise DatasetPreparationError(f"cannot decode source RGB: {sample.sample_id}") from exc
+    x0, y0, x1, y1 = _validated_crop(sample)
+    if x1 > image.width or y1 > image.height:
+        raise DatasetPreparationError(f"crop lies outside source RGB: {sample.sample_id}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    image.crop((x0, y0, x1, y1)).save(destination, format="PNG")
+    return _sha256(destination)
+
+
+def _prepared_name(sample: PatchCoreSample) -> str:
+    stable_id = sample.sample_id.replace("/", "__")
+    return f"{stable_id}__{sample.rgb_sha256[:12]}.png"
+
+
+def _validate_populations(
+    assigned: list[tuple[PatchCoreSample, str]], expected_object_ids: Iterable[str]
+) -> tuple[PatchCoreObjectCounts, ...]:
+    expected = tuple(expected_object_ids)
+    if not expected or len(expected) != len(set(expected)):
+        raise DatasetPreparationError("expected object IDs must be non-empty and unique")
+    if any(re.fullmatch(r"M[1-6]_0[1-4]", object_id) is None for object_id in expected):
+        raise DatasetPreparationError("expected object IDs must be exact taxonomy part IDs")
+    actual = {sample.object_id for sample, _ in assigned}
+    if actual != set(expected):
+        raise DatasetPreparationError("samples must match the expected object IDs exactly")
+    counts = {object_id: Counter(split for sample, split in assigned if sample.object_id == object_id)
+              for object_id in expected}
+    if any(not all(counter[split] for split in ("train/good", "test/good", "test/bad"))
+           for counter in counts.values()):
+        raise DatasetPreparationError("each expected object must have complete splits")
+    return tuple(PatchCoreObjectCounts(object_id, counter["train/good"], counter["test/good"],
+                                       counter["test/bad"])
+                 for object_id, counter in counts.items())
+
+
+def _destination(root: Path, sample: PatchCoreSample, split: str) -> tuple[Path, Path]:
+    relative = Path(sample.object_id) / split / _prepared_name(sample)
+    destination = (root / relative).resolve()
+    if not destination.is_relative_to(root.resolve()):
+        raise DatasetPreparationError(f"crop destination escapes output root: {sample.sample_id}")
+    return relative, destination
+
+
+def _summary(
+    assigned: list[tuple[PatchCoreSample, str]],
+    per_object: tuple[PatchCoreObjectCounts, ...],
+    modulus: int,
+) -> PatchCorePreparationSummary:
+    counts = Counter(split for _, split in assigned)
+    return PatchCorePreparationSummary(
+        object_ids=tuple(item.object_id for item in per_object), per_object=per_object,
+        total=len(assigned), train_good=counts["train/good"], test_good=counts["test/good"],
+        test_bad=counts["test/bad"], normal_test_modulus=modulus,
+    )
+
+
+def _finalize_preparation(
+    root: Path, rows: list[dict[str, Any]], summary: PatchCorePreparationSummary
+) -> None:
+    (root / "manifest.jsonl").write_text("".join(f"{json.dumps(row, sort_keys=True)}\n" for row in rows))
+    temporary = root / "_READY.json.tmp"
+    temporary.write_text(json.dumps(asdict(summary), indent=2, sort_keys=True) + "\n")
+    (root / "_INCOMPLETE").unlink()
+    temporary.replace(root / "_READY.json")
+
+
+def prepare_patchcore_folders(
+    samples: Iterable[PatchCoreSample],
+    output_root: Path,
+    *,
+    expected_object_ids: Iterable[str],
+    normal_test_modulus: int,
+) -> PatchCorePreparationSummary:
+    """Create deterministic per-part anomalib folders from verified bbox crops."""
+    root = Path(output_root)
+    if root.exists():
+        raise DatasetPreparationError(f"output root must not already exist: {root}")
+    if normal_test_modulus < 2:
+        raise DatasetPreparationError("normal_test_modulus must be at least 2")
+    assigned = _assign_splits(samples, normal_test_modulus)
+    if not assigned:
+        raise DatasetPreparationError("at least one PatchCore sample is required")
+    per_object = _validate_populations(assigned, expected_object_ids)
+    root.mkdir(parents=True)
+    incomplete = root / "_INCOMPLETE"
+    incomplete.write_text("preparation in progress\n")
+    rows = []
+    output_paths: set[Path] = set()
+    for sample, split in assigned:
+        relative, destination = _destination(root, sample, split)
+        if destination in output_paths:
+            raise DatasetPreparationError(f"duplicate crop destination: {relative}")
+        output_paths.add(destination)
+        crop_sha256 = _crop_sample(sample, destination)
+        rows.append({
+            "sample_id": sample.sample_id, "object_id": sample.object_id,
+            "variant": sample.variant, "stable_pose": sample.stable_pose,
+            "split": split, "source_rgb_sha256": sample.rgb_sha256,
+            "crop_sha256": crop_sha256, "output": relative.as_posix(),
+        })
+    summary = _summary(assigned, per_object, normal_test_modulus)
+    _finalize_preparation(root, rows, summary)
+    return summary
