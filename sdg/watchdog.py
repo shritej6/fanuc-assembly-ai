@@ -22,6 +22,7 @@ import traceback
 from pathlib import Path
 
 from sdg.qa import check_chunks, overlay_sheet
+from sdg.scene_sampler import Inputs, n_chunks
 
 REPO = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home() / "fanuc-assembly-data"))
@@ -140,6 +141,11 @@ def summary() -> dict:
         qa = c / "_QA.json"
         if qa.exists() and not json.loads(qa.read_text())["ok"]:
             s["qa_bad"].append(c.name)
+        s["qa_passed"] = s.get("qa_passed", 0) + (qa.exists() and json.loads(qa.read_text())["ok"])
+    inputs = Inputs.load()
+    for name, s in sets.items():
+        s["chunks_total"] = n_chunks(inputs, name) if name in inputs.sets["sets"] else None
+        s["ready_for_training"] = s["qa_passed"] == s["chunks_total"]   # every chunk done and sample-checked
     return sets
 
 
