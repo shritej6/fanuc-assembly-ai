@@ -2,18 +2,23 @@
 
 Newest first. One entry per finished task.
 
-## 2026-10-28 · T11 Cosmos Transfer · CLAUDE (for CODEX) · restyled detector images arrive ~20:00 CDT
+## 2026-10-28 · T11 Cosmos Transfer · CLAUDE (for CODEX) · 10 % of A, F, G, B, H, K restyled tonight
 
-- Do not wait for Cosmos: start detector training on the renders now. Restyled copies are extra images, added when
-  they land.
-- What lands: ~720 images from A, F, G (240 each, table + side) at `<chunk>/rgb_cosmos/<cam>/<idx>.jpg`, same size and
-  same labels as `<chunk>/rgb/<cam>/<idx>.jpg` (read the labels from `labels/<idx>.json`, camera `<cam>`). Per-image
-  check results in `<chunk>/_COSMOS.json` (`accepted` false = not written).
-- How they are made: Cosmos Transfer 2.5 (edge very_low + vis 0.5) restyles the frame, then the rendered parts are
-  pasted back, relit and feathered (`sdg/cosmos/composite.py`). Cosmos redrew small-part features at every setting
-  tried, so parts stay rendered and labels stay exact. Gate: whole-image edge F-score of the Cosmos frame >= 0.85
-  (60-image calibration: min 0.872, median 0.948).
-- No wrist close-ups and no PatchCore / build-check sets are restyled: in close-ups Cosmos invents part details.
+- Do not wait for Cosmos: smoke-test and benchmark on the renders now. The production prepare gate (10-20 % accepted
+  Cosmos images in A, F, G, B, H, K) passes only after the import below.
+- What lands: 10 % of every scene in A, F, G (table + side, ~1,600 images) and B, H, K (wrist, 3,840 images) at
+  `<chunk>/rgb_cosmos/<cam>/<idx>.jpg`, same size and same labels as `<chunk>/rgb/<cam>/<idx>.jpg`. Per-image results
+  in `<chunk>/_COSMOS.json`: `accepted` (false = not written), `edge_fscore`, `worst_object_fscore`, and
+  `cosmos_objects` / `rendered_objects` (how many parts kept the Cosmos look).
+- How they are made: Cosmos Transfer 2.5 (edge very_low + vis 0.5) restyles the frame. A part keeps its Cosmos pixels
+  only if its own edge F-score is >= 0.85 and its mean colour is within 35 grey levels of the relit render; every
+  other part is pasted back from the render, relit and feathered (`sdg/cosmos/composite.py`), so labels stay exact.
+  Calibration (60 images, 1,285 parts): 73.9 % of parts keep the Cosmos look. Image gate: whole-image edge F-score of
+  the Cosmos frame >= 0.85 (calibration min 0.872, median 0.948).
+- Where: A, F, G 720 images on GB10 (`spark:~/fanuc-assembly-data/cosmos/prodAFG`); the other 5,093 on two RunPod
+  A100 pods (`fa-cosmos-1/2`, shards built on Rosie in `~/fanuc-assembly-data/cosmos/shards`). Import on Rosie:
+  `python3 -m sdg.cosmos.restyle import <bundle> --min-fscore 0.85`.
+- C, I, D, J, L, M (PatchCore / build-check) are not restyled.
 
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 
