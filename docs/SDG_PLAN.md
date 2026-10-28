@@ -34,8 +34,8 @@ A scene renders one image per listed camera. Chunks hold 500 images.
 | D | Build check (recipe check + Cosmos Reason 2) | wrist + side | 6,000 | 3,000 | 12 | Top installed part is seated / high 1.5–4 mm / tilted 4–12° / wrong part (same family, other product) |
 | Pilot | all | all | 1,500 | — | — | First 375 images of chunk 0 of each set. **The full run reuses them** |
 
-Total: **54,000 images in 108 chunks**, plus the edge-case sets F–J (40,000) and the path-traced close-ups K–L
-(4,000) in section 11. E (GR00T demos) is sized after the scripted baseline works (T12).
+Total: **54,000 images in 108 chunks**, plus the edge-case sets F–J (40,000) and the close-ups K–L (4,000) in
+section 11. E (GR00T demos) is sized after the scripted baseline works (T12).
 
 ## 3. Scene rules (what the sampler guarantees, and the tests check)
 
@@ -164,11 +164,15 @@ and folders are the same as A–D; training uses the union.
 | H | Wrist classifier | 12,000 | Rare resting poses as often as common ones, a look-alike always present, touching neighbours, target up to 40 mm off-centre, tilt up to 30°, 90–320 mm standoff, hard look | Rosie T4 |
 | I | PatchCore | 6,000 | Good parts under hard light and rare poses (must not alarm); 40 % defect test images | GB10 |
 | J | Build check | 6,000 | The decision boundary: high 0.4–1.5 mm, tilt 1–4°, seated within 0.3 mm print tolerance. Labels carry `build_offset` (mm / deg) so the threshold is chosen from data | GB10 |
-| K | Classifier + detector (photoreal) | 2,400 | Path traced. Every object close up (70–180 mm), every resting pose, 80 per object | Brev L40S |
-| L | Build check (photoreal) | 1,600 | Path traced. Every product at every step close up, all build states | Brev L40S |
+| K | Classifier + detector | 2,400 | Every object close up (70–180 mm), every resting pose, 80 per object, hard look | GB10 |
+| L | Build check | 1,600 | Every product at every step close up, all build states (high 0.4–4 mm, tilt 1–12°) | GB10 |
 
 Every scene of F–L lays out and every arm pose solves (checked 2026-10-28). A–C specs are byte-identical to before
 the change apart from redrawn unreachable arm poses; D gains the `build_offset` field.
+
+**Path tracing tried and dropped (2026-10-28)**: a 3-scene K smoke test with Isaac's path tracer on the GB10 took
+164 s/img, and the capture did not follow the arm pose and returned empty instance masks and depth. Real-time ray
+tracing on the same scenes: 0.6 s/img, 0 QA errors. Realism comes from the randomized look plus Cosmos Transfer (T11).
 
 **Not covered, and why**: new defect geometry beyond the six types (needs new CAD booleans, T06 follow-up); a part
 held in the gripper (no grasp simulation in the renderer); real-camera lens distortion (the starter cameras are
@@ -186,7 +190,8 @@ ideal pinholes; Cosmos Transfer, T11, is the planned realism step).
 - `$DATA_ROOT/watchdog/status.json` lists per set: chunks done, scenes, failures, QA failures and
   `ready_for_training` (every chunk done and checked). One JSON line per pass in `watchdog/log.txt`.
 
-**Run order**: Rosie B → F → H (Slurm, 4 tasks at a time). GB10 C → D → A → G → I → J. Brev K → L after `brev login`.
+**Run order**: Rosie B → F → H (Slurm, 4 tasks at a time). GB10 C → D → A → G → I → J → K → L. Brev (after
+`brev login`) can take chunks of any set with `sdg/spark/render_chunk.sh` (any Docker host with an RTX GPU).
 
 **When a set is `ready_for_training`** (Claude):
 1. Rosie: `sdg/rosie/collect_spark.sh` pulls the GB10's finished chunks (direct Rosie → GB10 SSH, safe to repeat).

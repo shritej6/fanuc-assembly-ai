@@ -25,17 +25,13 @@ ap.add_argument("--specs", type=Path, required=True)
 ap.add_argument("--out", type=Path, required=True)
 ap.add_argument("--limit", type=int, default=0, help="render only the first N scenes (pilot)")
 ap.add_argument("--rt-subframes", type=int, default=4)
-ap.add_argument("--renderer", choices=["RaytracedLighting", "PathTracing"], default="RaytracedLighting",
-                help="PathTracing needs an RTX GPU with time to spare (Brev L40S sets K, L)")
-ap.add_argument("--spp", type=int, default=64, help="path-tracing samples per pixel per subframe")
 args = ap.parse_args()
 args.out = args.out.resolve()     # Kit changes the working directory
 
 from isaacsim import SimulationApp
 
-app = SimulationApp({"headless": True, "renderer": args.renderer})
+app = SimulationApp({"headless": True, "renderer": "RaytracedLighting"})
 
-import carb.settings
 import cv2
 import numpy as np
 import omni.replicator.core as rep
@@ -161,10 +157,6 @@ def main() -> None:
         return
     specs = [json.loads(line) for line in args.specs.read_text().splitlines() if line.strip()]
     specs = specs[: args.limit] if args.limit else specs
-    if args.renderer == "PathTracing":
-        settings = carb.settings.get_settings()
-        settings.set("/rtx/pathtracing/spp", args.spp)
-        settings.set("/rtx/pathtracing/totalSpp", args.spp * args.rt_subframes)
     world = World(stage_units_in_meters=1.0)
     stage = omni.usd.get_context().get_stage()
     cell.build(stage, with_objects=False)
@@ -185,7 +177,6 @@ def main() -> None:
     wall = time.time() - t0
     done = {"scenes": len(specs), "images_this_run": images, "wall_s": round(wall, 1),
             "s_per_image": round(wall / images, 3) if images else None, "rt_subframes": args.rt_subframes,
-            "renderer": args.renderer, "spp": args.spp if args.renderer == "PathTracing" else None,
             "container": os.environ.get("ISAAC_SIF", "unknown"), "limit": args.limit,
             "code_commit": _deployed_commit()}
     if not args.limit:

@@ -4,7 +4,7 @@
 #
 #   sdg/spark/render_chunk.sh C 0 1 2        # set C, chunks 0 1 2
 #   LIMIT=3 sdg/spark/render_chunk.sh B 0    # smoke test: first 3 scenes only
-#   RENDER_ARGS="--renderer PathTracing --spp 64" sdg/spark/render_chunk.sh K 0   # any Docker GPU host (Brev L40S)
+#   RENDER_ARGS="--rt-subframes 8" sdg/spark/render_chunk.sh K 0   # extra generator flags; works on any Docker GPU host
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

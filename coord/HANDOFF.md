@@ -6,8 +6,8 @@ Newest first. One entry per finished task.
 
 - Changed: `sdg/tools/defect_variants.py` + `cad/defects/manifest.json` (144 variants, regenerated per host),
   `sdg/coverage.py`, `sdg/qa.py`, `sdg/watchdog.py`, `sdg/wrist_ik.py`, `sdg/tools/check_wrist_ik.py`, sets F–L in
-  `sdg/configs/sets.yaml`, `sdg/rosie/collect_spark.sh`, `--renderer PathTracing` in `sdg/isaac/generate.py`.
-- Running: Rosie B → F → H (Slurm 289876 / 289881 / 289883, 4 at a time); GB10 C → D → A → G → I → J.
+  `sdg/configs/sets.yaml`, `sdg/rosie/collect_spark.sh`.
+- Running: Rosie B → F → H (Slurm 289876 / 289881 / 289883, 4 at a time); GB10 C → D → A → G → I → J → K → L.
   Data: Rosie `~/fanuc-assembly-data/synthetic/<set>/chunk_NNNN/` (GB10 output pulled in by `collect_spark.sh`).
 - Monitor (Codex too): `ssh rosie cat ~/fanuc-assembly-data/watchdog/status.json` and the same on the GB10
   (`hackathon1@spark1`). Per set: `chunks_done`, `failed`, `qa_bad`, `ready_for_training`. A chunk's `_QA.json`
@@ -16,7 +16,7 @@ Newest first. One entry per finished task.
   of every set solves with the starter IK. The wrist camera does not see the fingertips (calibrated mount).
 - For Codex: start T13 / T14 per set the moment `ready_for_training` is true (table in `docs/SDG_PLAN.md` section
   12). New label field: `build_offset` {high_mm, tilt_deg} on build-check targets (D, J, L). Evaluate per scenario.
-- Next: Brev L40S for K / L after `brev login`; T07 PLA look check needs one phone photo of a real print.
+- Next: Brev (after `brev login`) can take chunks of any set; T07 PLA look check needs one phone photo of a real print.
 
 ## 2026-10-27 · T08 (prep) · CLAUDE · synthetic data plan, scene sampler, Isaac generator draft
 

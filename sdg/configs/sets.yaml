@@ -222,9 +222,8 @@ sets:
       arm_in_view_prob: 0.3
     wrist: {standoff_mm: [120.0, 260.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
 
-  # ---------------------------------------------------------------- path-traced close-ups (Brev RTX GPU, section 11)
-  # Rendered with `--renderer PathTracing`: physically based light, soft shadows and PLA sheen, the closest look to
-  # real photos. Close standoffs so each part's shape, edges and layer lines fill the frame.
+  # ---------------------------------------------------------------- close-ups (section 11)
+  # Close standoffs so each part's shape, edges and layer lines fill more of the frame.
 
   K:                       # every object, every resting pose, close up: what each part looks like
     images: 2400           # 80 per object
