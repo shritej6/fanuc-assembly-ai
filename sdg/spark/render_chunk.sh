@@ -17,7 +17,8 @@ shift
 mkdir -p "$DATA_ROOT"/cache/home "$DATA_ROOT"/{logs,synthetic}
 # The image runs as its own user (uid 1234, owner of /isaac-sim) in our group, so our folders must be group-writable.
 # Its own files stay its own; only touch what we own. HOME=/cache/home keeps Kit / shader caches between runs.
-find "$DATA_ROOT/cache" "$DATA_ROOT/synthetic" "$DATA_ROOT/logs" -user "$(id -u)" -type d -exec chmod g+rwxs {} +
+find "$DATA_ROOT/cache" "$DATA_ROOT/synthetic" "$DATA_ROOT/logs" \( ! -user "$(id -u)" -prune \) -o \
+  \( -type d -exec chmod g+rwxs {} + \)
 for c in "$@"; do
   CHUNK=$(printf "%04d" "$c")
   SPECS="$DATA_ROOT/specs/$SET/chunk_$CHUNK.jsonl"

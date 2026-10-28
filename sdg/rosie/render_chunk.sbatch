@@ -26,8 +26,14 @@ fi
 mkdir -p "$OUT" "$DATA_ROOT/cache/ov" "$DATA_ROOT/cache/nv"
 
 echo "node $(hostname)  gpu $(nvidia-smi --query-gpu=name --format=csv,noheader)  set $SET  chunk $CHUNK  limit $LIMIT"
-# The SIF is read-only: Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
-singularity exec --nv --writable-tmpfs \
+# Isaac writes generated files under /isaac-sim at startup. The admin-capped --writable-tmpfs (64 MB) is too small
+# and node /tmp is nearly full, so each task gets its own overlay file, removed when the task ends.
+OVERLAY="$DATA_ROOT/cache/overlays/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.img"
+mkdir -p "$(dirname "$OVERLAY")"
+trap 'rm -f "$OVERLAY"' EXIT
+singularity overlay create --size 3072 "$OVERLAY"
+# Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
+singularity exec --nv --overlay "$OVERLAY" \
   --env ACCEPT_EULA=Y,PRIVACY_CONSENT=Y,ISAAC_SIF="$ISAAC_SIF",FANUC_ROBOT_USD="${FANUC_ROBOT_USD:-}" \
   -B "$REPO" -B "$DATA_ROOT" \
   -B "$DATA_ROOT/cache/ov:$HOME/.cache/ov" \
