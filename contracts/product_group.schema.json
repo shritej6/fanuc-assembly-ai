@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "product_group.schema.json",
+  "title": "Objects grouped into one product",
+  "type": "object",
+  "required": [
+    "product",
+    "base_instance",
+    "steps",
+    "status"
+  ],
+  "properties": {
+    "product": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    },
+    "base_instance": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "base_type": {
+      "$ref": "common.schema.json#/$defs/base_type"
+    },
+    "steps": {
+      "type": "object",
+      "description": "step number (1-4) -> instance_id or null if missing",
+      "patternProperties": {
+        "^[1-4]$": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "incomplete",
+        "blocked"
+      ]
+    },
+    "boundary_uf0": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "description": "polygon (x, y mm) around the base and its parts, for the report overlay"
+    }
+  }
+}

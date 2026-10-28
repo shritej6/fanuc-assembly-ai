@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "birth_certificate.schema.json",
+  "title": "Traceability record for one finished (or failed) product",
+  "type": "object",
+  "required": [
+    "run_id",
+    "rollout",
+    "product",
+    "result",
+    "steps"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "rollout": {
+      "type": "integer"
+    },
+    "product": {
+      "type": "integer"
+    },
+    "base_instance": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "result": {
+      "enum": [
+        "good_first_pass",
+        "good_after_rebuild",
+        "blocked",
+        "failed"
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "step",
+          "instance_id"
+        ],
+        "properties": {
+          "step": {
+            "type": "integer"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "object_id": {
+            "$ref": "common.schema.json#/$defs/object_id"
+          },
+          "inspection": {
+            "$ref": "inspection.schema.json"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "spare_used": {
+            "type": "boolean"
+          },
+          "seated_check": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rebuilds": {
+      "type": "integer"
+    },
+    "assists": {
+      "type": "integer"
+    },
+    "cycle_time_s": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "final_checks": {
+      "type": "object",
+      "properties": {
+        "recipe": {
+          "type": "boolean"
+        },
+        "cosmos_reason": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

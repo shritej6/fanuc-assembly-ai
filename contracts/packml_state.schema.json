@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "packml_state.schema.json",
+  "title": "Cell state (ISA-TR88 PackML subset)",
+  "type": "object",
+  "required": [
+    "state",
+    "timestamp"
+  ],
+  "properties": {
+    "state": {
+      "enum": [
+        "Idle",
+        "Starting",
+        "Execute",
+        "Held",
+        "Suspended",
+        "Completing",
+        "Complete",
+        "Stopping",
+        "Stopped",
+        "Aborting",
+        "Aborted",
+        "Resetting"
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "product": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

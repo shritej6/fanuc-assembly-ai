@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.request.json
+robot/cell/.request.json
+data/
+runs/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.usd*
+!sim/assets/**/*.usda

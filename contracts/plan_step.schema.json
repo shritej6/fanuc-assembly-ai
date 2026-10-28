@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "plan_step.schema.json",
+  "title": "One step the state machine asks the motion layer to do",
+  "type": "object",
+  "required": [
+    "step_id",
+    "op",
+    "product"
+  ],
+  "properties": {
+    "step_id": {
+      "type": "string"
+    },
+    "product": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "op": {
+      "enum": [
+        "inspect",
+        "pick",
+        "insert",
+        "extract",
+        "place",
+        "move_to_reject",
+        "move_to_rework",
+        "take_spare",
+        "andon",
+        "final_check"
+      ]
+    },
+    "instance_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "object_id": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "grasp": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/pose_uf0"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/pose_uf0"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "gripper_roll_deg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "90 for the connector housings"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

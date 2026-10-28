@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "detection.schema.json",
+  "title": "One detected object instance in one observation",
+  "type": "object",
+  "required": [
+    "instance_id",
+    "camera",
+    "label",
+    "score",
+    "bbox_px"
+  ],
+  "properties": {
+    "instance_id": {
+      "type": "string",
+      "description": "stable within a rollout, e.g. 'obj-07'"
+    },
+    "camera": {
+      "$ref": "common.schema.json#/$defs/camera"
+    },
+    "label": {
+      "type": "string",
+      "description": "detector class (family or object_id; set by the detector config)"
+    },
+    "object_id": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "exact id once the wrist classifier confirms it"
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "bbox_px": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "x0, y0, x1, y1 in the full-resolution image"
+    },
+    "pose": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/pose_uf0"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pose_source": {
+      "enum": [
+        "detector",
+        "foundationpose",
+        "none"
+      ]
+    },
+    "pose_fit_score": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resting_side": {
+      "enum": [
+        "upright",
+        "flipped",
+        "side",
+        "unknown"
+      ]
+    }
+  }
+}

@@ -1,0 +1,512 @@
+{
+ "objects": [
+  {
+   "object_id": "F01",
+   "family": "base_A",
+   "product": 1,
+   "lookalikes": [
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F06"
+   ],
+   "base_type": "A"
+  },
+  {
+   "object_id": "F02",
+   "family": "base_A",
+   "product": 2,
+   "lookalikes": [
+    "F01",
+    "F03",
+    "F04",
+    "F05",
+    "F06"
+   ],
+   "base_type": "A"
+  },
+  {
+   "object_id": "F03",
+   "family": "base_B",
+   "product": 3,
+   "lookalikes": [
+    "F01",
+    "F02",
+    "F04",
+    "F05",
+    "F06"
+   ],
+   "base_type": "B"
+  },
+  {
+   "object_id": "F04",
+   "family": "base_C",
+   "product": 4,
+   "lookalikes": [
+    "F01",
+    "F02",
+    "F03",
+    "F05",
+    "F06"
+   ],
+   "base_type": "C"
+  },
+  {
+   "object_id": "F05",
+   "family": "base_C",
+   "product": 5,
+   "lookalikes": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F06"
+   ],
+   "base_type": "C"
+  },
+  {
+   "object_id": "F06",
+   "family": "base_C",
+   "product": 6,
+   "lookalikes": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05"
+   ],
+   "base_type": "C"
+  },
+  {
+   "object_id": "M1_01",
+   "family": "housing_control",
+   "product": 1,
+   "lookalikes": [
+    "M2_01"
+   ]
+  },
+  {
+   "object_id": "M1_02",
+   "family": "carrier_stem",
+   "product": 1,
+   "lookalikes": [
+    "M2_02"
+   ]
+  },
+  {
+   "object_id": "M1_03",
+   "family": "cap_knob",
+   "product": 1,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M1_04",
+   "family": "rear_guard",
+   "product": 1,
+   "lookalikes": [
+    "M2_04"
+   ]
+  },
+  {
+   "object_id": "M2_01",
+   "family": "housing_control",
+   "product": 2,
+   "lookalikes": [
+    "M1_01"
+   ]
+  },
+  {
+   "object_id": "M2_02",
+   "family": "carrier_stem",
+   "product": 2,
+   "lookalikes": [
+    "M1_02"
+   ]
+  },
+  {
+   "object_id": "M2_03",
+   "family": "cap_knob",
+   "product": 2,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M2_04",
+   "family": "rear_guard",
+   "product": 2,
+   "lookalikes": [
+    "M1_04",
+    "M3_04"
+   ]
+  },
+  {
+   "object_id": "M3_01",
+   "family": "housing_control",
+   "product": 3,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M3_02",
+   "family": "carrier_stem",
+   "product": 3,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M3_03",
+   "family": "cap_knob",
+   "product": 3,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M3_04",
+   "family": "rear_guard",
+   "product": 3,
+   "lookalikes": [
+    "M2_04"
+   ]
+  },
+  {
+   "object_id": "M4_01",
+   "family": "housing_connector",
+   "product": 4,
+   "lookalikes": [
+    "M5_01",
+    "M6_01"
+   ]
+  },
+  {
+   "object_id": "M4_02",
+   "family": "insert",
+   "product": 4,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M4_03",
+   "family": "guide",
+   "product": 4,
+   "lookalikes": [
+    "M5_03",
+    "M6_03"
+   ]
+  },
+  {
+   "object_id": "M4_04",
+   "family": "lock",
+   "product": 4,
+   "lookalikes": [
+    "M5_04",
+    "M6_04"
+   ]
+  },
+  {
+   "object_id": "M5_01",
+   "family": "housing_connector",
+   "product": 5,
+   "lookalikes": [
+    "M4_01",
+    "M6_01"
+   ]
+  },
+  {
+   "object_id": "M5_02",
+   "family": "insert",
+   "product": 5,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M5_03",
+   "family": "guide",
+   "product": 5,
+   "lookalikes": [
+    "M4_03",
+    "M6_03"
+   ]
+  },
+  {
+   "object_id": "M5_04",
+   "family": "lock",
+   "product": 5,
+   "lookalikes": [
+    "M4_04",
+    "M6_04"
+   ]
+  },
+  {
+   "object_id": "M6_01",
+   "family": "housing_connector",
+   "product": 6,
+   "lookalikes": [
+    "M4_01",
+    "M5_01"
+   ]
+  },
+  {
+   "object_id": "M6_02",
+   "family": "insert",
+   "product": 6,
+   "lookalikes": []
+  },
+  {
+   "object_id": "M6_03",
+   "family": "guide",
+   "product": 6,
+   "lookalikes": [
+    "M4_03",
+    "M5_03"
+   ]
+  },
+  {
+   "object_id": "M6_04",
+   "family": "lock",
+   "product": 6,
+   "lookalikes": [
+    "M4_04",
+    "M5_04"
+   ]
+  }
+ ],
+ "lookalike_threshold_mm": 2.5,
+ "measurement": "max two-way nearest-surface distance, 20k samples per mesh, meshes aligned at bbox min (print pose); 2026-10-27",
+ "pairs": [
+  {
+   "a": "F01",
+   "b": "F02",
+   "max_surface_distance_mm": 0.0
+  },
+  {
+   "a": "F01",
+   "b": "F03",
+   "max_surface_distance_mm": 1.19
+  },
+  {
+   "a": "F01",
+   "b": "F04",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F01",
+   "b": "F05",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F01",
+   "b": "F06",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F02",
+   "b": "F03",
+   "max_surface_distance_mm": 1.19
+  },
+  {
+   "a": "F02",
+   "b": "F04",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F02",
+   "b": "F05",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F02",
+   "b": "F06",
+   "max_surface_distance_mm": 2.24
+  },
+  {
+   "a": "F03",
+   "b": "F04",
+   "max_surface_distance_mm": 1.41
+  },
+  {
+   "a": "F03",
+   "b": "F05",
+   "max_surface_distance_mm": 1.41
+  },
+  {
+   "a": "F03",
+   "b": "F06",
+   "max_surface_distance_mm": 1.41
+  },
+  {
+   "a": "F04",
+   "b": "F05",
+   "max_surface_distance_mm": 0.0
+  },
+  {
+   "a": "F04",
+   "b": "F06",
+   "max_surface_distance_mm": 0.0
+  },
+  {
+   "a": "F05",
+   "b": "F06",
+   "max_surface_distance_mm": 0.0
+  },
+  {
+   "a": "M1_01",
+   "b": "M2_01",
+   "max_surface_distance_mm": 2.07
+  },
+  {
+   "a": "M1_01",
+   "b": "M3_01",
+   "max_surface_distance_mm": 3.12
+  },
+  {
+   "a": "M1_01",
+   "b": "M4_01",
+   "max_surface_distance_mm": 18.23
+  },
+  {
+   "a": "M1_01",
+   "b": "M5_01",
+   "max_surface_distance_mm": 18.22
+  },
+  {
+   "a": "M1_01",
+   "b": "M6_01",
+   "max_surface_distance_mm": 19.02
+  },
+  {
+   "a": "M1_02",
+   "b": "M2_02",
+   "max_surface_distance_mm": 1.06
+  },
+  {
+   "a": "M1_02",
+   "b": "M3_02",
+   "max_surface_distance_mm": 5.0
+  },
+  {
+   "a": "M1_03",
+   "b": "M2_03",
+   "max_surface_distance_mm": 2.53
+  },
+  {
+   "a": "M1_03",
+   "b": "M3_03",
+   "max_surface_distance_mm": 5.16
+  },
+  {
+   "a": "M1_04",
+   "b": "M2_04",
+   "max_surface_distance_mm": 2.31
+  },
+  {
+   "a": "M1_04",
+   "b": "M3_04",
+   "max_surface_distance_mm": 4.52
+  },
+  {
+   "a": "M2_01",
+   "b": "M3_01",
+   "max_surface_distance_mm": 3.12
+  },
+  {
+   "a": "M2_01",
+   "b": "M4_01",
+   "max_surface_distance_mm": 18.22
+  },
+  {
+   "a": "M2_01",
+   "b": "M5_01",
+   "max_surface_distance_mm": 18.22
+  },
+  {
+   "a": "M2_01",
+   "b": "M6_01",
+   "max_surface_distance_mm": 19.02
+  },
+  {
+   "a": "M2_02",
+   "b": "M3_02",
+   "max_surface_distance_mm": 5.01
+  },
+  {
+   "a": "M2_03",
+   "b": "M3_03",
+   "max_surface_distance_mm": 5.23
+  },
+  {
+   "a": "M2_04",
+   "b": "M3_04",
+   "max_surface_distance_mm": 2.33
+  },
+  {
+   "a": "M3_01",
+   "b": "M4_01",
+   "max_surface_distance_mm": 18.23
+  },
+  {
+   "a": "M3_01",
+   "b": "M5_01",
+   "max_surface_distance_mm": 18.22
+  },
+  {
+   "a": "M3_01",
+   "b": "M6_01",
+   "max_surface_distance_mm": 19.02
+  },
+  {
+   "a": "M4_01",
+   "b": "M5_01",
+   "max_surface_distance_mm": 2.15
+  },
+  {
+   "a": "M4_01",
+   "b": "M6_01",
+   "max_surface_distance_mm": 2.34
+  },
+  {
+   "a": "M4_02",
+   "b": "M5_02",
+   "max_surface_distance_mm": 3.82
+  },
+  {
+   "a": "M4_02",
+   "b": "M6_02",
+   "max_surface_distance_mm": 4.0
+  },
+  {
+   "a": "M4_03",
+   "b": "M5_03",
+   "max_surface_distance_mm": 2.05
+  },
+  {
+   "a": "M4_03",
+   "b": "M6_03",
+   "max_surface_distance_mm": 2.06
+  },
+  {
+   "a": "M4_04",
+   "b": "M5_04",
+   "max_surface_distance_mm": 1.03
+  },
+  {
+   "a": "M4_04",
+   "b": "M6_04",
+   "max_surface_distance_mm": 1.04
+  },
+  {
+   "a": "M5_01",
+   "b": "M6_01",
+   "max_surface_distance_mm": 1.96
+  },
+  {
+   "a": "M5_02",
+   "b": "M6_02",
+   "max_surface_distance_mm": 3.97
+  },
+  {
+   "a": "M5_03",
+   "b": "M6_03",
+   "max_surface_distance_mm": 2.04
+  },
+  {
+   "a": "M5_04",
+   "b": "M6_04",
+   "max_surface_distance_mm": 1.03
+  }
+ ]
+}

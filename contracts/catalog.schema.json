@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "catalog.schema.json",
+  "title": "Product catalog and recipe (filled by T04 from the CAD)",
+  "type": "object",
+  "required": [
+    "products"
+  ],
+  "properties": {
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "product",
+          "name",
+          "base_type",
+          "steps"
+        ],
+        "properties": {
+          "product": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "base_type": {
+            "$ref": "common.schema.json#/$defs/base_type"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": [
+                "step",
+                "object_id"
+              ],
+              "properties": {
+                "step": {
+                  "type": "integer"
+                },
+                "object_id": {
+                  "$ref": "common.schema.json#/$defs/part_id"
+                },
+                "insert_offset_mm": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "gripper_roll_deg": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

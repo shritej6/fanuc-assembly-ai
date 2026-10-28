@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "inspection.schema.json",
+  "title": "Inspection verdict for one part instance",
+  "type": "object",
+  "required": [
+    "instance_id",
+    "verdict",
+    "action",
+    "checks_agree"
+  ],
+  "properties": {
+    "instance_id": {
+      "type": "string"
+    },
+    "object_id": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/object_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "ok",
+        "flipped",
+        "broken",
+        "missing_feature",
+        "print_defect",
+        "missing_layer",
+        "wrong_part",
+        "foreign",
+        "uncertain"
+      ]
+    },
+    "action": {
+      "enum": [
+        "use",
+        "rework",
+        "reject",
+        "ask_operator"
+      ]
+    },
+    "checks_agree": {
+      "type": "boolean",
+      "description": "look-alike classifier and FoundationPose fit agree (poka-yoke)"
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "classifier_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "patchcore_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "depth_residual_mm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "image_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
