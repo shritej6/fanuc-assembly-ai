@@ -31,7 +31,11 @@ SCENE = ("A real photograph of a FANUC robot cell. Every object keeps exactly th
          "the input: matte 3D-printed plastic parts with fine visible layer lines, a white table, real materials.")
 LIGHTS = ["Cool fluorescent ceiling light, soft shadows.", "Warm LED work light from one side, firm shadows.",
           "Mixed daylight from a window and ceiling light.", "Dim overhead light, slight sensor noise and grain."]
-CONTROLS = {"edge": {"control_weight": 1.0}, "vis": {"control_weight": 0.5}}
+# very_low: Cosmos's default Canny threshold dropped the faint inner edges of black parts and pale objects, and Cosmos
+# painted smooth surfaces there (base plates lost their pins and recesses); the lowest preset keeps them (sweep
+# 2026-10-28, worst-object edge F-score 0-0.2 -> 0.6-0.8). An edge map made from the render was worse: it kept the
+# render's sensor noise as edges, which Cosmos drew as serrated rims.
+CONTROLS = {"edge": {"control_weight": 1.0, "preset_edge_threshold": "very_low"}, "vis": {"control_weight": 0.5}}
 CAMERAS = {"table": "Shot from an overhead industrial camera.", "side": "Shot from a fixed side camera.",
            "wrist": "Close-up from a camera on the robot wrist, shallow depth of field."}
 

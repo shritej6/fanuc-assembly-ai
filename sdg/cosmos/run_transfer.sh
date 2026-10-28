@@ -28,6 +28,8 @@ docker run --rm --gpus all --ipc=host -v "$REPO_DIR":/workspace -v "$HOME/.cache
   bash -c 'python examples/inference.py -i /bundle/batch/*.json -o /bundle/raw --num-steps '"$NUM_STEPS" \
   >> "$BUNDLE/run.log" 2>&1 || echo "$(date '+%F %T') inference exited non-zero (see run.log)" | tee -a "$BUNDLE/timing.txt"
 
+# The Cosmos container runs as root; give its files back before converting them.
+docker run --rm --entrypoint chown -v "$BUNDLE":/bundle "$IMAGE" -R "$(id -u):$(id -g)" /bundle
 for f in "$BUNDLE"/raw/*; do
   name=$(basename "${f%.*}")
   [ -f "$BUNDLE/specs/$name.json" ] || continue
@@ -38,5 +40,6 @@ for f in "$BUNDLE"/raw/*; do
              "from PIL import Image; Image.open('/bundle/raw/$(basename "$f")').convert('RGB').save('/bundle/out/$name.jpg', quality=95)" ;;
   esac
 done
+docker run --rm --entrypoint chown -v "$BUNDLE":/bundle "$IMAGE" -R "$(id -u):$(id -g)" /bundle
 done_n=$(find "$BUNDLE/out" -name '*.jpg' | wc -l)
 echo "$(date '+%F %T') $done_n images in out/, batch took $(( $(date +%s) - start )) s for $todo" | tee -a "$BUNDLE/timing.txt"
