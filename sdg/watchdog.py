@@ -26,7 +26,7 @@ from sdg.scene_sampler import Inputs, n_chunks
 
 REPO = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", Path.home() / "fanuc-assembly-data"))
-SAMPLE, MAX_RETRIES, HANG_MIN = 40, 3, 30
+SAMPLE, MAX_RETRIES, HANG_MIN = 40, 3, 15   # a healthy render writes a file every few minutes
 
 
 def chunk_dirs() -> list[Path]:
