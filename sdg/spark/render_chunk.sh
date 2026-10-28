@@ -30,7 +30,7 @@ for c in "$@"; do
   (cd "$REPO" && "$PY" -m sdg.scene_sampler --set "$SET" --chunk "$c" --out "$SPECS")
   mkdir -p "$OUT" && chmod g+rwxs "$OUT"
   docker run --rm --gpus all --network host -u "1234:$(id -g)" \
-    -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e HOME=/cache/home -e ISAAC_SIF="$IMAGE" \
+    -e ACCEPT_EULA=Y -e SDG_DEBUG=${SDG_DEBUG:-} -e PRIVACY_CONSENT=Y -e HOME=/cache/home -e ISAAC_SIF="$IMAGE" \
     -v "$REPO:$REPO:ro" -v "$DATA_ROOT:$DATA_ROOT" -v "$DATA_ROOT/cache:/cache" \
     --entrypoint bash "$IMAGE" -c 'umask 002 && exec /isaac-sim/python.sh "$@"' _ \
     "$REPO/sdg/isaac/generate.py" --specs "$SPECS" --out "$OUT" --limit "$LIMIT" \

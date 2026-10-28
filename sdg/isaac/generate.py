@@ -112,7 +112,7 @@ class Cameras:
             rp = rep.create.render_product(path, tuple(CAM_CFG[name]["resolution"]))
             self.annot[name] = {k: rep.AnnotatorRegistry.get_annotator(k, init_params=p) for k, p in (
                 ("rgb", None), ("bounding_box_2d_tight", None), ("distance_to_image_plane", None),
-                ("instance_segmentation", {"colorize": False}))}
+                ("instance_id_segmentation", {"colorize": False}))}
             for a in self.annot[name].values():
                 a.attach([rp])
 
@@ -135,7 +135,12 @@ def write_scene(spec: dict, cams: Cameras, paths: dict, out: Path) -> int:
         rgb = apply_post(a["rgb"].get_data()[:, :, :3], spec["post"], spec["seed"] * 7 + k)
         _save(out / "rgb" / cam / f"{idx}.jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
               [cv2.IMWRITE_JPEG_QUALITY, spec["post"]["jpeg_quality"]])
-        seg = a["instance_segmentation"].get_data()
+        seg = a["instance_id_segmentation"].get_data()   # per-prim ids keyed by USD path; needs no semantic labels
+        if os.environ.get("SDG_DEBUG"):
+            info = seg["info"]
+            print(f"[sdg-debug] {cam} ids={np.unique(seg['data'])[:20].tolist()} dtype={seg['data'].dtype} "
+                  f"info_keys={list(info)} idToLabels={dict(list(info.get('idToLabels', {}).items())[:8])} "
+                  f"paths_sample={list(paths)[:3]}", flush=True)
         mask = instance_mask(seg["data"], seg["info"]["idToLabels"], paths)
         _save(out / "seg" / cam / f"{idx}.png", mask)
         if cam in DEPTH_SIZE and "depth" in spec["outputs"]:
