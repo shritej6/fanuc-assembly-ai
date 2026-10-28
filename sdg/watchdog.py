@@ -93,21 +93,34 @@ def spark_rendering() -> bool:
     return run(["pgrep", "-f", "sdg/spark/render_chunk.sh"]).returncode == 0
 
 
+def render_containers() -> dict[str, str]:
+    """Running Isaac containers keyed by the spec file they render (`<set>/chunk_NNNN.jsonl`)."""
+    image = os.environ.get("ISAAC_IMAGE", "nvcr.io/nvidia/isaac-sim:6.0.0")
+    out = {}
+    for cid in run(["docker", "ps", "-q", "--filter", f"ancestor={image}"]).stdout.split():
+        args = run(["docker", "inspect", "-f", "{{join .Args \" \"}}", cid]).stdout.split()
+        specs = [a for a in args if a.endswith(".jsonl")]
+        if specs:
+            out["/".join(Path(specs[0]).parts[-2:])] = cid
+    return out
+
+
+def last_activity(chunk: Path) -> float:
+    """Newest write of a render: any output file of the chunk or its log (Isaac logs while it starts up)."""
+    log = DATA_ROOT / "logs" / f"spark_{chunk.parent.name}_{chunk.name.split('_')[1]}.log"
+    files = [p for p in chunk.rglob("*") if p.is_file()] + ([log] if log.exists() else [])
+    return max((p.stat().st_mtime for p in files), default=chunk.stat().st_mtime)
+
+
 def spark_hang_check(events: list[str]) -> None:
-    """Kill a render whose newest label is older than HANG_MIN minutes; the chunk is then retried."""
-    active = [c for c in chunk_dirs() if not (c / "_DONE.json").exists() and not (c / "_FAILED.txt").exists()]
-    stamps = [(max((f.stat().st_mtime for f in (c / "labels").glob("*.json")), default=c.stat().st_mtime), c)
-              for c in active]
-    if not stamps:
-        return
-    newest, chunk = max(stamps)
-    if time.time() - newest > HANG_MIN * 60:
-        image = os.environ.get("ISAAC_IMAGE", "nvcr.io/nvidia/isaac-sim:6.0.0")
-        ids = run(["docker", "ps", "-q", "--filter", f"ancestor={image}"]).stdout.split()
-        if ids:
-            run(["docker", "kill", *ids])
-            (chunk / "_FAILED.txt").write_text(f"watchdog: no new label for {HANG_MIN} min, render killed\n")
-            events.append(f"HANG {chunk.parent.name}/{chunk.name}: killed render, will retry")
+    """Kill each render that wrote nothing for HANG_MIN minutes; the chunk is then retried. Checked per chunk:
+    several queues share the GPU, so one stalled render must not hide behind the others' progress."""
+    for spec, cid in render_containers().items():
+        chunk = chunk_path(spec.split("/")[0], int(spec.split("_")[1].split(".")[0]))
+        if chunk.exists() and time.time() - last_activity(chunk) > HANG_MIN * 60:
+            run(["docker", "kill", cid])
+            (chunk / "_FAILED.txt").write_text(f"watchdog: no output for {HANG_MIN} min, render killed\n")
+            events.append(f"HANG {chunk.parent.name}/{chunk.name}: killed its render, will retry")
 
 
 def spark_schedule(plan: list[tuple[str, int]], events: list[str]) -> None:
