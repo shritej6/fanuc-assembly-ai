@@ -9,6 +9,8 @@ from typing import Any
 
 from PIL import Image
 
+from perception.image_integrity import ImageIntegrityError, read_verified_rgb, require_sha256
+
 
 class DatasetError(ValueError):
     """Raised when frozen classifier crops are malformed."""
@@ -32,6 +34,10 @@ class CropDataset:
             except json.JSONDecodeError as exc:
                 raise DatasetError(f"invalid crop JSONL at {crops_path}:{line_number}") from exc
             if row.get("split") == split:
+                try:
+                    require_sha256(row.get("crop_sha256"), "crop_sha256")
+                except ImageIntegrityError as exc:
+                    raise DatasetError(f"invalid crop row at {crops_path}:{line_number}: {exc}") from exc
                 rows.append(row)
         if max_samples is not None:
             if max_samples < 1:
@@ -48,10 +54,9 @@ class CropDataset:
         row = self.rows[index]
         path = Path(row["crop_path"])
         try:
-            with Image.open(path) as opened:
-                image = opened.convert("RGB")
-        except OSError as exc:
-            raise DatasetError(f"cannot read classifier crop {path}: {exc}") from exc
+            image = read_verified_rgb(path, row["crop_sha256"])
+        except ImageIntegrityError as exc:
+            raise DatasetError(str(exc)) from exc
         class_id = row.get("class_id")
         object_id = row.get("object_id")
         valid_id = type(class_id) is int and 0 <= class_id < len(self.labels)

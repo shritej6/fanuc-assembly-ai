@@ -44,6 +44,7 @@ class ImageRecord:
     label_path: Path
     width: int
     height: int
+    image_sha256: str
     objects: tuple[Annotation, ...] = ()
     target: Annotation | None = None
 
@@ -53,7 +54,7 @@ class ImageRecord:
 
     def as_dict(self) -> dict[str, Any]:
         record: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "task": self.task,
             "scene_id": self.scene_id,
             "set": self.set_name,
@@ -65,6 +66,7 @@ class ImageRecord:
             "label_path": str(self.label_path),
             "width": self.width,
             "height": self.height,
+            "image_sha256": self.image_sha256,
         }
         if self.task == "detector":
             record["objects"] = [item.as_dict() for item in self.objects]

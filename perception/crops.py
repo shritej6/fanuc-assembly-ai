@@ -11,6 +11,14 @@ from typing import Any
 
 from PIL import Image
 
+from perception.image_integrity import (
+    ImageIntegrityError,
+    atomic_write_bytes,
+    encode_jpeg,
+    read_verified_rgb,
+    require_sha256,
+)
+
 
 class CropError(ValueError):
     """Raised when a classifier record cannot produce a safe crop."""
@@ -25,6 +33,12 @@ def _records(path: Path) -> list[dict[str, Any]]:
             raise CropError(f"invalid JSONL at {path}:{line_number}") from exc
         if record.get("task") != "classifier" or not isinstance(record.get("target"), dict):
             raise CropError(f"invalid classifier record at {path}:{line_number}")
+        if record.get("schema_version") != 2:
+            raise CropError(f"legacy classifier record at {path}:{line_number}")
+        try:
+            require_sha256(record.get("image_sha256"), "image_sha256")
+        except ImageIntegrityError as exc:
+            raise CropError(f"invalid classifier record at {path}:{line_number}: {exc}") from exc
         output.append(record)
     return output
 
@@ -57,22 +71,21 @@ def _crop_name(record: dict[str, Any]) -> str:
     )
 
 
-def _save_crop(image: Image.Image, box: tuple[int, int, int, int], target: Path) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(suffix=".jpg", dir=target.parent, delete=False) as handle:
-        temporary = Path(handle.name)
-    image.crop(box).save(temporary, format="JPEG", quality=95)
-    os.replace(temporary, target)
+def _save_crop(image: Image.Image, box: tuple[int, int, int, int], target: Path) -> str:
+    payload, digest = encode_jpeg(image.crop(box))
+    atomic_write_bytes(target, payload)
+    return digest
 
 
 def _metadata_row(
     record: dict[str, Any],
     crop_path: Path,
     box: tuple[int, int, int, int],
+    crop_sha256: str,
 ) -> dict[str, Any]:
     target = record["target"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "scene_id": record["scene_id"],
         "set": record["set"],
         "index": record["index"],
@@ -82,6 +95,7 @@ def _metadata_row(
         "source_image_path": record["image_path"],
         "label_path": record["label_path"],
         "crop_path": str(crop_path),
+        "crop_sha256": crop_sha256,
         "crop_bbox_xyxy": list(box),
         "object_id": target["object_id"],
         "class_id": target["class_id"],
@@ -110,8 +124,10 @@ def export_crops(
     seen: set[Path] = set()
     for record in _records(manifest_path):
         source = Path(record["image_path"])
-        with Image.open(source) as opened:
-            image = opened.convert("RGB")
+        try:
+            image = read_verified_rgb(source, record["image_sha256"])
+        except ImageIntegrityError as exc:
+            raise CropError(str(exc)) from exc
         if image.size != (record["width"], record["height"]):
             raise CropError(f"source size mismatch for {source}")
         target = record["target"]
@@ -120,8 +136,8 @@ def export_crops(
         if crop_path in seen:
             raise CropError(f"duplicate crop path: {crop_path}")
         seen.add(crop_path)
-        _save_crop(image, box, crop_path)
-        rows.append(_metadata_row(record, crop_path, box))
+        crop_sha256 = _save_crop(image, box, crop_path)
+        rows.append(_metadata_row(record, crop_path, box, crop_sha256))
     metadata_path = output_dir / "crops.jsonl"
     _write_jsonl(metadata_path, rows)
     return metadata_path

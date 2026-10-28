@@ -292,6 +292,23 @@ def _check_labels(datasets: tuple[CocoDataset, ...], labels: list[str]) -> None:
             )
 
 
+def _check_class_support(datasets: tuple[CocoDataset, ...], labels: list[str]) -> None:
+    """Require every frozen detector category in every production split."""
+    expected_ids = set(range(len(labels)))
+    for split, dataset in zip(("train", "validation", "test"), datasets):
+        observed = {
+            int(annotation["category_id"])
+            for annotations in dataset.annotations.values()
+            for annotation in annotations
+        }
+        unknown = sorted(observed - expected_ids)
+        if unknown:
+            raise DetectorTrainError(f"{split} detector split has unknown category IDs: {unknown}")
+        missing = [labels[index] for index in sorted(expected_ids - observed)]
+        if missing:
+            raise DetectorTrainError(f"{split} detector split lacks labels: {missing}")
+
+
 def _check_finite(metrics: dict[str, Any], phase: str) -> None:
     numeric = {key: value for key, value in metrics.items() if isinstance(value, (int, float))}
     invalid = {key: value for key, value in numeric.items() if not math.isfinite(float(value))}
@@ -322,18 +339,15 @@ def _evaluate_scenarios(trainer: Any, dataset: CocoDataset) -> dict[str, Any]:
     return report
 
 
-def _run_ml(
+def _build_trainer(
     args: argparse.Namespace,
     config: dict[str, Any],
-    labels: list[str],
-    resume: bool | str | None,
-) -> None:
+    processor: Any,
+    model: Any,
+    id2label: dict[int, str],
+    datasets: tuple[CocoDataset, CocoDataset, CocoDataset],
+) -> Any:
     from transformers import Trainer, TrainingArguments
-
-    processor, model, id2label = _load_model(config, labels)
-    datasets = _load_datasets(args, config, processor)
-    _check_labels(datasets, labels)
-    training_args = TrainingArguments(**trainer_arguments(config["training"], args.output_dir))
 
     class DetectionTrainer(Trainer):
         def _gather_detection_metrics(self, value: Any) -> Any:
@@ -346,7 +360,8 @@ def _run_ml(
             finally:
                 self.gather_function = self._gather_detection_metrics
 
-    trainer = DetectionTrainer(
+    training_args = TrainingArguments(**trainer_arguments(config["training"], args.output_dir))
+    return DetectionTrainer(
         model=model,
         args=training_args,
         train_dataset=datasets[0],
@@ -355,6 +370,20 @@ def _run_ml(
         data_collator=collate_fn,
         compute_metrics=metric_function(processor, id2label),
     )
+
+
+def _run_ml(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    labels: list[str],
+    resume: bool | str | None,
+) -> None:
+    processor, model, id2label = _load_model(config, labels)
+    datasets = _load_datasets(args, config, processor)
+    _check_labels(datasets, labels)
+    if not args.smoke:
+        _check_class_support(datasets, labels)
+    trainer = _build_trainer(args, config, processor, model, id2label, datasets)
     _configure_fp16_scaler(trainer, config["training"])
     train_result = trainer.train(resume_from_checkpoint=resume)
     _check_finite(train_result.metrics, "training")

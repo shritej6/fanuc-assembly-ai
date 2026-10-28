@@ -95,6 +95,10 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_split_is_deterministic_with_literal_scene_buckets() -> None:
     assert split_for_scene("A", 1, seed=17) == "train"
     assert split_for_scene("A", 13, seed=17) == "validation"
@@ -105,7 +109,9 @@ def test_split_is_deterministic_with_literal_scene_buckets() -> None:
 def test_builder_groups_cameras_and_accepted_cosmos_with_the_native_scene(tmp_path: Path) -> None:
     taxonomy = _write_taxonomy(tmp_path)
     detector_chunk = _write_chunk(tmp_path, "A", [0, 1, 13], ("table", "side"))
-    _write_image(detector_chunk / "rgb_cosmos" / "table" / "000001.jpg")
+    cosmos_path = detector_chunk / "rgb_cosmos" / "table" / "000001.jpg"
+    _write_image(cosmos_path)
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(cosmos_path)
     detector_chunk.joinpath("_COSMOS.json").write_text(
         json.dumps(
             {
@@ -154,6 +160,49 @@ def test_builder_groups_cameras_and_accepted_cosmos_with_the_native_scene(tmp_pa
         "foreign_tape_roll",
         "foreign_cube_10mm",
     ]
+    assert metadata["schema_version"] == 2
+    assert metadata["content_hash_algorithm"] == "sha256"
+    for record in detector + classifier:
+        assert record["schema_version"] == 2
+        assert record["image_sha256"] == _sha256(Path(record["image_path"]))
+    native = next(record for record in scene_one if record["camera"] == "table" and record["variant"] == "native")
+    cosmos = next(record for record in scene_one if record["camera"] == "table" and record["variant"] == "cosmos")
+    assert native["image_sha256"] != cosmos["image_sha256"]
+
+
+def test_manifest_sha_changes_when_valid_same_size_image_bytes_change(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1], ("table",))
+    first = build_manifests(
+        ManifestConfig(
+            data_root=tmp_path,
+            output_dir=tmp_path / "first",
+            taxonomy_path=taxonomy,
+            detector_sets=("A",),
+            classifier_sets=(),
+            require_cosmos=False,
+            include_cosmos=False,
+        )
+    )
+    image_path = chunk / "rgb/table/000001.jpg"
+    first_digest = _read_jsonl(first.detector_path)[0]["image_sha256"]
+
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(image_path)
+    second = build_manifests(
+        ManifestConfig(
+            data_root=tmp_path,
+            output_dir=tmp_path / "second",
+            taxonomy_path=taxonomy,
+            detector_sets=("A",),
+            classifier_sets=(),
+            require_cosmos=False,
+            include_cosmos=False,
+        )
+    )
+
+    assert first_digest != _sha256(image_path)
+    assert _read_jsonl(second.detector_path)[0]["image_sha256"] == _sha256(image_path)
+    assert first.detector_sha256 != second.detector_sha256
 
 
 @pytest.mark.parametrize(
@@ -254,6 +303,27 @@ def test_production_manifest_enforces_per_set_cosmos_fraction(tmp_path: Path) ->
         )
 
 
+def test_cosmos_fraction_uses_eligible_image_records_not_scene_count(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", list(range(10)), ("table", "side"))
+    _write_image(chunk / "rgb_cosmos" / "table" / "000001.jpg")
+    chunk.joinpath("_COSMOS.json").write_text(
+        json.dumps({"table/000001": {"edge_fscore": 0.95, "accepted": True}})
+    )
+
+    with pytest.raises(ManifestError, match="Cosmos coverage"):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=True,
+            )
+        )
+
+
 def test_native_smoke_manifest_excludes_partial_cosmos_and_limits_scenes(tmp_path: Path) -> None:
     taxonomy = _write_taxonomy(tmp_path)
     chunk = _write_chunk(tmp_path, "A", [1, 2, 3], ("table", "side"))
@@ -337,6 +407,157 @@ def test_accepted_cosmos_key_must_match_a_labelled_camera(tmp_path: Path) -> Non
     )
 
     with pytest.raises(ManifestError, match="no matching native record"):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_symlinked_chunk_cannot_escape_the_synthetic_set(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    external = _write_chunk(tmp_path / "real-cell", "A", [1], ("table", "side"))
+    data_root = tmp_path / "approved"
+    set_dir = data_root / "synthetic" / "A"
+    set_dir.mkdir(parents=True)
+    set_dir.joinpath("chunk_0000").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(ManifestError, match="outside approved"):
+        build_manifests(
+            ManifestConfig(
+                data_root=data_root,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_symlinked_synthetic_root_cannot_redefine_the_approved_boundary(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    external_root = tmp_path / "external"
+    _write_chunk(external_root, "A", [1], ("table",))
+    data_root = tmp_path / "approved"
+    data_root.mkdir()
+    data_root.joinpath("synthetic").symlink_to(external_root / "synthetic", target_is_directory=True)
+
+    with pytest.raises(ManifestError, match="outside approved"):
+        build_manifests(
+            ManifestConfig(
+                data_root=data_root,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_internal_synthetic_symlink_cannot_redirect_to_real_data(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    data_root = tmp_path / "approved"
+    _write_chunk(data_root / "real", "A", [1], ("table",))
+    data_root.joinpath("synthetic").symlink_to(
+        data_root / "real" / "synthetic",
+        target_is_directory=True,
+    )
+
+    with pytest.raises(ManifestError, match="symlink"):
+        build_manifests(
+            ManifestConfig(
+                data_root=data_root,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_symlinked_rgb_root_cannot_redefine_the_chunk_boundary(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1], ("table",))
+    external_rgb = tmp_path / "external-rgb"
+    chunk.joinpath("rgb").rename(external_rgb)
+    chunk.joinpath("rgb").symlink_to(external_rgb, target_is_directory=True)
+
+    with pytest.raises(ManifestError, match="outside approved"):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_internal_rgb_symlink_cannot_redirect_to_superseded_data(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1], ("table",))
+    superseded_rgb = chunk / "superseded" / "rgb"
+    superseded_rgb.parent.mkdir()
+    chunk.joinpath("rgb").rename(superseded_rgb)
+    chunk.joinpath("rgb").symlink_to(superseded_rgb, target_is_directory=True)
+
+    with pytest.raises(ManifestError, match="symlink"):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_symlinked_cosmos_root_cannot_redefine_the_chunk_boundary(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1], ("table",))
+    external_cosmos = tmp_path / "external-cosmos"
+    _write_image(external_cosmos / "table" / "000001.jpg")
+    chunk.joinpath("rgb_cosmos").symlink_to(external_cosmos, target_is_directory=True)
+    chunk.joinpath("_COSMOS.json").write_text(
+        json.dumps({"table/000001": {"edge_fscore": 0.95, "accepted": True}})
+    )
+
+    with pytest.raises(ManifestError, match="outside approved"):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=("A",),
+                classifier_sets=(),
+                require_cosmos=False,
+            )
+        )
+
+
+def test_label_camera_path_cannot_escape_the_chunk(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1], ("table",))
+    external = tmp_path / "real-cell" / "camera"
+    _write_image(external / "000001.jpg")
+    label_path = chunk / "labels" / "000001.json"
+    label = json.loads(label_path.read_text())
+    label["cameras"] = {str(external.resolve()): label["cameras"]["table"]}
+    label_path.write_text(json.dumps(label))
+
+    with pytest.raises(ManifestError, match="camera|outside approved"):
         build_manifests(
             ManifestConfig(
                 data_root=tmp_path,

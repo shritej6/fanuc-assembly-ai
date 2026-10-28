@@ -1,12 +1,15 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from perception.classifier.train import (
     ClassifierTrainingError,
+    _check_class_support,
     _check_finite_metrics,
     _parser,
+    _run_provenance,
     _validate_manifest_mode,
     classifier_report_from_logits,
     resolve_resume,
@@ -127,6 +130,22 @@ def test_new_run_writes_provenance_and_existing_checkpoint_requires_resume(tmp_p
         resolve_resume(None, tmp_path, current)
 
 
+def test_classifier_resume_rejects_changed_crop_bytes_identity(tmp_path: Path) -> None:
+    crops = tmp_path / "crops.jsonl"
+    crops.write_text(json.dumps({"crop_sha256": "a" * 64}) + "\n")
+    first = _run_provenance(_metadata(), _config(), crops)
+    output = tmp_path / "run"
+    resolve_resume(None, output, first)
+    (output / "checkpoint-1").mkdir()
+
+    crops.write_text(json.dumps({"crop_sha256": "b" * 64}) + "\n")
+    changed = _run_provenance(_metadata(), _config(), crops)
+
+    assert first["derived_data_sha256"] != changed["derived_data_sha256"]
+    with pytest.raises(ClassifierTrainingError, match="derived_data_sha256"):
+        resolve_resume("latest", output, changed)
+
+
 def test_classifier_parser_supports_bounded_resume_probe(tmp_path: Path) -> None:
     args = _parser().parse_args(
         [
@@ -164,3 +183,14 @@ def test_classifier_production_requires_cosmos_manifest() -> None:
         _validate_manifest_mode({"require_cosmos": False, "include_cosmos": False}, smoke=False)
     with pytest.raises(ClassifierTrainingError, match="Cosmos"):
         _validate_manifest_mode({"require_cosmos": True, "include_cosmos": False}, smoke=False)
+
+
+def test_classifier_requires_every_label_in_every_production_split() -> None:
+    labels = ("F00", "F01", "F02")
+    complete = SimpleNamespace(rows=[{"object_id": label} for label in labels])
+
+    _check_class_support((complete, complete, complete), labels)
+
+    incomplete = SimpleNamespace(rows=[{"object_id": "F00"}, {"object_id": "F01"}])
+    with pytest.raises(ClassifierTrainingError, match=r"validation.*F02"):
+        _check_class_support((complete, incomplete, complete), labels)

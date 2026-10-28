@@ -29,17 +29,19 @@ def _read_metadata(path: Path) -> dict[str, Any]:
 def _cosmos_fraction(set_name: str, raw: Any) -> float:
     if not isinstance(raw, dict):
         raise RosieGateError(f"missing manifest statistics for set {set_name}")
-    scenes, accepted = raw.get("scenes"), raw.get("cosmos_accepted")
-    if not isinstance(scenes, int) or scenes < 1:
-        raise RosieGateError(f"invalid scene count for set {set_name}: {scenes!r}")
+    native_records, accepted = raw.get("native_records"), raw.get("cosmos_accepted")
+    if not isinstance(native_records, int) or native_records < 1:
+        raise RosieGateError(f"invalid native record count for set {set_name}: {native_records!r}")
     if not isinstance(accepted, int) or accepted < 0:
         raise RosieGateError(f"invalid accepted Cosmos count for set {set_name}: {accepted!r}")
-    return accepted / scenes
+    return accepted / native_records
 
 
 def verify_production_manifest(path: Path) -> dict[str, Any]:
     """Require all six sets to carry a measured 10-20% Cosmos acceptance share."""
     metadata = _read_metadata(path)
+    if metadata.get("schema_version") != 2 or metadata.get("content_hash_algorithm") != "sha256":
+        raise RosieGateError("production manifest requires schema 2 with SHA-256 image binding")
     if metadata.get("require_cosmos") is not True or metadata.get("include_cosmos") is not True:
         raise RosieGateError("production training requires a Cosmos-gated manifest")
     sets = metadata.get("sets")

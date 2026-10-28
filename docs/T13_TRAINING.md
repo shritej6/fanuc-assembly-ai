@@ -23,8 +23,10 @@ Set `REPO`, `DATA_ROOT`, `ARTIFACT_ROOT`, and `RUN_ROOT` when the checkout or st
 
 ## 1. Create the T4 environment
 
-Run this once on Rosie. The script uses Python 3.12 `venv`, installs the CUDA 12.6 wheels explicitly, disables the
-pip download cache, verifies installed dependencies, and does not rely on Rosie's broken snap `uv` executable.
+Run this once on Rosie. The script uses Python 3.12 `venv` and replays the checked-in CUDA 12.6 artifact lock with
+`--no-index --require-hashes --only-binary=:all:`. Every dependency is an exact HTTPS wheel URL with SHA-256; the
+script disables the pip download cache, verifies installed dependencies, and does not rely on Rosie's broken snap
+`uv` executable.
 
 ```bash
 cd ~/fanuc-assembly-ai
@@ -96,6 +98,15 @@ To resume an interrupted production run, add `RESUME_FROM_CHECKPOINT=latest`. Re
 manifest, derived COCO/crop metadata, taxonomy, split seed, training configuration, installed package versions,
 trainer commit, pretrained model revision, or label mapping differs from the original run. The only permitted
 configuration difference is the bounded smoke probe increasing `max_steps` from 2 to 3.
+
+Manifest schema v2 binds every native and Cosmos source image to the SHA-256 of its exact compressed bytes. COCO
+records preserve that digest; crop records contain a digest of the exact JPEG bytes written for each crop. Dataset
+loaders verify each file from the same in-memory buffer they decode, so a same-path or same-dimension replacement is
+rejected before pixels reach either model. The derived metadata hashes therefore transitively bind run and resume
+provenance to every consumed image byte.
+
+Production training also requires every frozen detector or classifier label to occur in each train, validation, and
+test split; smoke runs skip only this class-completeness gate.
 
 ## Outputs to preserve
 

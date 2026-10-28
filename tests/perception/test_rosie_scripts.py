@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -34,18 +35,21 @@ def _run(script: str, tmp_path: Path, **overrides: str) -> subprocess.CompletedP
         capture_output=True,
         text=True,
         env=environment,
+        cwd=tmp_path,
     )
 
 
 def _metadata(path: Path, *, require_cosmos: bool) -> None:
     sets = {
-        name: {"scenes": 100, "cosmos_accepted": 10, "cosmos_used": 8}
+        name: {"scenes": 50, "native_records": 100, "cosmos_accepted": 10, "cosmos_used": 8}
         for name in ("A", "F", "G", "B", "H", "K")
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
+                "schema_version": 2,
+                "content_hash_algorithm": "sha256",
                 "require_cosmos": require_cosmos,
                 "include_cosmos": require_cosmos,
                 "sets": sets,
@@ -54,17 +58,39 @@ def _metadata(path: Path, *, require_cosmos: bool) -> None:
     )
 
 
-def test_setup_pins_cuda_126_without_populating_pip_cache(tmp_path: Path) -> None:
+def test_setup_replays_hash_locked_cuda_126_runtime_without_pip_cache(tmp_path: Path) -> None:
     result = _run("setup_ml.sh", tmp_path, VENV_PATH=str(tmp_path / "venv"))
+    lock = (ROSIE / "requirements-ml-cu126.txt").read_text()
 
     assert result.returncode == 0, result.stderr
-    assert "torch==2.14.1" in result.stdout
-    assert "torchvision==0.29.1" in result.stdout
-    assert "transformers==5.21.0" in result.stdout
-    assert "scipy==" in result.stdout
-    assert "https://download.pytorch.org/whl/cu126" in result.stdout
+    assert "-m venv --clear" in result.stdout
+    assert "--require-hashes" in result.stdout
+    assert "--only-binary=:all:" in result.stdout
     assert "--no-cache-dir" in result.stdout
+    assert "--no-index" in result.stdout
+    assert "--index-url" not in result.stdout
+    assert "--extra-index-url" not in result.stdout
+    assert "torch-2.14.1%2Bcu126" in lock
+    assert "torchvision-0.29.1%2Bcu126" in lock
+    assert "transformers-5.21.0" in lock
+    assert "--hash=sha256:" in lock
     assert not (tmp_path / "venv").exists()
+
+
+def test_rosie_runtime_lock_has_no_unhashed_requirement_lines() -> None:
+    lock = (ROSIE / "requirements-ml-cu126.txt").read_text()
+    logical_lines = lock.replace("\\\n", " ").splitlines()
+    requirements = [
+        line
+        for line in logical_lines
+        if line.strip() and not line.lstrip().startswith(("#", "--"))
+    ]
+
+    assert requirements
+    artifact = re.compile(
+        r"^[a-z0-9][a-z0-9._-]* @ https://[^ ]+ --hash=sha256:[0-9a-f]{64}$"
+    )
+    assert all(artifact.fullmatch(line) for line in requirements)
 
 
 def test_runtime_scripts_load_the_archived_commit_identity() -> None:
@@ -156,6 +182,39 @@ def test_full_manifest_gate_rejects_out_of_range_set(tmp_path: Path) -> None:
     metadata.write_text(json.dumps(payload))
 
     with pytest.raises(RosieGateError, match="G"):
+        verify_production_manifest(metadata)
+
+
+def test_full_manifest_gate_uses_native_image_records_as_denominator(tmp_path: Path) -> None:
+    metadata = tmp_path / "metadata.json"
+    _metadata(metadata, require_cosmos=True)
+    payload = json.loads(metadata.read_text())
+    payload["sets"]["A"].update({"scenes": 10, "native_records": 20, "cosmos_accepted": 1})
+    metadata.write_text(json.dumps(payload))
+
+    with pytest.raises(RosieGateError, match="A"):
+        verify_production_manifest(metadata)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"schema_version": 1, "content_hash_algorithm": "sha256"},
+        {"schema_version": 2},
+    ],
+)
+def test_full_manifest_gate_requires_pixel_bound_schema(
+    tmp_path: Path,
+    invalid: dict[str, object],
+) -> None:
+    metadata = tmp_path / "metadata.json"
+    _metadata(metadata, require_cosmos=True)
+    payload = json.loads(metadata.read_text())
+    payload.pop("content_hash_algorithm")
+    payload.update(invalid)
+    metadata.write_text(json.dumps(payload))
+
+    with pytest.raises(RosieGateError, match="schema"):
         verify_production_manifest(metadata)
 
 

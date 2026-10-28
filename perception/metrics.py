@@ -113,13 +113,13 @@ def classification_report(
         raise MetricInputError("scenarios and predictions must have the same length")
     matrix = _confusion(y_true, y_pred, len(labels))
     per_class = _per_class(matrix, labels)
-    f1_values = [item["f1"] for item in per_class.values() if item["f1"] is not None]
+    fixed_universe_f1 = [item["f1"] or 0.0 for item in per_class.values()]
     correct = int(np.trace(matrix))
     return {
         "samples": len(y_true),
         "correct": correct,
         "accuracy": correct / len(y_true),
-        "macro_f1": sum(f1_values) / len(f1_values) if f1_values else None,
+        "macro_f1": sum(fixed_universe_f1) / len(fixed_universe_f1),
         "labels": list(labels),
         "confusion_matrix": matrix.tolist(),
         "per_class": per_class,

@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,10 @@ from PIL import Image
 from perception.classifier.dataset import CropDataset
 from perception.detector.dataset import CocoDataset
 from perception.train_common import trainer_arguments
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class FakeTensor:
@@ -37,7 +42,15 @@ def test_coco_dataset_passes_real_image_and_annotations_to_processor(tmp_path: P
     coco_path.write_text(
         json.dumps(
             {
-                "images": [{"id": 7, "file_name": str(image_path), "width": 32, "height": 24}],
+                "images": [
+                    {
+                        "id": 7,
+                        "file_name": str(image_path),
+                        "width": 32,
+                        "height": 24,
+                        "image_sha256": _sha256(image_path),
+                    }
+                ],
                 "annotations": [
                     {
                         "id": 1,
@@ -93,6 +106,7 @@ def test_crop_dataset_filters_split_and_preserves_scenario_rows(tmp_path: Path) 
             "object_id": "F02",
             "set": "B",
             "variant": "native",
+            "crop_sha256": _sha256(train_image),
         },
         {
             "split": "test",
@@ -101,6 +115,7 @@ def test_crop_dataset_filters_split_and_preserves_scenario_rows(tmp_path: Path) 
             "object_id": "F03",
             "set": "H",
             "variant": "cosmos",
+            "crop_sha256": _sha256(test_image),
         },
     ]
     crops_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
@@ -128,6 +143,7 @@ def test_crop_dataset_rejects_class_id_and_object_id_mismatch(tmp_path: Path) ->
                 "crop_path": str(image),
                 "class_id": 1,
                 "object_id": "F00",
+                "crop_sha256": _sha256(image),
             }
         )
         + "\n"
@@ -137,6 +153,85 @@ def test_crop_dataset_rejects_class_id_and_object_id_mismatch(tmp_path: Path) ->
 
     with pytest.raises(ValueError, match="class mapping mismatch"):
         dataset[0]
+
+
+def test_detector_dataset_rejects_same_dimension_image_byte_replacement(tmp_path: Path) -> None:
+    image = tmp_path / "source.jpg"
+    Image.new("RGB", (32, 24), "white").save(image)
+    coco_path = tmp_path / "train.json"
+    coco_path.write_text(
+        json.dumps(
+            {
+                "images": [
+                    {
+                        "id": 1,
+                        "file_name": str(image),
+                        "width": 32,
+                        "height": 24,
+                        "image_sha256": _sha256(image),
+                    }
+                ],
+                "annotations": [],
+                "categories": [{"id": 0, "name": "F01"}],
+            }
+        )
+    )
+    processor = FakeProcessor()
+    dataset = CocoDataset(coco_path, processor)
+    Image.new("RGB", (32, 24), "black").save(image)
+
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        dataset[0]
+    assert processor.calls == []
+
+
+def test_crop_dataset_rejects_same_dimension_crop_byte_replacement(tmp_path: Path) -> None:
+    image = tmp_path / "crop.jpg"
+    Image.new("RGB", (8, 6), "white").save(image)
+    called = []
+    crops_path = tmp_path / "crops.jsonl"
+    crops_path.write_text(
+        json.dumps(
+            {
+                "split": "train",
+                "crop_path": str(image),
+                "class_id": 0,
+                "object_id": "F00",
+                "crop_sha256": _sha256(image),
+            }
+        )
+        + "\n"
+    )
+    dataset = CropDataset(crops_path, "train", transform=called.append, labels=("F00",))
+    Image.new("RGB", (8, 6), "black").save(image)
+
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        dataset[0]
+    assert called == []
+
+
+@pytest.mark.parametrize("digest", [None, "ABC", "A" * 64])
+def test_detector_dataset_rejects_missing_or_malformed_digest(tmp_path: Path, digest: str | None) -> None:
+    record = {"id": 1, "file_name": "source.jpg", "width": 1, "height": 1}
+    if digest is not None:
+        record["image_sha256"] = digest
+    coco_path = tmp_path / "train.json"
+    coco_path.write_text(json.dumps({"images": [record], "annotations": [], "categories": []}))
+
+    with pytest.raises(ValueError, match="image_sha256"):
+        CocoDataset(coco_path, FakeProcessor())
+
+
+@pytest.mark.parametrize("digest", [None, "ABC", "A" * 64])
+def test_crop_dataset_rejects_missing_or_malformed_digest(tmp_path: Path, digest: str | None) -> None:
+    row = {"split": "train", "crop_path": "crop.jpg", "class_id": 0, "object_id": "F00"}
+    if digest is not None:
+        row["crop_sha256"] = digest
+    crops_path = tmp_path / "crops.jsonl"
+    crops_path.write_text(json.dumps(row) + "\n")
+
+    with pytest.raises(ValueError, match="crop_sha256"):
+        CropDataset(crops_path, "train", transform=lambda value: value, labels=("F00",))
 
 
 def test_trainer_arguments_keep_precision_and_detection_batch_semantics(tmp_path: Path) -> None:

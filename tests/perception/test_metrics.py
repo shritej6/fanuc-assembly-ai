@@ -69,6 +69,7 @@ def test_report_keeps_all_30_classes_even_when_some_have_no_samples() -> None:
         "recall": None,
         "f1": None,
     }
+    assert report["macro_f1"] == pytest.approx(1 / 30)
 
 
 @pytest.mark.parametrize(

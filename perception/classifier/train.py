@@ -224,6 +224,22 @@ def _datasets(
     return train, validation, test
 
 
+def _check_class_support(
+    datasets: tuple[CropDataset, CropDataset, CropDataset],
+    labels: tuple[str, ...],
+) -> None:
+    """Require every frozen classifier label in every production split."""
+    expected = set(labels)
+    for split, dataset in zip(("train", "validation", "test"), datasets):
+        observed = {row.get("object_id") for row in dataset.rows}
+        unknown = sorted(value for value in observed - expected if isinstance(value, str))
+        if unknown:
+            raise ClassifierTrainingError(f"{split} classifier split has unknown labels: {unknown}")
+        missing = sorted(expected - observed)
+        if missing:
+            raise ClassifierTrainingError(f"{split} classifier split lacks labels: {missing}")
+
+
 def _run_provenance(
     metadata: dict[str, Any],
     config: dict[str, Any],
@@ -269,6 +285,8 @@ def _train(
     from transformers import Trainer, TrainingArguments
 
     train, validation, test = _datasets(args.crops, config, labels)
+    if not args.smoke:
+        _check_class_support((train, validation, test), labels)
     trainer = Trainer(
         model=_build_model(len(labels)),
         args=TrainingArguments(**trainer_arguments(config["training"], args.output_dir)),

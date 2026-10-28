@@ -15,6 +15,7 @@ if [[ -f "$REPO/.t13-code-commit" ]]; then
   IFS= read -r FANUC_CODE_COMMIT < "$REPO/.t13-code-commit"
   export FANUC_CODE_COMMIT
 fi
+cd "$REPO"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-$HOME/fanuc-t13/artifacts}"
 RUN_ROOT="${RUN_ROOT:-$HOME/fanuc-t13/runs}"
 PYTHON="${PYTHON:-$HOME/fanuc-t13-venv-secure/bin/python}"
@@ -54,6 +55,5 @@ printf ' %q' "${COMMAND[@]}"
 printf '\n'
 if [[ "$DRY_RUN" != "1" ]]; then
   export NVIDIA_TF32_OVERRIDE=0
-  cd "$REPO"
   "${COMMAND[@]}"
 fi

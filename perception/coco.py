@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from perception.image_integrity import ImageIntegrityError, require_sha256
+
 SPLITS = ("train", "validation", "test")
 
 
@@ -25,6 +27,12 @@ def _records(path: Path) -> list[dict[str, Any]]:
             raise ConversionError(f"invalid JSONL at {path}:{line_number}") from exc
         if record.get("task") != "detector":
             raise ConversionError(f"non-detector record at {path}:{line_number}")
+        if record.get("schema_version") != 2:
+            raise ConversionError(f"legacy detector record at {path}:{line_number}")
+        try:
+            require_sha256(record.get("image_sha256"), "image_sha256")
+        except ImageIntegrityError as exc:
+            raise ConversionError(f"invalid detector record at {path}:{line_number}: {exc}") from exc
         output.append(record)
     return output
 
@@ -103,6 +111,7 @@ def _image_entry(record: dict[str, Any], image_id: int) -> dict[str, Any]:
         "file_name": record["image_path"],
         "width": record["width"],
         "height": record["height"],
+        "image_sha256": record["image_sha256"],
         "scene_id": record["scene_id"],
         "set": record["set"],
         "camera": record["camera"],

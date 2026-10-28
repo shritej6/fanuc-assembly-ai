@@ -7,49 +7,22 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
+from perception.image_integrity import ImageIntegrityError, image_identity
+from perception.manifest_types import ManifestConfig, ManifestSummary, split_for_scene
 from perception.provenance import current_git_commit
 from perception.records import Annotation, ImageRecord
 from perception.taxonomy import Ontology, load_ontology
 
 CHUNK_PATTERN = re.compile(r"chunk_[0-9]{4}")
 FORBIDDEN_PARTS = {"rejected", "superseded", "real", "real-cell", "real_cell"}
+ALLOWED_CAMERAS = {"table", "side", "wrist"}
 
 
 class ManifestError(ValueError):
     """Raised when mutable source data cannot be frozen safely."""
-
-
-@dataclass(frozen=True)
-class ManifestConfig:
-    data_root: Path
-    output_dir: Path
-    taxonomy_path: Path
-    detector_sets: tuple[str, ...] = ("A", "F", "G")
-    classifier_sets: tuple[str, ...] = ("B", "H", "K")
-    split_seed: int = 1337
-    require_cosmos: bool = True
-    include_cosmos: bool = True
-    max_scenes_per_set: int | None = None
-    min_cosmos_fraction: float = 0.10
-    max_cosmos_fraction: float = 0.20
-
-
-@dataclass(frozen=True)
-class ManifestSummary:
-    detector_path: Path
-    classifier_path: Path
-    metadata_path: Path
-    detector_sha256: str
-    classifier_sha256: str
-    detector_records: int
-    classifier_records: int
-    skipped_classifier_targets: dict[str, int]
 
 
 def _validate_config(config: ManifestConfig) -> None:
@@ -58,17 +31,6 @@ def _validate_config(config: ManifestConfig) -> None:
     limit = config.max_scenes_per_set
     if limit is not None and (type(limit) is not int or limit < 1):
         raise ManifestError("max_scenes_per_set must be a positive integer")
-
-
-def split_for_scene(set_name: str, index: int, seed: int) -> str:
-    """Assign an entire scene to an 80/10/10 split deterministically."""
-    token = f"{seed}:{set_name}:{index}".encode()
-    bucket = int.from_bytes(hashlib.sha256(token).digest()[:8], "big") % 10_000
-    if bucket < 8_000:
-        return "train"
-    if bucket < 9_000:
-        return "validation"
-    return "test"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -95,8 +57,21 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _git_commit() -> str:
-    return current_git_commit()
+def _contained_path(path: Path, root: Path, description: str) -> Path:
+    resolved_root = root.resolve()
+    try:
+        relative = path.absolute().relative_to(resolved_root)
+    except ValueError as exc:
+        raise ManifestError(f"{description} is outside approved synthetic data: {path}") from exc
+    cursor = resolved_root
+    for part in relative.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise ManifestError(f"{description} symlink is outside approved synthetic structure: {cursor}")
+    resolved = path.resolve()
+    if not resolved.is_relative_to(resolved_root):
+        raise ManifestError(f"{description} is outside approved synthetic data: {resolved}")
+    return resolved
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -116,15 +91,21 @@ def _jsonl(records: list[ImageRecord]) -> str:
 def _chunk_dirs(set_dir: Path) -> list[Path]:
     if not set_dir.is_dir():
         raise ManifestError(f"set directory does not exist: {set_dir}")
-    chunks = sorted(path for path in set_dir.iterdir() if path.is_dir() and CHUNK_PATTERN.fullmatch(path.name))
+    chunks = []
+    for path in set_dir.iterdir():
+        if CHUNK_PATTERN.fullmatch(path.name):
+            resolved = _contained_path(path, set_dir, "chunk")
+            if resolved.is_dir():
+                chunks.append(resolved)
+    chunks.sort()
     if not chunks:
         raise ManifestError(f"no completed chunks found in {set_dir}")
     return chunks
 
 
 def _validated_labels(chunk: Path) -> tuple[list[Path], str]:
-    done_path = chunk / "_DONE.json"
-    qa_path = chunk / "_QA.json"
+    done_path = _contained_path(chunk / "_DONE.json", chunk, "completion metadata")
+    qa_path = _contained_path(chunk / "_QA.json", chunk, "QA metadata")
     if not done_path.is_file():
         raise ManifestError(f"missing _DONE.json in {chunk}")
     if not qa_path.is_file():
@@ -132,7 +113,7 @@ def _validated_labels(chunk: Path) -> tuple[list[Path], str]:
     done, qa = _read_json(done_path), _read_json(qa_path)
     if qa.get("ok") is not True:
         raise ManifestError(f"QA failed for {chunk}")
-    labels = sorted((chunk / "labels").glob("*.json"))
+    labels = sorted(_contained_path(path, chunk, "label") for path in (chunk / "labels").glob("*.json"))
     counts = (done.get("scenes"), qa.get("labelled_scenes"), qa.get("expected_scenes"), len(labels))
     if not all(isinstance(value, int) for value in counts) or len(set(counts)) != 1:
         raise ManifestError(f"scene count mismatch in {chunk}: {counts}")
@@ -140,15 +121,15 @@ def _validated_labels(chunk: Path) -> tuple[list[Path], str]:
 
 
 def _cosmos_entries(chunk: Path) -> dict[str, dict[str, Any]]:
-    manifest_path = chunk / "_COSMOS.json"
+    manifest_path = _contained_path(chunk / "_COSMOS.json", chunk, "Cosmos evidence")
     entries = _read_json(manifest_path) if manifest_path.exists() else {}
     expected = {key for key, value in entries.items() if value.get("accepted") is True}
     cosmos_root = chunk / "rgb_cosmos"
-    existing = {
-        f"{path.parent.name}/{path.stem}"
-        for path in cosmos_root.glob("*/*.jpg")
-        if path.is_file()
-    }
+    existing = set()
+    for path in cosmos_root.glob("*/*.jpg"):
+        resolved = _contained_path(path, chunk, "Cosmos image")
+        if resolved.is_file():
+            existing.add(f"{path.parent.name}/{path.stem}")
     missing = expected - existing
     if missing:
         raise ManifestError(f"accepted Cosmos file is missing in {chunk}: {sorted(missing)}")
@@ -158,14 +139,11 @@ def _cosmos_entries(chunk: Path) -> dict[str, dict[str, Any]]:
     return entries
 
 
-def _image_size(path: Path) -> tuple[int, int]:
-    if not path.is_file():
-        raise ManifestError(f"missing image: {path}")
+def _image_identity(path: Path) -> tuple[int, int, str]:
     try:
-        with Image.open(path) as image:
-            return image.size
-    except OSError as exc:
-        raise ManifestError(f"unreadable image {path}: {exc}") from exc
+        return image_identity(path)
+    except ImageIntegrityError as exc:
+        raise ManifestError(str(exc)) from exc
 
 
 def _bbox(raw: Any, width: int, height: int, context: str) -> tuple[int, int, int, int]:
@@ -222,8 +200,9 @@ class _ManifestBuilder:
         root = self.config.data_root.resolve()
         if {part.casefold() for part in root.parts} & FORBIDDEN_PARTS:
             raise ManifestError(f"forbidden data root: {root}")
-        if not (root / "synthetic").is_dir():
-            raise ManifestError(f"synthetic data root does not exist: {root / 'synthetic'}")
+        synthetic_root = _contained_path(root / "synthetic", root, "synthetic root")
+        if not synthetic_root.is_dir():
+            raise ManifestError(f"synthetic data root does not exist: {synthetic_root}")
 
     def _process_set(self, set_name: str, task: str) -> None:
         stats = {
@@ -235,7 +214,9 @@ class _ManifestBuilder:
             "code_commits": set(),
         }
         self.stats[set_name] = stats
-        set_dir = self.config.data_root.resolve() / "synthetic" / set_name
+        root = self.config.data_root.resolve()
+        synthetic_root = _contained_path(root / "synthetic", root, "synthetic root")
+        set_dir = _contained_path(synthetic_root / set_name, synthetic_root, f"set {set_name}")
         remaining = self.config.max_scenes_per_set
         for chunk in _chunk_dirs(set_dir):
             if remaining == 0:
@@ -248,7 +229,6 @@ class _ManifestBuilder:
             stats["scenes"] += len(labels)
             entries = _cosmos_entries(chunk) if self.config.include_cosmos else {}
             stats["cosmos_checked"] += len(entries)
-            stats["cosmos_accepted"] += sum(value.get("accepted") is True for value in entries.values())
             self._process_chunk(chunk, labels, entries, set_name, task)
 
     def _process_chunk(
@@ -274,8 +254,10 @@ class _ManifestBuilder:
         unknown_keys = accepted_keys - labelled_keys
         if unknown_keys:
             raise ManifestError(f"accepted Cosmos entry has no matching native record: {sorted(unknown_keys)}")
+        eligible_keys = accepted_keys & native.keys()
+        self.stats[set_name]["cosmos_accepted"] += len(eligible_keys)
         for key, value in sorted(cosmos.items()):
-            if value.get("accepted") is True and key in native:
+            if value.get("accepted") is True and key in eligible_keys:
                 self._append_cosmos(chunk, key, native[key])
 
     def _records_for_label(
@@ -290,10 +272,13 @@ class _ManifestBuilder:
         index = int(label_path.stem)
         if spec.get("set") != set_name or spec.get("index") != index:
             raise ManifestError(f"label identity mismatch in {label_path}")
+        cameras = label.get("cameras")
+        if not isinstance(cameras, dict) or not set(cameras) <= ALLOWED_CAMERAS:
+            raise ManifestError(f"label contains invalid camera names in {label_path}")
         if task == "detector":
             return [
                 self._detector_record(chunk, label_path, set_name, index, camera, raw)
-                for camera, raw in sorted(label.get("cameras", {}).items())
+                for camera, raw in sorted(cameras.items())
             ]
         record = self._classifier_record(chunk, label_path, set_name, index, label)
         return [record] if record else []
@@ -307,13 +292,28 @@ class _ManifestBuilder:
         camera: str,
         raw_objects: list[dict[str, Any]],
     ) -> ImageRecord:
-        image_path = (chunk / "rgb" / camera / f"{index:06d}.jpg").resolve()
-        width, height = _image_size(image_path)
+        image_path = _contained_path(
+            chunk / "rgb" / camera / f"{index:06d}.jpg",
+            chunk,
+            "native image",
+        )
+        width, height, image_sha256 = _image_identity(image_path)
         context = f"{set_name}:{index:06d}/{camera}"
         objects = tuple(
             _annotation(raw, self.ontology.detector_label2id, width, height, context) for raw in raw_objects
         )
-        return self._record("detector", set_name, index, camera, image_path, label_path, width, height, objects)
+        return self._record(
+            "detector",
+            set_name,
+            index,
+            camera,
+            image_path,
+            label_path,
+            width,
+            height,
+            image_sha256,
+            objects,
+        )
 
     def _classifier_record(
         self,
@@ -324,8 +324,12 @@ class _ManifestBuilder:
         label: dict[str, Any],
     ) -> ImageRecord | None:
         camera = "wrist"
-        image_path = (chunk / "rgb" / camera / f"{index:06d}.jpg").resolve()
-        width, height = _image_size(image_path)
+        image_path = _contained_path(
+            chunk / "rgb" / camera / f"{index:06d}.jpg",
+            chunk,
+            "native image",
+        )
+        width, height, image_sha256 = _image_identity(image_path)
         target_uid = label.get("spec", {}).get("wrist_target_uid")
         target_raw = next((item for item in label.get("cameras", {}).get(camera, []) if item.get("uid") == target_uid), None)
         if target_raw is None:
@@ -338,7 +342,19 @@ class _ManifestBuilder:
             height,
             f"{set_name}:{index:06d}/{camera}",
         )
-        return self._record("classifier", set_name, index, camera, image_path, label_path, width, height, (), target)
+        return self._record(
+            "classifier",
+            set_name,
+            index,
+            camera,
+            image_path,
+            label_path,
+            width,
+            height,
+            image_sha256,
+            (),
+            target,
+        )
 
     def _record(
         self,
@@ -350,6 +366,7 @@ class _ManifestBuilder:
         label_path: Path,
         width: int,
         height: int,
+        image_sha256: str,
         objects: tuple[Annotation, ...] = (),
         target: Annotation | None = None,
     ) -> ImageRecord:
@@ -365,6 +382,7 @@ class _ManifestBuilder:
             label_path=label_path.resolve(),
             width=width,
             height=height,
+            image_sha256=image_sha256,
             objects=objects,
             target=target,
         )
@@ -377,8 +395,12 @@ class _ManifestBuilder:
     def _append_cosmos(self, chunk: Path, key: str, native: ImageRecord) -> None:
         if native.split != "train":
             return
-        image_path = (chunk / "rgb_cosmos" / f"{key}.jpg").resolve()
-        width, height = _image_size(image_path)
+        image_path = _contained_path(
+            chunk / "rgb_cosmos" / f"{key}.jpg",
+            chunk,
+            "Cosmos image",
+        )
+        width, height, image_sha256 = _image_identity(image_path)
         if (width, height) != (native.width, native.height):
             raise ManifestError(f"Cosmos size mismatch for {image_path}")
         records = self.detector if native.task == "detector" else self.classifier
@@ -388,6 +410,7 @@ class _ManifestBuilder:
                     **native.__dict__,
                     "variant": "cosmos",
                     "image_path": image_path,
+                    "image_sha256": image_sha256,
                 }
             )
         )
@@ -397,7 +420,10 @@ class _ManifestBuilder:
         if not self.config.require_cosmos:
             return
         for set_name, stats in self.stats.items():
-            fraction = stats["cosmos_accepted"] / stats["scenes"]
+            native_records = stats["native_records"]
+            if native_records < 1:
+                raise ManifestError(f"no eligible native records for Cosmos coverage in {set_name}")
+            fraction = stats["cosmos_accepted"] / native_records
             if not self.config.min_cosmos_fraction <= fraction <= self.config.max_cosmos_fraction:
                 raise ManifestError(
                     f"Cosmos coverage for {set_name} is {fraction:.4f}; expected "
@@ -436,8 +462,8 @@ class _ManifestBuilder:
             for name, values in sorted(self.stats.items())
         }
         return {
-            "schema_version": 1,
-            "git_commit": _git_commit(),
+            "schema_version": 2, "content_hash_algorithm": "sha256",
+            "git_commit": current_git_commit(),
             "split_seed": self.config.split_seed,
             "taxonomy_path": str(self.config.taxonomy_path.resolve()),
             "taxonomy_sha256": _sha256(self.config.taxonomy_path),

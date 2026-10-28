@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from perception.detector.train import (
     DetectorTrainError,
+    _check_class_support,
     _check_finite_history,
     _detection_metric_options,
     _evaluate_scenarios,
@@ -107,6 +109,23 @@ def test_existing_checkpoint_requires_explicit_resume(tmp_path: Path) -> None:
         prepare_resume(output_dir, None, identity)
 
 
+def test_detector_resume_rejects_changed_source_bytes_identity(tmp_path: Path) -> None:
+    coco_dir = _coco_dir(tmp_path)
+    train_path = coco_dir / "train.json"
+    train_path.write_text(json.dumps({"images": [{"image_sha256": "a" * 64}]}))
+    first = build_run_provenance(METADATA, CONFIG, coco_dir)
+    output = tmp_path / "run"
+    prepare_resume(output, None, first)
+    (output / "checkpoint-1").mkdir()
+
+    train_path.write_text(json.dumps({"images": [{"image_sha256": "b" * 64}]}))
+    changed = build_run_provenance(METADATA, CONFIG, coco_dir)
+
+    assert first["derived_data_sha256"] != changed["derived_data_sha256"]
+    with pytest.raises(RuntimeError, match="derived_data_sha256"):
+        prepare_resume(output, "latest", changed)
+
+
 def test_explicit_resume_path_must_exist_and_match_provenance(tmp_path: Path) -> None:
     output_dir = tmp_path / "run"
     identity = build_run_provenance(METADATA, CONFIG, _coco_dir(tmp_path))
@@ -207,6 +226,19 @@ def test_detector_production_requires_cosmos_manifest() -> None:
         _validate_manifest_mode({"require_cosmos": False, "include_cosmos": False}, smoke=False)
     with pytest.raises(DetectorTrainError, match="Cosmos"):
         _validate_manifest_mode({"require_cosmos": True, "include_cosmos": False}, smoke=False)
+
+
+def test_detector_requires_every_category_in_every_production_split() -> None:
+    labels = ["F01", "F02", "foreign_screw_m3"]
+    complete = SimpleNamespace(
+        annotations={1: [{"category_id": index} for index in range(len(labels))]}
+    )
+
+    _check_class_support((complete, complete, complete), labels)
+
+    incomplete = SimpleNamespace(annotations={1: [{"category_id": 0}, {"category_id": 1}]})
+    with pytest.raises(DetectorTrainError, match=r"test.*foreign_screw_m3"):
+        _check_class_support((complete, complete, incomplete), labels)
 
 
 class _ScenarioDataset:
