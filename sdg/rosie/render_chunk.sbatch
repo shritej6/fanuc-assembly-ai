@@ -41,10 +41,18 @@ for f in /usr/share/vulkan/icd.d/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.js
 done
 # Singularity 3.10's library list predates newer driver libraries (e.g. libnvidia-gpucomp, needed by the Vulkan
 # driver), so mount every host NVIDIA library of the running driver version and put them on the library path.
+# Each library is mounted under its real name and under every soname link pointing to it: NGX (the RTX denoiser)
+# loads libnvidia-ngx.so.1 and OptiX libnvoptix.so.1, and without them every frame keeps its ray-tracing noise.
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-for lib in /usr/lib/x86_64-linux-gnu/libnvidia-*.so."$DRV" /usr/lib/x86_64-linux-gnu/lib{GLX,EGL}_nvidia.so."$DRV"; do
+LIBDIR=/usr/lib/x86_64-linux-gnu
+for lib in "$LIBDIR"/libnvidia-*.so."$DRV" "$LIBDIR"/libnvoptix.so."$DRV" "$LIBDIR"/lib{GLX,EGL}_nvidia.so."$DRV"; do
   [[ -f "$lib" ]] && GPU_BINDS+=(-B "$lib:/opt/nvhost/$(basename "$lib")")
 done
+for link in "$LIBDIR"/libnvidia-*.so.* "$LIBDIR"/libnvoptix.so.* "$LIBDIR"/lib{GLX,EGL}_nvidia.so.*; do
+  [[ -L "$link" && "$(readlink -f "$link")" == *".so.$DRV" ]] && GPU_BINDS+=(-B "$(readlink -f "$link"):/opt/nvhost/$(basename "$link")")
+done
+# OptiX denoiser weights (nvoptix.bin) and NGX application profiles.
+[[ -d /usr/share/nvidia ]] && GPU_BINDS+=(-B /usr/share/nvidia:/usr/share/nvidia)
 # Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
 singularity exec --nv "${GPU_BINDS[@]}" --overlay "$OVERLAY" \
   --env ACCEPT_EULA=Y,PRIVACY_CONSENT=Y,ISAAC_SIF="$ISAAC_SIF",FANUC_ROBOT_USD="${FANUC_ROBOT_USD:-}" \

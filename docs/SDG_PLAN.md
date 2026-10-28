@@ -196,8 +196,14 @@ ideal pinholes; Cosmos Transfer, T11, is the planned realism step).
 - `$DATA_ROOT/watchdog/status.json` lists per set: chunks done, scenes, failures, QA failures and
   `ready_for_training` (every chunk done and checked). One JSON line per pass in `watchdog/log.txt`.
 
-**Run order**: Rosie B → F → H (Slurm, 4 tasks at a time). GB10 C → D → A → G → I → J → K → L. Brev (after
-`brev login`) can take chunks of any set with `sdg/spark/render_chunk.sh` (any Docker host with an RTX GPU).
+**Run order (rebalanced 2026-10-28 02:25)**: Rosie B → F (Slurm, 4 at a time). GB10 C → D → A → K → L. Brev 2x L40S
+(`sdg/brev/render_queue.sh`, $35 cap) G, I, J → H. All three are expected to finish around 05:00–06:00 CDT.
+
+**Rosie denoiser (fixed 2026-10-28)**: Isaac logged `Failed to create NGX context` on every T4 task, so the RTX
+denoiser never ran and every Rosie frame kept its ray-tracing speckle (seen on the set B overlay sheets; the sampled
+QA checks labels, not image noise). The job script now also mounts `libnvidia-ngx.so.1`, `libnvoptix.so.*` and
+`/usr/share/nvidia` (OptiX weights). Verified clean on a T4; 1.6 s/img instead of 2.7. The 19 noisy set B chunks
+are kept in `$DATA_ROOT/rejected/B_no_denoiser_20261028/` and re-rendered; they are not used for training.
 
 **When a set is `ready_for_training`** (Claude):
 1. Rosie: `sdg/rosie/collect_spark.sh` pulls the GB10's finished chunks (direct Rosie → GB10 SSH, safe to repeat).
