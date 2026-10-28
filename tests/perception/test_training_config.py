@@ -32,6 +32,7 @@ def test_detector_config_pins_rtdetr_and_v100_safe_trainer_flags() -> None:
     assert config["training"]["fp16"] is True
     assert config["training"]["bf16"] is False
     assert config["training"]["tf32"] is False
+    assert config["training"]["fp16_initial_scale"] == 128
     assert config["training"]["remove_unused_columns"] is False
     assert config["training"]["eval_do_concat_batches"] is False
     assert config["training"]["metric_for_best_model"] == "eval_map"

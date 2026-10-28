@@ -147,6 +147,7 @@ def test_trainer_arguments_keep_precision_and_detection_batch_semantics(tmp_path
         "max_train_samples": 16,
         "max_eval_samples": 8,
         "fp16": True,
+        "fp16_initial_scale": 128,
         "bf16": False,
         "tf32": False,
         "remove_unused_columns": False,
@@ -158,6 +159,7 @@ def test_trainer_arguments_keep_precision_and_detection_batch_semantics(tmp_path
 
     assert arguments["output_dir"] == str((tmp_path / "run").resolve())
     assert arguments["fp16"] is True
+    assert "fp16_initial_scale" not in arguments
     assert arguments["bf16"] is False
     assert arguments["tf32"] is False
     assert arguments["remove_unused_columns"] is False

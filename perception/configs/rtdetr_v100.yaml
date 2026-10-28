@@ -17,6 +17,7 @@ training:
   gradient_accumulation_steps: 1
   dataloader_num_workers: 4
   fp16: true
+  fp16_initial_scale: 128
   bf16: false
   tf32: false
   remove_unused_columns: false

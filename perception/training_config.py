@@ -39,6 +39,7 @@ def _validate_detector(model: dict[str, Any], training: dict[str, Any]) -> None:
     if model.get("image_size") != 640:
         raise ConfigError("RT-DETR image size must be 640")
     required = {
+        "fp16_initial_scale": 128,
         "remove_unused_columns": False,
         "eval_do_concat_batches": False,
         "metric_for_best_model": "eval_map",

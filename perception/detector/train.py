@@ -12,6 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
+
 from perception.detector.dataset import CocoDataset
 from perception.detector.scenarios import scenario_datasets
 from perception.provenance import (
@@ -144,14 +146,25 @@ def _targets_for_metrics(target_batches: Any) -> tuple[list[Any], list[dict[str,
     image_sizes = []
     targets = []
     for batch in target_batches:
-        image_sizes.append(torch.tensor([target["orig_size"] for target in batch]))
-        for target in batch:
-            size = target["orig_size"]
-            boxes = center_to_corners_format(torch.tensor(target["boxes"]))
+        sizes = [_size_pair(target["orig_size"]) for target in batch]
+        image_sizes.append(torch.tensor(sizes))
+        for target, size in zip(batch, sizes):
+            boxes = center_to_corners_format(torch.as_tensor(target["boxes"]).reshape(-1, 4))
             height, width = size
             boxes = boxes * torch.tensor([[width, height, width, height]])
-            targets.append({"boxes": boxes, "labels": torch.tensor(target["class_labels"])})
+            labels = torch.as_tensor(target["class_labels"]).reshape(-1)
+            targets.append({"boxes": boxes, "labels": labels})
     return image_sizes, targets
+
+
+def _size_pair(raw: Any) -> tuple[int, int]:
+    values = np.asarray(raw).reshape(-1)
+    if values.size != 2:
+        raise DetectorTrainError(f"target orig_size must contain two values: {values.tolist()}")
+    height, width = (int(value) for value in values)
+    if height < 1 or width < 1:
+        raise DetectorTrainError(f"target orig_size must be positive: {(height, width)}")
+    return height, width
 
 
 def _predictions_for_metrics(prediction_batches: Any, image_sizes: list[Any], processor: Any) -> list[Any]:
@@ -269,6 +282,20 @@ def _check_finite(metrics: dict[str, Any], phase: str) -> None:
         raise DetectorTrainError(f"{phase} produced non-finite metrics: {invalid}")
 
 
+def _check_finite_history(history: list[dict[str, Any]]) -> None:
+    for index, metrics in enumerate(history):
+        _check_finite(metrics, f"training history entry {index}")
+
+
+def _configure_fp16_scaler(trainer: Any, training: dict[str, Any]) -> None:
+    import torch
+
+    initial_scale = training["fp16_initial_scale"]
+    if trainer.accelerator.scaler is None:
+        raise DetectorTrainError("FP16 training did not create a gradient scaler")
+    trainer.accelerator.scaler = torch.amp.GradScaler("cuda", init_scale=initial_scale)
+
+
 def _evaluate_scenarios(trainer: Any, dataset: CocoDataset) -> dict[str, Any]:
     report = {}
     for index, (name, selected) in enumerate(scenario_datasets(dataset).items()):
@@ -299,8 +326,10 @@ def _run_ml(
         data_collator=collate_fn,
         compute_metrics=metric_function(processor, id2label),
     )
+    _configure_fp16_scaler(trainer, config["training"])
     train_result = trainer.train(resume_from_checkpoint=resume)
     _check_finite(train_result.metrics, "training")
+    _check_finite_history(trainer.state.log_history)
     trainer.save_model()
     trainer.save_state()
     trainer.log_metrics("train", train_result.metrics)

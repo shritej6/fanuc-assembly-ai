@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-SAMPLE_LIMIT_KEYS = {"max_train_samples", "max_eval_samples"}
+INTERNAL_TRAINING_KEYS = {"max_train_samples", "max_eval_samples", "fp16_initial_scale"}
 
 
 def trainer_arguments(training: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     """Translate validated YAML fields into Hugging Face TrainingArguments."""
-    arguments = {key: value for key, value in training.items() if key not in SAMPLE_LIMIT_KEYS}
+    arguments = {key: value for key, value in training.items() if key not in INTERNAL_TRAINING_KEYS}
     arguments.update(
         {
             "output_dir": str(output_dir.resolve()),

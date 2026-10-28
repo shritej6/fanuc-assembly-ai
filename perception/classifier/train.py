@@ -278,6 +278,7 @@ def _train(
     )
     result = trainer.train(resume_from_checkpoint=resume)
     _check_finite_metrics(result.metrics, "training")
+    _check_finite_metrics({"log_history": trainer.state.log_history}, "training history")
     trainer.save_model()
     trainer.save_state()
     trainer.log_metrics("train", result.metrics)

@@ -5,9 +5,11 @@ import pytest
 
 from perception.detector.train import (
     DetectorTrainError,
+    _check_finite_history,
     _detection_metric_options,
     _evaluate_scenarios,
     _flatten_detection_metrics,
+    _size_pair,
     _validate_manifest_mode,
     build_parser,
     build_run_provenance,
@@ -162,6 +164,20 @@ def test_detection_metric_does_not_resynchronize_trainer_gathered_predictions() 
         "class_metrics": True,
         "sync_on_compute": False,
     }
+
+
+def test_singleton_target_size_is_normalized_for_scenario_evaluation() -> None:
+    assert _size_pair([[480, 640]]) == (480, 640)
+
+    with pytest.raises(DetectorTrainError, match="two values"):
+        _size_pair([480])
+
+
+def test_detector_rejects_non_finite_gradient_history() -> None:
+    _check_finite_history([{"loss": 2.0, "grad_norm": 4.0}])
+
+    with pytest.raises(DetectorTrainError, match="grad_norm"):
+        _check_finite_history([{"loss": 2.0, "grad_norm": float("nan")}])
 
 
 def test_detector_production_requires_cosmos_manifest() -> None:
