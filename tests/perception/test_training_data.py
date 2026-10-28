@@ -241,6 +241,7 @@ def test_trainer_arguments_keep_precision_and_detection_batch_semantics(tmp_path
         "max_steps": 3,
         "max_train_samples": 16,
         "max_eval_samples": 8,
+        "warmup_ratio": 0.05,
         "fp16": True,
         "fp16_initial_scale": 128,
         "bf16": False,
@@ -261,3 +262,5 @@ def test_trainer_arguments_keep_precision_and_detection_batch_semantics(tmp_path
     assert arguments["eval_do_concat_batches"] is False
     assert "max_train_samples" not in arguments
     assert "max_eval_samples" not in arguments
+    assert "warmup_ratio" not in arguments
+    assert arguments["warmup_steps"] == 0.05

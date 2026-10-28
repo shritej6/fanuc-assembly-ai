@@ -12,6 +12,10 @@ INTERNAL_TRAINING_KEYS = {"max_train_samples", "max_eval_samples", "fp16_initial
 def trainer_arguments(training: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     """Translate validated YAML fields into Hugging Face TrainingArguments."""
     arguments = {key: value for key, value in training.items() if key not in INTERNAL_TRAINING_KEYS}
+    if "warmup_ratio" in arguments:
+        if "warmup_steps" in arguments:
+            raise ValueError("training config cannot define both warmup_ratio and warmup_steps")
+        arguments["warmup_steps"] = arguments.pop("warmup_ratio")
     arguments.update(
         {
             "output_dir": str(output_dir.resolve()),
