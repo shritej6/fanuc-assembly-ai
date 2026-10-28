@@ -8,7 +8,7 @@ from PIL import Image
 
 from perception.classifier.dataset import CropDataset
 from perception.detector.dataset import CocoDataset
-from perception.train_common import seed_training, trainer_arguments
+from perception.train_common import configure_mixed_precision, seed_training, trainer_arguments
 
 
 def _sha256(path: Path) -> str:
@@ -23,6 +23,56 @@ def test_training_seed_is_applied_through_transformers(monkeypatch) -> None:
     seed_training(1337)
 
     assert calls == [1337]
+
+
+def test_mixed_precision_uses_a_bounded_scaler_only_for_fp16(monkeypatch) -> None:
+    calls = []
+
+    class FakeGradScaler:
+        def __init__(self, device: str, init_scale: int) -> None:
+            calls.append((device, init_scale))
+
+    fake_amp = type("Amp", (), {"GradScaler": FakeGradScaler})
+    monkeypatch.setitem(sys.modules, "torch", type("Torch", (), {"amp": fake_amp}))
+    accelerator = type("Accelerator", (), {"scaler": object()})()
+    fp16_trainer = type("Trainer", (), {"accelerator": accelerator})()
+    bf16_accelerator = type("Accelerator", (), {"scaler": None})()
+    bf16_trainer = type("Trainer", (), {"accelerator": bf16_accelerator})()
+
+    configure_mixed_precision(
+        fp16_trainer,
+        {"fp16": True, "bf16": False, "fp16_initial_scale": 128},
+        RuntimeError,
+    )
+    configure_mixed_precision(
+        bf16_trainer,
+        {"fp16": False, "bf16": True},
+        RuntimeError,
+    )
+
+    assert calls == [("cuda", 128)]
+    assert isinstance(fp16_trainer.accelerator.scaler, FakeGradScaler)
+
+
+def test_mixed_precision_rejects_missing_or_unexpected_scalers(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "torch", type("Torch", (), {}))
+    missing_accelerator = type("Accelerator", (), {"scaler": None})()
+    missing = type("Trainer", (), {"accelerator": missing_accelerator})()
+    unexpected_accelerator = type("Accelerator", (), {"scaler": object()})()
+    unexpected = type("Trainer", (), {"accelerator": unexpected_accelerator})()
+
+    with pytest.raises(RuntimeError, match="FP16.*gradient scaler"):
+        configure_mixed_precision(
+            missing,
+            {"fp16": True, "bf16": False, "fp16_initial_scale": 128},
+            RuntimeError,
+        )
+    with pytest.raises(RuntimeError, match="BF16.*gradient scaler"):
+        configure_mixed_precision(
+            unexpected,
+            {"fp16": False, "bf16": True},
+            RuntimeError,
+        )
 
 
 class FakeTensor:

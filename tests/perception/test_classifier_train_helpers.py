@@ -1,5 +1,4 @@
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,7 +8,6 @@ from perception.classifier.train import (
     ClassifierTrainingError,
     _check_class_support,
     _check_finite_metrics,
-    _configure_fp16_scaler,
     _parser,
     _run_provenance,
     _validate_manifest_mode,
@@ -36,6 +34,7 @@ def _metadata() -> dict:
 def _config() -> dict:
     return {
         "task": "classifier",
+        "hardware_profile": "t4",
         "model": {
             "architecture": "resnet18",
             "weights": "DEFAULT",
@@ -59,6 +58,8 @@ def _provenance() -> dict:
         "derived_data_sha256": "derived-abc",
         "trainer_code_commit": "code-abc",
         "packages": {"torch": "2.5.1+cu118"},
+        "hardware_profile": "t4",
+        "model_config": _config()["model"],
         "training_config": {"max_steps": 2, "fp16": True},
     }
 
@@ -176,30 +177,6 @@ def test_classifier_rejects_non_finite_measured_metrics() -> None:
 
     with pytest.raises(ClassifierTrainingError, match="non-finite"):
         _check_finite_metrics({"loss": float("nan")}, "training")
-
-
-def test_classifier_replaces_default_fp16_scaler_with_bounded_scale(monkeypatch) -> None:
-    calls = []
-
-    class FakeGradScaler:
-        def __init__(self, device: str, init_scale: int) -> None:
-            calls.append((device, init_scale))
-
-    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(amp=SimpleNamespace(GradScaler=FakeGradScaler)))
-    trainer = SimpleNamespace(accelerator=SimpleNamespace(scaler=object()))
-
-    _configure_fp16_scaler(trainer, {"fp16_initial_scale": 128})
-
-    assert calls == [("cuda", 128)]
-    assert isinstance(trainer.accelerator.scaler, FakeGradScaler)
-
-
-def test_classifier_rejects_missing_fp16_scaler(monkeypatch) -> None:
-    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace())
-    trainer = SimpleNamespace(accelerator=SimpleNamespace(scaler=None))
-
-    with pytest.raises(ClassifierTrainingError, match="gradient scaler"):
-        _configure_fp16_scaler(trainer, {"fp16_initial_scale": 128})
 
 
 def test_classifier_production_requires_cosmos_manifest() -> None:

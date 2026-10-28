@@ -22,6 +22,8 @@ CURRENT = {
     "derived_data_sha256": "derived-abc",
     "trainer_code_commit": "code-abc",
     "packages": {"torch": "2.5.1+cu118"},
+    "hardware_profile": "t4",
+    "model_config": {"image_size": 640},
     "training_config": {"learning_rate": 0.001, "max_steps": 2, "fp16": True},
 }
 
@@ -40,6 +42,8 @@ def test_exact_provenance_match_allows_resume() -> None:
         ("derived_data_sha256", "derived-other"),
         ("trainer_code_commit", "code-other"),
         ("packages", {"torch": "different"}),
+        ("hardware_profile", "h100"),
+        ("model_config", {"image_size": 1280}),
     ],
 )
 def test_data_or_model_identity_change_blocks_resume(key: str, value: object) -> None:

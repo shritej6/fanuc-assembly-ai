@@ -120,6 +120,25 @@ def test_slurm_launch_resolves_repo_from_submit_directory(
     assert str(archived_repo / "perception" / "configs") in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("script", "config"),
+    [("detector.sbatch", "rtdetr_h100.yaml"), ("classifier.sbatch", "classifier_h100.yaml")],
+)
+def test_no_slurm_launch_accepts_an_explicit_h100_config(
+    script: str,
+    config: str,
+    tmp_path: Path,
+) -> None:
+    path = REPO / "perception" / "configs" / config
+
+    result = _run(script, tmp_path, SMOKE="1", CONFIG=str(path))
+
+    assert result.returncode == 0, result.stderr
+    assert f"config={path}" in result.stdout
+    assert f"--config {path}" in result.stdout
+    assert "--nproc_per_node 1" in result.stdout
+
+
 def test_preparation_plan_allows_native_only_only_for_smoke(tmp_path: Path) -> None:
     smoke = preparation_plan(tmp_path / "data", tmp_path / "smoke", REPO / "contracts/taxonomy.json", True)
     full = preparation_plan(tmp_path / "data", tmp_path / "full", REPO / "contracts/taxonomy.json", False)

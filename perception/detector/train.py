@@ -26,7 +26,12 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
-from perception.train_common import load_manifest_metadata, seed_training, trainer_arguments
+from perception.train_common import (
+    configure_mixed_precision,
+    load_manifest_metadata,
+    seed_training,
+    trainer_arguments,
+)
 from perception.training_config import apply_smoke_step_override, load_training_config
 
 PACKAGE_NAMES = (
@@ -75,6 +80,8 @@ def build_run_provenance(
     )
     provenance["packages"] = package_versions(PACKAGE_NAMES)
     provenance["trainer_code_commit"] = current_git_commit()
+    provenance["hardware_profile"] = config["hardware_profile"]
+    provenance["model_config"] = dict(model)
     provenance["training_config"] = dict(config["training"])
     provenance.update(
         derived_data_identity(
@@ -363,15 +370,6 @@ def _check_finite_history(history: list[dict[str, Any]]) -> None:
         _check_finite(metrics, f"training history entry {index}")
 
 
-def _configure_fp16_scaler(trainer: Any, training: dict[str, Any]) -> None:
-    import torch
-
-    initial_scale = training["fp16_initial_scale"]
-    if trainer.accelerator.scaler is None:
-        raise DetectorTrainError("FP16 training did not create a gradient scaler")
-    trainer.accelerator.scaler = torch.amp.GradScaler("cuda", init_scale=initial_scale)
-
-
 def _evaluate_scenarios(trainer: Any, dataset: CocoDataset) -> dict[str, Any]:
     report = {}
     for index, (name, selected) in enumerate(scenario_datasets(dataset).items()):
@@ -427,7 +425,7 @@ def _run_ml(
     if not args.smoke:
         _check_class_support(datasets, labels)
     trainer = _build_trainer(args, config, processor, model, id2label, datasets)
-    _configure_fp16_scaler(trainer, config["training"])
+    configure_mixed_precision(trainer, config["training"], DetectorTrainError)
     train_result = trainer.train(resume_from_checkpoint=resume)
     _check_finite(train_result.metrics, "training")
     _check_finite_history(trainer.state.log_history)

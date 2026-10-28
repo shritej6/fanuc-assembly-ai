@@ -23,6 +23,8 @@ COMPATIBILITY_KEYS = (
     "derived_data_sha256",
     "trainer_code_commit",
     "packages",
+    "hardware_profile",
+    "model_config",
 )
 
 

@@ -1,4 +1,5 @@
 task: classifier
+hardware_profile: t4
 model:
   architecture: resnet18
   weights: DEFAULT

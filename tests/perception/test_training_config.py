@@ -9,6 +9,8 @@ from perception.training_config import ConfigError, apply_smoke_step_override, l
 ROOT = Path(__file__).resolve().parents[2]
 DETECTOR = ROOT / "perception" / "configs" / "rtdetr_t4.yaml"
 CLASSIFIER = ROOT / "perception" / "configs" / "classifier_t4.yaml"
+H100_DETECTOR = ROOT / "perception" / "configs" / "rtdetr_h100.yaml"
+H100_CLASSIFIER = ROOT / "perception" / "configs" / "classifier_h100.yaml"
 
 
 def test_ml_group_pins_security_compatible_torch_pair() -> None:
@@ -25,6 +27,7 @@ def test_detector_config_pins_rtdetr_and_t4_safe_trainer_flags() -> None:
     config = load_training_config(DETECTOR)
 
     assert config["task"] == "detector"
+    assert config["hardware_profile"] == "t4"
     assert config["model"] == {
         "name": "PekingU/rtdetr_r50vd",
         "revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
@@ -69,6 +72,7 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
     config = load_training_config(CLASSIFIER)
 
     assert config["task"] == "classifier"
+    assert config["hardware_profile"] == "t4"
     assert config["model"] == {
         "architecture": "resnet18",
         "weights": "DEFAULT",
@@ -82,10 +86,33 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
 
 
 @pytest.mark.parametrize(
+    ("path", "task", "image_size"),
+    [(H100_DETECTOR, "detector", 1280), (H100_CLASSIFIER, "classifier", 224)],
+)
+def test_h100_configs_use_bf16_without_an_fp16_scaler(
+    path: Path,
+    task: str,
+    image_size: int,
+) -> None:
+    config = load_training_config(path)
+
+    assert config["task"] == task
+    assert config["hardware_profile"] == "h100"
+    assert config["model"]["image_size"] == image_size
+    assert config["training"]["fp16"] is False
+    assert config["training"]["bf16"] is True
+    assert config["training"]["tf32"] is False
+    assert "fp16_initial_scale" not in config["training"]
+    assert config["training"]["gradient_accumulation_steps"] == 1
+
+
+@pytest.mark.parametrize(
     ("base", "mutation", "message"),
     [
         (DETECTOR, ("training", "bf16", True), "BF16"),
         (DETECTOR, ("training", "tf32", True), "TF32"),
+        (H100_DETECTOR, ("training", "fp16", True), "H100.*FP16"),
+        (H100_DETECTOR, ("model", "image_size", 640), "1280"),
         (CLASSIFIER, ("model", "num_labels", 29), "30 labels"),
         (CLASSIFIER, ("training", "fp16_initial_scale", 65_536), "fp16_initial_scale"),
     ],

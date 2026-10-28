@@ -22,7 +22,7 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
-from perception.train_common import load_manifest_metadata, trainer_arguments
+from perception.train_common import configure_mixed_precision, load_manifest_metadata, trainer_arguments
 from perception.training_config import apply_smoke_step_override, load_training_config
 
 PRETRAINED_MODEL = "torchvision/resnet18"
@@ -149,17 +149,6 @@ def _check_finite_metrics(metrics: dict[str, Any], phase: str) -> None:
         raise ClassifierTrainingError(f"{phase} produced non-finite metrics: {invalid}")
 
 
-def _configure_fp16_scaler(trainer: Any, training: dict[str, Any]) -> None:
-    import torch
-
-    if trainer.accelerator.scaler is None:
-        raise ClassifierTrainingError("FP16 training did not create a gradient scaler")
-    trainer.accelerator.scaler = torch.amp.GradScaler(
-        "cuda",
-        init_scale=training["fp16_initial_scale"],
-    )
-
-
 def _build_transforms(image_size: int) -> tuple[Any, Any]:
     from torchvision import transforms
 
@@ -264,6 +253,8 @@ def _run_provenance(
     )
     provenance["packages"] = package_versions(PACKAGE_NAMES)
     provenance["trainer_code_commit"] = current_git_commit()
+    provenance["hardware_profile"] = config["hardware_profile"]
+    provenance["model_config"] = dict(config["model"])
     provenance["training_config"] = dict(config["training"])
     provenance.update(derived_data_identity({"crops": crops_path}))
     return provenance
@@ -305,7 +296,7 @@ def _train(
         eval_dataset=validation,
         compute_metrics=_compute_metrics(labels, groups),
     )
-    _configure_fp16_scaler(trainer, config["training"])
+    configure_mixed_precision(trainer, config["training"], ClassifierTrainingError)
     result = trainer.train(resume_from_checkpoint=resume)
     _check_finite_metrics(result.metrics, "training")
     _check_finite_metrics({"log_history": trainer.state.log_history}, "training history")

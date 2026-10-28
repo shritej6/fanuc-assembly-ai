@@ -24,6 +24,7 @@ from perception.detector.train import (
 
 CONFIG = {
     "task": "detector",
+    "hardware_profile": "t4",
     "model": {
         "name": "PekingU/rtdetr_r50vd",
         "revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
@@ -81,6 +82,8 @@ def test_run_provenance_keeps_frozen_data_and_model_identity(tmp_path: Path) -> 
     assert provenance["taxonomy_sha256"] == "taxonomy-abc"
     assert provenance["labels"] == ["F01", "foreign_screw_m3"]
     assert provenance["pretrained_revision"] == "df939e661d8c52e80608d1ec566561aabd25a4e7"
+    assert provenance["hardware_profile"] == "t4"
+    assert provenance["model_config"]["image_size"] == 640
     assert set(provenance["packages"]) == {
         "accelerate",
         "pycocotools",

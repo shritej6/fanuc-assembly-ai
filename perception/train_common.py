@@ -9,6 +9,27 @@ from typing import Any
 INTERNAL_TRAINING_KEYS = {"max_train_samples", "max_eval_samples", "fp16_initial_scale"}
 
 
+def configure_mixed_precision(
+    trainer: Any,
+    training: dict[str, Any],
+    error_type: type[Exception],
+) -> None:
+    """Install the bounded FP16 scaler or verify scaler-free BF16."""
+    scaler = trainer.accelerator.scaler
+    if training.get("bf16") is True:
+        if scaler is not None:
+            raise error_type("BF16 training unexpectedly created a gradient scaler")
+        return
+    if training.get("fp16") is not True or scaler is None:
+        raise error_type("FP16 training did not create a gradient scaler")
+    import torch
+
+    trainer.accelerator.scaler = torch.amp.GradScaler(
+        "cuda",
+        init_scale=training["fp16_initial_scale"],
+    )
+
+
 def seed_training(seed: int) -> None:
     """Seed model initialization before Trainer receives an instantiated model."""
     if type(seed) is not int:

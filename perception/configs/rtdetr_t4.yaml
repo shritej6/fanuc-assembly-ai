@@ -1,4 +1,5 @@
 task: detector
+hardware_profile: t4
 model:
   name: PekingU/rtdetr_r50vd
   revision: df939e661d8c52e80608d1ec566561aabd25a4e7

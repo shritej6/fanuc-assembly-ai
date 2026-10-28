@@ -24,6 +24,7 @@ SMOKE="${SMOKE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-${SLURM_GPUS_ON_NODE:-1}}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
+CONFIG="${CONFIG:-$REPO/perception/configs/classifier_t4.yaml}"
 
 if [[ ! "$NPROC_PER_NODE" =~ ^[1-9][0-9]*$ ]]; then
   echo "NPROC_PER_NODE must be a positive integer" >&2
@@ -40,7 +41,7 @@ fi
 
 COMMAND=("$TORCHRUN" --standalone --nnodes=1 --nproc_per_node "$NPROC_PER_NODE"
   -m perception.classifier.train
-  --config "$REPO/perception/configs/classifier_t4.yaml"
+  --config "$CONFIG"
   --crops "$ARTIFACT_ROOT/$MODE/crops/crops.jsonl"
   --manifest-metadata "$ARTIFACT_ROOT/$MODE/manifests/metadata.json"
   --output-dir "$RUN_ROOT/$MODE/classifier")
@@ -50,7 +51,7 @@ fi
 if [[ -n "$RESUME_FROM_CHECKPOINT" ]]; then
   COMMAND+=(--resume-from-checkpoint "$RESUME_FROM_CHECKPOINT")
 fi
-printf 'precision=fp16 bf16=false tf32=false\n'
+printf 'config=%q\n' "$CONFIG"
 printf ' %q' "${COMMAND[@]}"
 printf '\n'
 if [[ "$DRY_RUN" != "1" ]]; then
