@@ -86,13 +86,18 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
 
 
 @pytest.mark.parametrize(
-    ("path", "task", "image_size"),
-    [(H100_DETECTOR, "detector", 1280), (H100_CLASSIFIER, "classifier", 224)],
+    ("path", "task", "image_size", "batch_size", "workers"),
+    [
+        (H100_DETECTOR, "detector", 1280, 20, 8),
+        (H100_CLASSIFIER, "classifier", 224, 64, 4),
+    ],
 )
 def test_h100_configs_use_bf16_without_an_fp16_scaler(
     path: Path,
     task: str,
     image_size: int,
+    batch_size: int,
+    workers: int,
 ) -> None:
     config = load_training_config(path)
 
@@ -104,6 +109,8 @@ def test_h100_configs_use_bf16_without_an_fp16_scaler(
     assert config["training"]["tf32"] is False
     assert "fp16_initial_scale" not in config["training"]
     assert config["training"]["gradient_accumulation_steps"] == 1
+    assert config["training"]["per_device_train_batch_size"] == batch_size
+    assert config["training"]["dataloader_num_workers"] == workers
 
 
 @pytest.mark.parametrize(

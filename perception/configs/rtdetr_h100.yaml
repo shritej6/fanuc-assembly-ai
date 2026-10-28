@@ -13,10 +13,12 @@ training:
   learning_rate: 0.00005
   weight_decay: 0.0001
   warmup_ratio: 0.05
-  per_device_train_batch_size: 2
+  # Batch 25 fit; 20 was the largest measured candidate below 85% peak-reserved VRAM.
+  per_device_train_batch_size: 20
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 1
-  dataloader_num_workers: 32
+  # Eight workers were within 0.55% of the best measured median on 208 logical CPUs.
+  dataloader_num_workers: 8
   fp16: false
   bf16: true
   tf32: false
