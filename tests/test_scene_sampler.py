@@ -151,3 +151,13 @@ def test_chunks_cover_every_scene_once_and_match_the_image_budget(inp, set_name)
     assert len(indices) * len(cfg["cameras"]) == cfg["images"]
     with pytest.raises(ValueError):
         chunk_range(inp, set_name, n_chunks(inp, set_name))
+
+
+def test_rest_shift_lands_the_lowest_vertex_on_the_table():
+    from sdg.transforms import rest_on_table_dz, rot_axis
+
+    verts = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 3.0], [0.0, 10.0, -1.5]])
+    tf = translation(5, 5, -330.0) @ rot_axis((1, 0, 0), 20)
+    dz = rest_on_table_dz(verts, tf, -335.0)
+    moved = (translation(0, 0, dz) @ tf @ np.c_[verts, np.ones(3)].T)[2]
+    assert moved.min() == pytest.approx(-335.0)

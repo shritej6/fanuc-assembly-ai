@@ -99,6 +99,7 @@ class SceneBuilder:
         rnd = self.inp.sets["randomization"]
         spec = {
             "spec_version": SPEC_VERSION, "set": self.set_name, "index": self.index, "seed": self.seed,
+            "table_z_uf0": self.table_z,
             "products": products, "assembly_step": {str(p): steps[p] for p in products},
             "cameras": self.cfg["cameras"], "outputs": self.cfg["outputs"], "objects": self.objects,
             "camera_jitter": {c: self._camera_jitter(rnd["camera_jitter"]) for c in self.cfg["cameras"]},

@@ -162,7 +162,7 @@ def main() -> None:
     world = World(stage_units_in_meters=1.0)
     stage = omni.usd.get_context().get_stage()
     cell.build(stage, with_objects=False)
-    scene = SceneStage(stage, REPO, C.TABLE_TOP_Z)
+    scene = SceneStage(stage, REPO, C.TABLE_TOP_Z, table_z_uf0=specs[0]["table_z_uf0"])
     world.reset()
     arm, cams = Arm(), Cameras(stage)
     for _ in range(60):          # let MDL / shaders compile before the first capture

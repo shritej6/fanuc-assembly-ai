@@ -14,6 +14,8 @@ from pathlib import Path
 import numpy as np
 from pxr import Gf, Sdf, UsdGeom, UsdLux, UsdSemantics, UsdShade, Vt
 
+from sdg.transforms import rest_on_table_dz, translation
+
 UF0_ABOVE_BASE_M = 0.330
 LIB_ROOT = "/_sdg_lib"           # class prim: abstract, never rendered, safe to reference
 SCENE_ROOT = "/World/SdgScene"
@@ -42,9 +44,9 @@ def uf0_to_world(tf_mm: np.ndarray, table_top_z: float) -> Gf.Matrix4d:
 
 
 class SceneStage:
-    def __init__(self, stage, repo: Path, table_top_z: float):
-        self.stage, self.repo, self.table_top_z = stage, repo, table_top_z
-        self._lib: set[str] = set()
+    def __init__(self, stage, repo: Path, table_top_z: float, table_z_uf0: float):
+        self.stage, self.repo, self.table_top_z, self.table_z_uf0 = stage, repo, table_top_z, table_z_uf0
+        self._lib: dict[str, np.ndarray] = {}     # mesh key -> vertices (mm), for resting defect variants
         stage.CreateClassPrim(LIB_ROOT)
         self.material = self._make_material()
         self._light_base = {p: stage.GetPrimAtPath(p).GetAttribute("inputs:intensity").Get() for p in STARTER_LIGHTS}
@@ -68,7 +70,7 @@ class SceneStage:
             mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(faces.reshape(-1).tolist()))
             mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
             UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(self.material)
-            self._lib.add(key)
+            self._lib[key] = verts
         return prim_path
 
     # ------------------------------------------------------------------ per scene
@@ -80,12 +82,17 @@ class SceneStage:
         paths = {}
         for obj in spec["objects"]:
             xf = UsdGeom.Xform.Define(self.stage, f"{SCENE_ROOT}/{obj['uid']}")
-            xf.AddTransformOp().Set(uf0_to_world(obj["transform_uf0"], self.table_top_z))
             geom = self.stage.DefinePrim(f"{xf.GetPath()}/geom")
+            tf = np.array(obj["transform_uf0"])
             if obj["kind"] == "foreign":
                 self._foreign(geom.GetPath(), obj["foreign_type"])
             else:
-                geom.GetReferences().AddInternalReference(self._library_mesh(*self._mesh_key(obj)))
+                key, path = self._mesh_key(obj)
+                geom.GetReferences().AddInternalReference(self._library_mesh(key, path))
+                if obj["variant"] != "ok" and obj["state"] != "installed":
+                    obj["render_dz_mm"] = round(rest_on_table_dz(self._lib[key], tf, self.table_z_uf0), 3)
+                    tf = translation(0, 0, obj["render_dz_mm"]) @ tf
+            xf.AddTransformOp().Set(uf0_to_world(tf, self.table_top_z))
             label = obj["object_id"] or f"foreign_{obj['foreign_type']}"
             _add_class_label(xf.GetPrim(), label)
             paths[str(xf.GetPath())] = obj["uid"]

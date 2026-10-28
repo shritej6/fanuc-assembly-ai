@@ -52,3 +52,12 @@ def footprint(aabb: np.ndarray) -> tuple[np.ndarray, float]:
 def yaw_deg(tf: np.ndarray) -> float:
     """Heading of the local x axis projected on the table."""
     return math.degrees(math.atan2(tf[1, 0], tf[0, 0]))
+
+
+def rest_on_table_dz(verts_mm: np.ndarray, tf: np.ndarray, table_z: float) -> float:
+    """Vertical shift that puts the lowest vertex of a mesh posed by `tf` exactly on the table.
+
+    A defect variant (warp, scale) rests slightly differently from the good part whose pose the sampler used.
+    """
+    z = verts_mm @ tf[2, :3] + tf[2, 3]
+    return float(table_z - z.min())

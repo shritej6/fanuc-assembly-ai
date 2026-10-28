@@ -14,3 +14,4 @@ runs/
 *.usd*
 !sim/assets/**/*.usda
 !sim/starter/assets/**/*.usda
+cad/defects/*.stl

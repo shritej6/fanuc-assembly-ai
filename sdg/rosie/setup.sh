@@ -11,7 +11,9 @@ VENV="${HOST_VENV:-$HOME/fa-venv}"
 if [[ ! -x "$VENV/bin/python" ]]; then
   python3 -m venv "$VENV"
 fi
-"$VENV/bin/pip" install --quiet "numpy>=1.26" "pyyaml>=6"
+"$VENV/bin/pip" install --quiet "numpy>=1.26" "pyyaml>=6" "trimesh>=4" manifold3d scipy
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+"$VENV/bin/python" "$REPO/sdg/tools/defect_variants.py"     # defect meshes, verified against the manifest
 mkdir -p "$DATA_ROOT"/{specs,synthetic,cache,models,runs}
 chmod 700 "$DATA_ROOT"
 
