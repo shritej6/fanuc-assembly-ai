@@ -2,6 +2,21 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-27 · T04 · CODEX · product catalog and recipe graph
+
+- Changed: added `assembly/catalog.yaml`, typed/validated loading in `assembly/catalog.py`, public exports in
+  `assembly/__init__.py`, and behavioral coverage in `tests/test_catalog.py`; configured pytest to import repository
+  packages consistently through the direct `uv run pytest` entry point.
+- Behavior: six recipes validate against `contracts/catalog.schema.json` and the fixed taxonomy; semantic checks enforce
+  products 1–6, ordered steps 1–4, ownership, exact 24-part coverage, base types, and finite three-axis offsets. Shared
+  fixtures resolve by type A/B/C, and each recipe graph traverses base→01→02→03→04 and reverses exactly for dismantling.
+- Run: `uv run pytest tests/test_catalog.py -q` (18 passed in 0.12s); `uv run pytest` (30 passed in 0.14s);
+  `uv run ruff check .` (all checks passed); `git diff --check` (clean).
+- Provenance/frame: product ownership and shared base types come from `contracts/taxonomy.json`; installed offsets are the
+  supplied CAD values in the detected fixture's CAD-local frame. They require a measured fixture-pose transform and are
+  never absolute UF0 TCP targets. No contract files changed.
+- Next: independent review, push/open the T04 PR, then use the catalog as the recipe source for T09 after merge.
+
 ## 2026-10-27 · T01 · CLAUDE · repo scaffold
 
 - Changed: repo layout, `CLAUDE.md` / `AGENTS.md` rules, `coord/` (TASKS, DECISIONS, HANDOFF), `contracts/` v1 (9 schemas

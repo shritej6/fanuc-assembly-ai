@@ -14,3 +14,4 @@ extend-exclude = ["robot/cell"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

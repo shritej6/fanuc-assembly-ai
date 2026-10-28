@@ -1,0 +1,129 @@
+# CAD installation offsets are [x, y, z] millimetres in the local frame of
+# the detected base/fixture. They must be transformed through the measured
+# base pose before motion planning; they are never absolute UF0 TCP targets.
+products:
+  - product: 1
+    name: Rotary Knob Module
+    base_type: A
+    steps:
+      - step: 1
+        object_id: M1_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 0
+      - step: 2
+        object_id: M1_02
+        insert_offset_mm: [0, 0, 7]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M1_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M1_04
+        insert_offset_mm: [0, 17.5, 4]
+        gripper_roll_deg: 0
+
+  - product: 2
+    name: Indicator Light Module
+    base_type: A
+    steps:
+      - step: 1
+        object_id: M2_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 0
+      - step: 2
+        object_id: M2_02
+        insert_offset_mm: [0, 0, 7]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M2_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M2_04
+        insert_offset_mm: [0, 17.5, 4]
+        gripper_roll_deg: 0
+
+  - product: 3
+    name: Push Button Module
+    base_type: B
+    steps:
+      - step: 1
+        object_id: M3_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 0
+      - step: 2
+        object_id: M3_02
+        insert_offset_mm: [0, 0, 7]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M3_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M3_04
+        insert_offset_mm: [0, 17.5, 4]
+        gripper_roll_deg: 0
+
+  - product: 4
+    name: Sensor Connector Module
+    base_type: C
+    steps:
+      - step: 1
+        object_id: M4_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 90
+      - step: 2
+        object_id: M4_02
+        insert_offset_mm: [0, 0, 5]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M4_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M4_04
+        insert_offset_mm: [0, -11.5, 18]
+        gripper_roll_deg: 0
+
+  - product: 5
+    name: Control I/O Connector Module
+    base_type: C
+    steps:
+      - step: 1
+        object_id: M5_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 90
+      - step: 2
+        object_id: M5_02
+        insert_offset_mm: [0, 0, 5]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M5_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M5_04
+        insert_offset_mm: [0, -11.5, 18]
+        gripper_roll_deg: 0
+
+  - product: 6
+    name: Power Connector Module
+    base_type: C
+    steps:
+      - step: 1
+        object_id: M6_01
+        insert_offset_mm: [0, 0, 0]
+        gripper_roll_deg: 90
+      - step: 2
+        object_id: M6_02
+        insert_offset_mm: [0, 0, 5]
+        gripper_roll_deg: 0
+      - step: 3
+        object_id: M6_03
+        insert_offset_mm: [0, 0, 18]
+        gripper_roll_deg: 0
+      - step: 4
+        object_id: M6_04
+        insert_offset_mm: [0, -11.5, 18]
+        gripper_roll_deg: 0
