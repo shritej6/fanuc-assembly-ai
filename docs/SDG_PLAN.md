@@ -166,6 +166,7 @@ and folders are the same as A–D; training uses the union.
 | J | Build check | 6,000 | The decision boundary: high 0.4–1.5 mm, tilt 1–4°, seated within 0.3 mm print tolerance. Labels carry `build_offset` (mm / deg) so the threshold is chosen from data | GB10 |
 | K | Classifier + detector | 2,400 | Every object close up (70–180 mm), every resting pose, 80 per object, hard look | GB10 |
 | L | Build check | 1,600 | Every product at every step close up, all build states (high 0.4–4 mm, tilt 1–12°) | GB10 |
+| M | Build check | 6,000 | Mis-assembly from the 200-case edge package: shifted 0.5–4 mm off the pegs (16 directions), turned 90/180/270° (only turns that change the visible shape by ≥ 1 mm), tilted 1–12°, look-alike swaps. `build_offset` adds `shift_mm`, `yaw_deg` | Brev |
 
 Every scene of F–L lays out and every arm pose solves (checked 2026-10-28). A–C specs are byte-identical to before
 the change apart from redrawn unreachable arm poses; D gains the `build_offset` field.
@@ -175,6 +176,19 @@ also moved the wrist camera, whose eye then sat inside its own lens housing (`Wr
 showed only the housing. Found by the depth check of the sampled QA. Drift now applies to the table / side cameras
 only; set I was re-rendered and set H re-specified before rendering. Sets without depth (B, H) cannot show this in
 QA, so the regression test checks the spec instead.
+
+**Mis-built parts rest on the stack (fixed 2026-10-28)**: a tilt about the part's bottom centre pushed half the
+part into the fixture (up to 1,350 mm³ at 8° for a housing), and some look-alike swaps overlapped the part below.
+`sdg/tools/build_clearance.py` measures (manifold3d booleans, 0.01 mm) how far each part must rise to clear the
+fixture plus the parts under it, per tilt direction and angle, shift, turn and swap; the sampler lifts the part by
+that amount. Sampled D, J, L, M specs: overlap ≤ 0.05 mm³, resting gap ~0.1 mm. `build_offset.high_mm` is now the
+real lift for every state. A–C and E–K specs are byte-identical; the 1,155 changed D scenes are re-rendered
+(`sdg/tools/supersede_changed.py`).
+
+**From the 200-case edge package (reviewed 2026-10-28)**: wrong-part swaps, the six defect classes, glare / colour
+temperature, blur, clutter, rare poses and mount drift were already rendered; shifts and wrong-way turns became
+set M. Not images: grasp failures, drops, recipe changes, pauses, stale sensor data (GR00T / Cosmos demos, set E).
+Training-time augmentation, not rendering: low resolution, depth holes on glossy faces, a missing camera.
 
 **Path tracing tried and dropped (2026-10-28)**: a 3-scene K smoke test with Isaac's path tracer on the GB10 took
 164 s/img, and the capture did not follow the arm pose and returned empty instance masks and depth. Real-time ray
