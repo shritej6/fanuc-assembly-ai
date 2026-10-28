@@ -263,7 +263,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M1_01": {
    "stl": "cad/stl/M1_01_Housing.stl",
@@ -526,7 +561,42 @@
      "footprint_r": 25.773,
      "height_mm": 36.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -0.5
+    ],
+    "footprint_r": 28.613,
+    "height_mm": 16.0,
+    "stands": true
+   }
   },
   "M1_02": {
    "stl": "cad/stl/M1_02_Spindle_Carrier.stl",
@@ -789,7 +859,42 @@
      "footprint_r": 11.508,
      "height_mm": 20.97
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.002,
+     0.0
+    ],
+    "footprint_r": 11.002,
+    "height_mm": 17.0,
+    "stands": true
+   }
   },
   "M1_03": {
    "stl": "cad/stl/M1_03_Rotary_Knob.stl",
@@ -1052,7 +1157,42 @@
      "footprint_r": 15.134,
      "height_mm": 22.72
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 11.616,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M1_04": {
    "stl": "cad/stl/M1_04_Rear_Guard.stl",
@@ -1315,7 +1455,42 @@
      "footprint_r": 17.434,
      "height_mm": 35.347
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      -1.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      17.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -4.0
+    ],
+    "footprint_r": 13.124,
+    "height_mm": 34.0,
+    "stands": true
+   }
   },
   "F02": {
    "stl": "cad/stl/F02_Indicator_Fixture.stl",
@@ -1578,7 +1753,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M2_01": {
    "stl": "cad/stl/M2_01_Housing.stl",
@@ -1841,7 +2051,42 @@
      "footprint_r": 25.613,
      "height_mm": 50.593
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -0.5
+    ],
+    "footprint_r": 28.613,
+    "height_mm": 16.0,
+    "stands": true
+   }
   },
   "M2_02": {
    "stl": "cad/stl/M2_02_Diffuser_Carrier.stl",
@@ -2104,7 +2349,42 @@
      "footprint_r": 11.417,
      "height_mm": 20.303
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.002,
+     0.0
+    ],
+    "footprint_r": 11.002,
+    "height_mm": 16.0,
+    "stands": true
+   }
   },
   "M2_03": {
    "stl": "cad/stl/M2_03_Indicator_Cap.stl",
@@ -2367,7 +2647,42 @@
      "footprint_r": 11.002,
      "height_mm": 18.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.002,
+     0.0
+    ],
+    "footprint_r": 11.002,
+    "height_mm": 18.0,
+    "stands": true
+   }
   },
   "M2_04": {
    "stl": "cad/stl/M2_04_Rear_Guard.stl",
@@ -2630,7 +2945,42 @@
      "footprint_r": 18.133,
      "height_mm": 35.372
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      -1.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      17.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -4.0
+    ],
+    "footprint_r": 14.08,
+    "height_mm": 34.0,
+    "stands": true
+   }
   },
   "F03": {
    "stl": "cad/stl/F03_Pushbutton_Fixture.stl",
@@ -2893,7 +3243,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M3_01": {
    "stl": "cad/stl/M3_01_Housing.stl",
@@ -3156,7 +3541,42 @@
      "footprint_r": 26.178,
      "height_mm": 51.523
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -0.5
+    ],
+    "footprint_r": 29.151,
+    "height_mm": 16.0,
+    "stands": true
+   }
   },
   "M3_02": {
    "stl": "cad/stl/M3_02_Actuator_Stem.stl",
@@ -3419,7 +3839,42 @@
      "footprint_r": 13.538,
      "height_mm": 19.6
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 13.806,
+    "height_mm": 17.0,
+    "stands": true
+   }
   },
   "M3_03": {
    "stl": "cad/stl/M3_03_Button_Cap.stl",
@@ -3682,7 +4137,42 @@
      "footprint_r": 14.422,
      "height_mm": 20.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 14.806,
+    "height_mm": 16.0,
+    "stands": true
+   }
   },
   "M3_04": {
    "stl": "cad/stl/M3_04_Rear_Guard.stl",
@@ -3945,7 +4435,42 @@
      "footprint_r": 19.056,
      "height_mm": 36.762
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      -1.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      17.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     -4.0
+    ],
+    "footprint_r": 15.042,
+    "height_mm": 34.0,
+    "stands": true
+   }
   },
   "F04": {
    "stl": "cad/stl/F04_Sensor_Connector_Fixture.stl",
@@ -4208,7 +4733,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M4_01": {
    "stl": "cad/stl/M4_01_Housing.stl",
@@ -4471,7 +5031,42 @@
      "footprint_r": 28.267,
      "height_mm": 33.941
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     4.0,
+     0.1
+    ],
+    "footprint_r": 27.131,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M4_02": {
    "stl": "cad/stl/M4_02_Sensor_Insert.stl",
@@ -4734,7 +5329,42 @@
      "footprint_r": 15.368,
      "height_mm": 23.917
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 15.0,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M4_03": {
    "stl": "cad/stl/M4_03_Upper_Guide.stl",
@@ -4997,7 +5627,42 @@
      "footprint_r": 21.03,
      "height_mm": 36.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     3.0
+    ],
+    "footprint_r": 26.495,
+    "height_mm": 13.0,
+    "stands": true
+   }
   },
   "M4_04": {
    "stl": "cad/stl/M4_04_Top_Lock.stl",
@@ -5260,7 +5925,42 @@
      "footprint_r": 13.342,
      "height_mm": 17.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 13.342,
+    "height_mm": 17.0,
+    "stands": true
+   }
   },
   "F05": {
    "stl": "cad/stl/F05_IO_Connector_Fixture.stl",
@@ -5523,7 +6223,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M5_01": {
    "stl": "cad/stl/M5_01_Housing.stl",
@@ -5786,7 +6521,42 @@
      "footprint_r": 18.111,
      "height_mm": 48.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     4.0,
+     0.1
+    ],
+    "footprint_r": 27.131,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M5_02": {
    "stl": "cad/stl/M5_02_IO_Insert.stl",
@@ -6049,7 +6819,42 @@
      "footprint_r": 13.124,
      "height_mm": 26.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 16.401,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M5_03": {
    "stl": "cad/stl/M5_03_Alignment_Guide.stl",
@@ -6312,7 +7117,42 @@
      "footprint_r": 21.03,
      "height_mm": 36.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     3.0
+    ],
+    "footprint_r": 26.495,
+    "height_mm": 13.0,
+    "stands": true
+   }
   },
   "M5_04": {
    "stl": "cad/stl/M5_04_Service_Lock.stl",
@@ -6575,7 +7415,42 @@
      "footprint_r": 13.342,
      "height_mm": 17.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 13.342,
+    "height_mm": 17.0,
+    "stands": true
+   }
   },
   "F06": {
    "stl": "cad/stl/F06_Power_Connector_Fixture.stl",
@@ -6838,7 +7713,42 @@
      "footprint_r": 25.598,
      "height_mm": 60.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      8.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 37.828,
+    "height_mm": 11.0,
+    "stands": true
+   }
   },
   "M6_01": {
    "stl": "cad/stl/M6_01_Housing.stl",
@@ -7101,7 +8011,42 @@
      "footprint_r": 25.271,
      "height_mm": 47.598
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     4.0,
+     0.0
+    ],
+    "footprint_r": 27.077,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M6_02": {
    "stl": "cad/stl/M6_02_Power_Insert.stl",
@@ -7364,7 +8309,42 @@
      "footprint_r": 13.124,
      "height_mm": 26.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 16.401,
+    "height_mm": 20.0,
+    "stands": true
+   }
   },
   "M6_03": {
    "stl": "cad/stl/M6_03_Power_Guide.stl",
@@ -7627,7 +8607,42 @@
      "footprint_r": 21.03,
      "height_mm": 36.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     3.0
+    ],
+    "footprint_r": 26.495,
+    "height_mm": 13.0,
+    "stands": true
+   }
   },
   "M6_04": {
    "stl": "cad/stl/M6_04_Power_Lock.stl",
@@ -7890,7 +8905,42 @@
      "footprint_r": 13.342,
      "height_mm": 17.0
     }
-   ]
+   ],
+   "installed_rest": {
+    "transform": [
+     [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      -0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ]
+    ],
+    "footprint_xy": [
+     0.0,
+     0.0
+    ],
+    "footprint_r": 13.342,
+    "height_mm": 17.0,
+    "stands": true
+   }
   }
  }
 }

@@ -29,6 +29,7 @@ An agent may only start a task that is READY and owned by it.
 | T22 | `placement.yaml` (10 rollouts with planned faults) + `submission.yaml` | CLAUDE | BACKLOG | feature/T22-placement | T04 | Wed |
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
+| T25 | Test-bed data: parts in installed orientation (arm cannot reorient), any yaw, fallen -> reject; ~70k images (test-bed, fixed-height identity close-ups, insertion alignment, reject/spare) + Cosmos | CLAUDE | IN PROGRESS (READY by user 2026-10-28) | feature/T25-testbed-sets | T08, T11 | Wed–Thu |
 
 ## User-only actions (physical / accounts)
 

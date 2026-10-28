@@ -8,6 +8,12 @@ Writes `sdg/data/object_geometry.json`, which the scene sampler reads. Run with 
   Each pose stores its table footprint (circle) and height, measured on the posed mesh, not on a bounding box.
 * Installed poses come from the product's `build()` in the CAD scripts: the STL (print frame) is registered onto the
   assembled solid over all 24 axis-aligned rotations, and the residual is recorded so a bad match is visible.
+* `installed_rest` is the part standing on the table exactly as it sits in its product (the installed rotation,
+  lowered to z=0). The arm only picks and places straight down and cannot turn a part over, so on the real test-bed
+  every loose part stands like this, at any yaw (user, 2026-10-28). Not every installed orientation is a likely drop
+  pose (M1/M2/M3_04 stand on an 8 mm edge), so it is measured here instead of picked from `stable_poses`.
+
+    python sdg/tools/object_geometry.py --add-installed-rest   # adds only that field to the existing JSON
 """
 
 from __future__ import annotations
@@ -89,6 +95,36 @@ def footprint(mesh: trimesh.Trimesh, tf: np.ndarray) -> dict:
             "height_mm": round(float(pts[:, 2].max()), 3)}
 
 
+def installed_rest(mesh: trimesh.Trimesh, installed: np.ndarray) -> dict:
+    """The installed rotation lowered onto z=0, with its footprint, and whether it stands on its own."""
+    tf = np.eye(4)
+    tf[:3, :3] = np.asarray(installed)[:3, :3]
+    tf[2, 3] = -trimesh.transform_points(mesh.vertices, tf)[:, 2].min()
+    return {"transform": np.round(tf, 6).tolist(), **footprint(mesh, tf), "stands": stands(mesh, tf)}
+
+
+def stands(mesh: trimesh.Trimesh, tf: np.ndarray, contact_mm: float = 0.3, margin_mm: float = 0.5) -> bool:
+    """Centre of mass inside the contact polygon (shrunk by margin_mm): the part does not tip over on its own."""
+    from shapely.geometry import MultiPoint, Point
+
+    posed = mesh.copy()
+    posed.apply_transform(tf)
+    contact = posed.vertices[posed.vertices[:, 2] < contact_mm][:, :2]
+    if len(contact) < 3:
+        return False
+    return bool(MultiPoint(contact).convex_hull.buffer(-margin_mm).contains(Point(posed.center_mass[:2])))
+
+
+def add_installed_rest(path: Path = OUT) -> None:
+    """Add `installed_rest` to every object of an existing geometry file; every other value stays byte-identical."""
+    data = json.loads(path.read_text())
+    for object_id, obj in data["objects"].items():
+        obj["installed_rest"] = installed_rest(trimesh.load(REPO / obj["stl"]), np.array(obj["installed_in_base_frame"]))
+        print(f"{object_id:6s} installed rest: height {obj['installed_rest']['height_mm']:6.2f} mm  "
+              f"stands {obj['installed_rest']['stands']}")
+    path.write_text(json.dumps(data, indent=1))
+
+
 def stable_poses(mesh: trimesh.Trimesh) -> list[dict]:
     transforms, probs = trimesh.poses.compute_stable_poses(mesh, n_samples=4, threshold=0.0)
     keep = [(t, p) for t, p in zip(transforms, probs) if p >= MIN_POSE_PROB][:MAX_POSES]
@@ -99,8 +135,13 @@ def stable_poses(mesh: trimesh.Trimesh) -> list[dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cad-dir", type=Path, required=True, help="folder with the product CAD scripts")
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--cad-dir", type=Path, help="folder with the product CAD scripts (rebuilds the whole file)")
+    mode.add_argument("--add-installed-rest", action="store_true", help="add installed_rest to the existing file")
     args = ap.parse_args()
+    if args.add_installed_rest:
+        add_installed_rest()
+        return
     sys.path.insert(0, str(args.cad_dir))
     objects = {}
     for name in PRODUCT_MODULES:
@@ -119,6 +160,7 @@ def main() -> None:
                 "registration_residual_mm": round(residual, 4),
                 "upright": footprint(mesh, trimesh.transformations.translation_matrix([0, 0, -mesh.bounds[0][2]])),
                 "stable_poses": stable_poses(mesh),
+                "installed_rest": installed_rest(mesh, installed),
             }
             print(f"{object_id:6s} step {step}  residual {residual:.4f} mm  poses {len(objects[object_id]['stable_poses'])}")
     OUT.write_text(json.dumps({"units": "mm", "source": "cad/stl + CAD build()", "objects": objects}, indent=1))

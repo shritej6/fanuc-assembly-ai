@@ -294,6 +294,117 @@ sets:
       arm_in_view_prob: 0.3
     wrist: {standoff_mm: [100.0, 240.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
 
+  # ---------------------------------------------------------------- test-bed sets (T25, user 2026-10-28)
+  # The arm only picks and places straight down and cannot turn a part over, so on the real test-bed every loose part
+  # (and every spare) stands exactly as it sits in its product, at any yaw: pose_sampling: installed. A fallen_prob
+  # share lies in another resting pose (label rest: fallen); the planner rejects those and takes a spare.
+
+  N:                       # detector on the real test-bed: installed orientation, any yaw, nominal look
+    images: 20000
+    seed: 14000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.35, 0.2, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 0.5
+      spares_in_store: [0, 6]
+      rejects: [0, 2]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.4
+      arm_in_view_prob: 0.4
+      pose_sampling: installed
+      fallen_prob: 0.1
+
+  R:                       # detector on the test-bed under bad light, noise, clutter and look-alikes side by side
+    images: 10000
+    seed: 15000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.5, 0.2, 0.1, 0.1, 0.1]
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 1.0
+      spares_in_store: [2, 6]
+      rejects: [0, 2]
+      foreign_objects: [1, 3]
+      cluster_prob: 0.8
+      arm_in_view_prob: 0.5
+      pose_sampling: installed
+      fallen_prob: 0.1
+    randomization: *hard_look
+
+  O:                       # identity close-ups at ONE wrist height: a fixed mm-per-pixel makes 1-1.5 mm size gaps
+    images: 24000          # between look-alikes visible; 800 per object, a look-alike always beside the target
+    seed: 16000
+    model: wrist look-alike classifier
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    per_object: 800
+    target_plan: all_objects
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 1.0
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.7
+      arm_in_view_prob: 0.0
+      pose_sampling: installed
+      fallen_prob: 0.1
+    wrist: {standoff_mm: [147.0, 153.0], tilt_deg: [0.0, 3.0], target_offset_mm: 8.0}   # planner identity height 150 mm
+
+  P:                       # insertion alignment from the wrist: top part over / on its pegs, slightly off, labelled
+    images: 12000          # with the exact shift / yaw / tilt / height (build_offset) so a model can read "how far off"
+    seed: 17000
+    model: insertion alignment + seated check (wrist)
+    cameras: [wrist]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, shifted, rotated, tilted, high]
+    build_state_weights: [0.3, 0.25, 0.2, 0.1, 0.15]
+    seated_noise_mm: 0.3
+    high_mm: [0.3, 3.0]
+    tilt_deg: [0.5, 10.0]
+    shift_mm: [0.3, 3.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.0
+      pose_sampling: installed
+      fallen_prob: 0.05
+    wrist: {standoff_mm: [80.0, 160.0], tilt_deg: [0.0, 10.0], target_offset_mm: 6.0}
+
+  Q:                       # fallen parts and the spare store: what to reject and what to pick instead
+    images: 4000
+    seed: 18000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.35, 0.2, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 0.3
+      spares_in_store: [3, 6]
+      rejects: [1, 3]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.4
+      arm_in_view_prob: 0.4
+      pose_sampling: installed
+      fallen_prob: 0.5
+
 randomization:              # applied by the Isaac generator to every scene
   camera_jitter: {translate_mm: 6.0, rotate_deg: 0.8}   # real camera mounts are calibrated; keep this small
   lighting:
