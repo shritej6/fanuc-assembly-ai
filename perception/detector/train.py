@@ -29,6 +29,7 @@ from perception.training_config import apply_smoke_step_override, load_training_
 PACKAGE_NAMES = (
     "accelerate",
     "pycocotools",
+    "scipy",
     "torch",
     "torchmetrics",
     "torchvision",

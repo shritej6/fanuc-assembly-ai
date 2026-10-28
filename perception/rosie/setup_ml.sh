@@ -24,8 +24,8 @@ run "$VENV_PATH/bin/python" -m pip install --no-cache-dir \
   torch==2.5.1+cu118 torchvision==0.20.1+cu118
 run "$VENV_PATH/bin/python" -m pip install --no-cache-dir \
   accelerate==1.15.0 pycocotools==2.0.11 safetensors==0.8.0 \
-  timm==1.0.30 'torchmetrics[detection]==1.9.0' transformers==4.57.3 \
+  scipy==1.18.1 timm==1.0.30 'torchmetrics[detection]==1.9.0' transformers==4.57.3 \
   jsonschema==4.26.0 numpy==2.5.4 pillow==13.0.0 pyyaml==6.0.3
 run "$VENV_PATH/bin/python" -m pip check
 run "$VENV_PATH/bin/python" -c \
-  'import torch, torchvision, transformers; assert torch.version.cuda == "11.8"; print(torch.__version__, torchvision.__version__, transformers.__version__)'
+  'import scipy, torch, torchvision, transformers; assert torch.version.cuda == "11.8"; print(scipy.__version__, torch.__version__, torchvision.__version__, transformers.__version__)'

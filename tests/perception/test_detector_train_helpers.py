@@ -75,6 +75,7 @@ def test_run_provenance_keeps_frozen_data_and_model_identity(tmp_path: Path) -> 
     assert set(provenance["packages"]) == {
         "accelerate",
         "pycocotools",
+        "scipy",
         "torch",
         "torchmetrics",
         "torchvision",

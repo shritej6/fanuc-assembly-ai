@@ -60,6 +60,7 @@ def test_setup_pins_cuda_118_without_populating_pip_cache(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     assert "torch==2.5.1+cu118" in result.stdout
     assert "torchvision==0.20.1+cu118" in result.stdout
+    assert "scipy==" in result.stdout
     assert "https://download.pytorch.org/whl/cu118" in result.stdout
     assert "--no-cache-dir" in result.stdout
     assert not (tmp_path / "venv").exists()
