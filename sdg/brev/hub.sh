@@ -8,6 +8,7 @@
 #   nohup sdg/brev/hub.sh "N:0-19 O:0-23 ..." "R:0-19 P:0-23 ..." > ~/hub.log 2>&1 &
 #   (arguments go to render_queue.sh: one render plan per GPU)
 set -uo pipefail
+shopt -s nullglob   # no chunk rendered yet = nothing to send, not a literal "*" path
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-assembly-data}"
