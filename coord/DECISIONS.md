@@ -19,3 +19,6 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Brev cap for training, Cosmos and GR00T: $50 (separate from the ~$21 spent on rendering) | user |
 | 2026-10-28 | Detector, classifier and PatchCore train on Rosie's V100 (`dgx`, idle) since the H100 queue estimates a start after the deadline | Claude (proposal, user said "do everything") |
 | 2026-10-28 | Use imitation learning where it helps: GR00T N1.7 (LeRobot), SmolVLA, ACT trained on Isaac Lab Mimic demos, kept only if it beats the scripted baseline | user |
+| 2026-10-28 | Compute for Cosmos and training moves to RunPod (H100 SXM for the detector, A100 SXM for the classifier, PatchCore and Cosmos); Rosie's H100s stay queued (Priority, est. Nov 9). Cap $100 for this phase | user |
+| 2026-10-28 | Cosmos covers 10 % of A, F, G, B, H, K (Codex's production gate needs 10-20 %); C, I, D, J, L, M are not restyled. Cosmos part pixels are kept only for objects that pass a per-object edge check, the rest are pasted back from the render | user (approved plan) |
+| 2026-10-28 | On the H100 the detector trains at 1280 px input with bf16 instead of the T4 setting (640 px, fp16, batch 2), so small parts keep their detail | user (approved plan) |

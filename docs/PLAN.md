@@ -110,7 +110,7 @@ I compared every STL pair by surface distance:
 | Motion | Detected pose + CAD heights (scripted baseline) |
 | Learned picking | GR00T N1.7 via LeRobot (main), SmolVLA (backup), ACT (baseline); trained on sim demos multiplied by Isaac Lab Mimic; used only if it beats the script |
 | Deployment | Official client `policy.py` |
-| Compute | GR00T training and Cosmos on Rosie's H100 (`dgxh100` partition) first, Brev only when the H100 queue cannot start in time; everything else on Rosie's T4 or a laptop |
+| Compute | RunPod (user 2026-10-28, $100 cap): H100 SXM for the detector, A100 SXM for the classifier, PatchCore and Cosmos; GB10 for Cosmos too; Rosie's H100 when the queue starts it; GR00T on an H100/H200 later |
 | Left out | ROS 2, MoveIt, Jetson, Isaac OS, Gemini Robotics, Cosmos 3 Nano/Super, π0.5 |
 
 ## 5. System pipeline
