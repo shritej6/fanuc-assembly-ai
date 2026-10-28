@@ -39,6 +39,9 @@ ENV_DIR=$1
 ARTIFACT=$2
 AUDIT=$3
 export PIP_CACHE_DIR=$4
+export PIP_CONFIG_FILE=/dev/null
+unset PIP_INDEX_URL PIP_EXTRA_INDEX_URL PIP_FIND_LINKS PIP_NO_INDEX
+unset PIP_REQUIREMENT PIP_CONSTRAINT PIP_TRUSTED_HOST
 JOB_ID=$5
 NODE_NAME=$6
 SOURCE_COMMIT=$7
@@ -49,7 +52,9 @@ python -m venv "$ENV_DIR"
 "$ENV_DIR/bin/python" -m pip install \
     torch==2.10.0 torchvision==0.25.0 \
     --index-url https://download.pytorch.org/whl/cu126
-"$ENV_DIR/bin/python" -m pip install anomalib==2.7.0 pip-audit==2.10.1
+"$ENV_DIR/bin/python" -m pip install \
+    anomalib==2.7.0 pip-audit==2.10.1 \
+    --index-url https://pypi.org/simple
 "$ENV_DIR/bin/python" -m pip check
 "$ENV_DIR/bin/python" -m pip freeze > "$ENV_DIR/requirements.freeze.txt"
 "$ENV_DIR/bin/pip-audit" --strict --format=json --output "$AUDIT"
