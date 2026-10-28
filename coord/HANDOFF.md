@@ -9,8 +9,9 @@ Newest first. One entry per finished task.
   packages consistently through the direct `uv run pytest` entry point.
 - Behavior: six recipes validate against `contracts/catalog.schema.json` and the fixed taxonomy; semantic checks enforce
   products 1–6, ordered steps 1–4, ownership, exact 24-part coverage, base types, and finite three-axis offsets. Shared
-  fixtures resolve by type A/B/C, and each recipe graph traverses base→01→02→03→04 and reverses exactly for dismantling.
-- Run: `uv run pytest tests/test_catalog.py -q` (18 passed in 0.12s); `uv run pytest` (30 passed in 0.14s);
+  fixtures resolve by type A/B/C; recipe graphs assemble base→01→02→03→04 and dismantle 04→01 without moving the base.
+  YAML duplicate keys fail closed, and catalog/schema/taxonomy resource failures stay within typed catalog errors.
+- Run: `uv run pytest tests/test_catalog.py -q` (26 passed); `uv run pytest` (38 passed);
   `uv run ruff check .` (all checks passed); `git diff --check` (clean).
 - Provenance/frame: product ownership and shared base types come from `contracts/taxonomy.json`; installed offsets are the
   supplied CAD values in the detected fixture's CAD-local frame. They require a measured fixture-pose transform and are

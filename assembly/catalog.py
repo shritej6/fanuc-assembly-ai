@@ -15,12 +15,18 @@ from typing import Any, Literal, cast
 
 import yaml
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 from referencing import Registry, Resource
+from referencing.exceptions import CannotDetermineSpecification, Unresolvable
+from yaml.constructor import ConstructorError
+from yaml.nodes import MappingNode
+from yaml.resolver import BaseResolver
 
 BaseType = Literal["A", "B", "C"]
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG_PATH = Path(__file__).with_name("catalog.yaml")
 CONTRACTS_PATH = ROOT / "contracts"
+CATALOG_SCHEMA_PATH = CONTRACTS_PATH / "catalog.schema.json"
 TAXONOMY_PATH = CONTRACTS_PATH / "taxonomy.json"
 
 
@@ -36,6 +42,10 @@ class CatalogLoadError(CatalogError):
     """Raised when a catalog file cannot be read or parsed."""
 
 
+class CatalogResourceError(CatalogError):
+    """Raised when a schema or taxonomy resource cannot be used."""
+
+
 class CatalogSemanticError(CatalogError):
     """Raised when schema-valid catalog data is unsafe or inconsistent."""
 
@@ -46,6 +56,41 @@ class UnknownProductError(CatalogError):
 
 class UnknownBaseError(CatalogError):
     """Raised when a fixture object is absent from the taxonomy."""
+
+
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    """Safe YAML loader that fails closed on duplicate mapping keys."""
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeySafeLoader,
+    node: MappingNode,
+    deep: bool = False,
+) -> dict[Any, Any]:
+    loader.flatten_mapping(node)
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            if key in mapping:
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+        except TypeError as error:
+            raise ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "found an unhashable key",
+                key_node.start_mark,
+            ) from error
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeySafeLoader.add_constructor(BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +122,7 @@ class RecipeGraph:
         return self.nodes
 
     def dismantling_traversal(self) -> tuple[str, ...]:
-        return tuple(reversed(self.nodes))
+        return tuple(reversed(self.nodes[1:]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,54 +155,86 @@ class Catalog:
 def _schema_registry() -> Registry:
     registry = Registry()
     for path in CONTRACTS_PATH.glob("*.schema.json"):
-        contents = json.loads(path.read_text())
-        registry = registry.with_resource(path.name, Resource.from_contents(contents))
+        contents = _read_json_resource(path, f"schema {path.name}")
+        try:
+            resource = Resource.from_contents(contents)
+        except CannotDetermineSpecification as error:
+            raise CatalogResourceError(f"Cannot identify schema resource {path}: {error}") from error
+        registry = registry.with_resource(path.name, resource)
     return registry
 
 
 def _read_catalog_data(path: Path) -> Any:
     try:
-        contents = path.read_text()
-    except OSError as error:
+        contents = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
         raise CatalogLoadError(f"Cannot read catalog {path}: {error}") from error
     try:
-        return yaml.safe_load(contents)
+        return yaml.load(contents, Loader=_UniqueKeySafeLoader)
     except yaml.YAMLError as error:
         raise CatalogLoadError(f"Cannot parse catalog {path}: {error}") from error
 
 
+def _read_json_resource(path: Path, label: str) -> Any:
+    try:
+        contents = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise CatalogResourceError(f"Cannot read {label} resource {path}: {error}") from error
+    try:
+        return json.loads(contents)
+    except json.JSONDecodeError as error:
+        raise CatalogResourceError(f"Cannot parse {label} resource {path}: {error}") from error
+
+
 def _validate_schema(data: Any) -> None:
-    schema_path = CONTRACTS_PATH / "catalog.schema.json"
-    schema = json.loads(schema_path.read_text())
-    validator = Draft202012Validator(schema, registry=_schema_registry())
-    errors = sorted(validator.iter_errors(data), key=lambda error: error.json_path)
+    schema = _read_json_resource(CATALOG_SCHEMA_PATH, "catalog schema")
+    try:
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema, registry=_schema_registry())
+        errors = sorted(validator.iter_errors(data), key=lambda error: error.json_path)
+    except SchemaError as error:
+        raise CatalogResourceError(f"Invalid catalog schema resource {CATALOG_SCHEMA_PATH}: {error}") from error
+    except Unresolvable as error:
+        raise CatalogResourceError(f"Cannot resolve catalog schema reference: {error}") from error
     if errors:
         details = "; ".join(f"{error.json_path}: {error.message}" for error in errors)
         raise CatalogSchemaError(f"Catalog schema validation failed: {details}")
 
 
+def _taxonomy_objects() -> list[dict[str, Any]]:
+    taxonomy = _read_json_resource(TAXONOMY_PATH, "taxonomy")
+    if not isinstance(taxonomy, dict) or not isinstance(taxonomy.get("objects"), list):
+        raise CatalogResourceError(f"Malformed taxonomy resource {TAXONOMY_PATH}: missing objects list")
+    return taxonomy["objects"]
+
+
 def _taxonomy_reference() -> tuple[dict[str, int], dict[int, str]]:
-    objects = json.loads(TAXONOMY_PATH.read_text())["objects"]
-    part_owners = {
-        item["object_id"]: item["product"]
-        for item in objects
-        if item["object_id"].startswith("M")
-    }
-    base_types = {
-        item["product"]: item["base_type"]
-        for item in objects
-        if item["object_id"].startswith("F")
-    }
+    try:
+        objects = _taxonomy_objects()
+        part_owners = {
+            item["object_id"]: item["product"]
+            for item in objects
+            if item["object_id"].startswith("M")
+        }
+        base_types = {
+            item["product"]: item["base_type"]
+            for item in objects
+            if item["object_id"].startswith("F")
+        }
+    except (AttributeError, KeyError, TypeError) as error:
+        raise CatalogResourceError(f"Malformed taxonomy resource {TAXONOMY_PATH}: {error}") from error
     return part_owners, base_types
 
 
 def _base_type_pairs() -> tuple[tuple[str, BaseType], ...]:
-    objects = json.loads(TAXONOMY_PATH.read_text())["objects"]
-    return tuple(
-        (item["object_id"], cast(BaseType, item["base_type"]))
-        for item in objects
-        if item["object_id"].startswith("F")
-    )
+    try:
+        return tuple(
+            (item["object_id"], cast(BaseType, item["base_type"]))
+            for item in _taxonomy_objects()
+            if item["object_id"].startswith("F")
+        )
+    except (AttributeError, KeyError, TypeError) as error:
+        raise CatalogResourceError(f"Malformed taxonomy resource {TAXONOMY_PATH}: {error}") from error
 
 
 def _validate_product_ids(products: list[dict[str, Any]]) -> None:

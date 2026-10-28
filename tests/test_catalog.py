@@ -10,8 +10,10 @@ import yaml
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+import assembly.catalog as catalog_module
 from assembly.catalog import (
     CatalogLoadError,
+    CatalogResourceError,
     CatalogSchemaError,
     CatalogSemanticError,
     UnknownBaseError,
@@ -209,6 +211,76 @@ def test_load_catalog_wraps_io_and_yaml_failures(
         load_catalog(path)
 
 
+def test_load_catalog_rejects_duplicate_yaml_mapping_keys(tmp_path: Path) -> None:
+    duplicate = CATALOG_PATH.read_text().replace(
+        "        insert_offset_mm: [0, 0, 0]\n",
+        "        insert_offset_mm: [0, 0, 0]\n        insert_offset_mm: [1, 2, 3]\n",
+        1,
+    )
+    path = tmp_path / "duplicate-key.yaml"
+    path.write_text(duplicate)
+
+    with pytest.raises(CatalogLoadError, match="duplicate key 'insert_offset_mm'"):
+        load_catalog(path)
+
+
+def test_load_catalog_wraps_invalid_utf8(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-utf8.yaml"
+    path.write_bytes(b"products: \xff")
+
+    with pytest.raises(CatalogLoadError, match="Cannot read catalog"):
+        load_catalog(path)
+
+
+@pytest.mark.parametrize(
+    ("attribute", "filename", "contents", "label"),
+    [
+        ("CATALOG_SCHEMA_PATH", "missing-schema.json", None, "schema"),
+        ("CATALOG_SCHEMA_PATH", "malformed-schema.json", "{", "schema"),
+        ("TAXONOMY_PATH", "missing-taxonomy.json", None, "taxonomy"),
+        ("TAXONOMY_PATH", "malformed-taxonomy.json", "{", "taxonomy"),
+        ("TAXONOMY_PATH", "invalid-utf8-taxonomy.json", b"\xff", "taxonomy"),
+    ],
+)
+def test_load_catalog_wraps_resource_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    attribute: str,
+    filename: str,
+    contents: str | bytes | None,
+    label: str,
+) -> None:
+    path = tmp_path / filename
+    if isinstance(contents, str):
+        path.write_text(contents)
+    elif contents is not None:
+        path.write_bytes(contents)
+    monkeypatch.setattr(catalog_module, attribute, path, raising=False)
+
+    with pytest.raises(CatalogResourceError, match=label):
+        load_catalog()
+
+
+def test_load_catalog_wraps_unresolvable_schema_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "unresolvable.schema.json"
+    path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "unresolvable.schema.json",
+                "$ref": "missing.schema.json",
+            }
+        )
+    )
+    monkeypatch.setattr(catalog_module, "CATALOG_SCHEMA_PATH", path, raising=False)
+
+    with pytest.raises(CatalogResourceError, match="reference"):
+        load_catalog()
+
+
 def test_shared_bases_select_products_by_type_not_exact_fixture_id() -> None:
     catalog = load_catalog()
     actual = {
@@ -246,7 +318,7 @@ def test_recipe_graph_traverses_forward_then_exact_reverse() -> None:
         ("M4_03", "M4_04"),
     )
     assert graph.assembly_traversal() == ("base:C", "M4_01", "M4_02", "M4_03", "M4_04")
-    assert graph.dismantling_traversal() == ("M4_04", "M4_03", "M4_02", "M4_01", "base:C")
+    assert graph.dismantling_traversal() == ("M4_04", "M4_03", "M4_02", "M4_01")
 
 
 def test_load_catalog_accepts_unique_products_in_any_yaml_order(tmp_path: Path) -> None:
