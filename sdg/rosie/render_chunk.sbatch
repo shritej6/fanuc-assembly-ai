@@ -32,9 +32,23 @@ OVERLAY="$DATA_ROOT/cache/overlays/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.
 mkdir -p "$(dirname "$OVERLAY")"
 trap 'rm -f "$OVERLAY"' EXIT
 singularity overlay create --size 3072 "$OVERLAY"
+# --nv mounts the NVIDIA libraries but not the Vulkan / EGL loader manifests that Docker's NVIDIA runtime injects;
+# without them Isaac's RTX renderer fails with vkCreateInstance ERROR_INCOMPATIBLE_DRIVER and falls back to CPU.
+GPU_BINDS=()
+for f in /usr/share/vulkan/icd.d/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.json \
+         /usr/share/glvnd/egl_vendor.d/10_nvidia.json /usr/share/vulkan/implicit_layer.d/nvidia_layers.json; do
+  [[ -f "$f" ]] && GPU_BINDS+=(-B "$f:$f")
+done
+# Singularity 3.10's library list predates newer driver libraries (e.g. libnvidia-gpucomp, needed by the Vulkan
+# driver), so mount every host NVIDIA library of the running driver version and put them on the library path.
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+for lib in /usr/lib/x86_64-linux-gnu/libnvidia-*.so."$DRV" /usr/lib/x86_64-linux-gnu/lib{GLX,EGL}_nvidia.so."$DRV"; do
+  [[ -f "$lib" ]] && GPU_BINDS+=(-B "$lib:/opt/nvhost/$(basename "$lib")")
+done
 # Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
-singularity exec --nv --overlay "$OVERLAY" \
+singularity exec --nv "${GPU_BINDS[@]}" --overlay "$OVERLAY" \
   --env ACCEPT_EULA=Y,PRIVACY_CONSENT=Y,ISAAC_SIF="$ISAAC_SIF",FANUC_ROBOT_USD="${FANUC_ROBOT_USD:-}" \
+  --env LD_LIBRARY_PATH=/.singularity.d/libs:/opt/nvhost \
   -B "$REPO" -B "$DATA_ROOT" \
   -B "$DATA_ROOT/cache/ov:$HOME/.cache/ov" \
   -B "$DATA_ROOT/cache/nv:$HOME/.nv" \
