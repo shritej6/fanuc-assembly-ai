@@ -4,6 +4,7 @@
 #
 #   sdg/spark/render_chunk.sh C 0 1 2        # set C, chunks 0 1 2
 #   LIMIT=3 sdg/spark/render_chunk.sh B 0    # smoke test: first 3 scenes only
+#   RENDER_ARGS="--renderer PathTracing --spp 64" sdg/spark/render_chunk.sh K 0   # any Docker GPU host (Brev L40S)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -33,6 +34,6 @@ for c in "$@"; do
     -e ACCEPT_EULA=Y -e SDG_DEBUG=${SDG_DEBUG:-} -e PRIVACY_CONSENT=Y -e HOME=/cache/home -e ISAAC_SIF="$IMAGE" \
     -v "$REPO:$REPO:ro" -v "$DATA_ROOT:$DATA_ROOT" -v "$DATA_ROOT/cache:/cache" \
     --entrypoint bash "$IMAGE" -c 'umask 002 && exec /isaac-sim/python.sh "$@"' _ \
-    "$REPO/sdg/isaac/generate.py" --specs "$SPECS" --out "$OUT" --limit "$LIMIT" \
+    "$REPO/sdg/isaac/generate.py" --specs "$SPECS" --out "$OUT" --limit "$LIMIT" ${RENDER_ARGS:-} \
     2>&1 | tee "$DATA_ROOT/logs/spark_${SET}_${CHUNK}.log"
 done

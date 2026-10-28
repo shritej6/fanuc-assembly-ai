@@ -222,6 +222,55 @@ sets:
       arm_in_view_prob: 0.3
     wrist: {standoff_mm: [120.0, 260.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
 
+  # ---------------------------------------------------------------- path-traced close-ups (Brev RTX GPU, section 11)
+  # Rendered with `--renderer PathTracing`: physically based light, soft shadows and PLA sheen, the closest look to
+  # real photos. Close standoffs so each part's shape, edges and layer lines fill the frame.
+
+  K:                       # every object, every resting pose, close up: what each part looks like
+    images: 2400           # 80 per object
+    seed: 11000
+    model: wrist look-alike classifier + detector fine-tune (photoreal subset)
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    per_object: 80
+    target_plan: all_objects
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 0.5
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.5
+      arm_in_view_prob: 0.0
+      pose_sampling: uniform
+    wrist: {standoff_mm: [70.0, 180.0], tilt_deg: [0.0, 25.0], target_offset_mm: 10.0}
+    randomization: *hard_look
+
+  L:                       # assembled structure close up: every product at every step, mostly seated
+    images: 1600
+    seed: 12000
+    model: build check (recipe check + Cosmos Reason 2 evaluation), photoreal subset
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, high, tilted, wrong_part]
+    build_state_weights: [0.55, 0.15, 0.15, 0.15]
+    seated_noise_mm: 0.3
+    high_mm: [0.4, 4.0]
+    tilt_deg: [1.0, 12.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.0
+    wrist: {standoff_mm: [80.0, 200.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
+
 randomization:              # applied by the Isaac generator to every scene
   camera_jitter: {translate_mm: 6.0, rotate_deg: 0.8}   # real camera mounts are calibrated; keep this small
   lighting:
