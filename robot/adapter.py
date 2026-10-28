@@ -24,6 +24,14 @@ OFFICIAL_OBSERVATION_FIELDS = frozenset(
         "depth",
     }
 )
+OFFICIAL_TRIAL_FIELDS = frozenset({"trial_id", "index", "layout", "status", "instruction", "scored"})
+RGB_CAMERA_FIELDS = frozenset({"table", "side", "wrist"})
+DEPTH_CAMERA_FIELDS = frozenset({"table", "wrist"})
+NESTED_OBSERVATION_FIELDS = {
+    "trial": OFFICIAL_TRIAL_FIELDS,
+    "images": RGB_CAMERA_FIELDS,
+    "depth": DEPTH_CAMERA_FIELDS,
+}
 TCP_FIELDS = ("x", "y", "z", "w", "p", "r", "gripper")
 TCP_LIMITS = (
     (150.0, 650.0, "mm in UF0"),
@@ -146,6 +154,14 @@ def guard_tcp_action(action: object, *, dt: object) -> list[float] | list[list[f
     return safe_rows if is_chunk else safe_rows[0]
 
 
+def _project_public_mapping(field: str, value: object, allowed_fields: frozenset[str]) -> object:
+    if field == "trial" and value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise TypeError(f"sim observation field '{field}' must be a mapping")
+    return {key: item for key, item in value.items() if key in allowed_fields}
+
+
 class Controller(Protocol):
     """Callback contract implemented by controllers and recipe state machines."""
 
@@ -189,7 +205,11 @@ class SimAdapter(_ControllerAdapter):
     """Project simulator observations onto fields available from the cell."""
 
     def _controller_observation(self, observation: Observation) -> Observation:
-        return {key: value for key, value in observation.items() if key in OFFICIAL_OBSERVATION_FIELDS}
+        projected = {key: value for key, value in observation.items() if key in OFFICIAL_OBSERVATION_FIELDS}
+        for field, allowed_fields in NESTED_OBSERVATION_FIELDS.items():
+            if field in projected:
+                projected[field] = _project_public_mapping(field, projected[field], allowed_fields)
+        return projected
 
 
 class MockAdapter(_ControllerAdapter):

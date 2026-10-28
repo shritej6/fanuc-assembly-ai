@@ -26,6 +26,51 @@ from robot import (
 
 SAFE_TCP_ROW = [400.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5]
 CELL_DIR = Path(__file__).resolve().parents[1] / "robot" / "cell"
+POLICY_DELEGATION_SCRIPT = textwrap.dedent(
+    """
+    import json
+
+    from policy import Policy
+    from robot import CellAdapter
+
+    class SpyAdapter:
+        def __init__(self):
+            self.reset_calls = 0
+            self.observations = []
+
+        def reset(self):
+            self.reset_calls += 1
+
+        def act(self, observation):
+            self.observations.append(observation)
+            return [9.0] * 7
+
+    policy = Policy("unused-checkpoint")
+    assert Policy.ACTION == "joints"
+    assert isinstance(policy.adapter, CellAdapter)
+    spy = SpyAdapter()
+    policy.adapter = spy
+    observation = {"sentinel": "observation"}
+    policy.reset()
+    action = policy.act(observation)
+    print(json.dumps({
+        "action": action,
+        "reset_calls": spy.reset_calls,
+        "delegated_same_object": spy.observations == [observation],
+    }))
+    """
+)
+DEFAULT_POLICY_SCRIPT = textwrap.dedent(
+    """
+    import json
+
+    from policy import Policy
+
+    joints = [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0]
+    action = Policy().act({"joints": joints, "tcp_pose": None})
+    print(json.dumps({"action": action, "copied": action is not joints}))
+    """
+)
 
 
 class RecordingController:
@@ -54,6 +99,27 @@ def official_observation() -> dict:
         "images": {"table": "rgb"},
         "depth": {"table": "depth"},
     }
+
+
+def privileged_sim_observation() -> dict:
+    observation = official_observation()
+    observation["trial"] = {
+        "trial_id": "trial-1",
+        "index": 2,
+        "layout": "L3",
+        "status": "running",
+        "instruction": "assemble",
+        "scored": False,
+        "ground_truth": {"object_poses": [[1.0, 2.0, 3.0]]},
+    }
+    observation["images"] = {
+        "table": ["table-rgb"],
+        "side": ["side-rgb"],
+        "wrist": ["wrist-rgb"],
+        "segmentation": [42],
+    }
+    observation["depth"] = {"table": [1000], "wrist": [350], "ground_truth_depth": [1]}
+    return observation
 
 
 @pytest.mark.parametrize("adapter_type", [SimAdapter, MockAdapter, CellAdapter])
@@ -96,6 +162,27 @@ def test_sim_adapter_filters_privileged_ground_truth() -> None:
         "depth",
     }
     assert result == observation["joints"]
+    assert observation == original
+
+
+def test_sim_adapter_projects_nested_observation_mappings() -> None:
+    observation = privileged_sim_observation()
+    original = deepcopy(observation)
+    controller = RecordingController(observation["joints"])
+
+    SimAdapter(controller, action_mode="joints").act(observation)
+
+    projected = controller.observations[0]
+    assert projected["trial"] == {
+        key: observation["trial"][key] for key in ("trial_id", "index", "layout", "status", "instruction", "scored")
+    }
+    assert projected["images"] == {key: observation["images"][key] for key in ("table", "side", "wrist")}
+    assert projected["depth"] == {key: observation["depth"][key] for key in ("table", "wrist")}
+    assert projected["trial"] is not observation["trial"]
+    assert projected["images"] is not observation["images"]
+    assert projected["depth"] is not observation["depth"]
+    assert projected["images"]["table"] is observation["images"]["table"]
+    assert projected["depth"]["wrist"] is observation["depth"]["wrist"]
     assert observation == original
 
 
@@ -295,45 +382,10 @@ def test_tcp_adapter_guards_controller_output_with_configured_dt() -> None:
         adapter.act(official_observation())
 
 
-def test_policy_imports_from_cell_directory_and_delegates_without_pythonpath() -> None:
-    script = textwrap.dedent(
-        """
-        import json
-
-        from policy import Policy
-        from robot import CellAdapter
-
-        class SpyAdapter:
-            def __init__(self):
-                self.reset_calls = 0
-                self.observations = []
-
-            def reset(self):
-                self.reset_calls += 1
-
-            def act(self, observation):
-                self.observations.append(observation)
-                return [9.0] * 7
-
-        policy = Policy("unused-checkpoint")
-        assert Policy.ACTION == "joints"
-        assert isinstance(policy.adapter, CellAdapter)
-        spy = SpyAdapter()
-        policy.adapter = spy
-        observation = {"sentinel": "observation"}
-        policy.reset()
-        action = policy.act(observation)
-        print(json.dumps({
-            "action": action,
-            "reset_calls": spy.reset_calls,
-            "delegated_same_object": spy.observations == [observation],
-        }))
-        """
-    )
+def run_policy_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
-
-    result = subprocess.run(
+    return subprocess.run(
         [sys.executable, "-c", script],
         cwd=CELL_DIR,
         env=env,
@@ -341,6 +393,10 @@ def test_policy_imports_from_cell_directory_and_delegates_without_pythonpath() -
         capture_output=True,
         text=True,
     )
+
+
+def test_policy_imports_from_cell_directory_and_delegates_without_pythonpath() -> None:
+    result = run_policy_script(POLICY_DELEGATION_SCRIPT)
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
@@ -351,28 +407,7 @@ def test_policy_imports_from_cell_directory_and_delegates_without_pythonpath() -
 
 
 def test_default_policy_holds_current_joints_when_tcp_pose_is_none() -> None:
-    script = textwrap.dedent(
-        """
-        import json
-
-        from policy import Policy
-
-        joints = [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0]
-        action = Policy().act({"joints": joints, "tcp_pose": None})
-        print(json.dumps({"action": action, "copied": action is not joints}))
-        """
-    )
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=CELL_DIR,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = run_policy_script(DEFAULT_POLICY_SCRIPT)
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
