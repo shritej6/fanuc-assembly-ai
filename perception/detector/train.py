@@ -127,6 +127,48 @@ def prepare_resume(
     return str(checkpoint)
 
 
+def _load_converted_checkpoint(model: Any, checkpoint: str | Path) -> None:
+    """Restore an RT-DETR checkpoint through its public key-conversion path."""
+    checkpoint_path = Path(checkpoint).resolve()
+    if not checkpoint_path.is_dir():
+        raise DetectorTrainError(f"checkpoint does not exist: {checkpoint_path}")
+    loader = getattr(type(model), "from_pretrained", None)
+    if not callable(loader):
+        raise DetectorTrainError(f"model cannot load converted checkpoints: {type(model).__name__}")
+    try:
+        restored = loader(
+            str(checkpoint_path),
+            local_files_only=True,
+            use_safetensors=True,
+        )
+    except Exception as exc:
+        raise DetectorTrainError(f"could not load detector checkpoint: {checkpoint_path}") from exc
+    restored_state = restored.state_dict()
+    expected_keys = set(model.state_dict())
+    restored_keys = set(restored_state)
+    if restored_keys != expected_keys:
+        missing = sorted(expected_keys - restored_keys)
+        unexpected = sorted(restored_keys - expected_keys)
+        raise DetectorTrainError(
+            f"converted checkpoint keys differ: missing={missing}, unexpected={unexpected}"
+        )
+    model.load_state_dict(restored_state, strict=True)
+
+
+class _RTDetrCheckpointMixin:
+    """Use RT-DETR's conversion-aware loader for resume and best-model restore."""
+
+    def _load_from_checkpoint(self, resume_from_checkpoint: str, model: Any = None) -> None:
+        target = model if model is not None else self.model
+        _load_converted_checkpoint(target, resume_from_checkpoint)
+
+    def _load_best_model(self) -> None:
+        checkpoint = self.state.best_model_checkpoint
+        if not checkpoint:
+            raise DetectorTrainError("best-model restore requested without a checkpoint")
+        _load_converted_checkpoint(self.model, checkpoint)
+
+
 def collate_fn(batch: list[dict[str, Any]]) -> dict[str, Any]:
     """Stack fixed-size RT-DETR images while retaining variable-length labels."""
     import torch
@@ -349,7 +391,7 @@ def _build_trainer(
 ) -> Any:
     from transformers import Trainer, TrainingArguments
 
-    class DetectionTrainer(Trainer):
+    class DetectionTrainer(_RTDetrCheckpointMixin, Trainer):
         def _gather_detection_metrics(self, value: Any) -> Any:
             return _gather_for_metrics(self.accelerator, value)
 

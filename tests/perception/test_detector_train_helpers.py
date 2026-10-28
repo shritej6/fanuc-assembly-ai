@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
@@ -12,6 +13,8 @@ from perception.detector.train import (
     _evaluate_scenarios,
     _flatten_detection_metrics,
     _gather_for_metrics,
+    _load_converted_checkpoint,
+    _RTDetrCheckpointMixin,
     _size_pair,
     _validate_manifest_mode,
     build_parser,
@@ -146,6 +149,68 @@ def test_explicit_resume_path_must_exist_and_match_provenance(tmp_path: Path) ->
     outside.mkdir(parents=True)
     with pytest.raises(DetectorTrainError, match="inside"):
         prepare_resume(output_dir, str(outside), identity)
+
+
+class _ConversionAwareModel:
+    converted_state: ClassVar[dict[str, str]] = {"model.mlp.fc1.weight": "checkpoint-value"}
+    load_calls: ClassVar[list[tuple[str, bool, bool]]] = []
+
+    def __init__(self) -> None:
+        self.values = {"model.mlp.fc1.weight": "initial-value"}
+        self.strict = None
+
+    @classmethod
+    def from_pretrained(cls, checkpoint: str, local_files_only: bool, use_safetensors: bool):
+        cls.load_calls.append((checkpoint, local_files_only, use_safetensors))
+        restored = cls()
+        restored.values = dict(cls.converted_state)
+        return restored
+
+    def state_dict(self):
+        return dict(self.values)
+
+    def load_state_dict(self, state, strict: bool):
+        self.values = dict(state)
+        self.strict = strict
+
+
+def test_detector_checkpoint_restore_uses_conversion_loader_strictly(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint-2"
+    checkpoint.mkdir()
+    model = _ConversionAwareModel()
+    _ConversionAwareModel.load_calls.clear()
+
+    _load_converted_checkpoint(model, checkpoint)
+
+    assert model.values == {"model.mlp.fc1.weight": "checkpoint-value"}
+    assert model.strict is True
+    assert _ConversionAwareModel.load_calls == [(str(checkpoint.resolve()), True, True)]
+
+
+def test_detector_checkpoint_restore_rejects_incomplete_conversion(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint-2"
+    checkpoint.mkdir()
+    model = _ConversionAwareModel()
+    original = _ConversionAwareModel.converted_state
+    _ConversionAwareModel.converted_state = {"model.fc1.weight": "unconverted-value"}
+    try:
+        with pytest.raises(DetectorTrainError, match="converted checkpoint keys differ"):
+            _load_converted_checkpoint(model, checkpoint)
+    finally:
+        _ConversionAwareModel.converted_state = original
+
+
+def test_detector_trainer_uses_converted_restore_for_resume_and_best(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint-2"
+    checkpoint.mkdir()
+    model = _ConversionAwareModel()
+    trainer = SimpleNamespace(model=model, state=SimpleNamespace(best_model_checkpoint=str(checkpoint)))
+
+    _RTDetrCheckpointMixin._load_from_checkpoint(trainer, str(checkpoint))
+    model.values["model.mlp.fc1.weight"] = "changed-after-resume"
+    _RTDetrCheckpointMixin._load_best_model(trainer)
+
+    assert model.values == {"model.mlp.fc1.weight": "checkpoint-value"}
 
 
 class _MetricValue:
