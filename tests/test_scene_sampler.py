@@ -161,3 +161,12 @@ def test_rest_shift_lands_the_lowest_vertex_on_the_table():
     dz = rest_on_table_dz(verts, tf, -335.0)
     moved = (translation(0, 0, dz) @ tf @ np.c_[verts, np.ones(3)].T)[2]
     assert moved.min() == pytest.approx(-335.0)
+
+
+def test_coverage_gate_reports_every_missing_case(inp, scenes):
+    from sdg.coverage import count, missing_cases
+
+    c = count(scenes["A"][:5], inp)
+    missing = missing_cases(c, inp)
+    assert any(m.startswith("defect_part ('M6_04', 'warp')") for m in missing)
+    assert len([m for m in missing if m.startswith("product_combo")]) == 20

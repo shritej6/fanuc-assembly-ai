@@ -23,14 +23,13 @@ if [[ -f "$OUT/_DONE.json" ]]; then
   echo "chunk $SET/$CHUNK already done"
   exit 0
 fi
-mkdir -p "$OUT" "$DATA_ROOT/cache/kit" "$DATA_ROOT/cache/ov" "$DATA_ROOT/cache/nv"
+mkdir -p "$OUT" "$DATA_ROOT/cache/ov" "$DATA_ROOT/cache/nv"
 
 echo "node $(hostname)  gpu $(nvidia-smi --query-gpu=name --format=csv,noheader)  set $SET  chunk $CHUNK  limit $LIMIT"
 # The SIF is read-only: Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
 singularity exec --nv --writable-tmpfs \
   --env ACCEPT_EULA=Y,PRIVACY_CONSENT=Y,ISAAC_SIF="$ISAAC_SIF",FANUC_ROBOT_USD="${FANUC_ROBOT_USD:-}" \
   -B "$REPO" -B "$DATA_ROOT" \
-  -B "$DATA_ROOT/cache/kit:/isaac-sim/kit/cache" \
   -B "$DATA_ROOT/cache/ov:$HOME/.cache/ov" \
   -B "$DATA_ROOT/cache/nv:$HOME/.nv" \
   "$ISAAC_SIF" /isaac-sim/python.sh "$REPO/sdg/isaac/generate.py" \

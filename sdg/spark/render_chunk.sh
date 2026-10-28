@@ -14,7 +14,10 @@ LIMIT="${LIMIT:-0}"
 SET="$1"
 shift
 
-mkdir -p "$DATA_ROOT"/cache/{kit,ov,nv,glcache,computecache,home} "$DATA_ROOT/logs"
+mkdir -p "$DATA_ROOT"/cache/home "$DATA_ROOT"/{logs,synthetic}
+# The image runs as its own user (uid 1234, owner of /isaac-sim) in our group, so our folders must be group-writable.
+# Its own files stay its own; only touch what we own. HOME=/cache/home keeps Kit / shader caches between runs.
+find "$DATA_ROOT/cache" "$DATA_ROOT/synthetic" "$DATA_ROOT/logs" -user "$(id -u)" -type d -exec chmod g+rwxs {} +
 for c in "$@"; do
   CHUNK=$(printf "%04d" "$c")
   SPECS="$DATA_ROOT/specs/$SET/chunk_$CHUNK.jsonl"
@@ -24,15 +27,11 @@ for c in "$@"; do
     continue
   fi
   (cd "$REPO" && "$PY" -m sdg.scene_sampler --set "$SET" --chunk "$c" --out "$SPECS")
-  mkdir -p "$OUT"
-  docker run --rm --gpus all --network host -u "$(id -u):$(id -g)" \
+  mkdir -p "$OUT" && chmod g+rwxs "$OUT"
+  docker run --rm --gpus all --network host -u "1234:$(id -g)" \
     -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e HOME=/cache/home -e ISAAC_SIF="$IMAGE" \
     -v "$REPO:$REPO:ro" -v "$DATA_ROOT:$DATA_ROOT" -v "$DATA_ROOT/cache:/cache" \
-    -v "$DATA_ROOT/cache/kit:/isaac-sim/kit/cache" \
-    -v "$DATA_ROOT/cache/ov:/cache/home/.cache/ov" \
-    -v "$DATA_ROOT/cache/glcache:/cache/home/.cache/nvidia/GLCache" \
-    -v "$DATA_ROOT/cache/computecache:/cache/home/.nv/ComputeCache" \
-    --entrypoint /isaac-sim/python.sh "$IMAGE" \
+    --entrypoint bash "$IMAGE" -c 'umask 002 && exec /isaac-sim/python.sh "$@"' _ \
     "$REPO/sdg/isaac/generate.py" --specs "$SPECS" --out "$OUT" --limit "$LIMIT" \
     2>&1 | tee "$DATA_ROOT/logs/spark_${SET}_${CHUNK}.log"
 done
