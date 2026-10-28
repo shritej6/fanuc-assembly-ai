@@ -170,6 +170,12 @@ and folders are the same as A–D; training uses the union.
 Every scene of F–L lays out and every arm pose solves (checked 2026-10-28). A–C specs are byte-identical to before
 the change apart from redrawn unreachable arm poses; D gains the `build_offset` field.
 
+**Wrist camera jitter stays nominal (fixed 2026-10-28)**: the 15 mm mount-drift jitter of the hard-look sets first
+also moved the wrist camera, whose eye then sat inside its own lens housing (`WristCamLens`): 22 of 367 set I frames
+showed only the housing. Found by the depth check of the sampled QA. Drift now applies to the table / side cameras
+only; set I was re-rendered and set H re-specified before rendering. Sets without depth (B, H) cannot show this in
+QA, so the regression test checks the spec instead.
+
 **Path tracing tried and dropped (2026-10-28)**: a 3-scene K smoke test with Isaac's path tracer on the GB10 took
 164 s/img, and the capture did not follow the arm pose and returned empty instance masks and depth. Real-time ray
 tracing on the same scenes: 0.6 s/img, 0 QA errors. Realism comes from the randomized look plus Cosmos Transfer (T11).
