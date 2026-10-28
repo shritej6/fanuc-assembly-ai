@@ -46,7 +46,7 @@ import ik
 import scene_config as C
 
 from sdg.isaac.stage import UF0_ABOVE_BASE_M, SceneStage
-from sdg.postprocess import apply_post, box_labels, depth_mm_u16, instance_mask, resize_nearest
+from sdg.postprocess import apply_post, box_labels, depth_mm_u16, instance_mask, mask_box_labels, resize_nearest
 
 CAM_PATHS = {"table": cell.TABLE_CAM_PATH, "side": cell.SIDE_CAM_PATH, "wrist": cell.WRIST_CAM_PATH}
 CAM_CFG = {"table": C.TABLE_CAM, "side": C.SIDE_CAM, "wrist": C.WRIST_CAM}
@@ -136,12 +136,17 @@ def write_scene(spec: dict, cams: Cameras, paths: dict, out: Path) -> int:
         _save(out / "rgb" / cam / f"{idx}.jpg", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
               [cv2.IMWRITE_JPEG_QUALITY, spec["post"]["jpeg_quality"]])
         seg = a["instance_segmentation"].get_data()
-        _save(out / "seg" / cam / f"{idx}.png", instance_mask(seg["data"], seg["info"]["idToLabels"], paths))
+        mask = instance_mask(seg["data"], seg["info"]["idToLabels"], paths)
+        _save(out / "seg" / cam / f"{idx}.png", mask)
         if cam in DEPTH_SIZE and "depth" in spec["outputs"]:
             depth = depth_mm_u16(a["distance_to_image_plane"].get_data())
             _save(out / "depth" / cam / f"{idx}.png", resize_nearest(depth, DEPTH_SIZE[cam]))
-        bb = a["bounding_box_2d_tight"].get_data()
-        labels["cameras"][cam] = box_labels(bb["data"], bb["info"]["primPaths"], paths, objects)
+        boxes = mask_box_labels(mask, objects)
+        bb = a["bounding_box_2d_tight"].get_data()   # adds occlusion where Replicator reports the object
+        occ = {b["uid"]: b["occlusion"] for b in box_labels(bb["data"], bb["info"]["primPaths"], paths, objects)}
+        for b in boxes:
+            b["occlusion"] = occ.get(b["uid"])
+        labels["cameras"][cam] = boxes
     (out / "labels").mkdir(parents=True, exist_ok=True)
     (out / "labels" / f"{idx}.json").write_text(json.dumps(labels))
     return len(spec["cameras"])

@@ -1,6 +1,14 @@
 import numpy as np
 
-from sdg.postprocess import apply_post, box_labels, depth_mm_u16, instance_mask, resize_nearest, uid_for_prim
+from sdg.postprocess import (
+    apply_post,
+    box_labels,
+    depth_mm_u16,
+    instance_mask,
+    mask_box_labels,
+    resize_nearest,
+    uid_for_prim,
+)
 
 PATHS = {"/World/SdgScene/o00": "o00", "/World/SdgScene/o10": "o10"}
 OBJECTS = {
@@ -48,3 +56,12 @@ def test_post_is_deterministic_per_seed_and_off_means_identity():
     assert np.array_equal(apply_post(rgb, off, 1), rgb)
     assert np.array_equal(apply_post(rgb, on, 7), apply_post(rgb, on, 7))
     assert not np.array_equal(apply_post(rgb, on, 7), apply_post(rgb, on, 8))
+
+
+def test_mask_boxes_are_tight_and_drop_slivers():
+    mask = np.zeros((20, 30), dtype=np.uint16)
+    mask[2:8, 5:15] = 1      # o00: 60 px
+    mask[10, 0:5] = 11       # o10: 5 px sliver
+    labels = mask_box_labels(mask, OBJECTS)
+    assert labels == [{"uid": "o00", "object_id": "F01", "kind": "base", "state": "on_table", "variant": "ok",
+                       "build_state": None, "bbox_xyxy": [5, 2, 15, 8], "visible_px": 60}]

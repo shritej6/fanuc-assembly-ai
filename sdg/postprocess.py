@@ -51,6 +51,27 @@ def box_labels(boxes: np.ndarray, prim_paths: list[str], paths: dict[str, str], 
     return out
 
 
+def mask_box_labels(mask: np.ndarray, objects: dict[str, dict], min_pixels: int = 20) -> list[dict]:
+    """Tight boxes from the uid instance mask, so boxes and masks agree by construction.
+
+    `visible_px` is the unoccluded pixel count; tiny slivers (< min_pixels) are dropped.
+    """
+    by_number = {uid_number(uid): (uid, o) for uid, o in objects.items()}
+    out = []
+    for number in np.unique(mask):
+        if number == 0 or number not in by_number:
+            continue
+        ys, xs = np.nonzero(mask == number)
+        if len(xs) < min_pixels:
+            continue
+        uid, o = by_number[int(number)]
+        out.append({"uid": uid, "object_id": o["object_id"] or f"foreign_{o['foreign_type']}", "kind": o["kind"],
+                    "state": o["state"], "variant": o["variant"], "build_state": o["build_state"],
+                    "bbox_xyxy": [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1],
+                    "visible_px": len(xs)})
+    return out
+
+
 def depth_mm_u16(depth_m: np.ndarray) -> np.ndarray:
     """Metres (inf / nan where nothing was hit) -> uint16 mm, 0 = no return (same convention as the cell's depth)."""
     mm = np.nan_to_num(depth_m * 1000.0, nan=0.0, posinf=0.0, neginf=0.0)
