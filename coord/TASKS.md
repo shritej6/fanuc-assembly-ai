@@ -15,7 +15,7 @@ An agent may only start a task that is READY and owned by it.
 | T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | IN PROGRESS: prep in REVIEW; pilot waits for U07 + T06/T07 | feature/T08-sdg-pilot | T06, T07 | Tue |
 | T09 | Recipe state machine (PackML states), inventory, recovery, Andon; two-independent-check gates | CODEX | BACKLOG | feature/T09-state-machine | T04, T05 | Tue |
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
-| T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | READY (user, 2026-10-28) | feature/T11-cosmos | T08 | Wed |
+| T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | IN PROGRESS: 48-image pilot on the GB10 (Brev H100 create failed twice) | feature/T11-cosmos | T08 | Wed |
 | T12 | Isaac Lab Mimic demos for GR00T (after the scripted baseline works in sim) | CLAUDE | BACKLOG | feature/T12-mimic | T09 | Wed |
 | T13 | Detector (Faster R-CNN or RT-DETR) + wrist look-alike classifier training/eval | CODEX | READY (user, 2026-10-28) | feature/T13-detector | T08 | Wed |
 | T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | READY (user, 2026-10-28) | feature/T14-pose-anomaly | T07 | Wed |

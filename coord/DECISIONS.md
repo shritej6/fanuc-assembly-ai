@@ -18,3 +18,4 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Cosmos Transfer restyles 10–20 % of each set; shape drift is checked before any restyled image is used | user |
 | 2026-10-28 | Brev cap for training, Cosmos and GR00T: $50 (separate from the ~$21 spent on rendering) | user |
 | 2026-10-28 | Detector, classifier and PatchCore train on Rosie's V100 (`dgx`, idle) since the H100 queue estimates a start after the deadline | Claude (proposal, user said "do everything") |
+| 2026-10-28 | Use imitation learning where it helps: GR00T N1.7 (LeRobot), SmolVLA, ACT trained on Isaac Lab Mimic demos, kept only if it beats the scripted baseline | user |

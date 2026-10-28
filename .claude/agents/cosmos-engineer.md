@@ -1,6 +1,6 @@
 ---
 name: cosmos-engineer
-description: Cosmos Transfer realism pilot and the Cosmos Reason 2 (2B) build-check endpoint.
+description: Cosmos Transfer realism pilot and the Cosmos Reason 2 (8B, user 2026-10-28) build-check endpoint.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
