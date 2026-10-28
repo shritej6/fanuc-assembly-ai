@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,10 @@ COMPATIBILITY_KEYS = (
     "labels",
     "pretrained_model",
     "pretrained_revision",
+    "manifest_code_commit",
+    "derived_data_sha256",
+    "trainer_code_commit",
+    "packages",
 )
 
 
@@ -40,7 +46,7 @@ def provenance_from_manifest(
             "labels": metadata["labels"][task],
             "pretrained_model": pretrained_model,
             "pretrained_revision": pretrained_revision,
-            "code_commit": metadata["git_commit"],
+            "manifest_code_commit": metadata["git_commit"],
         }
     except KeyError as exc:
         raise ValueError(f"manifest metadata is missing {exc.args[0]!r}") from exc
@@ -57,8 +63,62 @@ def assert_resume_compatible(
             mismatches.append(f"{key}: missing")
         elif current[key] != checkpoint[key]:
             mismatches.append(f"{key}: current={current[key]!r}, checkpoint={checkpoint[key]!r}")
+    config_error = _training_config_error(current.get("training_config"), checkpoint.get("training_config"))
+    if config_error:
+        mismatches.append(config_error)
     if mismatches:
         raise ProvenanceMismatchError("incompatible checkpoint provenance: " + "; ".join(mismatches))
+
+
+def _training_config_error(current: Any, checkpoint: Any) -> str | None:
+    if not isinstance(current, dict) or not isinstance(checkpoint, dict):
+        return "training_config: missing"
+    current_values, checkpoint_values = dict(current), dict(checkpoint)
+    current_steps = current_values.pop("max_steps", None)
+    checkpoint_steps = checkpoint_values.pop("max_steps", None)
+    if current_values != checkpoint_values:
+        return "training_config: fields changed other than max_steps"
+    if current_steps == checkpoint_steps:
+        return None
+    bounded_increase = (
+        type(current_steps) is int
+        and type(checkpoint_steps) is int
+        and 1 <= checkpoint_steps <= current_steps <= 5
+    )
+    return None if bounded_increase else "training_config.max_steps: not a bounded smoke increase"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def derived_data_identity(paths: dict[str, Path]) -> dict[str, Any]:
+    """Hash the exact derived metadata files consumed by a trainer."""
+    hashes = {name: _sha256(path) for name, path in sorted(paths.items())}
+    combined = hashlib.sha256()
+    for name, value in hashes.items():
+        combined.update(f"{name}\0{value}\n".encode())
+    return {"derived_data_sha256": combined.hexdigest(), "derived_files": hashes}
+
+
+def current_git_commit() -> str:
+    """Return the exact trainer source revision, refusing an unknown identity."""
+    root = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError("cannot determine trainer git commit") from exc
+    return result.stdout.strip()
 
 
 def package_versions(names: tuple[str, ...]) -> dict[str, str | None]:

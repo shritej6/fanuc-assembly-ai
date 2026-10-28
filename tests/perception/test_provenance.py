@@ -1,10 +1,12 @@
 import copy
+from pathlib import Path
 
 import pytest
 
 from perception.provenance import (
     ProvenanceMismatchError,
     assert_resume_compatible,
+    derived_data_identity,
     provenance_from_manifest,
 )
 
@@ -15,6 +17,11 @@ CURRENT = {
     "labels": ["F01", "M1_01"],
     "pretrained_model": "PekingU/rtdetr_r50vd",
     "pretrained_revision": "revision-123",
+    "manifest_code_commit": "manifest-code-abc",
+    "derived_data_sha256": "derived-abc",
+    "trainer_code_commit": "code-abc",
+    "packages": {"torch": "2.5.1+cu118"},
+    "training_config": {"learning_rate": 0.001, "max_steps": 2, "fp16": True},
 }
 
 
@@ -29,6 +36,9 @@ def test_exact_provenance_match_allows_resume() -> None:
         ("taxonomy_sha256", "taxonomy-other"),
         ("labels", ["M1_01", "F01"]),
         ("pretrained_revision", "revision-other"),
+        ("derived_data_sha256", "derived-other"),
+        ("trainer_code_commit", "code-other"),
+        ("packages", {"torch": "different"}),
     ],
 )
 def test_data_or_model_identity_change_blocks_resume(key: str, value: object) -> None:
@@ -37,6 +47,35 @@ def test_data_or_model_identity_change_blocks_resume(key: str, value: object) ->
 
     with pytest.raises(ProvenanceMismatchError, match=key):
         assert_resume_compatible(CURRENT, checkpoint)
+
+
+def test_only_bounded_smoke_step_increase_is_resume_compatible() -> None:
+    current = copy.deepcopy(CURRENT)
+    current["training_config"]["max_steps"] = 3
+    assert_resume_compatible(current, CURRENT)
+
+    current["training_config"]["learning_rate"] = 0.1
+    with pytest.raises(ProvenanceMismatchError, match="training_config"):
+        assert_resume_compatible(current, CURRENT)
+
+    decreased = copy.deepcopy(CURRENT)
+    decreased["training_config"]["max_steps"] = 1
+    with pytest.raises(ProvenanceMismatchError, match="max_steps"):
+        assert_resume_compatible(decreased, CURRENT)
+
+
+def test_derived_data_identity_changes_when_consumed_bytes_change(tmp_path: Path) -> None:
+    train = tmp_path / "train.json"
+    validation = tmp_path / "validation.json"
+    train.write_text("train-v1")
+    validation.write_text("validation-v1")
+
+    first = derived_data_identity({"train": train, "validation": validation})
+    train.write_text("train-v2")
+    second = derived_data_identity({"train": train, "validation": validation})
+
+    assert first["derived_files"]["train"] != second["derived_files"]["train"]
+    assert first["derived_data_sha256"] != second["derived_data_sha256"]
 
 
 def test_manifest_metadata_is_reduced_to_task_specific_resume_identity() -> None:
@@ -63,5 +102,5 @@ def test_manifest_metadata_is_reduced_to_task_specific_resume_identity() -> None
         "labels": ["F01", "foreign_screw_m3"],
         "pretrained_model": "PekingU/rtdetr_r50vd",
         "pretrained_revision": "revision-123",
-        "code_commit": "abc1234",
+        "manifest_code_commit": "abc1234",
     }

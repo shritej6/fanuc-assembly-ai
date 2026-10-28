@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,39 @@ def _empty_payload(labels: tuple[str, ...]) -> dict[str, Any]:
     }
 
 
+def _product_id(object_id: Any) -> int | None:
+    if not isinstance(object_id, str):
+        return None
+    match = re.fullmatch(r"F0([1-6])", object_id) or re.fullmatch(r"M([1-6])_\d{2}", object_id)
+    return int(match.group(1)) if match else None
+
+
+def _scenario_dimensions(objects: list[dict[str, Any]]) -> dict[str, Any]:
+    products = {_product_id(item.get("object_id")) for item in objects}
+    defects = {item.get("variant") for item in objects if item.get("variant") not in {None, "", "ok"}}
+    build_states = {item.get("build_state") for item in objects if item.get("build_state")}
+    return {
+        "products": sorted(product for product in products if product is not None),
+        "defect_types": sorted(str(value) for value in defects),
+        "build_states": sorted(str(value) for value in build_states),
+        "has_trap": any(item.get("kind") == "trap" for item in objects),
+    }
+
+
+def _image_entry(record: dict[str, Any], image_id: int) -> dict[str, Any]:
+    return {
+        "id": image_id,
+        "file_name": record["image_path"],
+        "width": record["width"],
+        "height": record["height"],
+        "scene_id": record["scene_id"],
+        "set": record["set"],
+        "camera": record["camera"],
+        "variant": record["variant"],
+        **_scenario_dimensions(record.get("objects", [])),
+    }
+
+
 def export_coco(
     manifest_path: Path,
     output_dir: Path,
@@ -92,18 +126,7 @@ def export_coco(
             raise ConversionError(f"unknown split {split!r} in {manifest_path}")
         image_ids[split] += 1
         image_id = image_ids[split]
-        payloads[split]["images"].append(
-            {
-                "id": image_id,
-                "file_name": record["image_path"],
-                "width": record["width"],
-                "height": record["height"],
-                "scene_id": record["scene_id"],
-                "set": record["set"],
-                "camera": record["camera"],
-                "variant": record["variant"],
-            }
-        )
+        payloads[split]["images"].append(_image_entry(record, image_id))
         for raw in record.get("objects", []):
             annotation_ids[split] += 1
             context = f"{record['scene_id']}/{record['camera']}/{raw.get('uid')}"

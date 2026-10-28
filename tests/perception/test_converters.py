@@ -101,6 +101,45 @@ def test_coco_export_uses_xywh_area_and_unique_camera_image_ids(tmp_path: Path) 
     ]
 
 
+def test_coco_export_preserves_detector_scenario_dimensions(tmp_path: Path) -> None:
+    image = tmp_path / "scenario.jpg"
+    Image.new("RGB", (64, 48), "white").save(image)
+    record = _detector_record(image, "table", [1, 2, 11, 12])
+    record["objects"].extend(
+        [
+            {
+                "uid": "o01",
+                "object_id": "M1_01",
+                "class_id": 1,
+                "bbox_xyxy": [12, 4, 24, 20],
+                "kind": "part",
+                "state": "on_table",
+                "variant": "crack",
+                "build_state": "high",
+            },
+            {
+                "uid": "o02",
+                "object_id": "M2_01",
+                "class_id": 2,
+                "bbox_xyxy": [30, 5, 42, 21],
+                "kind": "trap",
+                "state": "on_table",
+                "variant": "ok",
+                "build_state": None,
+            },
+        ]
+    )
+    manifest = _write_jsonl(tmp_path / "detector.jsonl", [record])
+
+    outputs = export_coco(manifest, tmp_path / "coco", labels=("F01", "M1_01", "M2_01"))
+
+    exported = json.loads(outputs["train"].read_text())["images"][0]
+    assert exported["products"] == [1, 2]
+    assert exported["defect_types"] == ["crack"]
+    assert exported["build_states"] == ["high"]
+    assert exported["has_trap"] is True
+
+
 def test_coco_export_refuses_zero_area_boxes(tmp_path: Path) -> None:
     image = tmp_path / "image.jpg"
     Image.new("RGB", (64, 48), "white").save(image)

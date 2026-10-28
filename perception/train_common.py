@@ -1,0 +1,32 @@
+"""Shared, dependency-light helpers for both T13 trainers."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+SAMPLE_LIMIT_KEYS = {"max_train_samples", "max_eval_samples"}
+
+
+def trainer_arguments(training: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    """Translate validated YAML fields into Hugging Face TrainingArguments."""
+    arguments = {key: value for key, value in training.items() if key not in SAMPLE_LIMIT_KEYS}
+    arguments.update(
+        {
+            "output_dir": str(output_dir.resolve()),
+            "do_train": True,
+            "do_eval": True,
+            "report_to": [],
+            "ddp_find_unused_parameters": False,
+        }
+    )
+    return arguments
+
+
+def load_manifest_metadata(path: Path) -> dict[str, Any]:
+    """Read the frozen manifest metadata used to construct run provenance."""
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict):
+        raise TypeError(f"manifest metadata must be a JSON object: {path}")
+    return value
