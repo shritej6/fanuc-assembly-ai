@@ -29,6 +29,8 @@ SPEC_VERSION = 1
 MAX_TRIES = 400
 FOREIGN_RADIUS_MM = {"screw_m3": 9.0, "tape_roll": 26.0, "cube_10mm": 8.0}
 TCP_BOX = {"x": (150.0, 650.0), "y": (-450.0, 450.0), "z": (-334.0, 300.0)}
+REST_MARGIN_MM = 0.05   # a mis-built part rests this far above the contact found by sdg/tools/build_clearance.py
+MAX_REST_LIFT_MM = 15.0   # higher than this the part would be balanced on a point: such a yaw is not used
 
 
 class SceneSamplingError(RuntimeError):
@@ -41,6 +43,7 @@ class Inputs:
     sets: dict
     geometry: dict
     taxonomy: dict
+    clearance: dict
 
     @classmethod
     def load(cls, repo: Path = REPO) -> Inputs:
@@ -49,6 +52,7 @@ class Inputs:
             sets=yaml.safe_load((repo / "sdg/configs/sets.yaml").read_text()),
             geometry=json.loads((repo / "sdg/data/object_geometry.json").read_text())["objects"],
             taxonomy={o["object_id"]: o for o in json.loads((repo / "contracts/taxonomy.json").read_text())["objects"]},
+            clearance=json.loads((repo / "sdg/data/build_clearance.json").read_text()),
         )
 
     def product_parts(self, product: int) -> list[str]:
@@ -225,28 +229,55 @@ class SceneBuilder:
             obj["variant"] = self.rng.choice(types)
 
     def _apply_build_state(self, target: dict) -> None:
+        """Mis-builds rest ON the fixture stack: each is lifted by the precomputed clearance, never passes through."""
         state = self.rng.choices(self.cfg["build_states"], weights=self.cfg["build_state_weights"])[0]
-        target["build_state"] = state
         base = next(o for o in self.objects if o["uid"] == target["on_base"])
         base_tf = np.array(base["transform_uf0"])
-        installed = np.array(self.inp.geometry[target["object_id"]]["installed_in_base_frame"])
+        part_id = target["object_id"]
+        clear = self.inp.clearance["parts"][part_id]
+        installed = np.array(self.inp.geometry[part_id]["installed_in_base_frame"])
+        box = world_aabb(installed, self.inp.geometry[part_id]["bounds_mm"])
+        pivot = np.array([*(box[0, :2] + box[1, :2]) / 2, box[0, 2]])
         offset = {"high_mm": 0.0, "tilt_deg": 0.0}   # magnitude in the label, so a threshold can be chosen later
+        if "shift_mm" in self.cfg:
+            offset.update(shift_mm=0.0, yaw_deg=0.0)
+        if state == "rotated":
+            yaws = [y for y, v in clear["yaw"].items()
+                    if v["deviation_mm"] >= self.inp.clearance["yaw_visible_mm"] and v["lift_mm"] <= MAX_REST_LIFT_MM]
+            state = state if yaws else "shifted"   # a symmetric part turned looks seated: shift it instead
+        lift = 0.0
         if state == "seated" and "seated_noise_mm" in self.cfg:   # print tolerance: still seated
-            offset["high_mm"] = self.rng.uniform(0, self.cfg["seated_noise_mm"])
-            installed = translation(0, 0, offset["high_mm"]) @ installed
+            lift = offset["high_mm"] = self.rng.uniform(0, self.cfg["seated_noise_mm"])
         elif state == "high":
-            offset["high_mm"] = self.rng.uniform(*self.cfg["high_mm"])
-            installed = translation(0, 0, offset["high_mm"]) @ installed
+            lift = offset["high_mm"] = self.rng.uniform(*self.cfg["high_mm"])
         elif state == "tilted":
-            box = world_aabb(installed, self.inp.geometry[target["object_id"]]["bounds_mm"])
-            pivot = np.array([*(box[0, :2] + box[1, :2]) / 2, box[0, 2]])
-            az = math.radians(self.rng.uniform(0, 360))
+            az = self.rng.uniform(0, 360)
             offset["tilt_deg"] = self.rng.uniform(*self.cfg["tilt_deg"])
-            installed = about_point(rot_axis((math.cos(az), math.sin(az), 0), offset["tilt_deg"]), pivot) @ installed
+            installed = about_point(rot_axis((math.cos(math.radians(az)), math.sin(math.radians(az)), 0),
+                                             offset["tilt_deg"]), pivot) @ installed
+            lift = _rest_lift(clear["tilt_mm"], az, offset["tilt_deg"], self.inp.clearance["tilt_deg"])
+        elif state == "shifted":   # peg contact changes abruptly with direction: use exact table entries only
+            n_dirs, grid = len(clear["shift_mm"]), self.inp.clearance["shift_mm"]
+            d = self.rng.randrange(n_dirs)
+            k = self.rng.choice([i for i, v in enumerate(grid) if self.cfg["shift_mm"][0] <= v <= self.cfg["shift_mm"][1]])
+            az, offset["shift_mm"] = 360.0 * d / n_dirs, grid[k]
+            installed = translation(grid[k] * math.cos(math.radians(az)), grid[k] * math.sin(math.radians(az)), 0) \
+                @ installed
+            lift = clear["shift_mm"][d][k] + REST_MARGIN_MM * (clear["shift_mm"][d][k] > 0)
+        elif state == "rotated":
+            yaw = self.rng.choice(yaws)
+            offset["yaw_deg"] = float(yaw)
+            installed = about_point(rot_axis((0, 0, 1), float(yaw)), pivot) @ installed
+            lift = clear["yaw"][yaw]["lift_mm"] + REST_MARGIN_MM * (clear["yaw"][yaw]["lift_mm"] > 0)
         elif state == "wrong_part":
-            self._set_object(target, self.rng.choice(self.inp.family_mates(target["object_id"])))
+            mate = self.rng.choice(self.inp.family_mates(part_id))
+            self._set_object(target, mate)
+            lift = clear["wrong_mm"][mate] + REST_MARGIN_MM * (clear["wrong_mm"][mate] > 0)
+        if state in ("tilted", "shifted", "rotated", "wrong_part"):
+            offset["high_mm"] = lift
+        target["build_state"] = state
         target["build_offset"] = {k: round(v, 3) for k, v in offset.items()}
-        self._set_transform(target, base_tf @ installed)
+        self._set_transform(target, base_tf @ translation(0, 0, lift) @ installed)
 
     # ------------------------------------------------------------------ arm, camera, look
     def _arm(self, target: dict | None) -> dict:
@@ -366,6 +397,15 @@ class SceneBuilder:
         obj["transform_uf0"] = np.round(tf, 4).tolist()
         obj["pose_uf0"] = {"x": round(float(tf[0, 3]), 3), "y": round(float(tf[1, 3]), 3),
                            "z": round(float(tf[2, 3]), 3), "yaw": round(yaw_deg(tf), 3)}
+
+
+def _rest_lift(table: list[list[float]], az_deg: float, value: float, grid: list[float]) -> float:
+    """Clearance for a tilt / shift of `value` toward azimuth `az_deg`: the larger of the two neighbouring azimuth
+    rows (so the part may float a hair, never sink), interpolated along `grid` from 0 at 0."""
+    n = len(table)
+    a0 = int(az_deg % 360 / 360 * n) % n
+    lifts = [float(np.interp(value, [0.0, *grid], [0.0, *table[a % n]])) for a in (a0, a0 + 1)]
+    return max(lifts) + REST_MARGIN_MM * (max(lifts) > 0)
 
 
 def _check_tcp(tcp: list[float]) -> list[float]:

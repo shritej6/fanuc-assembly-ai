@@ -218,3 +218,37 @@ def test_wrist_camera_keeps_the_nominal_jitter_even_in_hard_look_sets(inp):
             j = sample_scene(inp, set_name, i)["camera_jitter"]["wrist"]
             assert max(abs(v) for v in j["translate_mm"]) <= nominal["translate_mm"]
             assert max(abs(v) for v in j["rotate_deg"]) <= nominal["rotate_deg"]
+
+
+def _build_targets(inp, set_name, n=80):
+    for i in range(n):
+        spec = sample_scene(inp, set_name, i)
+        yield next(o for o in spec["objects"] if o["uid"] == spec["wrist_target_uid"])
+
+
+def test_tilted_and_swapped_parts_rest_on_the_stack_instead_of_sinking_into_it(inp):
+    """A rigid tilt about the bottom centre pushes half the part into the fixture: the clearance lifts it out."""
+    for t in _build_targets(inp, "D"):
+        if t["build_state"] == "tilted":
+            assert t["build_offset"]["high_mm"] > 0.0
+        elif t["build_state"] == "wrong_part":
+            original = next(k for k, v in inp.clearance["parts"].items() if t["object_id"] in v["wrong_mm"]
+                            and k[3:] == t["object_id"][3:] and k[1] == str(t["product"]))
+            expected = inp.clearance["parts"][original]["wrong_mm"][t["object_id"]]
+            assert t["build_offset"]["high_mm"] == pytest.approx(expected + 0.05 * (expected > 0), abs=1e-3)
+
+
+def test_misassembly_set_labels_every_shift_and_turn_with_its_measured_rest_height(inp):
+    cfg, grid = inp.sets["sets"]["M"], inp.clearance["shift_mm"]
+    seen = collections.Counter()
+    for t in _build_targets(inp, "M", 120):
+        state, off = t["build_state"], t["build_offset"]
+        seen[state] += 1
+        assert set(off) == {"high_mm", "tilt_deg", "shift_mm", "yaw_deg"}
+        if state == "shifted":
+            assert off["shift_mm"] in grid and cfg["shift_mm"][0] <= off["shift_mm"] <= cfg["shift_mm"][1]
+        elif state == "rotated":
+            yaw = inp.clearance["parts"][t["object_id"]]["yaw"][str(int(off["yaw_deg"]))]
+            assert yaw["deviation_mm"] >= inp.clearance["yaw_visible_mm"]   # a turn you can actually see
+            assert off["high_mm"] == pytest.approx(yaw["lift_mm"] + 0.05 * (yaw["lift_mm"] > 0), abs=1e-3)
+    assert set(seen) == {"seated", "shifted", "rotated", "tilted", "high", "wrong_part"}

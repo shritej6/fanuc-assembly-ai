@@ -270,6 +270,30 @@ sets:
       arm_in_view_prob: 0.0
     wrist: {standoff_mm: [80.0, 200.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
 
+  M:                       # mis-assembly: shifted off the pegs, turned the wrong way, tilted, wrong look-alike
+    images: 6000           # (edge cases EC-016/029/032/033/035/089/091). Every mis-built part rests ON the stack:
+    seed: 13000            # lifted by sdg/data/build_clearance.json, labelled with shift / yaw / tilt / lift
+    model: build check (recipe check + Cosmos Reason 2 evaluation)
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, shifted, rotated, tilted, high, wrong_part]
+    build_state_weights: [0.3, 0.2, 0.2, 0.1, 0.1, 0.1]
+    seated_noise_mm: 0.3
+    high_mm: [0.5, 3.0]
+    tilt_deg: [1.0, 12.0]
+    shift_mm: [0.5, 4.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.3
+    wrist: {standoff_mm: [100.0, 240.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
+
 randomization:              # applied by the Isaac generator to every scene
   camera_jitter: {translate_mm: 6.0, rotate_deg: 0.8}   # real camera mounts are calibrated; keep this small
   lighting:

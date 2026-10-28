@@ -5,6 +5,8 @@
 #
 #   nohup sdg/brev/render_queue.sh "G:0-15 J:6-11" "I:0-11 J:0-5" > ~/queue.log 2>&1 &
 #   (argument N = the plan for GPU N-1, items in render order)
+#   ONE_GPU=1 SKIP_SETUP=1 sdg/brev/render_queue.sh "A:1-15" "F:0-15"   # GB10: parallel queues sharing GPU 0
+#   (SKIP_SETUP leaves the defect meshes alone while other renders read them)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -42,12 +44,12 @@ queue() {  # gpu "SET:first-last ..."
   done
 }
 
-setup
-echo "$(date +%T) setup done; $# GPU queues"
+[[ -n "${SKIP_SETUP:-}" ]] || setup
+echo "$(date +%T) setup done; $# queues"
 gpu=0
 for plan in "$@"; do
   queue "$gpu" "$plan" &
-  gpu=$((gpu + 1))
+  [[ -n "${ONE_GPU:-}" ]] || gpu=$((gpu + 1))
 done
 wait
 date +%T > "$DATA_ROOT/QUEUE_DONE"
