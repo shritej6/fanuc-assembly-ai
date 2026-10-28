@@ -8,7 +8,7 @@ An agent may only start a task that is READY and owned by it.
 | T01 | Repo scaffold, rules, coord files, contracts v1, vendored official client (`run.py --mock` passes) | CLAUDE | REVIEW | main (initial commit) | none | Mon |
 | T02 | Assembly instruction sheets for all 6 products (pictures from CAD, order 01→04, reverse to dismantle) | CLAUDE | READY | feature/T02-assembly-sheets | T01 | Mon |
 | T03 | CAD risk ranking v0 (min wall, slender features, layer direction, insertion clearance) → spare/print list | CLAUDE | READY | feature/T03-cad-risk | T01 | Mon |
-| T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | BACKLOG | feature/T04-catalog | T01 | Mon |
+| T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | IN PROGRESS | feature/T04-catalog | T01 | Mon |
 | T05 | Adapter layer: `robot/adapter.py` (Sim / Mock / Cell), `policy.py` wiring, UF0 TCP-box guard | CODEX | BACKLOG | feature/T05-adapters | T01 | Mon |
 | T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | BACKLOG | feature/T06-defect-variants | T03 | Tue |
 | T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | BACKLOG | feature/T07-usd-scene | T01 | Tue |
