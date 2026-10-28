@@ -6,6 +6,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -107,6 +108,11 @@ def derived_data_identity(paths: dict[str, Path]) -> dict[str, Any]:
 
 def current_git_commit() -> str:
     """Return the exact trainer source revision, refusing an unknown identity."""
+    override = os.environ.get("FANUC_CODE_COMMIT")
+    if override:
+        if not re.fullmatch(r"[0-9a-f]{40}", override):
+            raise RuntimeError("FANUC_CODE_COMMIT must be a full lowercase Git SHA")
+        return override
     root = Path(__file__).resolve().parents[1]
     try:
         result = subprocess.run(

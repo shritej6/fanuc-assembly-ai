@@ -65,6 +65,13 @@ def test_setup_pins_cuda_118_without_populating_pip_cache(tmp_path: Path) -> Non
     assert not (tmp_path / "venv").exists()
 
 
+def test_runtime_scripts_load_the_archived_commit_identity() -> None:
+    for name in ("prepare.sbatch", "detector.sbatch", "classifier.sbatch"):
+        content = (ROSIE / name).read_text()
+        assert ".t13-code-commit" in content
+        assert "FANUC_CODE_COMMIT" in content
+
+
 def test_preparation_plan_allows_native_only_only_for_smoke(tmp_path: Path) -> None:
     smoke = preparation_plan(tmp_path / "data", tmp_path / "smoke", REPO / "contracts/taxonomy.json", True)
     full = preparation_plan(tmp_path / "data", tmp_path / "full", REPO / "contracts/taxonomy.json", False)

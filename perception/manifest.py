@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +13,7 @@ from typing import Any
 
 from PIL import Image
 
+from perception.provenance import current_git_commit
 from perception.records import Annotation, ImageRecord
 from perception.taxonomy import Ontology, load_ontology
 
@@ -96,15 +96,7 @@ def _sha256(path: Path) -> str:
 
 
 def _git_commit() -> str:
-    repo = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
+    return current_git_commit()
 
 
 def _atomic_write(path: Path, content: str) -> None:

@@ -10,6 +10,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="${REPO:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+if [[ -f "$REPO/.t13-code-commit" ]]; then
+  IFS= read -r FANUC_CODE_COMMIT < "$REPO/.t13-code-commit"
+  export FANUC_CODE_COMMIT
+fi
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-assembly-data}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-$HOME/fanuc-t13/artifacts}"
 PYTHON="${PYTHON:-$HOME/fanuc-t13-venv/bin/python}"

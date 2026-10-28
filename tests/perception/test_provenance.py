@@ -6,6 +6,7 @@ import pytest
 from perception.provenance import (
     ProvenanceMismatchError,
     assert_resume_compatible,
+    current_git_commit,
     derived_data_identity,
     provenance_from_manifest,
 )
@@ -76,6 +77,17 @@ def test_derived_data_identity_changes_when_consumed_bytes_change(tmp_path: Path
 
     assert first["derived_files"]["train"] != second["derived_files"]["train"]
     assert first["derived_data_sha256"] != second["derived_data_sha256"]
+
+
+def test_archive_commit_override_requires_a_full_git_sha(monkeypatch: pytest.MonkeyPatch) -> None:
+    commit = "a" * 40
+    monkeypatch.setenv("FANUC_CODE_COMMIT", commit)
+
+    assert current_git_commit() == commit
+
+    monkeypatch.setenv("FANUC_CODE_COMMIT", "not-a-commit")
+    with pytest.raises(RuntimeError, match="FANUC_CODE_COMMIT"):
+        current_git_commit()
 
 
 def test_manifest_metadata_is_reduced_to_task_specific_resume_identity() -> None:
