@@ -11,3 +11,6 @@ Read first: `docs/PLAN.md`, `coord/TASKS.md`, `coord/DECISIONS.md`, `contracts/`
 - Follow the Team V tech stack exactly (PLAN section 4). Do not substitute tools.
 - Never weaken a check to make it pass. Never report a number that was not measured. Failure
   probabilities stay labelled PRELIMINARY. Real-cell data is for evaluation only, never training.
+
+Claude agents: `.claude/agents/` (cad-engineer, sim-builder, sdg-engineer, cosmos-engineer, demo-generator,
+doc-writer). Codex roles: `agents/codex/`. Review every Codex PR with `gh pr review`.
