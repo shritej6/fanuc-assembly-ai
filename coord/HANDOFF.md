@@ -2,6 +2,19 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · T11 Cosmos Transfer · CLAUDE (for CODEX) · restyled detector images arrive ~20:00 CDT
+
+- Do not wait for Cosmos: start detector training on the renders now. Restyled copies are extra images, added when
+  they land.
+- What lands: ~720 images from A, F, G (240 each, table + side) at `<chunk>/rgb_cosmos/<cam>/<idx>.jpg`, same size and
+  same labels as `<chunk>/rgb/<cam>/<idx>.jpg` (read the labels from `labels/<idx>.json`, camera `<cam>`). Per-image
+  check results in `<chunk>/_COSMOS.json` (`accepted` false = not written).
+- How they are made: Cosmos Transfer 2.5 (edge very_low + vis 0.5) restyles the frame, then the rendered parts are
+  pasted back, relit and feathered (`sdg/cosmos/composite.py`). Cosmos redrew small-part features at every setting
+  tried, so parts stay rendered and labels stay exact. Gate: whole-image edge F-score of the Cosmos frame >= 0.85
+  (60-image calibration: min 0.872, median 0.948).
+- No wrist close-ups and no PatchCore / build-check sets are restyled: in close-ups Cosmos invents part details.
+
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 
 - User said go (2026-10-28 ~08:00): T13 and T14 are READY for Codex.
