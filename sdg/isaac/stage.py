@@ -15,8 +15,8 @@ import numpy as np
 from pxr import Gf, Sdf, UsdGeom, UsdLux, UsdSemantics, UsdShade, Vt
 
 from sdg.transforms import rest_on_table_dz, translation
+from sdg.wrist_ik import UF0_ABOVE_BASE_M
 
-UF0_ABOVE_BASE_M = 0.330
 LIB_ROOT = "/_sdg_lib"           # class prim: abstract, never rendered, safe to reference
 SCENE_ROOT = "/World/SdgScene"
 MATERIAL_PATH = "/World/SdgLooks/BlackPLA"

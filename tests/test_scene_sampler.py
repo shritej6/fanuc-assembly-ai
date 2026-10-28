@@ -170,3 +170,42 @@ def test_coverage_gate_reports_every_missing_case(inp, scenes):
     missing = missing_cases(c, inp)
     assert any(m.startswith("defect_part ('M6_04', 'warp')") for m in missing)
     assert len([m for m in missing if m.startswith("product_combo")]) == 20
+
+
+def test_every_arm_pose_has_an_ik_solution_on_the_render_host(scenes):
+    from sdg.wrist_ik import reachable
+
+    poses = [s["arm"]["tcp_uf0"] for set_scenes in scenes.values() for s in set_scenes[:30] if s["arm"]["mode"] != "parked"]
+    assert poses and all(reachable(tcp) for tcp in poses)
+
+
+def test_edge_set_shows_rare_resting_poses_more_often_than_the_nominal_set(inp):
+    def rare_share(set_name):
+        loose = [o for i in range(60) for o in sample_scene(inp, set_name, i)["objects"] if "stable_pose" in o
+                 and o["kind"] == "part"]
+        return sum(o["stable_pose"] > 0 for o in loose) / len(loose)
+
+    assert rare_share("H") > rare_share("B") + 0.1
+
+
+def test_edge_set_widens_the_look_ranges_beyond_the_nominal_ones(inp):
+    nominal = inp.sets["randomization"]["camera_jitter"]["translate_mm"]
+    shifts = [abs(v) for i in range(60) for v in sample_scene(inp, "F", i)["camera_jitter"]["table"]["translate_mm"]]
+    assert max(shifts) > nominal
+
+
+def test_borderline_build_states_carry_their_offset_inside_the_configured_range(inp):
+    cfg = inp.sets["sets"]["J"]
+    seen = collections.Counter()
+    for i in range(80):
+        spec = sample_scene(inp, "J", i)
+        target = next(o for o in spec["objects"] if o["uid"] == spec["wrist_target_uid"])
+        state, off = target["build_state"], target["build_offset"]
+        seen[state] += 1
+        if state == "seated":
+            assert 0.0 <= off["high_mm"] <= cfg["seated_noise_mm"] and off["tilt_deg"] == 0.0
+        elif state == "high":
+            assert cfg["high_mm"][0] <= off["high_mm"] <= cfg["high_mm"][1]
+        elif state == "tilted":
+            assert cfg["tilt_deg"][0] <= off["tilt_deg"] <= cfg["tilt_deg"][1]
+    assert set(seen) == {"seated", "high", "tilted", "wrong_part"}

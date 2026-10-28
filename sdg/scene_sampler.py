@@ -22,6 +22,7 @@ import numpy as np
 import yaml
 
 from sdg.transforms import about_point, footprint, rot_axis, rot_z, translation, world_aabb, yaw_deg
+from sdg.wrist_ik import reachable
 
 REPO = Path(__file__).resolve().parents[1]
 SPEC_VERSION = 1
@@ -96,7 +97,7 @@ class SceneBuilder:
         return self._spec(products, steps, target)
 
     def _spec(self, products: list[int], steps: dict, target: dict | None) -> dict:
-        rnd = self.inp.sets["randomization"]
+        rnd = {**self.inp.sets["randomization"], **self.cfg.get("randomization", {})}   # edge sets widen ranges
         spec = {
             "spec_version": SPEC_VERSION, "set": self.set_name, "index": self.index, "seed": self.seed,
             "table_z_uf0": self.table_z,
@@ -112,10 +113,11 @@ class SceneBuilder:
 
     # ------------------------------------------------------------------ products and parts
     def _planned_target(self) -> str | None:
-        """B balances all 30 objects; C cycles the 24 parts. Others pick a target after layout (or none)."""
-        if self.set_name == "B":
+        """`all_objects` balances all 30 objects; `parts` cycles the 24 parts. Others pick after layout (or none)."""
+        plan = self.cfg.get("target_plan")
+        if plan == "all_objects":
             return sorted(self.inp.geometry)[self.index % len(self.inp.geometry)]
-        if self.set_name == "C":
+        if plan == "parts":
             parts = sorted(k for k in self.inp.geometry if k.startswith("M"))
             return parts[self.index % len(parts)]
         return None
@@ -153,7 +155,9 @@ class SceneBuilder:
                    required: bool = True) -> dict | None:
         geo = self.inp.geometry[object_id]
         poses = geo["stable_poses"]
-        k = self.rng.choices(range(len(poses)), weights=[p["probability"] for p in poses])[0]
+        # `uniform` shows rare resting poses (on a side, upside down) as often as the likely ones.
+        weights = None if self.sc.get("pose_sampling") == "uniform" else [p["probability"] for p in poses]
+        k = self.rng.choices(range(len(poses)), weights=weights)[0]
         local = np.array(poses[k]["transform"])
         cluster = self._cluster_centre() if zone == "work_area" else None
         tf = self._place(local, poses[k], self.inp.layout[zone], "part", cluster, required)
@@ -226,28 +230,45 @@ class SceneBuilder:
         base = next(o for o in self.objects if o["uid"] == target["on_base"])
         base_tf = np.array(base["transform_uf0"])
         installed = np.array(self.inp.geometry[target["object_id"]]["installed_in_base_frame"])
-        if state == "high":
-            installed = translation(0, 0, self.rng.uniform(*self.cfg["high_mm"])) @ installed
+        offset = {"high_mm": 0.0, "tilt_deg": 0.0}   # magnitude in the label, so a threshold can be chosen later
+        if state == "seated" and "seated_noise_mm" in self.cfg:   # print tolerance: still seated
+            offset["high_mm"] = self.rng.uniform(0, self.cfg["seated_noise_mm"])
+            installed = translation(0, 0, offset["high_mm"]) @ installed
+        elif state == "high":
+            offset["high_mm"] = self.rng.uniform(*self.cfg["high_mm"])
+            installed = translation(0, 0, offset["high_mm"]) @ installed
         elif state == "tilted":
             box = world_aabb(installed, self.inp.geometry[target["object_id"]]["bounds_mm"])
             pivot = np.array([*(box[0, :2] + box[1, :2]) / 2, box[0, 2]])
             az = math.radians(self.rng.uniform(0, 360))
-            installed = about_point(rot_axis((math.cos(az), math.sin(az), 0), self.rng.uniform(*self.cfg["tilt_deg"])),
-                                    pivot) @ installed
+            offset["tilt_deg"] = self.rng.uniform(*self.cfg["tilt_deg"])
+            installed = about_point(rot_axis((math.cos(az), math.sin(az), 0), offset["tilt_deg"]), pivot) @ installed
         elif state == "wrong_part":
             self._set_object(target, self.rng.choice(self.inp.family_mates(target["object_id"])))
+        target["build_offset"] = {k: round(v, 3) for k, v in offset.items()}
         self._set_transform(target, base_tf @ installed)
 
     # ------------------------------------------------------------------ arm, camera, look
     def _arm(self, target: dict | None) -> dict:
+        """Drawn last in the scene, so redrawing an unreachable pose changes nothing else in the spec."""
         if target is not None and "wrist" in self.cfg["cameras"]:
-            return {"mode": "wrist_view", "tcp_uf0": self._wrist_tcp(target)}
+            return {"mode": "wrist_view", "tcp_uf0": self._reachable(lambda: self._wrist_tcp(target))}
         if self.rng.random() < self.sc["arm_in_view_prob"]:
-            wa = self.inp.layout["work_area"]
-            tcp = [self.rng.uniform(*wa["x"]), self.rng.uniform(*wa["y"]), self.rng.uniform(-200, 100),
-                   -180.0, 0.0, self.rng.uniform(-90, 90)]
-            return {"mode": "in_view", "tcp_uf0": _check_tcp([round(v, 3) for v in tcp])}
+            return {"mode": "in_view", "tcp_uf0": self._reachable(self._in_view_tcp)}
         return {"mode": "parked"}
+
+    def _reachable(self, draw) -> list[float]:
+        for _ in range(MAX_TRIES):
+            tcp = draw()
+            if reachable(tcp):
+                return tcp
+        raise SceneSamplingError(f"{self.set_name}[{self.index}]: no reachable arm pose after {MAX_TRIES} tries")
+
+    def _in_view_tcp(self) -> list[float]:
+        wa = self.inp.layout["work_area"]
+        tcp = [self.rng.uniform(*wa["x"]), self.rng.uniform(*wa["y"]), self.rng.uniform(-200, 100),
+               -180.0, 0.0, self.rng.uniform(-90, 90)]
+        return _check_tcp([round(v, 3) for v in tcp])
 
     def _wrist_tcp(self, target: dict) -> list[float]:
         w = self.cfg["wrist"]
@@ -375,12 +396,14 @@ def chunk_range(inputs: Inputs, set_name: str, chunk: int) -> range:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--set", required=True, choices=["A", "B", "C", "D"])
+    ap.add_argument("--set", required=True, help="a set name from sdg/configs/sets.yaml")
     ap.add_argument("--chunk", type=int, help="write the specs of one chunk")
     ap.add_argument("--n-chunks", action="store_true", help="print how many chunks the set has")
     ap.add_argument("--out", type=Path, help="JSONL file for --chunk")
     args = ap.parse_args()
     inputs = Inputs.load()
+    if args.set not in inputs.sets["sets"]:
+        ap.error(f"unknown set {args.set}; sets.yaml has {sorted(inputs.sets['sets'])}")
     if args.n_chunks:
         print(n_chunks(inputs, args.set))
         return

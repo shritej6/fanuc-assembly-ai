@@ -11,7 +11,6 @@ A re-run skips scenes that already have labels and skips the chunk if _DONE.json
 
 import argparse
 import json
-import math
 import os
 import sys
 import time
@@ -46,8 +45,9 @@ import cell
 import ik
 import scene_config as C
 
-from sdg.isaac.stage import UF0_ABOVE_BASE_M, SceneStage
+from sdg.isaac.stage import SceneStage
 from sdg.postprocess import apply_post, box_labels, depth_mm_u16, instance_mask, mask_box_labels, resize_nearest
+from sdg.wrist_ik import solve_tcp
 
 CAM_PATHS = {"table": cell.TABLE_CAM_PATH, "side": cell.SIDE_CAM_PATH, "wrist": cell.WRIST_CAM_PATH}
 CAM_CFG = {"table": C.TABLE_CAM, "side": C.SIDE_CAM, "wrist": C.WRIST_CAM}
@@ -77,36 +77,10 @@ class Arm:
         self.art.set_joint_positions(full)
 
     def _solve(self, tcp: list[float]) -> np.ndarray:
-        """UF0 [x y z w p r] (mm/deg, FANUC fixed-XYZ) -> joints. Base frame = UF0 shifted down 330 mm, metres.
-
-        Damped least squares is local, so it is seeded facing the target (J1 = atan2(y, x)) before the park pose.
-        """
-        x, y, z, w, p, r = tcp
-        rot = _rz(r) @ _ry(p) @ _rx(w)
-        target = np.array([x, y, z]) / 1000.0 + (0.0, 0.0, UF0_ABOVE_BASE_M)
-        facing = self.home.copy()
-        facing[0] = math.atan2(y, x)
-        for seed in (facing, self.home, self.park):
-            q, ok = ik.solve(seed, target, rot @ (0, 0, 1), self.limits, tool_offset=self.tool,
-                             spread_dir=rot @ (0, 1, 0), iters=400)
-            if ok:
-                return q
-        raise RuntimeError(f"IK failed for TCP {tcp} from all seeds")
-
-
-def _rx(d):
-    c, s = math.cos(math.radians(d)), math.sin(math.radians(d))
-    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
-
-
-def _ry(d):
-    c, s = math.cos(math.radians(d)), math.sin(math.radians(d))
-    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
-
-
-def _rz(d):
-    c, s = math.cos(math.radians(d)), math.sin(math.radians(d))
-    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+        q = solve_tcp(ik, tcp, self.home, self.park, self.limits, self.tool)
+        if q is None:
+            raise RuntimeError(f"IK failed for TCP {tcp} from all seeds")
+        return q
 
 
 class Cameras:
