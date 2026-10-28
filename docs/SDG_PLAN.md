@@ -12,10 +12,12 @@ optional (T11). Real-cell images are for evaluation only, never training.
 | Set sizes and randomization | `sdg/configs/sets.yaml` | Done (sizes from PLAN 6.1) |
 | Scene sampler (layout, defects, look-alike traps, build states, wrist poses) | `sdg/scene_sampler.py` | **Done, tested.** All 54,000 scenes lay out in about 16 s on a laptop; 16 behaviour tests |
 | Post-processing + label assembly | `sdg/postprocess.py` | Done, tested (6 tests) |
-| Isaac stage builder + render loop | `sdg/isaac/stage.py`, `sdg/isaac/generate.py` | **Written, UNTESTED.** Runs only inside Isaac; the pilot is its first run |
-| Rosie jobs | `sdg/rosie/{setup.sh,submit.sh,render_chunk.sbatch}` | Written, UNTESTED (syntax-checked) |
+| Isaac stage builder + render loop | `sdg/isaac/stage.py`, `sdg/isaac/generate.py` | **Runs on the GB10** (Isaac 6.0.0): images, masks and labels come out; boxes now come from the masks. Rosie T4 run in progress |
+| Render hosts | `sdg/rosie/*` (T4, Slurm, Isaac 6.0.0 sandbox), `sdg/spark/render_chunk.sh` (GB10, Docker) | Both start Isaac 6.0.0; see section 5 |
 | Starter cell (robot, gripper, cameras, lights) | `sim/starter/` | Vendored unmodified; all 38 files match the starter's own SHA-256 list (`MANIFEST.json`) |
-| Defect meshes | `cad/defects/<id>__<variant>.stl` | **Not started (T06).** The generator refuses to render a defect label without its mesh |
+| Defect meshes | `sdg/tools/defect_variants.py` → `cad/defects/` | **Done (T06).** 144 variants (24 parts × 6), regenerated on each host and checked against `manifest.json` (identical on Mac and GB10) |
+| Coverage report | `sdg/coverage.py` → `docs/SDG_COVERAGE.md` | **Done.** Every planned case present; smallest is part × defect at 51 |
+| QA gate | `sdg/qa.py` | Done: files, box = mask extent, depth range, overlay sheet |
 | Black PLA look check | `sdg/isaac/stage.py` (UsdPreviewSurface) | Parameters drafted; T07 compares a render against a phone photo of a real print |
 
 ## 2. Sets
@@ -71,11 +73,16 @@ this PR.
 | Wall time | about 10–11 h | 8 array tasks in parallel (`MAX_PARALLEL=8`); Rosie had 12 idle T4 nodes on 2026-10-27 |
 | Disk | about 25 GB images + about 5 GB cache | JPEG about 200–400 KB, depth PNG about 300 KB, masks about 50 KB |
 
-Rosie facts checked 2026-10-27:
-- `teaching` partition with 20 T4 nodes, 4 GPUs each.
-- Containers in `/data/containers`: `isaac-sim-6.1.0.sif`, `isaac-sim_5.0.0.sif` and `isaac-sim-20231103.sif`.
-  **There is no 6.0 container.**
-- `/home` is 87% full cluster-wide, and the user's home folder already holds 201 GB.
+Render hosts (checked 2026-10-27):
+
+| Host | Isaac | Notes |
+|---|---|---|
+| Rosie T4 (`teaching`, 20 nodes × 4 T4) | 6.0.0 sandbox at `~/containers/isaac-sim-6.0.0`, built by `sdg/rosie/build_isaac_sandbox.sbatch` | The shared `isaac-sim-6.1.0.sif` cannot be used: `/isaac-sim` inside it is root-only. Each task gets its own overlay file (Isaac outgrows the 64 MB tmpfs). Compute nodes reach NVIDIA's asset server |
+| GB10 (`spark`, DGX Spark, arm64) | Official `nvcr.io/nvidia/isaac-sim:6.0.0` (arm64), Docker | Runs as the image's own user (uid 1234) in our group. 1.6 TB free |
+| Brev A100 / H100 | — | **Not for rendering**: A100 / H100 have no RT cores, which Isaac RTX rendering needs. Use them for training (section 10) |
+
+Both render hosts run **Isaac Sim 6.0.0, the version in the stack**. The T4s take sets A and B; the GB10 takes C
+and D, which need defects and depth. GB10 output is copied to Rosie with `rsync` for training.
 
 ## 6. How to run (after the user approves the Isaac container, section 8)
 
@@ -110,7 +117,7 @@ export DATA_ROOT=~/fanuc-assembly-data          # later: the shared team folder
 
 | Item | Why it matters | Proposed |
 |---|---|---|
-| **Isaac version**: the stack says 6.0; Rosie has 6.1.0 | The starter was validated on 6.0. A 6.0 container would have to be pulled (about 10 GB) into a `/home` that is 87% full | Run the pilot on `isaac-sim-6.1.0.sif`. If the starter cell fails to build on it, pull 6.0. **Your call; nothing runs until you choose** |
+| ~~Isaac version~~ | Solved: both hosts run 6.0.0 (section 5) | — |
 | Data location | 30 GB in a crowded home folder | Use the shared folder as soon as karriv grants access (`DATA_ROOT=/data/ai_club/...`) |
 | Robot asset on compute nodes | The ER-4iA USD loads from Isaac's asset server; compute nodes may have no internet | The pilot shows it. If it fails, copy the asset once and set `FANUC_ROBOT_USD` |
 | Zone positions | The spare store and reject tray must be reachable and visible on the real cell | Check during the first real slot |
@@ -119,3 +126,18 @@ export DATA_ROOT=~/fanuc-assembly-data          # later: the shared team folder
 
 T07 USD + look check → T06 defect meshes → pilot (1.5k) → gates → T10 full sets (108 chunks) → T11 Cosmos Transfer
 pilot. T13 / T14 (Codex) start training on set A as soon as its 32 chunks are done.
+
+## 10. Training (owned by Codex: T13 detector + classifier, T14 PatchCore + FoundationPose, T18 policy)
+
+Training starts as soon as a set's chunks pass the QA gate. Compute, per the stack:
+
+| Model | Data | Compute |
+|---|---|---|
+| Detector (Faster R-CNN or RT-DETR) | Set A (table + side) | Brev A100 or Rosie `dgxh100` |
+| Wrist look-alike classifier | Set B crops | Brev A100 / Rosie `dgxh100` (small; a T4 also works) |
+| anomalib PatchCore | Set C good-only (train), C defects (test) | Rosie T4 is enough |
+| Build check | Set D + Cosmos Reason 2 (2B) | GB10 (endpoint) |
+| GR00T N1.7 / SmolVLA / ACT | Set E (Isaac Lab Mimic, T12) | Brev H100 |
+
+Every model is evaluated per scenario from `labels/` (per product, per defect type, per build state, traps), not
+only on overall accuracy. Real-cell images are the final test, never training data.
