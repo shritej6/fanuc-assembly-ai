@@ -24,11 +24,11 @@ def _mapping(value: Any, name: str) -> dict[str, Any]:
 
 def _validate_precision(training: dict[str, Any]) -> None:
     if training.get("fp16") is not True:
-        raise ConfigError("V100 training requires FP16")
+        raise ConfigError("T4 training requires FP16")
     if training.get("bf16") is not False:
-        raise ConfigError("BF16 is not supported by V100")
+        raise ConfigError("BF16 is not supported by T4")
     if training.get("tf32") is not False:
-        raise ConfigError("TF32 is not supported by V100")
+        raise ConfigError("TF32 is not supported by T4")
 
 
 def _validate_detector(model: dict[str, Any], training: dict[str, Any]) -> None:

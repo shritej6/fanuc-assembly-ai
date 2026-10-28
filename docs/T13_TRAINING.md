@@ -14,16 +14,16 @@ The scripts default to these paths and allow explicit environment overrides:
 ```text
 repository       ~/fanuc-assembly-ai
 source data      ~/fanuc-assembly-data/synthetic/{A,F,G,B,H,K}
-environment      ~/fanuc-t13-venv
+environment      ~/fanuc-t13-venv-secure
 prepared data    ~/fanuc-t13/artifacts/{smoke,full}
 training output  ~/fanuc-t13/runs/{smoke,full}/{detector,classifier}
 ```
 
 Set `REPO`, `DATA_ROOT`, `ARTIFACT_ROOT`, and `RUN_ROOT` when the checkout or storage roots differ.
 
-## 1. Create the V100 environment
+## 1. Create the T4 environment
 
-Run this once on Rosie. The script uses Python 3.12 `venv`, installs the CUDA 11.8 wheels explicitly, disables the
+Run this once on Rosie. The script uses Python 3.12 `venv`, installs the CUDA 12.6 wheels explicitly, disables the
 pip download cache, verifies installed dependencies, and does not rely on Rosie's broken snap `uv` executable.
 
 ```bash
@@ -31,8 +31,9 @@ cd ~/fanuc-assembly-ai
 bash perception/rosie/setup_ml.sh
 ```
 
-The fixed environment uses PyTorch `2.6.0+cu118`, torchvision `0.21.0+cu118`, and Transformers `4.57.3`. PyTorch
-2.6 or newer is required so checkpoint optimizer-state resume is not blocked by CVE-2025-32434.
+The fixed environment uses PyTorch `2.14.1+cu126`, torchvision `0.29.1+cu126`, and Transformers `5.21.0`. These
+versions clear the dependency audit used by T13. The T4 nodes' measured driver `610.43.02` supports this runtime;
+the V100 nodes' measured driver `525.105.17` does not, so T13 must not be submitted to `dgx` with this environment.
 
 ## 2. Run the bounded native smoke gate
 
@@ -83,12 +84,12 @@ leak into validation or test.
 
 ## 4. Submit full training
 
-The scripts request one V100 by default. A larger single-node DDP allocation can be requested at submission time;
+The scripts request one T4 by default. A larger single-node DDP allocation can be requested at submission time;
 `torchrun` reads the observed Slurm GPU count rather than assuming hardware that was not allocated.
 
 ```bash
-sbatch --parsable --gres=gpu:8 --export=ALL,SMOKE=0 perception/rosie/detector.sbatch
-sbatch --parsable --gres=gpu:8 --export=ALL,SMOKE=0 perception/rosie/classifier.sbatch
+sbatch --parsable --gres=gpu:t4:4 --export=ALL,SMOKE=0 perception/rosie/detector.sbatch
+sbatch --parsable --gres=gpu:t4:4 --export=ALL,SMOKE=0 perception/rosie/classifier.sbatch
 ```
 
 To resume an interrupted production run, add `RESUME_FROM_CHECKPOINT=latest`. Resume is rejected when the frozen

@@ -54,14 +54,15 @@ def _metadata(path: Path, *, require_cosmos: bool) -> None:
     )
 
 
-def test_setup_pins_cuda_118_without_populating_pip_cache(tmp_path: Path) -> None:
+def test_setup_pins_cuda_126_without_populating_pip_cache(tmp_path: Path) -> None:
     result = _run("setup_ml.sh", tmp_path, VENV_PATH=str(tmp_path / "venv"))
 
     assert result.returncode == 0, result.stderr
-    assert "torch==2.6.0+cu118" in result.stdout
-    assert "torchvision==0.21.0+cu118" in result.stdout
+    assert "torch==2.14.1" in result.stdout
+    assert "torchvision==0.29.1" in result.stdout
+    assert "transformers==5.21.0" in result.stdout
     assert "scipy==" in result.stdout
-    assert "https://download.pytorch.org/whl/cu118" in result.stdout
+    assert "https://download.pytorch.org/whl/cu126" in result.stdout
     assert "--no-cache-dir" in result.stdout
     assert not (tmp_path / "venv").exists()
 
@@ -127,8 +128,8 @@ def test_smoke_launch_is_one_gpu_two_steps_and_resumable(
     )
 
     assert initial.returncode == 0, initial.stderr
-    assert "--partition=dgx" in (ROSIE / script).read_text()
-    assert "--gres=gpu:1" in (ROSIE / script).read_text()
+    assert "--partition=teaching" in (ROSIE / script).read_text()
+    assert "--gres=gpu:t4:1" in (ROSIE / script).read_text()
     assert "--nproc_per_node 1" in initial.stdout
     assert "--smoke" in initial.stdout
     assert "--max-steps 2" in initial.stdout

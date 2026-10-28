@@ -1,8 +1,8 @@
 #!/bin/bash
-# Train RT-DETR on Rosie V100s. Override --gres at sbatch time for multi-GPU full runs.
+# Train RT-DETR on Rosie T4s. Override --gres at sbatch time for multi-GPU full runs.
 #SBATCH --job-name=fa-t13-detector
-#SBATCH --partition=dgx
-#SBATCH --gres=gpu:1
+#SBATCH --partition=teaching
+#SBATCH --gres=gpu:t4:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
@@ -17,8 +17,8 @@ if [[ -f "$REPO/.t13-code-commit" ]]; then
 fi
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-$HOME/fanuc-t13/artifacts}"
 RUN_ROOT="${RUN_ROOT:-$HOME/fanuc-t13/runs}"
-PYTHON="${PYTHON:-$HOME/fanuc-t13-venv/bin/python}"
-TORCHRUN="${TORCHRUN:-$HOME/fanuc-t13-venv/bin/torchrun}"
+PYTHON="${PYTHON:-$HOME/fanuc-t13-venv-secure/bin/python}"
+TORCHRUN="${TORCHRUN:-$HOME/fanuc-t13-venv-secure/bin/torchrun}"
 SMOKE="${SMOKE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-${SLURM_GPUS_ON_NODE:-1}}"
@@ -39,7 +39,7 @@ fi
 
 COMMAND=("$TORCHRUN" --standalone --nnodes=1 --nproc_per_node "$NPROC_PER_NODE"
   -m perception.detector.train
-  --config "$REPO/perception/configs/rtdetr_v100.yaml"
+  --config "$REPO/perception/configs/rtdetr_t4.yaml"
   --coco-dir "$ARTIFACT_ROOT/$MODE/coco"
   --manifest-metadata "$ARTIFACT_ROOT/$MODE/manifests/metadata.json"
   --output-dir "$RUN_ROOT/$MODE/detector")

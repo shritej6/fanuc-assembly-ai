@@ -16,7 +16,7 @@ if [[ -f "$REPO/.t13-code-commit" ]]; then
 fi
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-assembly-data}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-$HOME/fanuc-t13/artifacts}"
-PYTHON="${PYTHON:-$HOME/fanuc-t13-venv/bin/python}"
+PYTHON="${PYTHON:-$HOME/fanuc-t13-venv-secure/bin/python}"
 SMOKE="${SMOKE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 
