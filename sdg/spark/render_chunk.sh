@@ -5,6 +5,7 @@
 #   sdg/spark/render_chunk.sh C 0 1 2        # set C, chunks 0 1 2
 #   LIMIT=3 sdg/spark/render_chunk.sh B 0    # smoke test: first 3 scenes only
 #   RENDER_ARGS="--rt-subframes 8" sdg/spark/render_chunk.sh K 0   # extra generator flags; works on any Docker GPU host
+#   DOCKER_GPUS=device=1 sdg/spark/render_chunk.sh G 0              # pin to one GPU on a multi-GPU host (Brev 2x L40S)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -30,7 +31,7 @@ for c in "$@"; do
   fi
   (cd "$REPO" && "$PY" -m sdg.scene_sampler --set "$SET" --chunk "$c" --out "$SPECS")
   mkdir -p "$OUT" && chmod g+rwxs "$OUT"
-  docker run --rm --gpus all --network host -u "1234:$(id -g)" \
+  docker run --rm --gpus "${DOCKER_GPUS:-all}" --network host -u "1234:$(id -g)" \
     -e ACCEPT_EULA=Y -e SDG_DEBUG=${SDG_DEBUG:-} -e PRIVACY_CONSENT=Y -e HOME=/cache/home -e ISAAC_SIF="$IMAGE" \
     -v "$REPO:$REPO:ro" -v "$DATA_ROOT:$DATA_ROOT" -v "$DATA_ROOT/cache:/cache" \
     --entrypoint bash "$IMAGE" -c 'umask 002 && exec /isaac-sim/python.sh "$@"' _ \
