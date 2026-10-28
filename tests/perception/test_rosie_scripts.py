@@ -58,8 +58,8 @@ def test_setup_pins_cuda_118_without_populating_pip_cache(tmp_path: Path) -> Non
     result = _run("setup_ml.sh", tmp_path, VENV_PATH=str(tmp_path / "venv"))
 
     assert result.returncode == 0, result.stderr
-    assert "torch==2.5.1+cu118" in result.stdout
-    assert "torchvision==0.20.1+cu118" in result.stdout
+    assert "torch==2.6.0+cu118" in result.stdout
+    assert "torchvision==0.21.0+cu118" in result.stdout
     assert "scipy==" in result.stdout
     assert "https://download.pytorch.org/whl/cu118" in result.stdout
     assert "--no-cache-dir" in result.stdout

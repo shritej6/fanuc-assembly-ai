@@ -31,7 +31,8 @@ cd ~/fanuc-assembly-ai
 bash perception/rosie/setup_ml.sh
 ```
 
-The fixed environment uses PyTorch `2.5.1+cu118`, torchvision `0.20.1+cu118`, and Transformers `4.57.3`.
+The fixed environment uses PyTorch `2.6.0+cu118`, torchvision `0.21.0+cu118`, and Transformers `4.57.3`. PyTorch
+2.6 or newer is required so checkpoint optimizer-state resume is not blocked by CVE-2025-32434.
 
 ## 2. Run the bounded native smoke gate
 

@@ -18,9 +18,9 @@ ml = [
     "safetensors>=0.4.5,<1",
     "scipy>=1.14,<2",
     "timm>=1,<2",
-    "torch==2.5.1",
+    "torch==2.6.0",
     "torchmetrics[detection]>=1.6,<2",
-    "torchvision==0.20.1",
+    "torchvision==0.21.0",
     "transformers==4.57.3",
 ]
 

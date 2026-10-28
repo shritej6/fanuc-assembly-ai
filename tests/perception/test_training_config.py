@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,15 @@ from perception.training_config import ConfigError, apply_smoke_step_override, l
 ROOT = Path(__file__).resolve().parents[2]
 DETECTOR = ROOT / "perception" / "configs" / "rtdetr_v100.yaml"
 CLASSIFIER = ROOT / "perception" / "configs" / "classifier_v100.yaml"
+
+
+def test_ml_group_pins_security_compatible_torch_pair() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+
+    dependencies = set(project["dependency-groups"]["ml"])
+
+    assert "torch==2.6.0" in dependencies
+    assert "torchvision==0.21.0" in dependencies
 
 
 def test_detector_config_pins_rtdetr_and_v100_safe_trainer_flags() -> None:

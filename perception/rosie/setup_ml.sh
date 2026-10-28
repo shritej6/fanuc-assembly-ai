@@ -21,7 +21,7 @@ run "$PYTHON" -m venv "$VENV_PATH"
 run "$VENV_PATH/bin/python" -m pip install --no-cache-dir --upgrade pip==25.3
 run "$VENV_PATH/bin/python" -m pip install --no-cache-dir \
   --extra-index-url https://download.pytorch.org/whl/cu118 \
-  torch==2.5.1+cu118 torchvision==0.20.1+cu118
+  torch==2.6.0+cu118 torchvision==0.21.0+cu118
 run "$VENV_PATH/bin/python" -m pip install --no-cache-dir \
   accelerate==1.15.0 pycocotools==2.0.11 safetensors==0.8.0 \
   scipy==1.18.1 timm==1.0.30 'torchmetrics[detection]==1.9.0' transformers==4.57.3 \
