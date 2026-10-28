@@ -209,3 +209,12 @@ def test_borderline_build_states_carry_their_offset_inside_the_configured_range(
         elif state == "tilted":
             assert cfg["tilt_deg"][0] <= off["tilt_deg"] <= cfg["tilt_deg"][1]
     assert set(seen) == {"seated", "high", "tilted", "wrong_part"}
+
+
+def test_wrist_camera_keeps_the_nominal_jitter_even_in_hard_look_sets(inp):
+    nominal = inp.sets["randomization"]["camera_jitter"]
+    for set_name in ("H", "I", "K"):
+        for i in range(40):
+            j = sample_scene(inp, set_name, i)["camera_jitter"]["wrist"]
+            assert max(abs(v) for v in j["translate_mm"]) <= nominal["translate_mm"]
+            assert max(abs(v) for v in j["rotate_deg"]) <= nominal["rotate_deg"]

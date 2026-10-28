@@ -103,7 +103,7 @@ class SceneBuilder:
             "table_z_uf0": self.table_z,
             "products": products, "assembly_step": {str(p): steps[p] for p in products},
             "cameras": self.cfg["cameras"], "outputs": self.cfg["outputs"], "objects": self.objects,
-            "camera_jitter": {c: self._camera_jitter(rnd["camera_jitter"]) for c in self.cfg["cameras"]},
+            "camera_jitter": {c: self._camera_jitter(self._jitter_range(c, rnd)) for c in self.cfg["cameras"]},
             "lighting": self._draw(rnd["lighting"]), "material": self._draw_material(rnd["black_pla"]),
             "post": self._draw_post(rnd["post"]), "arm": self._arm(target),
         }
@@ -280,6 +280,11 @@ class SceneBuilder:
                box[1, 2] + self.rng.uniform(*w["standoff_mm"]),
                -180.0 + tilt * math.cos(tilt_az), tilt * math.sin(tilt_az), self.rng.uniform(-90, 90)]
         return _check_tcp([round(float(v), 3) for v in tcp])
+
+    def _jitter_range(self, camera: str, rnd: dict) -> dict:
+        """Mount drift applies to the fixed table / side cameras. The wrist camera is bolted to the tool: a large
+        offset would put its eye inside its own lens housing, so it always keeps the nominal range."""
+        return self.inp.sets["randomization"]["camera_jitter"] if camera == "wrist" else rnd["camera_jitter"]
 
     def _camera_jitter(self, cfg: dict) -> dict:
         t, r = cfg["translate_mm"], cfg["rotate_deg"]
