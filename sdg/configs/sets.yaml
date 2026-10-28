@@ -1,0 +1,115 @@
+# Synthetic image sets (docs/PLAN.md section 6, docs/SDG_PLAN.md). Counts are images, not scenes.
+# s_per_image is an ESTIMATE (5.5 s on a T4, real-time render) until the pilot measures it.
+
+defaults:
+  chunk_size: 500
+  s_per_image_estimate: 5.5
+  image_size: {table: [1920, 1080], side: [1920, 1080], wrist: [1280, 720]}
+  depth: {table: [640, 400], wrist: [848, 480]}   # what the real cell can send (DEPTH=True)
+  material: black_pla
+  spares: [M2_03, M2_02, M1_03, M6_02, M3_03, M4_04]   # RISK_RANKING_v0 print list (PRELIMINARY)
+  defect_types: [snapped_tab, missing_feature, scale_97, scale_103, warp, layer_split]
+  foreign_objects: [screw_m3, tape_roll, cube_10mm]
+
+# Pilot = the first 375 images of chunk 0 of each set (1,500 images). Specs are deterministic and the generator
+# skips finished scenes, so the full run reuses every pilot image. Purpose: label QA on all outputs + real s/img.
+pilot:
+  images_per_set: 375
+  sets: [A, B, C, D]
+
+sets:
+  A:
+    images: 16000
+    seed: 2000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.35, 0.2, 0.15, 0.15, 0.15]   # step 0..4 per product
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 0.3
+      spares_in_store: [0, 6]
+      rejects: [0, 2]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.35
+      arm_in_view_prob: 0.4
+
+  B:
+    images: 24000          # ~800 per object (30 objects), per the stack
+    seed: 3000
+    model: wrist look-alike classifier
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation]
+    per_object: 800
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 0.5
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.5
+      arm_in_view_prob: 0.0
+    wrist:
+      standoff_mm: [120.0, 260.0]   # fingertip-to-part height range over the target
+      tilt_deg: [0.0, 20.0]
+      target_offset_mm: 15.0
+
+  C:
+    images: 8000
+    seed: 4000
+    model: anomalib PatchCore (train on good only; defect renders are the test set)
+    cameras: [wrist]
+    outputs: [rgb, instance_segmentation, depth]
+    good_fraction: 0.75
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 0]
+      cluster_prob: 0.2
+      arm_in_view_prob: 0.0
+    wrist: {standoff_mm: [120.0, 200.0], tilt_deg: [0.0, 10.0], target_offset_mm: 5.0}
+
+  D:
+    images: 6000
+    seed: 5000
+    model: build check (recipe check + Cosmos Reason 2 evaluation)
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, high, tilted, wrong_part]
+    build_state_weights: [0.4, 0.2, 0.2, 0.2]
+    high_mm: [1.5, 4.0]
+    tilt_deg: [4.0, 12.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.2
+      arm_in_view_prob: 0.3
+    wrist: {standoff_mm: [140.0, 220.0], tilt_deg: [0.0, 15.0], target_offset_mm: 5.0}
+
+randomization:              # applied by the Isaac generator to every scene
+  camera_jitter: {translate_mm: 6.0, rotate_deg: 0.8}   # real camera mounts are calibrated; keep this small
+  lighting:
+    dome_intensity_scale: [0.5, 1.6]
+    rect_intensity_scale: [0.4, 1.8]
+    color_temperature_k: [3500, 6500]
+  black_pla:
+    base_color_rgb: [[0.015, 0.015, 0.015], [0.045, 0.045, 0.045]]
+    roughness: [0.35, 0.65]
+    specular: [0.4, 0.6]
+    layer_line_normal_strength: [0.0, 0.6]
+  post:
+    motion_blur_prob: 0.15
+    gaussian_noise_sigma: [0.0, 0.015]
+    jpeg_quality: [80, 98]   # the cell sends JPEG when IMAGE_FORMAT is jpeg

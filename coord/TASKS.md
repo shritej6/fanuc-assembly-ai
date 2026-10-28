@@ -10,9 +10,9 @@ An agent may only start a task that is READY and owned by it.
 | T03 | CAD risk ranking v0 (min wall, slender features, layer direction, insertion clearance) → spare/print list | CLAUDE | READY | feature/T03-cad-risk | T01 | Mon |
 | T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | BACKLOG | feature/T04-catalog | T01 | Mon |
 | T05 | Adapter layer: `robot/adapter.py` (Sim / Mock / Cell), `policy.py` wiring, UF0 TCP-box guard | CODEX | BACKLOG | feature/T05-adapters | T01 | Mon |
-| T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | BACKLOG | feature/T06-defect-variants | T03 | Tue |
-| T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | BACKLOG | feature/T07-usd-scene | T01 | Tue |
-| T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | BACKLOG | feature/T08-sdg-pilot | T06, T07 | Tue |
+| T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | READY (user, 2026-10-27) | feature/T06-defect-variants | T03 | Tue |
+| T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | READY (user, 2026-10-27) | feature/T07-usd-scene | T01 | Tue |
+| T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | IN PROGRESS: prep in REVIEW; pilot waits for U07 + T06/T07 | feature/T08-sdg-pilot | T06, T07 | Tue |
 | T09 | Recipe state machine (PackML states), inventory, recovery, Andon; two-independent-check gates | CODEX | BACKLOG | feature/T09-state-machine | T04, T05 | Tue |
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
 | T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | BACKLOG | feature/T11-cosmos | T08 | Wed |
@@ -40,3 +40,4 @@ An agent may only start a task that is READY and owned by it.
 | U04 | Print defects + spares (after T03) | TODO |
 | U05 | Cycle tests on high-risk parts → results into `assembly/risk_table.json` | TODO |
 | U06 | Book real-cell slots on hackathon.sidclab.org (Calendar tab) | TODO |
+| U07 | Choose the Isaac container for rendering: Rosie has `isaac-sim-6.1.0.sif`, the stack says 6.0 (`docs/SDG_PLAN.md` section 8) | TODO |
