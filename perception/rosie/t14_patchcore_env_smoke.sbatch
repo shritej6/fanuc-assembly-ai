@@ -56,10 +56,37 @@ python -m venv "$ENV_DIR"
     anomalib==2.7.0 pip-audit==2.10.1 \
     --index-url https://pypi.org/simple
 "$ENV_DIR/bin/python" -m pip check
-"$ENV_DIR/bin/python" -m pip freeze > "$ENV_DIR/requirements.freeze.txt"
-"$ENV_DIR/bin/pip-audit" --strict --format=json --output "$AUDIT"
+"$ENV_DIR/bin/python" -m pip freeze --all > "$ENV_DIR/requirements.freeze.txt"
+"$ENV_DIR/bin/python" - \
+    "$ENV_DIR/requirements.freeze.txt" "$ENV_DIR/requirements.audit.txt" <<'PY'
+import sys
+from pathlib import Path
+
+from packaging.version import InvalidVersion, Version
+
+freeze = Path(sys.argv[1])
+audit_requirements = Path(sys.argv[2])
+normalized = []
+for line in freeze.read_text().splitlines():
+    if line.count("==") != 1:
+        raise RuntimeError(f"audit requires one exact version pin per line: {line!r}")
+    package, raw_version = line.split("==", 1)
+    try:
+        public_version = Version(raw_version).public
+    except InvalidVersion as exc:
+        raise RuntimeError(f"invalid frozen version for {package}: {raw_version}") from exc
+    normalized.append(f"{package}=={public_version}")
+temporary = audit_requirements.with_suffix(".tmp")
+temporary.write_text("\n".join(normalized) + "\n")
+temporary.replace(audit_requirements)
+PY
+"$ENV_DIR/bin/pip-audit" \
+    --strict --no-deps --disable-pip --progress-spinner=off \
+    --requirement "$ENV_DIR/requirements.audit.txt" \
+    --format=json --output "$AUDIT"
 "$ENV_DIR/bin/python" - \
     "$ARTIFACT" "$AUDIT" "$ENV_DIR/requirements.freeze.txt" \
+    "$ENV_DIR/requirements.audit.txt" \
     "$JOB_ID" "$NODE_NAME" "$SOURCE_COMMIT" "$SIF" "$SIF_SHA256" <<'PY'
 import hashlib
 import json
@@ -87,6 +114,7 @@ model = Patchcore()
 artifact = Path(sys.argv[1])
 audit = Path(sys.argv[2])
 freeze = Path(sys.argv[3])
+audit_requirements = Path(sys.argv[4])
 payload = {
     "anomalib": version("anomalib"),
     "torch": torch.__version__,
@@ -97,12 +125,13 @@ payload = {
     "architectures": torch.cuda.get_arch_list(),
     "cuda_probe_checksum": checksum,
     "model": type(model).__name__,
-    "slurm_job_id": sys.argv[4],
-    "hostname": sys.argv[5],
-    "source_commit": sys.argv[6],
-    "singularity_image": sys.argv[7],
-    "singularity_sha256": sys.argv[8],
+    "slurm_job_id": sys.argv[5],
+    "hostname": sys.argv[6],
+    "source_commit": sys.argv[7],
+    "singularity_image": sys.argv[8],
+    "singularity_sha256": sys.argv[9],
     "freeze_sha256": hashlib.sha256(freeze.read_bytes()).hexdigest(),
+    "audit_requirements_sha256": hashlib.sha256(audit_requirements.read_bytes()).hexdigest(),
     "pip_audit_sha256": hashlib.sha256(audit.read_bytes()).hexdigest(),
 }
 temporary = artifact.with_suffix(".tmp")

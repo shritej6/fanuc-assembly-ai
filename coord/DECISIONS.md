@@ -19,3 +19,4 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Brev cap for training, Cosmos and GR00T: $50 (separate from the ~$21 spent on rendering) | user |
 | 2026-10-28 | Detector, classifier and PatchCore train on Rosie's V100 (`dgx`, idle) since the H100 queue estimates a start after the deadline | Claude (proposal, user said "do everything") |
 | 2026-10-28 | T14 PatchCore uses anomalib 2.7.0 with Torch 2.10.0 / torchvision 0.25.0 (CUDA 12.6); the earlier Torch 2.4 proposal is rejected by the critical-security quality gate | Codex (security gate) |
+| 2026-10-28 | T14 PatchCore fitting remains blocked until a strict full-environment audit passes. Normalizing CUDA-local versions exposed advisories in Torch 2.10.0, Pillow 12.3.0, and filelock 4.1.0; the required Pillow 13.0.0 and filelock 4.2.1 fixes are not yet on the approved PyPI index. Do not suppress them or train from the unapproved attempt environment. | Codex (security gate) |
