@@ -434,6 +434,11 @@ class _ManifestBuilder:
             "taxonomy_path": str(self.config.taxonomy_path.resolve()),
             "taxonomy_sha256": _sha256(self.config.taxonomy_path),
             "require_cosmos": self.config.require_cosmos,
+            "labels": {
+                "classifier": list(self.ontology.classifier_labels),
+                "detector": list(self.ontology.detector_labels),
+                "lookalike_groups": [list(group) for group in self.ontology.lookalike_groups],
+            },
             "sets": stats,
             "skipped_classifier_targets": dict(sorted(self.skipped.items())),
             "detector": {

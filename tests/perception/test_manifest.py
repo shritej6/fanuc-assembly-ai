@@ -145,6 +145,15 @@ def test_builder_groups_cameras_and_accepted_cosmos_with_the_native_scene(tmp_pa
     assert summary.skipped_classifier_targets == {"B": 1}
     assert summary.detector_sha256 == hashlib.sha256(summary.detector_path.read_bytes()).hexdigest()
     assert summary.classifier_sha256 == hashlib.sha256(summary.classifier_path.read_bytes()).hexdigest()
+    metadata = json.loads(summary.metadata_path.read_text())
+    assert metadata["labels"]["classifier"] == ["F01", "M1_01"]
+    assert metadata["labels"]["detector"] == [
+        "F01",
+        "M1_01",
+        "foreign_screw_m3",
+        "foreign_tape_roll",
+        "foreign_cube_10mm",
+    ]
 
 
 @pytest.mark.parametrize(
