@@ -3,7 +3,7 @@ import json
 import numpy as np
 from PIL import Image
 
-from sdg.cosmos.drift import edge_fscore
+from sdg.cosmos.drift import edge_fscore, worst_object
 from sdg.cosmos.restyle import export, import_results, parse_name, pick
 
 
@@ -23,6 +23,16 @@ def test_restyle_that_keeps_edges_passes_and_moved_parts_fail():
     moved, _ = scene(shift=8)                                            # parts drawn 8 px away
     assert edge_fscore(rgb, relit, seg) > 0.9
     assert edge_fscore(rgb, moved, seg) < 0.5
+
+
+def test_one_reshaped_object_is_caught_by_the_worst_object_score():
+    rgb, seg = scene()
+    reshaped = rgb.copy()
+    reshaped[60:90, 90:130] = 235
+    reshaped[60:90, 100:120] = 20                                        # second part drawn half as wide
+    assert edge_fscore(rgb, reshaped, seg) > 0.6                         # the whole image still looks fine
+    score, uid = worst_object(rgb, reshaped, seg)
+    assert uid == 2 and score < 0.5
 
 
 def write_set(root, set_name="A", n=10):
@@ -57,7 +67,8 @@ def test_import_keeps_only_images_that_pass_the_drift_check(tmp_path):
     moved, _ = scene(shift=8)
     for name, img in ((names[0], rgb), (names[1], moved)):              # Cosmos output size differs from the render
         Image.fromarray(img).resize((320, 240)).save(bundle / "out" / f"{name}.jpg")
-    assert import_results(tmp_path, bundle, min_fscore=0.7) == {"checked": 2, "accepted": 1, "min_fscore": 0.7}
+    assert import_results(tmp_path, bundle, 0.7, 0.7) == {"checked": 2, "accepted": 1, "min_fscore": 0.7,
+                                                           "min_object": 0.7}
     _, _, cam, idx = parse_name(names[0])
     kept = Image.open(chunk / "rgb_cosmos" / cam / f"{idx}.jpg")
     assert kept.size == (160, 120)

@@ -3,11 +3,11 @@
     python -m sdg.cosmos.restyle export --sets A B C --fraction 0.15 --out bundle/        # on Rosie
     python -m sdg.cosmos.restyle export --sets A B C --count 4 --out pilot/                # a fixed number per set
     (bundle/ is restyled on an H100 by sdg/cosmos/run_transfer.sh, which writes bundle/out/<name>.jpg)
-    python -m sdg.cosmos.restyle import bundle/ --min-fscore <measured>                   # on Rosie
+    python -m sdg.cosmos.restyle import bundle/ --min-fscore <measured> --min-object <measured>   # on Rosie
 
-Cosmos Transfer 2.5 image-to-image with edge control keeps every part edge where the render put it, so a restyled
-image keeps the render's labels. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's size, the
-check result of every image to <chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
+Cosmos Transfer 2.5 image-to-image with edge + vis control keeps every part edge where the render put it, so a
+restyled image keeps the render's labels. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's
+size, the check result of every image to <chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
 """
 
 from __future__ import annotations
@@ -21,15 +21,17 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from sdg.cosmos.drift import edge_fscore
+from sdg.cosmos.drift import edge_fscore, worst_object
 
 DATA_ROOT = Path.home() / "fanuc-assembly-data"
-# Prompts describe the real cell: a white table, matte black PLA parts, a lab light. Only the light and the
-# camera wording vary, so Cosmos changes the look and nothing else.
-SCENE = ("A real photograph of matte black 3D-printed PLA parts with fine visible layer lines on a white table in "
-         "an industrial robot cell. The shapes and positions of every part are exactly as in the input.")
+# Edge control pins every shape; vis control (the blurred input) keeps every colour: the yellow robot and tape, the
+# black parts, the coloured foreign objects. The prompt only adds real-camera look, so Cosmos changes nothing else.
+# (Edge control alone took colours from the prompt and painted the yellow robot black: pilot 2026-10-28.)
+SCENE = ("A real photograph of a FANUC robot cell. Every object keeps exactly the shape, position and colour it has in "
+         "the input: matte 3D-printed plastic parts with fine visible layer lines, a white table, real materials.")
 LIGHTS = ["Cool fluorescent ceiling light, soft shadows.", "Warm LED work light from one side, firm shadows.",
           "Mixed daylight from a window and ceiling light.", "Dim overhead light, slight sensor noise and grain."]
+CONTROLS = {"edge": {"control_weight": 1.0}, "vis": {"control_weight": 0.5}}
 CAMERAS = {"table": "Shot from an overhead industrial camera.", "side": "Shot from a fixed side camera.",
            "wrist": "Close-up from a camera on the robot wrist, shallow depth of field."}
 
@@ -59,7 +61,7 @@ def pick(data_root: Path, set_name: str, amount: float, seed: int) -> list[tuple
 def spec_for(name: str, cam: str, seed: int) -> dict:
     light = LIGHTS[random.Random(f"{name}:{seed}").randrange(len(LIGHTS))]
     return {"name": name, "prompt": f"{SCENE} {CAMERAS[cam]} {light}", "video_path": f"../inputs/{name}.jpg",
-            "max_frames": 1, "num_video_frames_per_chunk": 1, "seed": seed, "edge": {}}
+            "max_frames": 1, "num_video_frames_per_chunk": 1, "seed": seed, **CONTROLS}
 
 
 def export(data_root: Path, sets: list[str], amount: float, seed: int, out: Path) -> int:
@@ -75,33 +77,37 @@ def export(data_root: Path, sets: list[str], amount: float, seed: int, out: Path
     return n
 
 
-def check_one(data_root: Path, restyled_path: Path) -> tuple[Path, str, str, float, Image.Image]:
-    """Restyled image resized to the render's size, and its edge F-score against the render."""
+def check_one(data_root: Path, restyled_path: Path) -> tuple[Path, str, str, dict, Image.Image]:
+    """Restyled image resized to the render's size, and its edge scores against the render (whole image, worst object)."""
     s, chunk, cam, idx = parse_name(restyled_path.stem)
     chunk_dir = data_root / "synthetic" / s / chunk
     source = Image.open(chunk_dir / "rgb" / cam / f"{idx}.jpg").convert("RGB")
     restyled = Image.open(restyled_path).convert("RGB").resize(source.size, Image.Resampling.LANCZOS)
     seg = np.array(Image.open(chunk_dir / "seg" / cam / f"{idx}.png"))
-    return chunk_dir, cam, idx, edge_fscore(np.asarray(source), np.asarray(restyled), seg), restyled
+    src, out = np.asarray(source), np.asarray(restyled)
+    worst, uid = worst_object(src, out, seg)
+    scores = {"edge_fscore": round(edge_fscore(src, out, seg), 4), "worst_object_fscore": round(worst, 4),
+              "worst_object_seg_id": uid}
+    return chunk_dir, cam, idx, scores, restyled
 
 
-def import_results(data_root: Path, bundle: Path, min_fscore: float) -> dict:
-    """Keep restyled images whose edges match the render (F-score >= min_fscore); record every result."""
+def import_results(data_root: Path, bundle: Path, min_fscore: float, min_object: float) -> dict:
+    """Keep restyled images whose edges match the render, as a whole and for every object; record every result."""
     records: dict[Path, dict] = {}
     for path in sorted((bundle / "out").glob("*.jpg")):
-        chunk_dir, cam, idx, score, restyled = check_one(data_root, path)
-        ok = score >= min_fscore
+        chunk_dir, cam, idx, scores, restyled = check_one(data_root, path)
+        ok = scores["edge_fscore"] >= min_fscore and scores["worst_object_fscore"] >= min_object
         if ok:
             target = chunk_dir / "rgb_cosmos" / cam / f"{idx}.jpg"
             target.parent.mkdir(parents=True, exist_ok=True)
             restyled.save(target, quality=95)
-        records.setdefault(chunk_dir, {})[f"{cam}/{idx}"] = {"edge_fscore": round(score, 4), "accepted": ok}
+        records.setdefault(chunk_dir, {})[f"{cam}/{idx}"] = {**scores, "accepted": ok}
     for chunk_dir, rec in records.items():
         path = chunk_dir / "_COSMOS.json"
         old = json.loads(path.read_text()) if path.exists() else {}
         path.write_text(json.dumps({**old, **rec}, indent=1, sort_keys=True))
     scores = [r["accepted"] for rec in records.values() for r in rec.values()]
-    return {"checked": len(scores), "accepted": sum(scores), "min_fscore": min_fscore}
+    return {"checked": len(scores), "accepted": sum(scores), "min_fscore": min_fscore, "min_object": min_object}
 
 
 def main() -> None:
@@ -116,7 +122,8 @@ def main() -> None:
     ex.add_argument("--out", type=Path, required=True)
     im = sub.add_parser("import", help="shape-drift check the restyled images and keep the good ones")
     im.add_argument("bundle", type=Path)
-    im.add_argument("--min-fscore", type=float, required=True)
+    im.add_argument("--min-fscore", type=float, required=True, help="whole-image edge F-score")
+    im.add_argument("--min-object", type=float, required=True, help="edge F-score of the worst object")
     for p in (ex, im):
         p.add_argument("--data-root", type=Path, default=DATA_ROOT)
     args = ap.parse_args()
@@ -126,7 +133,7 @@ def main() -> None:
             ap.error("--fraction must be in (0, 1), --count at least 1")
         print(f"{export(args.data_root, args.sets, amount, args.seed, args.out)} images exported")
     else:
-        print(json.dumps(import_results(args.data_root, args.bundle, args.min_fscore)))
+        print(json.dumps(import_results(args.data_root, args.bundle, args.min_fscore, args.min_object)))
 
 
 if __name__ == "__main__":

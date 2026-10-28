@@ -11,6 +11,7 @@ import numpy as np
 
 TOL_PX, ROI_PAD_PX, EDGE_FRACTION = 2, 3, 0.15
 MIN_GRADIENT = 4.0   # grey levels per pixel; below it a pixel is flat even if it ranks among the strongest
+MIN_OBJECT_PX = 150  # smaller objects have too few edge pixels for a stable per-object score
 
 
 def grey(rgb: np.ndarray) -> np.ndarray:
@@ -51,3 +52,20 @@ def edge_fscore(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> fl
     precision = (b & dilate(a, TOL_PX)).sum() / b.sum()
     recall = (a & dilate(b, TOL_PX)).sum() / a.sum()
     return float(0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall))
+
+
+def worst_object(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> tuple[float, int]:
+    """Lowest per-object edge F-score and its seg id. One object reshaped (a cylinder drawn as a cube, a slot added
+    to a knob) hides in the whole-image score but not here. Objects under MIN_OBJECT_PX are too small to judge."""
+    pad = ROI_PAD_PX + TOL_PX + 2
+    worst = (1.0, 0)
+    for uid in np.unique(seg[seg > 0]):
+        ys, xs = np.nonzero(seg == uid)
+        if len(xs) < MIN_OBJECT_PX:
+            continue
+        y0, y1 = max(ys.min() - pad, 0), ys.max() + pad + 1
+        x0, x1 = max(xs.min() - pad, 0), xs.max() + pad + 1
+        mask = (seg[y0:y1, x0:x1] == uid).astype(np.uint8)
+        score = edge_fscore(source[y0:y1, x0:x1], restyled[y0:y1, x0:x1], mask)
+        worst = min(worst, (score, int(uid)))
+    return worst
