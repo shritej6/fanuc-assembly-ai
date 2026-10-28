@@ -2,6 +2,17 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
+
+- User said go (2026-10-28 ~08:00): T13 and T14 are READY for Codex.
+- Label decision (user, `coord/DECISIONS.md`): all 30 objects are separate classes, in the detector and the wrist
+  classifier. Identical shapes (`contracts/taxonomy.json` look-alike groups, e.g. F01=F02, F04=F05=F06) stay separate;
+  report their confusion per group in the eval so it is visible.
+- Data: Rosie `~/fanuc-assembly-data/synthetic/<set>/chunk_NNNN/`, read `labels/` only (never `superseded/`).
+  Detector A, F, G · wrist classifier B, H, K · PatchCore C, I (good targets train, defect targets test only) ·
+  build check D, J, L, M. 78,200 scenes / 104,000 images, every chunk sample-checked, coverage 0 thin cases.
+- Real-cell photos are evaluation only, never training.
+
 ## 2026-10-28 · T06 + T10 (running) · CLAUDE · defect meshes, production rendering, edge sets, watchdog
 
 - Changed: `sdg/tools/defect_variants.py` + `cad/defects/manifest.json` (144 variants, regenerated per host),
