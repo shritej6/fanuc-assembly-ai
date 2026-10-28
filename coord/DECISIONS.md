@@ -18,3 +18,4 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Cosmos Transfer restyles 10–20 % of each set; shape drift is checked before any restyled image is used | user |
 | 2026-10-28 | Brev cap for training, Cosmos and GR00T: $50 (separate from the ~$21 spent on rendering) | user |
 | 2026-10-28 | Detector, classifier and PatchCore train on Rosie's V100 (`dgx`, idle) since the H100 queue estimates a start after the deadline | Claude (proposal, user said "do everything") |
+| 2026-10-28 | T14 PatchCore uses anomalib 2.7.0 with Torch 2.10.0 / torchvision 0.25.0 (CUDA 12.6); the earlier Torch 2.4 proposal is rejected by the critical-security quality gate | Codex (security gate) |
