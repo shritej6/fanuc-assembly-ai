@@ -42,3 +42,31 @@ def test_lookalikes_are_symmetric() -> None:
     for oid, others in objs.items():
         for other in others:
             assert oid in objs[other], f"{oid} lists {other} but not the reverse"
+
+
+def _validator(name: str) -> Draft202012Validator:
+    return Draft202012Validator(json.loads((CONTRACTS / name).read_text()), registry=_registry())
+
+
+def test_inspection_reports_error_codes() -> None:
+    v = _validator("inspection.schema.json")
+    verdict = {"instance_id": "p7", "verdict": "uncertain", "action": "ask_operator", "checks_agree": False,
+               "error_codes": ["LOOKALIKE_UNRESOLVED", "OCCLUDED"]}
+    assert list(v.iter_errors(verdict)) == []
+    assert list(v.iter_errors({**verdict, "error_codes": ["SOMETHING_WRONG"]}))
+    assert list(v.iter_errors({**verdict, "error_codes": ["OCCLUDED", "OCCLUDED"]}))
+
+
+def test_plan_step_names_its_error_code() -> None:
+    v = _validator("plan_step.schema.json")
+    step = {"step_id": "s3", "op": "move_to_reject", "product": 1, "error_code": "GUARD_TOPPLED"}
+    assert list(v.iter_errors(step)) == []
+    assert list(v.iter_errors({**step, "error_code": None})) == []
+    assert list(v.iter_errors({**step, "error_code": "FLIPPED"}))
+
+
+def test_readme_explains_every_error_code() -> None:
+    codes = json.loads((CONTRACTS / "common.schema.json").read_text())["$defs"]["error_code"]["enum"]
+    readme = (CONTRACTS / "README.md").read_text()
+    assert len(codes) == 11
+    assert all(f"| `{c}` |" in readme for c in codes)

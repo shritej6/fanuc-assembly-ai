@@ -78,6 +78,17 @@
     "attempt": {
       "type": "integer",
       "minimum": 1
+    },
+    "error_code": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/error_code"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "why the step was planned (move_to_reject, take_spare, andon); null otherwise"
     }
   }
 }
