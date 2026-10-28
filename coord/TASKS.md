@@ -17,7 +17,7 @@ An agent may only start a task that is READY and owned by it.
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
 | T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | READY (user, 2026-10-28) | feature/T11-cosmos | T08 | Wed |
 | T12 | Isaac Lab Mimic demos for GR00T (after the scripted baseline works in sim) | CLAUDE | BACKLOG | feature/T12-mimic | T09 | Wed |
-| T13 | Detector (Faster R-CNN or RT-DETR) + wrist look-alike classifier training/eval | CODEX | READY (user, 2026-10-28) | feature/T13-detector | T08 | Wed |
+| T13 | Detector (RT-DETR) + wrist look-alike classifier training/eval | CODEX | IN PROGRESS | feature/T13-detector | T08 | Wed |
 | T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | READY (user, 2026-10-28) | feature/T14-pose-anomaly | T07 | Wed |
 | T15 | Product birth certificate (JSON) + PDF layout | CODEX + CLAUDE | BACKLOG | feature/T15-birth-cert | T09 | Wed |
 | T16 | Live OEE + Andon dashboard | CLAUDE + CODEX | BACKLOG | feature/T16-dashboard | T09 | Wed–Thu |

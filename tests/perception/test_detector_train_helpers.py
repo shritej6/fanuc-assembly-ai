@@ -9,6 +9,7 @@ from perception.detector.train import (
     _detection_metric_options,
     _evaluate_scenarios,
     _flatten_detection_metrics,
+    _gather_for_metrics,
     _size_pair,
     _validate_manifest_mode,
     build_parser,
@@ -171,6 +172,25 @@ def test_singleton_target_size_is_normalized_for_scenario_evaluation() -> None:
 
     with pytest.raises(DetectorTrainError, match="two values"):
         _size_pair([480])
+
+
+class _GatherRecorder:
+    def __init__(self) -> None:
+        self.object_flags = []
+
+    def gather_for_metrics(self, value, use_gather_object: bool):
+        self.object_flags.append(use_gather_object)
+        return value
+
+
+def test_ragged_detection_targets_use_object_gather_without_changing_logits() -> None:
+    accelerator = _GatherRecorder()
+    targets = [{"boxes": [[0.1, 0.2, 0.3, 0.4]], "class_labels": [1], "orig_size": [1080, 1920]}]
+    logits = ([0.1], [[0.2, 0.3, 0.4, 0.5]])
+
+    assert _gather_for_metrics(accelerator, targets) is targets
+    assert _gather_for_metrics(accelerator, logits) is logits
+    assert accelerator.object_flags == [True, False]
 
 
 def test_detector_rejects_non_finite_gradient_history() -> None:

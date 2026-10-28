@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import math
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -167,6 +168,22 @@ def _size_pair(raw: Any) -> tuple[int, int]:
     return height, width
 
 
+def _is_detection_targets(value: Any) -> bool:
+    required = {"boxes", "class_labels", "orig_size"}
+    return (
+        isinstance(value, (list, tuple))
+        and bool(value)
+        and all(isinstance(item, Mapping) and required <= item.keys() for item in value)
+    )
+
+
+def _gather_for_metrics(accelerator: Any, value: Any) -> Any:
+    return accelerator.gather_for_metrics(
+        value,
+        use_gather_object=_is_detection_targets(value),
+    )
+
+
 def _predictions_for_metrics(prediction_batches: Any, image_sizes: list[Any], processor: Any) -> list[Any]:
     import torch
 
@@ -317,7 +334,19 @@ def _run_ml(
     datasets = _load_datasets(args, config, processor)
     _check_labels(datasets, labels)
     training_args = TrainingArguments(**trainer_arguments(config["training"], args.output_dir))
-    trainer = Trainer(
+
+    class DetectionTrainer(Trainer):
+        def _gather_detection_metrics(self, value: Any) -> Any:
+            return _gather_for_metrics(self.accelerator, value)
+
+        def evaluation_loop(self, *loop_args: Any, **loop_kwargs: Any):
+            self.gather_function = self._gather_detection_metrics
+            try:
+                return super().evaluation_loop(*loop_args, **loop_kwargs)
+            finally:
+                self.gather_function = self._gather_detection_metrics
+
+    trainer = DetectionTrainer(
         model=model,
         args=training_args,
         train_dataset=datasets[0],
