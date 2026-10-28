@@ -1,6 +1,7 @@
 """Quality gates for rendered chunks (docs/SDG_PLAN.md section 7). Runs on any host with the chunk folders.
 
     uv run python -m sdg.qa $DATA_ROOT/synthetic/A/chunk_0000 [more chunks...] --sheet qa_A0.png
+    uv run python -m sdg.qa <chunk> --sample 40          # random 40 scenes per chunk (the watchdog's check)
 
 Checks every scene: all files present, boxes inside the image and equal to the mask extent, depth sane.
 Exit code 1 if any check fails. The overlay sheet (boxes + ids on 12 images) is for the by-eye gate.
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -91,21 +93,31 @@ def overlay_sheet(chunks: list[Path], out: Path, n: int = 12, width: int = 640) 
     sheet.save(out)
 
 
+def check_chunks(chunks: list[Path], sample: int = 0, seed: int = 0) -> dict:
+    """Check every scene, or a random `sample` per chunk (fixed seed, so a re-check looks at the same scenes)."""
+    scenes, errors = 0, []
+    for chunk in chunks:
+        files = sorted((chunk / "labels").glob("*.json"))
+        if sample and len(files) > sample:
+            files = sorted(random.Random(seed).sample(files, sample))
+        for f in files:
+            scenes += 1
+            errors += check_scene(chunk, f)
+    return {"scenes": scenes, "errors": len(errors), "first_errors": errors[:20]}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("chunks", nargs="+", type=Path)
     ap.add_argument("--sheet", type=Path)
+    ap.add_argument("--sample", type=int, default=0, help="check N random scenes per chunk instead of all")
     args = ap.parse_args()
-    scenes, errors = 0, []
-    for chunk in args.chunks:
-        for f in sorted((chunk / "labels").glob("*.json")):
-            scenes += 1
-            errors += check_scene(chunk, f)
-    print(json.dumps({"scenes": scenes, "errors": len(errors), "first_errors": errors[:20]}, indent=1))
+    result = check_chunks(args.chunks, args.sample)
+    print(json.dumps(result, indent=1))
     if args.sheet:
         overlay_sheet(args.chunks, args.sheet)
         print(f"overlay sheet: {args.sheet}")
-    sys.exit(1 if errors or scenes == 0 else 0)
+    sys.exit(1 if result["errors"] or result["scenes"] == 0 else 0)
 
 
 if __name__ == "__main__":
