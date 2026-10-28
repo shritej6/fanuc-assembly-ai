@@ -2,6 +2,7 @@
 
     python -m sdg.cosmos.restyle export --sets A B C --fraction 0.15 --out bundle/        # on Rosie
     python -m sdg.cosmos.restyle export --sets A B C --count 4 --out pilot/                # a fixed number per set
+    python -m sdg.cosmos.restyle export --sets N --chunks chunk_0003 --fraction 0.55 --out b/  # one rendered chunk
     (bundle/ is restyled on an H100 by sdg/cosmos/run_transfer.sh, which writes bundle/out/<name>.jpg)
     python -m sdg.cosmos.restyle import bundle/ --min-fscore 0.85                          # on Rosie
 
@@ -52,10 +53,14 @@ def parse_name(name: str) -> tuple[str, str, str, str]:
     return set_name, chunk, cam, idx
 
 
-def pick(data_root: Path, set_name: str, amount: float, seed: int) -> list[tuple[str, str, str, str]]:
-    """A fixed random share of the set's scenes (amount < 1: fraction, else count), one camera per scene in turn."""
+def pick(data_root: Path, set_name: str, amount: float, seed: int,
+         chunks: list[str] | None = None) -> list[tuple[str, str, str, str]]:
+    """A fixed random share of the set's scenes (amount < 1: fraction, else count), one camera per scene in turn.
+    With chunks, only those chunks (so each chunk can go to Cosmos as soon as it is rendered)."""
     picks = []
     for chunk in sorted((data_root / "synthetic" / set_name).glob("chunk_*")):
+        if chunks is not None and chunk.name not in chunks:
+            continue
         for label in sorted((chunk / "labels").glob("*.json")):
             cams = sorted(json.loads(label.read_text())["cameras"])
             picks.append((set_name, chunk.name, cams, label.stem))
@@ -71,12 +76,13 @@ def spec_for(name: str, cam: str, seed: int) -> dict:
             "max_frames": 1, "num_video_frames_per_chunk": 1, "seed": seed, **CONTROLS}
 
 
-def export(data_root: Path, sets: list[str], amount: float, seed: int, out: Path) -> int:
+def export(data_root: Path, sets: list[str], amount: float, seed: int, out: Path,
+           chunks: list[str] | None = None) -> int:
     (out / "inputs").mkdir(parents=True, exist_ok=True)
     (out / "specs").mkdir(exist_ok=True)
     n = 0
     for set_name in sets:
-        for s, chunk, cam, idx in pick(data_root, set_name, amount, seed):
+        for s, chunk, cam, idx in pick(data_root, set_name, amount, seed, chunks):
             name = name_of(s, chunk, cam, idx)
             shutil.copyfile(data_root / "synthetic" / s / chunk / "rgb" / cam / f"{idx}.jpg", out / "inputs" / f"{name}.jpg")
             (out / "specs" / f"{name}.json").write_text(json.dumps(spec_for(name, cam, seed), indent=1))
@@ -127,6 +133,7 @@ def main() -> None:
     share = ex.add_mutually_exclusive_group(required=True)
     share.add_argument("--fraction", type=float, help="share of each set's scenes (0-1)")
     share.add_argument("--count", type=int, help="scenes per set")
+    ex.add_argument("--chunks", nargs="+", help="only these chunk folders, e.g. chunk_0003")
     ex.add_argument("--seed", type=int, default=0)
     ex.add_argument("--out", type=Path, required=True)
     im = sub.add_parser("import", help="shape-drift check the restyled images and keep the good ones")
@@ -139,7 +146,7 @@ def main() -> None:
         amount = args.fraction if args.fraction is not None else args.count
         if not (0 < args.fraction < 1 if args.fraction is not None else args.count >= 1):
             ap.error("--fraction must be in (0, 1), --count at least 1")
-        print(f"{export(args.data_root, args.sets, amount, args.seed, args.out)} images exported")
+        print(f"{export(args.data_root, args.sets, amount, args.seed, args.out, args.chunks)} images exported")
     else:
         print(json.dumps(import_results(args.data_root, args.bundle, args.min_fscore)))
 

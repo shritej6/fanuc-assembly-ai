@@ -1,4 +1,5 @@
 import json
+import shutil
 
 import numpy as np
 from PIL import Image
@@ -57,6 +58,13 @@ def test_pick_is_deterministic_and_uses_each_camera(tmp_path):
     assert {cam for _, _, cam, _ in a} == {"table", "side"}
     assert len(pick(tmp_path, "A", 4, 0)) == 4 and len(pick(tmp_path, "A", 50, 0)) == 10
 
+
+def test_pick_can_take_one_rendered_chunk(tmp_path):
+    chunk = write_set(tmp_path)
+    shutil.copytree(chunk, chunk.parent / "chunk_0001")
+    picked = pick(tmp_path, "A", 0.5, 0, chunks=["chunk_0001"])
+    assert len(picked) == 5 and {c for _, c, _, _ in picked} == {"chunk_0001"}
+    assert len(pick(tmp_path, "A", 0.5, 0)) == 10
 
 def test_import_keeps_only_images_that_pass_the_drift_check(tmp_path):
     chunk = write_set(tmp_path, n=4)
