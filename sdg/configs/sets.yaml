@@ -366,8 +366,8 @@ sets:
     model: insertion alignment + seated check (wrist)
     cameras: [wrist]
     outputs: [rgb, depth, instance_segmentation]
-    build_states: [seated, shifted, rotated, tilted, high]
-    build_state_weights: [0.3, 0.25, 0.2, 0.1, 0.15]
+    build_states: [seated, shifted, rotated, tilted, high, wrong_part]   # wrong_part: a look-alike that may seat fully
+    build_state_weights: [0.27, 0.22, 0.18, 0.09, 0.14, 0.10]             # (M1_01 / M2_01 drop into F03: fit != identity)
     seated_noise_mm: 0.3
     high_mm: [0.3, 3.0]
     tilt_deg: [0.5, 10.0]
