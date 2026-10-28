@@ -2,6 +2,24 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · T25 test-bed data (in progress) · CLAUDE (for CODEX) · parts stand as installed, any yaw
+
+- Rule from the user: the arm only picks/places straight down and cannot turn a part over, so every loose part and
+  spare stands in its installed orientation at any yaw. A part that has fallen over must go to the reject zone and be
+  replaced from the spare store (no "flip -> rework"). Planner work for you: reject on `rest == "fallen"`-like evidence.
+- Old sets A-M drew random drop poses: only 14-27 % of loose parts were in installed orientation and M1/M2/M3_04
+  (standing on an 8 mm edge) never were. Keep A-M in training (they teach fallen parts) but weight the new sets up.
+- New sets (sdg/configs/sets.yaml, rendering next): N 20k + R 10k (detector, table+side, installed, 10 % fallen),
+  O 24k (wrist identity close-ups at ONE height, 147-153 mm above the part's top face, so mm-per-pixel is fixed and
+  1-1.5 mm look-alike size gaps stay visible: the planner should take identity close-ups at 150 mm above the part top),
+  P 12k (wrist insertion alignment: top part on/over its pegs with labelled `build_offset` shift/yaw/tilt/height),
+  Q 4k (50 % fallen + spare store).
+- New label fields: loose work-area parts and spares carry `rest`: `installed` | `fallen`. `stable_pose` stays an int:
+  the matching drop pose, or -1 when the installed orientation is not a drop pose (M1/M2/M3_04 standing).
+- `sdg/data/insertion_tolerance.json` (from CAD): per part the yaws it fits at (11 one way only, 11 every 180 deg,
+  2 any), yaw tolerance (keyed parts +-1.4-2.4 deg, caps 6.8) and sideways tolerance (0.38-0.50 mm). Use it to yaw-align
+  before the straight-down insert and to size the small search when a part does not seat.
+
 ## 2026-10-28 · T11 Cosmos Transfer · CLAUDE (for CODEX) · 10 % of A, F, G, B, H, K restyled tonight
 
 - Do not wait for Cosmos: smoke-test and benchmark on the renders now. The production prepare gate (10-20 % accepted
