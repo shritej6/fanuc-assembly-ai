@@ -14,10 +14,12 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from jsonschema.protocols import Validator
+from jsonschema.validators import validator_for
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
+from referencing.jsonschema import UnknownDialect
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
 from yaml.resolver import BaseResolver
@@ -155,11 +157,7 @@ class Catalog:
 def _schema_registry() -> Registry:
     registry = Registry()
     for path in CONTRACTS_PATH.glob("*.schema.json"):
-        contents = _read_json_resource(path, f"schema {path.name}")
-        try:
-            resource = Resource.from_contents(contents)
-        except CannotDetermineSpecification as error:
-            raise CatalogResourceError(f"Cannot identify schema resource {path}: {error}") from error
+        _, _, resource = _load_schema_resource(path)
         registry = registry.with_resource(path.name, resource)
     return registry
 
@@ -186,14 +184,26 @@ def _read_json_resource(path: Path, label: str) -> Any:
         raise CatalogResourceError(f"Cannot parse {label} resource {path}: {error}") from error
 
 
-def _validate_schema(data: Any) -> None:
-    schema = _read_json_resource(CATALOG_SCHEMA_PATH, "catalog schema")
+def _load_schema_resource(path: Path) -> tuple[Any, type[Validator], Resource]:
+    contents = _read_json_resource(path, f"schema {path.name}")
     try:
-        Draft202012Validator.check_schema(schema)
-        validator = Draft202012Validator(schema, registry=_schema_registry())
-        errors = sorted(validator.iter_errors(data), key=lambda error: error.json_path)
+        resource = Resource.from_contents(contents)
+        validator_type = validator_for(contents)
+        validator_type.check_schema(contents)
     except SchemaError as error:
-        raise CatalogResourceError(f"Invalid catalog schema resource {CATALOG_SCHEMA_PATH}: {error}") from error
+        raise CatalogResourceError(f"Invalid schema resource {path}: {error}") from error
+    except (CannotDetermineSpecification, UnknownDialect) as error:
+        raise CatalogResourceError(f"Cannot identify schema resource {path}: {error}") from error
+    except Unresolvable as error:
+        raise CatalogResourceError(f"Cannot resolve schema resource {path}: {error}") from error
+    return contents, validator_type, resource
+
+
+def _validate_schema(data: Any) -> None:
+    schema, validator_type, _ = _load_schema_resource(CATALOG_SCHEMA_PATH)
+    try:
+        validator = validator_type(schema, registry=_schema_registry())
+        errors = sorted(validator.iter_errors(data), key=lambda error: error.json_path)
     except Unresolvable as error:
         raise CatalogResourceError(f"Cannot resolve catalog schema reference: {error}") from error
     if errors:

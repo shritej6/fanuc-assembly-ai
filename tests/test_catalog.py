@@ -107,6 +107,12 @@ def _write_catalog(path: Path, data: dict) -> Path:
     return path
 
 
+def _copy_schema_set(destination: Path) -> Path:
+    for source in CONTRACTS.glob("*.schema.json"):
+        (destination / source.name).write_text(source.read_text())
+    return destination
+
+
 def _replace_nested(data: dict, keys: tuple[str | int, ...], value: object) -> None:
     target = data
     for key in keys[:-1]:
@@ -278,6 +284,27 @@ def test_load_catalog_wraps_unresolvable_schema_reference(
     monkeypatch.setattr(catalog_module, "CATALOG_SCHEMA_PATH", path, raising=False)
 
     with pytest.raises(CatalogResourceError, match="reference"):
+        load_catalog()
+
+
+@pytest.mark.parametrize("failure", ["invalid-structure", "unknown-dialect"])
+def test_load_catalog_validates_every_registry_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    schema_dir = _copy_schema_set(tmp_path)
+    common_path = schema_dir / "common.schema.json"
+    common = json.loads(common_path.read_text())
+    if failure == "invalid-structure":
+        common["type"] = 7
+    else:
+        common["$schema"] = "https://example.invalid/unknown-dialect"
+    common_path.write_text(json.dumps(common))
+    monkeypatch.setattr(catalog_module, "CONTRACTS_PATH", schema_dir)
+    monkeypatch.setattr(catalog_module, "CATALOG_SCHEMA_PATH", schema_dir / "catalog.schema.json")
+
+    with pytest.raises(CatalogResourceError, match="common.schema.json"):
         load_catalog()
 
 
