@@ -21,6 +21,10 @@ Newest first. One entry per finished task.
   0 errors, on Rosie at `~/fanuc-assembly-data/synthetic/C/`. Codex can start PatchCore (T14): train on scenes whose
   wrist target has `variant == "ok"`, keep the defect scenes as the test set.
 - Brev 2x L40S (`fa-render-l40s`) renders G, I, J with `sdg/brev/render_queue.sh`; deleted when done ($35 cap).
+- **Sets G and I READY FOR TRAINING (2026-10-28 04:00)**, on Rosie under `~/fanuc-assembly-data/synthetic/`:
+  G 16/16 chunks (4,000 scenes, 8,000 table + side images, detector clutter); I 12/12 chunks (6,000 wrist images,
+  PatchCore hard look: good targets extend the training set, defect targets are test only). Every chunk sample-checked
+  with 0 errors; Rosie copy verified file-for-file against Brev (same file count and bytes).
 - **Build-check labels changed (2026-10-28 03:00)**: mis-built parts now rest ON the stack (no clipping into the
   fixture); `build_offset.high_mm` is the real lift for tilted / swapped / shifted / turned parts. Set D: 1,155 scenes
   re-rendering on the GB10 — do not train on D until it is marked ready again. New set M (6,000, Brev): states
