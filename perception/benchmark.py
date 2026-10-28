@@ -2,14 +2,46 @@
 
 from __future__ import annotations
 
+import copy
 import math
+import os
 import statistics
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 
 class BenchmarkError(ValueError):
     """Raised when a benchmark cannot produce a defensible measurement."""
+
+
+def benchmark_training_config(
+    config: dict[str, Any],
+    *,
+    batch_size: int,
+    workers: int,
+    steps: int,
+    max_batch_size: int,
+) -> dict[str, Any]:
+    """Create a bounded no-eval overlay without mutating production settings."""
+    if type(batch_size) is not int or not 1 <= batch_size <= max_batch_size:
+        raise BenchmarkError(f"benchmark batch size must be in [1, {max_batch_size}]")
+    if type(workers) is not int or not 0 <= workers <= 208:
+        raise BenchmarkError("benchmark workers must be in [0, 208]")
+    updated = copy.deepcopy(config)
+    updated["training"].update(
+        {
+            "max_steps": steps,
+            "per_device_train_batch_size": batch_size,
+            "dataloader_num_workers": workers,
+            "eval_strategy": "no",
+            "save_strategy": "no",
+            "logging_strategy": "no",
+            "load_best_model_at_end": False,
+        }
+    )
+    return updated
 
 
 def validate_benchmark_shape(steps: int, warmup_steps: int) -> None:
@@ -45,6 +77,43 @@ def projected_train_loop_hours(step_seconds: float, steps: int) -> float:
     if type(steps) is not int or steps < 1:
         raise BenchmarkError("projected optimizer steps must be a positive integer")
     return step_seconds * steps / 3600
+
+
+def projection_report(
+    train_samples: int,
+    config: dict[str, Any],
+    step_seconds: float,
+) -> dict[str, Any]:
+    """Bind an exact train count and production schedule to a timing result."""
+    training = config["training"]
+    steps = optimizer_steps(
+        train_samples,
+        training["per_device_train_batch_size"],
+        training["gradient_accumulation_steps"],
+        training["num_train_epochs"],
+    )
+    return {
+        "train_samples": train_samples,
+        "epochs": training["num_train_epochs"],
+        "optimizer_steps": steps,
+        "train_loop_hours": projected_train_loop_hours(step_seconds, steps),
+        "excludes": ["evaluation", "checkpoint_writes", "final_test", "scenario_reports"],
+    }
+
+
+def cpu_affinity_count() -> int:
+    """Return schedulable logical CPUs rather than the host-wide CPU count."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    return len(affinity(0)) if affinity is not None else int(os.cpu_count() or 1)
+
+
+def ensure_empty_output(path: Path, error_type: type[Exception]) -> Path:
+    """Refuse to merge measurements from different benchmark processes."""
+    resolved = path.resolve()
+    if resolved.exists() and any(resolved.iterdir()):
+        raise error_type(f"benchmark output is not empty: {resolved}")
+    resolved.mkdir(parents=True, exist_ok=True)
+    return resolved
 
 
 @dataclass
@@ -86,3 +155,45 @@ class SynchronizedStepTimer:
             "max_seconds_per_optimizer_step": max(values),
             "median_compute_seconds": statistics.median(self.compute_seconds),
         }
+
+
+def cuda_timing_callback(timer: SynchronizedStepTimer) -> tuple[Any, dict[str, Any]]:
+    """Build a Trainer callback that captures synchronized timing and CUDA peaks."""
+    import torch
+    from transformers import TrainerCallback
+    memory: dict[str, Any] = {
+        "gpu_name": torch.cuda.get_device_name(),
+        "total_bytes": torch.cuda.get_device_properties(0).total_memory,
+        "minimum_free_at_step_end_bytes": None,
+    }
+
+    class TimingCallback(TrainerCallback):
+        def on_train_begin(self, args, state, control, **kwargs):
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            return control
+
+        def on_step_begin(self, args, state, control, **kwargs):
+            timer.step_begin()
+            return control
+
+        def on_step_end(self, args, state, control, **kwargs):
+            completed_step = int(state.global_step)
+            timer.step_end(completed_step)
+            if completed_step == timer.warmup_steps:
+                torch.cuda.reset_peak_memory_stats()
+            elif completed_step > timer.warmup_steps:
+                free_bytes, _ = torch.cuda.mem_get_info()
+                current = memory["minimum_free_at_step_end_bytes"]
+                memory["minimum_free_at_step_end_bytes"] = (
+                    free_bytes if current is None else min(current, free_bytes)
+                )
+            return control
+
+        def on_train_end(self, args, state, control, **kwargs):
+            torch.cuda.synchronize()
+            memory["peak_allocated_bytes"] = torch.cuda.max_memory_allocated()
+            memory["peak_reserved_bytes"] = torch.cuda.max_memory_reserved()
+            return control
+
+    return TimingCallback(), memory

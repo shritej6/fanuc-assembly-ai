@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import math
 import os
 import time
@@ -12,8 +11,11 @@ from typing import Any
 
 from perception.benchmark import (
     SynchronizedStepTimer,
-    optimizer_steps,
-    projected_train_loop_hours,
+    benchmark_training_config,
+    cpu_affinity_count,
+    cuda_timing_callback,
+    ensure_empty_output,
+    projection_report,
     validate_benchmark_shape,
 )
 from perception.detector.train import (
@@ -40,23 +42,13 @@ def benchmark_config(
     steps: int,
 ) -> dict[str, Any]:
     """Create a bounded, no-eval overlay without changing production settings."""
-    if type(batch_size) is not int or not 1 <= batch_size <= 256:
-        raise ValueError("benchmark batch size must be in [1, 256]")
-    if type(workers) is not int or not 0 <= workers <= 208:
-        raise ValueError("benchmark workers must be in [0, 208]")
-    updated = copy.deepcopy(config)
-    updated["training"].update(
-        {
-            "max_steps": steps,
-            "per_device_train_batch_size": batch_size,
-            "dataloader_num_workers": workers,
-            "eval_strategy": "no",
-            "save_strategy": "no",
-            "logging_strategy": "no",
-            "load_best_model_at_end": False,
-        }
+    return benchmark_training_config(
+        config,
+        batch_size=batch_size,
+        workers=workers,
+        steps=steps,
+        max_batch_size=256,
     )
-    return updated
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -72,61 +64,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-train-samples", type=int)
     parser.add_argument("--worst-case-annotations", action="store_true")
     return parser
-
-
-def _cpu_affinity_count() -> int:
-    affinity = getattr(os, "sched_getaffinity", None)
-    return len(affinity(0)) if affinity is not None else int(os.cpu_count() or 1)
-
-
-def _timing_callback(timer: SynchronizedStepTimer) -> tuple[Any, dict[str, Any]]:
-    import torch
-    from transformers import TrainerCallback
-
-    memory: dict[str, Any] = {
-        "gpu_name": torch.cuda.get_device_name(),
-        "total_bytes": torch.cuda.get_device_properties(0).total_memory,
-        "minimum_free_at_step_end_bytes": None,
-    }
-
-    class TimingCallback(TrainerCallback):
-        def on_train_begin(self, args, state, control, **kwargs):
-            torch.cuda.synchronize()
-            torch.cuda.reset_peak_memory_stats()
-            return control
-
-        def on_step_begin(self, args, state, control, **kwargs):
-            timer.step_begin()
-            return control
-
-        def on_step_end(self, args, state, control, **kwargs):
-            completed_step = int(state.global_step)
-            timer.step_end(completed_step)
-            if completed_step == timer.warmup_steps:
-                torch.cuda.reset_peak_memory_stats()
-            elif completed_step > timer.warmup_steps:
-                free_bytes, _ = torch.cuda.mem_get_info()
-                current = memory["minimum_free_at_step_end_bytes"]
-                memory["minimum_free_at_step_end_bytes"] = (
-                    free_bytes if current is None else min(current, free_bytes)
-                )
-            return control
-
-        def on_train_end(self, args, state, control, **kwargs):
-            torch.cuda.synchronize()
-            memory["peak_allocated_bytes"] = torch.cuda.max_memory_allocated()
-            memory["peak_reserved_bytes"] = torch.cuda.max_memory_reserved()
-            return control
-
-    return TimingCallback(), memory
-
-
-def _ensure_empty_output(path: Path) -> Path:
-    resolved = path.resolve()
-    if resolved.exists() and any(resolved.iterdir()):
-        raise DetectorTrainError(f"benchmark output is not empty: {resolved}")
-    resolved.mkdir(parents=True, exist_ok=True)
-    return resolved
 
 
 def _repeat_worst_annotation_batch(dataset: Any, batch_size: int, steps: int) -> None:
@@ -160,7 +97,7 @@ def _prepare(args: argparse.Namespace) -> tuple[dict[str, Any], list[str], dict[
     labels = metadata.get("labels", {}).get("detector")
     if not isinstance(labels, list) or not labels:
         raise DetectorTrainError("frozen detector label map is empty")
-    args.output_dir = _ensure_empty_output(args.output_dir)
+    args.output_dir = ensure_empty_output(args.output_dir, DetectorTrainError)
     identity = build_run_provenance(metadata, config, args.coco_dir)
     write_provenance(args.output_dir / "run_provenance.json", identity)
     return config, labels, identity
@@ -182,7 +119,7 @@ def _train(
     trainer = _build_trainer(args, config, processor, model, id2label, datasets)
     configure_mixed_precision(trainer, config["training"], DetectorTrainError)
     timer = SynchronizedStepTimer(args.warmup_steps, torch.cuda.synchronize, time.perf_counter)
-    callback, memory = _timing_callback(timer)
+    callback, memory = cuda_timing_callback(timer)
     trainer.add_callback(callback)
     result = trainer.train()
     _check_finite(result.metrics, "benchmark training")
@@ -198,20 +135,7 @@ def _projection(
 ) -> dict[str, Any] | None:
     if args.project_train_samples is None:
         return None
-    training = config["training"]
-    steps = optimizer_steps(
-        args.project_train_samples,
-        training["per_device_train_batch_size"],
-        training["gradient_accumulation_steps"],
-        training["num_train_epochs"],
-    )
-    return {
-        "train_samples": args.project_train_samples,
-        "epochs": training["num_train_epochs"],
-        "optimizer_steps": steps,
-        "train_loop_hours": projected_train_loop_hours(step_seconds, steps),
-        "excludes": ["evaluation", "checkpoint_writes", "final_test", "scenario_reports"],
-    }
+    return projection_report(args.project_train_samples, config, step_seconds)
 
 
 def _report(
@@ -236,7 +160,7 @@ def _report(
         "batch_size": batch_size,
         "gradient_accumulation_steps": accumulation,
         "dataloader_workers": config["training"]["dataloader_num_workers"],
-        "cpu_affinity_count": _cpu_affinity_count(),
+        "cpu_affinity_count": cpu_affinity_count(),
         "warmup_steps": args.warmup_steps,
         "worst_case_annotations": args.worst_case_annotations,
         "benchmark_dataset_samples": sample_counts,
