@@ -69,6 +69,7 @@ def test_benchmark_overlay_is_bounded_and_does_not_mutate_production() -> None:
     benchmark = benchmark_config(production, batch_size=16, workers=52, steps=8)
 
     assert production["training"]["max_steps"] == -1
+    assert benchmark["training"]["num_train_epochs"] == 20
     assert benchmark["training"]["max_steps"] == 8
     assert benchmark["training"]["per_device_train_batch_size"] == 16
     assert benchmark["training"]["dataloader_num_workers"] == 52

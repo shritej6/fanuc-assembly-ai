@@ -47,7 +47,6 @@ def benchmark_config(
     updated = copy.deepcopy(config)
     updated["training"].update(
         {
-            "num_train_epochs": 1,
             "max_steps": steps,
             "per_device_train_batch_size": batch_size,
             "dataloader_num_workers": workers,
