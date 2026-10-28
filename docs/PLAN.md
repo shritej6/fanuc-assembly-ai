@@ -100,13 +100,13 @@ I compared every STL pair by surface distance:
 | Simulated cell | Isaac Sim 6.0 starter + our 30 STL parts |
 | Training images | Replicator in Isaac Sim (~800 renders per part: black PLA, blur, noise, clutter) |
 | Extra realism | Cosmos Transfer (required, user 2026-10-28; spot-check for shape drift) |
-| Find parts, fixtures | Detector: Faster R-CNN or RT-DETR (avoid YOLO's AGPL) |
+| Find parts, fixtures | Detector: RT-DETR (user 2026-10-28; Faster R-CNN was the alternative; avoid YOLO's AGPL) |
 | Exact pose | FoundationPose with STL files + depth |
 | Look-alikes | Wrist-camera close-up classifier |
 | Damaged parts | anomalib (PatchCore) |
 | Missing layers | Table and wrist depth |
 | Decisions | Recipe state machine + live inventory |
-| Build check | Recipe check, then Cosmos Reason 2 (2B) |
+| Build check | Recipe check, then Cosmos Reason 2 (8B, user 2026-10-28; was 2B) |
 | Motion | Detected pose + CAD heights (scripted baseline) |
 | Learned picking | GR00T N1.7 via LeRobot (main), SmolVLA (backup), ACT (baseline); trained on sim demos multiplied by Isaac Lab Mimic; used only if it beats the script |
 | Deployment | Official client `policy.py` |
@@ -126,7 +126,7 @@ Operator: "assemble everything on the table"   (or obs["trial"]["instruction"])
 6 ASSEMBLE  01→04: scripted motion from detected pose + CAD heights (GR00T N1.7 picking only if it beats the script)
             → VERIFY (depth height + wrist check)
 7 RECOVER   not seated → pull out and reinsert ×2 → still bad: disassemble 04→01, re-inspect, swap, rebuild
-8 FINAL QC  recipe check, then Cosmos Reason 2 second opinion → DONE / REBUILD
+8 FINAL QC  recipe check, then Cosmos Reason 2 (8B) second opinion → DONE / REBUILD
 9 LEARN     log defects, jams, slips and retries per part → risk table → stocking advice
 ```
 
@@ -172,7 +172,7 @@ The basis for the time estimate is **5.5 s per image on a T4** (real-time render
 |---|---|
 | Rosie T4 | Isaac/Replicator rendering, Slurm arrays |
 | Rosie dgxh100 / Brev H100–A100 | Train A–D; Cosmos Transfer pilot (50 images, measure time and credits, then about 10% of set A) |
-| Brev (480 credits) | GR00T training, Cosmos, overflow. Stop every instance as soon as its job ends. |
+| Brev | GR00T training, Cosmos, overflow when Rosie's H100 cannot start in time. Cap $50 for this phase (user 2026-10-28). Stop every instance as soon as its job ends. |
 | GB10 / DGX Spark | Cosmos Reason 2 build-check endpoint + operator agent |
 | Omniverse / Isaac Sim | USD assets of all 30 objects, zones, insertion physics, the fault-injected scenario fleet |
 
@@ -236,7 +236,7 @@ fanuc-assembly-ai/
 | **Fri Oct 31** | **Real slot 2 (+3)** | Summary draft, renders | Fixes; baseline comparison |
 | **Sat Nov 1** | Video | Summary, references, README | Final tests, clean repo → **submit by 11:59 PM CT** |
 
-**If time runs short:** Cosmos Transfer is optional per the stack; real-cell scope changes only with your OK.
+**If time runs short:** real-cell scope changes only with your OK. Cosmos Transfer is required (user 2026-10-28).
 
 ## 10a. Industry-level layer (approved 2026-10-27; adds to the stack, replaces nothing)
 
