@@ -34,6 +34,8 @@ class ManifestConfig:
     classifier_sets: tuple[str, ...] = ("B", "H", "K")
     split_seed: int = 1337
     require_cosmos: bool = True
+    include_cosmos: bool = True
+    max_scenes_per_set: int | None = None
     min_cosmos_fraction: float = 0.10
     max_cosmos_fraction: float = 0.20
 
@@ -48,6 +50,14 @@ class ManifestSummary:
     detector_records: int
     classifier_records: int
     skipped_classifier_targets: dict[str, int]
+
+
+def _validate_config(config: ManifestConfig) -> None:
+    if config.require_cosmos and not config.include_cosmos:
+        raise ManifestError("a Cosmos-required manifest must include Cosmos records")
+    limit = config.max_scenes_per_set
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise ManifestError("max_scenes_per_set must be a positive integer")
 
 
 def split_for_scene(set_name: str, index: int, seed: int) -> str:
@@ -234,11 +244,17 @@ class _ManifestBuilder:
         }
         self.stats[set_name] = stats
         set_dir = self.config.data_root.resolve() / "synthetic" / set_name
+        remaining = self.config.max_scenes_per_set
         for chunk in _chunk_dirs(set_dir):
+            if remaining == 0:
+                break
             labels, code_commit = _validated_labels(chunk)
+            if remaining is not None:
+                labels = labels[:remaining]
+                remaining -= len(labels)
             stats["code_commits"].add(code_commit)
             stats["scenes"] += len(labels)
-            entries = _cosmos_entries(chunk)
+            entries = _cosmos_entries(chunk) if self.config.include_cosmos else {}
             stats["cosmos_checked"] += len(entries)
             stats["cosmos_accepted"] += sum(value.get("accepted") is True for value in entries.values())
             self._process_chunk(chunk, labels, entries, set_name, task)
@@ -434,6 +450,8 @@ class _ManifestBuilder:
             "taxonomy_path": str(self.config.taxonomy_path.resolve()),
             "taxonomy_sha256": _sha256(self.config.taxonomy_path),
             "require_cosmos": self.config.require_cosmos,
+            "include_cosmos": self.config.include_cosmos,
+            "max_scenes_per_set": self.config.max_scenes_per_set,
             "labels": {
                 "classifier": list(self.ontology.classifier_labels),
                 "detector": list(self.ontology.detector_labels),
@@ -458,5 +476,6 @@ class _ManifestBuilder:
 
 def build_manifests(config: ManifestConfig) -> ManifestSummary:
     """Validate approved synthetic sets and atomically freeze both T13 manifests."""
+    _validate_config(config)
     ontology = load_ontology(config.taxonomy_path)
     return _ManifestBuilder(config, ontology).build()

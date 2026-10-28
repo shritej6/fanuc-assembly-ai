@@ -254,6 +254,62 @@ def test_production_manifest_enforces_per_set_cosmos_fraction(tmp_path: Path) ->
         )
 
 
+def test_native_smoke_manifest_excludes_partial_cosmos_and_limits_scenes(tmp_path: Path) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+    chunk = _write_chunk(tmp_path, "A", [1, 2, 3], ("table", "side"))
+    _write_image(chunk / "rgb_cosmos" / "table" / "000001.jpg")
+    chunk.joinpath("_COSMOS.json").write_text(
+        json.dumps({"table/000001": {"edge_fscore": 0.95, "accepted": True}})
+    )
+
+    summary = build_manifests(
+        ManifestConfig(
+            data_root=tmp_path,
+            output_dir=tmp_path / "out",
+            taxonomy_path=taxonomy,
+            detector_sets=("A",),
+            classifier_sets=(),
+            require_cosmos=False,
+            include_cosmos=False,
+            max_scenes_per_set=2,
+        )
+    )
+
+    records = _read_jsonl(summary.detector_path)
+    metadata = json.loads(summary.metadata_path.read_text())
+    assert len(records) == 4
+    assert {record["variant"] for record in records} == {"native"}
+    assert metadata["include_cosmos"] is False
+    assert metadata["max_scenes_per_set"] == 2
+
+
+@pytest.mark.parametrize(
+    ("include_cosmos", "max_scenes", "message"),
+    [(False, None, "include Cosmos"), (True, 0, "max_scenes_per_set")],
+)
+def test_manifest_rejects_inconsistent_mode_configuration(
+    tmp_path: Path,
+    include_cosmos: bool,
+    max_scenes: int | None,
+    message: str,
+) -> None:
+    taxonomy = _write_taxonomy(tmp_path)
+
+    with pytest.raises(ManifestError, match=message):
+        build_manifests(
+            ManifestConfig(
+                data_root=tmp_path,
+                output_dir=tmp_path / "out",
+                taxonomy_path=taxonomy,
+                detector_sets=(),
+                classifier_sets=(),
+                require_cosmos=True,
+                include_cosmos=include_cosmos,
+                max_scenes_per_set=max_scenes,
+            )
+        )
+
+
 def test_malformed_label_is_reported_as_a_manifest_error(tmp_path: Path) -> None:
     taxonomy = _write_taxonomy(tmp_path)
     chunk = _write_chunk(tmp_path, "A", [1], ("table", "side"))
