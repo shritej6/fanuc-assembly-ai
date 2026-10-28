@@ -7,6 +7,7 @@
 #
 #   nohup sdg/brev/hub.sh "N:0-19 O:0-23 ..." "R:0-19 P:0-23 ..." > ~/hub.log 2>&1 &
 #   (arguments go to render_queue.sh: one render plan per GPU)
+#   NO_RENDER=1 nohup sdg/brev/hub.sh > ~/hub.log 2>&1 &     # restart the hub only; the render queue keeps running
 set -uo pipefail
 shopt -s nullglob   # no chunk rendered yet = nothing to send, not a literal "*" path
 
@@ -20,7 +21,7 @@ SSH=(ssh -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-n
 export DATA_ROOT
 mkdir -p "$BUNDLES"
 
-"$REPO/sdg/brev/render_queue.sh" "$@" > "$DATA_ROOT/render_queue.log" 2>&1 &
+[[ -n "${NO_RENDER:-}" ]] || "$REPO/sdg/brev/render_queue.sh" "$@" > "$DATA_ROOT/render_queue.log" 2>&1 &
 
 send_finished_chunks() {
   local done_file chunk set name host
