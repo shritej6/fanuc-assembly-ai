@@ -81,11 +81,23 @@ def test_composite_keeps_rendered_parts_relit_and_takes_the_rest_from_cosmos():
     cosmos = (rgb.astype(np.float32) * np.array([0.85, 0.8, 0.7])).astype(np.uint8)   # dimmer, warmer light
     cosmos[60:90, 90:130] = 235                                           # and it erased the second part
     cosmos[5:15, 5:15] = 120                                              # and added a real-looking smudge
-    out = composite(rgb, cosmos, seg)
+    out, kept = composite(rgb, cosmos, seg)
     parts = seg > 0
     expected = rgb.astype(np.float32) * np.array([0.85, 0.8, 0.7])
-    assert np.abs(out[parts].astype(np.float32) - expected[parts]).max() <= 1.5   # both parts back, relit
+    assert np.abs(out[parts].astype(np.float32) - expected[parts]).max() <= 1.5   # both parts right, relit
     assert (out[5:15, 5:15] == 120).all()                                 # background stays Cosmos
+    assert kept == [1]                                                    # only the unchanged part kept Cosmos
+
+
+def test_composite_keeps_the_cosmos_look_of_a_part_whose_shape_is_unchanged():
+    rgb, seg = scene()
+    cosmos = rgb.copy()
+    cosmos[30:60, 30:70] = 45                                             # part 1: new material, same outline
+    cosmos[60:90, 90:130] = 235                                           # part 2: erased
+    out, kept = composite(rgb, cosmos, seg)
+    assert kept == [1]
+    assert (out[32:58, 32:68] == 45).all()                                # Cosmos look kept
+    assert (out[62:88, 92:128] == 20).all()                               # erased part restored from the render
 
 
 def test_light_change_is_clamped_and_box_blur_keeps_flat_images_flat():
@@ -94,3 +106,13 @@ def test_light_change_is_clamped_and_box_blur_keeps_flat_images_flat():
     assert (gain <= 1.5).all()
     flat = np.full((20, 30), 7.0)
     assert np.allclose(box_blur(flat, 3), 7.0)
+
+
+def test_composite_restores_a_part_cosmos_recoloured_with_its_outline_intact():
+    rgb, seg = scene()
+    rgb[30:60, 30:70] = (220, 60, 50)                                     # a red foreign object
+    cosmos = rgb.copy()
+    cosmos[30:60, 30:70] = (40, 35, 30)                                   # Cosmos painted it black, same outline
+    out, kept = composite(rgb, cosmos, seg)
+    assert kept == [2]
+    assert (np.abs(out[32:58, 32:68].astype(int) - (220, 60, 50)) <= 1).all()

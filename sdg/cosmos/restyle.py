@@ -5,10 +5,10 @@
     (bundle/ is restyled on an H100 by sdg/cosmos/run_transfer.sh, which writes bundle/out/<name>.jpg)
     python -m sdg.cosmos.restyle import bundle/ --min-fscore 0.85                          # on Rosie
 
-Cosmos Transfer 2.5 image-to-image (edge + vis control) restyles the whole frame; the rendered parts are then put
-back (sdg/cosmos/composite.py), so a restyled image keeps the render's labels exactly. The import gate is the
-whole-image edge F-score of the Cosmos frame (is the scene still where the render put it); the worst single object
-is recorded too. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's size, every result to
+Cosmos Transfer 2.5 image-to-image (edge + vis control) restyles the whole frame; every part Cosmos changed is then
+put back from the render (sdg/cosmos/composite.py), so a restyled image keeps the render's labels exactly. The import
+gate is the whole-image edge F-score of the Cosmos frame (is the scene still where the render put it); the worst
+single object and how many objects kept their Cosmos look are recorded too. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's size, every result to
 <chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
 """
 
@@ -95,7 +95,9 @@ def check_one(data_root: Path, restyled_path: Path) -> tuple[Path, str, str, dic
     worst, uid = worst_object(src, out, seg)
     scores = {"edge_fscore": round(edge_fscore(src, out, seg), 4), "worst_object_fscore": round(worst, 4),
               "worst_object_seg_id": uid}
-    return chunk_dir, cam, idx, scores, Image.fromarray(composite(src, out, seg))
+    merged, kept = composite(src, out, seg)
+    scores["cosmos_objects"], scores["rendered_objects"] = len(kept), len(np.unique(seg[seg > 0])) - len(kept)
+    return chunk_dir, cam, idx, scores, Image.fromarray(merged)
 
 
 def import_results(data_root: Path, bundle: Path, min_fscore: float) -> dict:

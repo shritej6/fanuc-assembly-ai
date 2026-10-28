@@ -54,11 +54,11 @@ def edge_fscore(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> fl
     return float(0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall))
 
 
-def worst_object(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> tuple[float, int]:
-    """Lowest per-object edge F-score and its seg id. One object reshaped (a cylinder drawn as a cube, a slot added
-    to a knob) hides in the whole-image score but not here. Objects under MIN_OBJECT_PX are too small to judge."""
+def object_scores(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> dict[int, float]:
+    """Edge F-score of every object of at least MIN_OBJECT_PX pixels, by seg id. One object reshaped (a cylinder drawn
+    as a cube, a slot added to a knob) hides in the whole-image score but not here."""
     pad = ROI_PAD_PX + TOL_PX + 2
-    worst = (1.0, 0)
+    scores = {}
     for uid in np.unique(seg[seg > 0]):
         ys, xs = np.nonzero(seg == uid)
         if len(xs) < MIN_OBJECT_PX:
@@ -66,6 +66,11 @@ def worst_object(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> t
         y0, y1 = max(ys.min() - pad, 0), ys.max() + pad + 1
         x0, x1 = max(xs.min() - pad, 0), xs.max() + pad + 1
         mask = (seg[y0:y1, x0:x1] == uid).astype(np.uint8)
-        score = edge_fscore(source[y0:y1, x0:x1], restyled[y0:y1, x0:x1], mask)
-        worst = min(worst, (score, int(uid)))
-    return worst
+        scores[int(uid)] = edge_fscore(source[y0:y1, x0:x1], restyled[y0:y1, x0:x1], mask)
+    return scores
+
+
+def worst_object(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> tuple[float, int]:
+    """Lowest per-object edge F-score and its seg id ((1.0, 0) when no object is large enough to judge)."""
+    scores = object_scores(source, restyled, seg)
+    return min(((score, uid) for uid, score in scores.items()), default=(1.0, 0))

@@ -1,19 +1,27 @@
-"""Put the rendered parts back into a Cosmos-restyled image.
+"""Put rendered parts back into a Cosmos-restyled image where Cosmos changed them.
 
-Cosmos Transfer makes the table, robot, background and light look real, but it redraws the fine features of small
-parts (pins and recesses moved, merged or invented; pale discs erased) at every setting tried on 2026-10-28: default
-and lowest edge threshold, vis control, guided generation with the part masks. The labels describe the rendered
-parts, so the parts must stay rendered: each object's pixels (plus a feathered margin) come from the render, relit
-with the light change Cosmos made to the background, and everything else comes from Cosmos.
+Cosmos Transfer makes the table, robot, background and light look real, but it often redraws the fine features of
+small parts (pins and recesses moved, merged or invented; pale discs erased) at every setting tried on 2026-10-28:
+default and lowest edge threshold, vis control, guided generation with the part masks. The labels describe the
+rendered parts, so an object keeps its Cosmos pixels only when Cosmos kept both its shape and its colour:
+- per-object edge F-score >= KEEP_COSMOS_MIN (60-image calibration, 1,211 objects: at that level shapes looked
+  unchanged by eye, at 0.6-0.75 they often did not);
+- mean colour within MAX_COLOUR_SHIFT of the relit render in every channel. Edges alone missed recolouring: Cosmos
+  turned red foreign objects black, brown, yellow or white and greyed black parts with the outline intact (shifts
+  36-137 in the calibration, every one wrong by eye; shifts up to 35 looked like the new light).
+Every other object (and every object too small to judge) is pasted back from the render, relit with the light change
+Cosmos made to the background, with a feathered margin.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from sdg.cosmos.drift import dilate
+from sdg.cosmos.drift import dilate, object_scores
 
 FEATHER_PX = 4                 # soft seam between the rendered part and the Cosmos surroundings
+KEEP_COSMOS_MIN = 0.85         # per-object edge F-score at which an object may keep its Cosmos look
+MAX_COLOUR_SHIFT = 35.0        # grey levels, per channel, between Cosmos's and the relit render's mean object colour
 GAIN_RANGE = (0.5, 1.5)        # a per-channel light change outside this is not light, so it is clamped
 MAX_FIT_PIXELS = 200_000
 
@@ -45,15 +53,23 @@ def light_change(source: np.ndarray, restyled: np.ndarray, background: np.ndarra
     return np.clip(gain, *GAIN_RANGE).astype(np.float32)
 
 
-def composite(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> np.ndarray:
-    """Cosmos image with every labelled object replaced by its relit render pixels (exact inside the mask)."""
+def colour_shift(relit: np.ndarray, restyled: np.ndarray, mask: np.ndarray) -> float:
+    """Largest per-channel difference of the object's mean colour (grey levels)."""
+    return float(np.abs(restyled[mask].astype(np.float32).mean(axis=0) - relit[mask].mean(axis=0)).max())
+
+
+def composite(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> tuple[np.ndarray, list[int]]:
+    """Cosmos image with every object Cosmos changed replaced by its relit render pixels (exact inside the mask).
+    Returns the image and the seg ids that kept their Cosmos look."""
     if source.shape != restyled.shape or source.shape[:2] != seg.shape:
         raise ValueError(f"sizes differ: source {source.shape}, restyled {restyled.shape}, seg {seg.shape}")
-    parts = seg > 0
-    if not parts.any():
-        return restyled.copy()
-    gain = light_change(source, restyled, ~dilate(parts, 2 * FEATHER_PX))
+    gain = light_change(source, restyled, ~dilate(seg > 0, 2 * FEATHER_PX))
     relit = np.clip(source.astype(np.float32) * gain, 0, 255)
+    kept = sorted(uid for uid, score in object_scores(source, restyled, seg).items()
+                  if score >= KEEP_COSMOS_MIN and colour_shift(relit, restyled, seg == uid) <= MAX_COLOUR_SHIFT)
+    parts = (seg > 0) & ~np.isin(seg, kept)
+    if not parts.any():
+        return restyled.copy(), kept
     alpha = np.maximum(parts, np.clip(box_blur(dilate(parts, FEATHER_PX).astype(np.float32), FEATHER_PX), 0, 1))
     blended = alpha[..., None] * relit + (1 - alpha[..., None]) * restyled.astype(np.float32)
-    return np.clip(np.rint(blended), 0, 255).astype(np.uint8)
+    return np.clip(np.rint(blended), 0, 255).astype(np.uint8), kept
