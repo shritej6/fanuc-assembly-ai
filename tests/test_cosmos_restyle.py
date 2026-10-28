@@ -3,6 +3,7 @@ import json
 import numpy as np
 from PIL import Image
 
+from sdg.cosmos.composite import box_blur, composite, light_change
 from sdg.cosmos.drift import edge_fscore, worst_object
 from sdg.cosmos.restyle import export, import_results, parse_name, pick
 
@@ -67,10 +68,29 @@ def test_import_keeps_only_images_that_pass_the_drift_check(tmp_path):
     moved, _ = scene(shift=8)
     for name, img in ((names[0], rgb), (names[1], moved)):              # Cosmos output size differs from the render
         Image.fromarray(img).resize((320, 240)).save(bundle / "out" / f"{name}.jpg")
-    assert import_results(tmp_path, bundle, 0.7, 0.7) == {"checked": 2, "accepted": 1, "min_fscore": 0.7,
-                                                           "min_object": 0.7}
+    assert import_results(tmp_path, bundle, 0.7) == {"checked": 2, "accepted": 1, "min_fscore": 0.7}
     _, _, cam, idx = parse_name(names[0])
     kept = Image.open(chunk / "rgb_cosmos" / cam / f"{idx}.jpg")
     assert kept.size == (160, 120)
     record = json.loads((chunk / "_COSMOS.json").read_text())
     assert [r["accepted"] for r in record.values()] == [True, False]
+
+
+def test_composite_keeps_rendered_parts_relit_and_takes_the_rest_from_cosmos():
+    rgb, seg = scene()
+    cosmos = (rgb.astype(np.float32) * np.array([0.85, 0.8, 0.7])).astype(np.uint8)   # dimmer, warmer light
+    cosmos[60:90, 90:130] = 235                                           # and it erased the second part
+    cosmos[5:15, 5:15] = 120                                              # and added a real-looking smudge
+    out = composite(rgb, cosmos, seg)
+    parts = seg > 0
+    expected = rgb.astype(np.float32) * np.array([0.85, 0.8, 0.7])
+    assert np.abs(out[parts].astype(np.float32) - expected[parts]).max() <= 1.5   # both parts back, relit
+    assert (out[5:15, 5:15] == 120).all()                                 # background stays Cosmos
+
+
+def test_light_change_is_clamped_and_box_blur_keeps_flat_images_flat():
+    src = np.random.default_rng(1).integers(0, 255, (40, 40, 3)).astype(np.uint8)
+    gain = light_change(src, np.clip(src.astype(np.float32) * 3, 0, 255).astype(np.uint8), np.ones((40, 40), bool))
+    assert (gain <= 1.5).all()
+    flat = np.full((20, 30), 7.0)
+    assert np.allclose(box_blur(flat, 3), 7.0)

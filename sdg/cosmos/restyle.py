@@ -3,11 +3,13 @@
     python -m sdg.cosmos.restyle export --sets A B C --fraction 0.15 --out bundle/        # on Rosie
     python -m sdg.cosmos.restyle export --sets A B C --count 4 --out pilot/                # a fixed number per set
     (bundle/ is restyled on an H100 by sdg/cosmos/run_transfer.sh, which writes bundle/out/<name>.jpg)
-    python -m sdg.cosmos.restyle import bundle/ --min-fscore <measured> --min-object <measured>   # on Rosie
+    python -m sdg.cosmos.restyle import bundle/ --min-fscore 0.85                          # on Rosie
 
-Cosmos Transfer 2.5 image-to-image with edge + vis control keeps every part edge where the render put it, so a
-restyled image keeps the render's labels. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's
-size, the check result of every image to <chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
+Cosmos Transfer 2.5 image-to-image (edge + vis control) restyles the whole frame; the rendered parts are then put
+back (sdg/cosmos/composite.py), so a restyled image keeps the render's labels exactly. The import gate is the
+whole-image edge F-score of the Cosmos frame (is the scene still where the render put it); the worst single object
+is recorded too. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's size, every result to
+<chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from sdg.cosmos.composite import composite
 from sdg.cosmos.drift import edge_fscore, worst_object
 
 DATA_ROOT = Path.home() / "fanuc-assembly-data"
@@ -82,7 +85,7 @@ def export(data_root: Path, sets: list[str], amount: float, seed: int, out: Path
 
 
 def check_one(data_root: Path, restyled_path: Path) -> tuple[Path, str, str, dict, Image.Image]:
-    """Restyled image resized to the render's size, and its edge scores against the render (whole image, worst object)."""
+    """Cosmos frame scored against the render (whole image, worst object), and the frame with the parts put back."""
     s, chunk, cam, idx = parse_name(restyled_path.stem)
     chunk_dir = data_root / "synthetic" / s / chunk
     source = Image.open(chunk_dir / "rgb" / cam / f"{idx}.jpg").convert("RGB")
@@ -92,15 +95,15 @@ def check_one(data_root: Path, restyled_path: Path) -> tuple[Path, str, str, dic
     worst, uid = worst_object(src, out, seg)
     scores = {"edge_fscore": round(edge_fscore(src, out, seg), 4), "worst_object_fscore": round(worst, 4),
               "worst_object_seg_id": uid}
-    return chunk_dir, cam, idx, scores, restyled
+    return chunk_dir, cam, idx, scores, Image.fromarray(composite(src, out, seg))
 
 
-def import_results(data_root: Path, bundle: Path, min_fscore: float, min_object: float) -> dict:
-    """Keep restyled images whose edges match the render, as a whole and for every object; record every result."""
+def import_results(data_root: Path, bundle: Path, min_fscore: float) -> dict:
+    """Keep composited images whose Cosmos frame still lines up with the render; record every result."""
     records: dict[Path, dict] = {}
     for path in sorted((bundle / "out").glob("*.jpg")):
         chunk_dir, cam, idx, scores, restyled = check_one(data_root, path)
-        ok = scores["edge_fscore"] >= min_fscore and scores["worst_object_fscore"] >= min_object
+        ok = scores["edge_fscore"] >= min_fscore
         if ok:
             target = chunk_dir / "rgb_cosmos" / cam / f"{idx}.jpg"
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -111,7 +114,7 @@ def import_results(data_root: Path, bundle: Path, min_fscore: float, min_object:
         old = json.loads(path.read_text()) if path.exists() else {}
         path.write_text(json.dumps({**old, **rec}, indent=1, sort_keys=True))
     scores = [r["accepted"] for rec in records.values() for r in rec.values()]
-    return {"checked": len(scores), "accepted": sum(scores), "min_fscore": min_fscore, "min_object": min_object}
+    return {"checked": len(scores), "accepted": sum(scores), "min_fscore": min_fscore}
 
 
 def main() -> None:
@@ -126,8 +129,7 @@ def main() -> None:
     ex.add_argument("--out", type=Path, required=True)
     im = sub.add_parser("import", help="shape-drift check the restyled images and keep the good ones")
     im.add_argument("bundle", type=Path)
-    im.add_argument("--min-fscore", type=float, required=True, help="whole-image edge F-score")
-    im.add_argument("--min-object", type=float, required=True, help="edge F-score of the worst object")
+    im.add_argument("--min-fscore", type=float, required=True, help="whole-image edge F-score of the Cosmos frame")
     for p in (ex, im):
         p.add_argument("--data-root", type=Path, default=DATA_ROOT)
     args = ap.parse_args()
@@ -137,7 +139,7 @@ def main() -> None:
             ap.error("--fraction must be in (0, 1), --count at least 1")
         print(f"{export(args.data_root, args.sets, amount, args.seed, args.out)} images exported")
     else:
-        print(json.dumps(import_results(args.data_root, args.bundle, args.min_fscore, args.min_object)))
+        print(json.dumps(import_results(args.data_root, args.bundle, args.min_fscore)))
 
 
 if __name__ == "__main__":
