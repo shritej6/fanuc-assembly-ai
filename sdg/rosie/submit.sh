@@ -3,6 +3,7 @@
 #
 #   sdg/rosie/submit.sh A            # all chunks of set A
 #   sdg/rosie/submit.sh A 0-3        # chunks 0..3
+#   LIMIT=3 sdg/rosie/submit.sh B 0  # smoke test: 3 scenes of chunk 0
 #   sdg/rosie/submit.sh pilot        # first 375 images of chunk 0 of A, B, C, D (reused by the full run)
 #
 # Needs: ISAAC_SIF, DATA_ROOT (default ~/fanuc-assembly-data), the host venv from sdg/rosie/setup.sh.
@@ -43,4 +44,4 @@ LAST="${RANGE#*-}"
 for ((c = FIRST; c <= LAST; c++)); do
   specs "$SET" "$c"
 done
-echo "set $SET chunks $RANGE: job $(submit "$SET" "$RANGE" 0)"
+echo "set $SET chunks $RANGE: job $(submit "$SET" "$RANGE" "${LIMIT:-0}")"
