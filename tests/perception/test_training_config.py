@@ -78,6 +78,7 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
     assert config["training"]["fp16"] is True
     assert config["training"]["bf16"] is False
     assert config["training"]["tf32"] is False
+    assert config["training"]["fp16_initial_scale"] == 128
 
 
 @pytest.mark.parametrize(
@@ -86,6 +87,7 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
         (DETECTOR, ("training", "bf16", True), "BF16"),
         (DETECTOR, ("training", "tf32", True), "TF32"),
         (CLASSIFIER, ("model", "num_labels", 29), "30 labels"),
+        (CLASSIFIER, ("training", "fp16_initial_scale", 65_536), "fp16_initial_scale"),
     ],
 )
 def test_unsafe_or_wrong_label_configs_are_rejected(

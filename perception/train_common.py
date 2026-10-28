@@ -9,6 +9,15 @@ from typing import Any
 INTERNAL_TRAINING_KEYS = {"max_train_samples", "max_eval_samples", "fp16_initial_scale"}
 
 
+def seed_training(seed: int) -> None:
+    """Seed model initialization before Trainer receives an instantiated model."""
+    if type(seed) is not int:
+        raise TypeError("training seed must be an integer")
+    from transformers import set_seed
+
+    set_seed(seed)
+
+
 def trainer_arguments(training: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     """Translate validated YAML fields into Hugging Face TrainingArguments."""
     arguments = {key: value for key, value in training.items() if key not in INTERNAL_TRAINING_KEYS}

@@ -50,13 +50,15 @@ def _validate_detector(model: dict[str, Any], training: dict[str, Any]) -> None:
             raise ConfigError(f"detector training requires {key}={expected!r}")
 
 
-def _validate_classifier(model: dict[str, Any]) -> None:
+def _validate_classifier(model: dict[str, Any], training: dict[str, Any]) -> None:
     if model.get("architecture") != "resnet18" or model.get("weights") != "DEFAULT":
         raise ConfigError("classifier must use ImageNet-pretrained resnet18")
     if model.get("num_labels") != 30:
         raise ConfigError("classifier must keep exactly 30 labels")
     if model.get("image_size") != 224:
         raise ConfigError("classifier image size must be 224")
+    if training.get("fp16_initial_scale") != 128:
+        raise ConfigError("classifier training requires fp16_initial_scale=128")
 
 
 def _validate_smoke(training: dict[str, Any]) -> None:
@@ -105,7 +107,7 @@ def load_training_config(path: Path, smoke: bool = False) -> dict[str, Any]:
     if task == "detector":
         _validate_detector(model, training)
     elif task == "classifier":
-        _validate_classifier(model)
+        _validate_classifier(model, training)
     else:
         raise ConfigError(f"unknown task {task!r}")
     if smoke:

@@ -149,6 +149,17 @@ def _check_finite_metrics(metrics: dict[str, Any], phase: str) -> None:
         raise ClassifierTrainingError(f"{phase} produced non-finite metrics: {invalid}")
 
 
+def _configure_fp16_scaler(trainer: Any, training: dict[str, Any]) -> None:
+    import torch
+
+    if trainer.accelerator.scaler is None:
+        raise ClassifierTrainingError("FP16 training did not create a gradient scaler")
+    trainer.accelerator.scaler = torch.amp.GradScaler(
+        "cuda",
+        init_scale=training["fp16_initial_scale"],
+    )
+
+
 def _build_transforms(image_size: int) -> tuple[Any, Any]:
     from torchvision import transforms
 
@@ -288,12 +299,13 @@ def _train(
     if not args.smoke:
         _check_class_support((train, validation, test), labels)
     trainer = Trainer(
-        model=_build_model(len(labels)),
+        model_init=lambda: _build_model(len(labels)),
         args=TrainingArguments(**trainer_arguments(config["training"], args.output_dir)),
         train_dataset=train,
         eval_dataset=validation,
         compute_metrics=_compute_metrics(labels, groups),
     )
+    _configure_fp16_scaler(trainer, config["training"])
     result = trainer.train(resume_from_checkpoint=resume)
     _check_finite_metrics(result.metrics, "training")
     _check_finite_metrics({"log_history": trainer.state.log_history}, "training history")

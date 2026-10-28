@@ -26,7 +26,7 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
-from perception.train_common import load_manifest_metadata, trainer_arguments
+from perception.train_common import load_manifest_metadata, seed_training, trainer_arguments
 from perception.training_config import apply_smoke_step_override, load_training_config
 
 PACKAGE_NAMES = (
@@ -420,6 +420,7 @@ def _run_ml(
     labels: list[str],
     resume: bool | str | None,
 ) -> None:
+    seed_training(config["training"]["seed"])
     processor, model, id2label = _load_model(config, labels)
     datasets = _load_datasets(args, config, processor)
     _check_labels(datasets, labels)

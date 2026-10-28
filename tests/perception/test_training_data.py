@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,11 +8,21 @@ from PIL import Image
 
 from perception.classifier.dataset import CropDataset
 from perception.detector.dataset import CocoDataset
-from perception.train_common import trainer_arguments
+from perception.train_common import seed_training, trainer_arguments
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_training_seed_is_applied_through_transformers(monkeypatch) -> None:
+    calls = []
+    fake_transformers = type("FakeTransformers", (), {"set_seed": staticmethod(calls.append)})
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    seed_training(1337)
+
+    assert calls == [1337]
 
 
 class FakeTensor:

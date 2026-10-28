@@ -20,6 +20,7 @@ training:
   fp16: true
   bf16: false
   tf32: false
+  fp16_initial_scale: 128
   remove_unused_columns: false
   eval_do_concat_batches: true
   eval_strategy: epoch
