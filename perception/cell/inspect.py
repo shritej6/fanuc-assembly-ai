@@ -5,7 +5,9 @@ Who decides what:
   rule 2026-10-29) and its identity is the detector's, since the wrist models only learned installed-orientation
   close-ups;
 - the wrist classifier decides identity; below its measured confidence the part goes to the operator;
-- `checks_agree` is the contract's poka-yoke: the classifier's identity and the FoundationPose fit agree;
+- `checks_agree` is the contract's poka-yoke: the classifier's identity and the FoundationPose fit agree. Bases of
+  one `base_type` are the same mesh (contracts/taxonomy.json: F01=F02, F04=F05=F06, 0.0 mm), so neither model can
+  tell them apart and any base of the right type agrees (user 2026-10-29: same-shape bases are interchangeable);
 - PatchCore, against the part's measured threshold, decides defects.
 Thresholds only come from a measured file (`Thresholds.load`); a part without a measured PatchCore threshold fails
 the load, so a gap shows up before the slot and not as a silent pass during it.
@@ -20,9 +22,17 @@ from pathlib import Path
 
 from perception.taxonomy import FALLEN_SUFFIX, FOREIGN_LABELS
 
+TAXONOMY = Path(__file__).resolve().parents[2] / "contracts" / "taxonomy.json"
+BASE_TYPE = {o["object_id"]: o["base_type"] for o in json.loads(TAXONOMY.read_text())["objects"] if o.get("base_type")}
+
 
 class InspectError(ValueError):
     """Missing or malformed evidence or thresholds; the part is not judged."""
+
+
+def same_shape(a: str, b: str) -> bool:
+    """Two ids name the same mesh: equal, or bases of one base type."""
+    return a == b or (a in BASE_TYPE and BASE_TYPE.get(a) == BASE_TYPE.get(b))
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +87,7 @@ def inspect(instance_id: str, evidence: Evidence, thresholds: Thresholds) -> dic
     if confidence < thresholds.classifier_min:
         return _result(instance_id, None, "uncertain", "ask_operator", False, evidence)
     fit_id, fit = evidence.pose_fit
-    if fit_id != identity or fit < thresholds.pose_fit_min:
+    if not same_shape(fit_id, identity) or fit < thresholds.pose_fit_min:
         return _result(instance_id, identity, "uncertain", "ask_operator", False, evidence)
     if identity.startswith("F"):
         return _result(instance_id, identity, "ok", "use", True, evidence)

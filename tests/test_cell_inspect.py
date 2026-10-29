@@ -92,3 +92,12 @@ def test_thresholds_must_cover_every_part_and_name_their_source(tmp_path):
     path.write_text(json.dumps({"classifier_min": 0.8, "pose_fit_min": 0.6, "patchcore_max": {}}))
     with pytest.raises(InspectError, match="measurement"):
         Thresholds.load(path, ())
+
+
+def test_same_shape_bases_agree_but_different_types_do_not():
+    agree = _check(inspect("p1", _ev(detector_label="F05", classifier=("F05", 0.9), pose_fit=("F04", 0.9),
+                                     patchcore_score=None), TH))
+    assert (agree["checks_agree"], agree["action"]) == (True, "use")
+    differ = _check(inspect("p1", _ev(detector_label="F03", classifier=("F03", 0.9), pose_fit=("F01", 0.9),
+                                      patchcore_score=None), TH))
+    assert (differ["checks_agree"], differ["action"]) == (False, "ask_operator")
