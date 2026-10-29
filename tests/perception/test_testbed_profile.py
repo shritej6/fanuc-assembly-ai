@@ -179,3 +179,17 @@ def test_build_state_trainer_requires_six_labels_in_their_frozen_order() -> None
     shuffled = {**metadata, "labels": {"classifier": list(reversed(BUILD_STATES)), "lookalike_groups": []}}
     with pytest.raises(ClassifierTrainingError, match="exactly"):
         validate_classifier_identity(config, shuffled)
+
+
+def test_build_state_configs_load_and_other_label_counts_stay_rejected(tmp_path: Path) -> None:
+    import yaml
+
+    from perception.training_config import ConfigError, load_training_config
+
+    for hw in ("t4", "h100"):
+        assert load_training_config(REPO / f"perception/configs/classifier_build_{hw}.yaml")["model"]["num_labels"] == 6
+    bad = yaml.safe_load((REPO / "perception/configs/classifier_build_t4.yaml").read_text())
+    bad["model"]["num_labels"] = 7
+    (tmp_path / "bad.yaml").write_text(yaml.safe_dump(bad))
+    with pytest.raises(ConfigError, match="30 part labels or the 6"):
+        load_training_config(tmp_path / "bad.yaml")

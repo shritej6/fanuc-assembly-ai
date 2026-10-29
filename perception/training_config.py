@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from perception.taxonomy import BUILD_STATES
+
 REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
@@ -69,8 +71,8 @@ def _validate_classifier(
 ) -> None:
     if model.get("architecture") != "resnet18" or model.get("weights") != "DEFAULT":
         raise ConfigError("classifier must use ImageNet-pretrained resnet18")
-    if model.get("num_labels") != 30:
-        raise ConfigError("classifier must keep exactly 30 labels")
+    if model.get("num_labels") not in (30, len(BUILD_STATES)):
+        raise ConfigError(f"classifier must keep exactly 30 part labels or the {len(BUILD_STATES)} set-P build states")
     if model.get("image_size") != 224:
         raise ConfigError("classifier image size must be 224")
     if hardware_profile == "t4" and training.get("fp16_initial_scale") != 128:

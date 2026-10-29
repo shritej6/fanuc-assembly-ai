@@ -120,7 +120,7 @@ def test_h100_configs_use_bf16_without_an_fp16_scaler(
         (DETECTOR, ("training", "tf32", True), "TF32"),
         (H100_DETECTOR, ("training", "fp16", True), "H100.*FP16"),
         (H100_DETECTOR, ("model", "image_size", 640), "1280"),
-        (CLASSIFIER, ("model", "num_labels", 29), "30 labels"),
+        (CLASSIFIER, ("model", "num_labels", 29), "30 part labels"),
         (CLASSIFIER, ("training", "fp16_initial_scale", 65_536), "fp16_initial_scale"),
     ],
 )
