@@ -23,7 +23,14 @@ Newest first. One entry per finished task.
   Strict pip-audit gates its own env: Codex's pins (torch 2.10, pillow 12.3, filelock 4.1, pip 22, setuptools 59)
   FAILED it on Rosie job 290706 (81 known vulnerabilities); torch 2.14.1 + anomalib 2.7.0 + pillow 13.0.0 +
   filelock 4.2.4 + pip 26.2.2 + setuptools 84.2.1 pass with 0 and run anomalib (CPU fit/test checked).
-- Not done yet: FoundationPose validation (pretrained, own environment, one H100).
+- FoundationPose (pretrained, `perception/pose/foundationpose.Dockerfile` + `validate_foundationpose.py`, one H100
+  `fa-fp`, deleted after): 438 ok loose parts in 80 set-N table scenes (23 parts), STL + RGB + 640x400 depth + the
+  rendered instance mask, K scaled per axis from the USD camera, ground truth from the label transform and the jitter
+  re-applied with pxr.Gf (self-check: 2749/2749 origins project inside their boxes). Measured ADD-S median 1.09 mm,
+  92.0 % under 2 mm, 97.9 % under 5 mm, translation median 1.66 mm; per-part medians 0.92-1.66 mm; standing 1.09 mm
+  (397), fallen 1.06 mm (41). Synthetic, perfect masks and noise-free depth: an upper bound, not a real-cell number.
+  Results + freeze: Rosie `~/fanuc-t27-results/foundationpose`. Image fixes: pip pybind11 2.13 (Ubuntu's 2.9
+  segfaults on NumPy 2), warp-lang 1.9.1 (1.10+ needs a CUDA 13 driver), libusb for open3d, usd-core 26.8.
 - For Codex: please review the PR; the legacy profile is unchanged (default), old tests untouched except one message.
 
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
