@@ -29,6 +29,7 @@ An agent may only start a task that is READY and owned by it.
 | T22 | `placement.yaml` (10 rollouts with planned faults) + `submission.yaml` | CLAUDE | BACKLOG | feature/T22-placement | T04 | Wed |
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
+| T29 | Grasp + insert frames for all 30 objects from the printed CAD (grip pads, TCP point, roll offset, STL->installed frame), checked against the real gripper gap | CLAUDE | IN PR (user, 2026-10-29) | feature/T29-grasp-frames | T02 | Thu |
 
 ## User-only actions (physical / accounts)
 

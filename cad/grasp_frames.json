@@ -1,0 +1,1499 @@
+{
+ "source": "cad/products build() (printed CAD), cad/grasp_frames.py",
+ "units": "mm, deg",
+ "tcp": "fingertip point, w, p = -180, 0; r = measured part yaw + roll_offset_deg",
+ "gripper_gap_mm": {
+  "closed_max": 5.0,
+  "open_min": 13.0
+ },
+ "objects": {
+  "F01": {
+   "name": "F01_Rotary_Fixture",
+   "base": "F01",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "F02": {
+   "name": "F02_Indicator_Fixture",
+   "base": "F02",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "F03": {
+   "name": "F03_Pushbutton_Fixture",
+   "base": "F03",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "F04": {
+   "name": "F04_Sensor_Connector_Fixture",
+   "base": "F04",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "F05": {
+   "name": "F05_IO_Connector_Fixture",
+   "base": "F05",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "F06": {
+   "name": "F06_Power_Connector_Fixture",
+   "base": "F06",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": []
+  },
+  "M1_01": {
+   "name": "M1_01_Housing",
+   "base": "F01",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -25.0,
+      -17.5
+     ],
+     "pad_top_z_mm": 16.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      0.0,
+      -21.25,
+      9.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M1_02": {
+   "name": "M1_02_Spindle_Carrier",
+   "base": "F01",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    7.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 17.0,
+     "contact_height_mm": 6.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M1_03": {
+   "name": "M1_03_Rotary_Knob",
+   "base": "F01",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 20.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      14.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M1_04": {
+   "name": "M1_04_Rear_Guard",
+   "base": "F01",
+   "installed_origin_mm": [
+    0.0,
+    17.5,
+    4.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     -0.0,
+     0.0,
+     -1.0,
+     4.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     17.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -4.0,
+      4.0
+     ],
+     "pad_top_z_mm": 34.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      28.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M2_01": {
+   "name": "M2_01_Housing",
+   "base": "F02",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -25.0,
+      -17.5
+     ],
+     "pad_top_z_mm": 16.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      0.0,
+      -21.25,
+      9.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M2_02": {
+   "name": "M2_02_Diffuser_Carrier",
+   "base": "F02",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    7.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 16.0,
+     "contact_height_mm": 5.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M2_03": {
+   "name": "M2_03_Indicator_Cap",
+   "base": "F02",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 18.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M2_04": {
+   "name": "M2_04_Rear_Guard",
+   "base": "F02",
+   "installed_origin_mm": [
+    0.0,
+    17.5,
+    4.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     -0.0,
+     0.0,
+     -1.0,
+     4.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     17.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -4.0,
+      4.0
+     ],
+     "pad_top_z_mm": 34.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      28.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M3_01": {
+   "name": "M3_01_Housing",
+   "base": "F03",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -25.0,
+      -17.5
+     ],
+     "pad_top_z_mm": 16.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      0.0,
+      -21.25,
+      9.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M3_02": {
+   "name": "M3_02_Actuator_Stem",
+   "base": "F03",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    7.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 17.0,
+     "contact_height_mm": 6.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M3_03": {
+   "name": "M3_03_Button_Cap",
+   "base": "F03",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 16.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      10.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M3_04": {
+   "name": "M3_04_Rear_Guard",
+   "base": "F03",
+   "installed_origin_mm": [
+    0.0,
+    17.5,
+    4.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     -0.0,
+     0.0,
+     -1.0,
+     4.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     17.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -4.0,
+      4.0
+     ],
+     "pad_top_z_mm": 34.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      28.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M4_01": {
+   "name": "M4_01_Housing",
+   "base": "F04",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "Y",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      20.5,
+      28.0
+     ],
+     "pad_top_z_mm": 18.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      24.25,
+      0.0,
+      11.0
+     ],
+     "roll_offset_deg": 0.0
+    }
+   ]
+  },
+  "M4_02": {
+   "name": "M4_02_Sensor_Insert",
+   "base": "F04",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    5.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 20.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      14.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M4_03": {
+   "name": "M4_03_Upper_Guide",
+   "base": "F04",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      13.0,
+      23.0
+     ],
+     "pad_top_z_mm": 13.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      18.0,
+      7.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M4_04": {
+   "name": "M4_04_Top_Lock",
+   "base": "F04",
+   "installed_origin_mm": [
+    0.0,
+    -11.5,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 17.0,
+     "contact_height_mm": 6.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M5_01": {
+   "name": "M5_01_Housing",
+   "base": "F05",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "Y",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      20.5,
+      28.0
+     ],
+     "pad_top_z_mm": 18.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      24.25,
+      0.0,
+      11.0
+     ],
+     "roll_offset_deg": 0.0
+    }
+   ]
+  },
+  "M5_02": {
+   "name": "M5_02_IO_Insert",
+   "base": "F05",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    5.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 20.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      14.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M5_03": {
+   "name": "M5_03_Alignment_Guide",
+   "base": "F05",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      13.0,
+      23.0
+     ],
+     "pad_top_z_mm": 13.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      18.0,
+      7.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M5_04": {
+   "name": "M5_04_Service_Lock",
+   "base": "F05",
+   "installed_origin_mm": [
+    0.0,
+    -11.5,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 17.0,
+     "contact_height_mm": 6.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M6_01": {
+   "name": "M6_01_Housing",
+   "base": "F06",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "Y",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      20.5,
+      28.0
+     ],
+     "pad_top_z_mm": 18.0,
+     "contact_height_mm": 8.0,
+     "tcp_local_mm": [
+      24.25,
+      0.0,
+      11.0
+     ],
+     "roll_offset_deg": 0.0
+    }
+   ]
+  },
+  "M6_02": {
+   "name": "M6_02_Power_Insert",
+   "base": "F06",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    5.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 20.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      14.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M6_03": {
+   "name": "M6_03_Power_Guide",
+   "base": "F06",
+   "installed_origin_mm": [
+    0.0,
+    0.0,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      13.0,
+      23.0
+     ],
+     "pad_top_z_mm": 13.0,
+     "contact_height_mm": 6.5,
+     "tcp_local_mm": [
+      0.0,
+      18.0,
+      7.5
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  },
+  "M6_04": {
+   "name": "M6_04_Power_Lock",
+   "base": "F06",
+   "installed_origin_mm": [
+    0.0,
+    -11.5,
+    18.0
+   ],
+   "T_local_from_stl": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "grips": [
+    {
+     "closing_axis": "X",
+     "pad_width_mm": 7.0,
+     "pad_span_mm": [
+      -5.0,
+      5.0
+     ],
+     "pad_top_z_mm": 17.0,
+     "contact_height_mm": 6.0,
+     "tcp_local_mm": [
+      0.0,
+      0.0,
+      12.0
+     ],
+     "roll_offset_deg": 90.0
+    }
+   ]
+  }
+ }
+}

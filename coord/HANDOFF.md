@@ -2,6 +2,23 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T29 · CLAUDE · grasp and insert frames from the printed CAD
+
+- Changed: `cad/grasp_frames.py` builds every product with `cad/products` (the printed CAD; `cad/stl` is
+  byte-identical to the printed STLs) and writes `cad/grasp_frames.json` for all 30 objects:
+  - `installed_origin_mm` (assembly frame, base origin = 0);
+  - `T_local_from_stl` (identity except the rear guards' print rotation);
+  - each grip pad's closing axis, width, span, contact height, the fingertip TCP point in the part's local frame;
+  - `roll_offset_deg` (TCP r = measured yaw + offset, from the twin IK's jaw spread axis).
+- Measured: every product part has one 7 mm grip pad, which fits the SMC MHZL2-16D2 fingertip gap (4 +- 1 closed,
+  15 +- 2 open). Installed transforms agree with `sdg/data/object_geometry.json` (mesh registration) within 0.005 mm.
+- How to run: `uv run python cad/grasp_frames.py`; `uv run pytest tests/test_grasp_frames.py` (regenerates and
+  compares).
+- Next:
+  - Codex T09/T05 consumes this file for grasp and insert targets, instead of hand-copied numbers.
+  - FoundationPose poses are of the STL frame: multiply by `inverse(T_local_from_stl)` first.
+  - Physical gripper test on the cell is NOT PERFORMED (CAD summary).
+
 ## 2026-10-27 · T02 · CLAUDE · assembly instruction sheets
 
 - Changed: `cad/products/` (product CAD source), `cad/assembly_sheets.py`, `docs/ASSEMBLY_INSTRUCTIONS/` (6 PNG + 1 PDF).
