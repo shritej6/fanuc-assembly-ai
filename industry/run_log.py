@@ -10,7 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from assembly.birth_certificate import BirthCertificateError, validate_birth_certificate
 from assembly.state_machine import PackMLState, PackMLStateMachine, StateRecord
+from industry.events import RunEventError, validate_scope
 from industry.oee import (
     DashboardMetricError,
     EscapeEvent,
@@ -22,7 +24,7 @@ from industry.oee import (
     RunEvent,
 )
 
-_TOP_LEVEL_KEYS = frozenset({"version", "source", "event", "timestamp", "payload"})
+_TOP_LEVEL_KEYS = frozenset({"version", "source", "event", "timestamp", "run_id", "rollout", "payload"})
 _MAX_LOG_BYTES = 16 * 1024 * 1024
 
 
@@ -70,7 +72,6 @@ class RunLogWriter:
             if size + len(encoded) > self.max_bytes:
                 raise RunLogError(f"run log would exceed configured {self.max_bytes}-byte limit")
             _write_exact(descriptor, encoded, size)
-            os.fsync(descriptor)
         except OSError as error:
             raise RunLogError(f"cannot append run log {self.path}: {error}") from error
         finally:
@@ -81,21 +82,30 @@ class RunLogWriter:
 class ControllerRunLogRecorder:
     """Bridge public T09 PackML history and terminal outcomes into JSONL."""
 
-    def __init__(self, writer: RunLogWriter, source: EventSource) -> None:
+    def __init__(self, writer: RunLogWriter, source: EventSource, run_id: str, rollout: int) -> None:
         if not isinstance(writer, RunLogWriter):
             raise RunLogError("writer must be a RunLogWriter")
         if not isinstance(source, EventSource):
             raise RunLogError("source must be an EventSource")
+        try:
+            identity = validate_scope(run_id, rollout)
+        except RunEventError as error:
+            raise RunLogError(str(error)) from error
         self.writer = writer
         self.source = source
+        self.run_id, self.rollout = identity
 
     def sync_packml(self, machine: PackMLStateMachine) -> int:
         if not isinstance(machine, PackMLStateMachine):
             raise RunLogError("machine must be a PackMLStateMachine")
-        history = tuple(_state_event(record, self.source) for record in machine.history)
+        history = tuple(_state_event(record, self.source, self.run_id, self.rollout) for record in machine.history)
         existing = self.writer.read()
-        _require_source(existing, self.source)
-        recorded = tuple(event for event in existing if isinstance(event, PackMLEvent))
+        _require_log_identity(existing, self.source, self.run_id)
+        recorded = tuple(
+            event
+            for event in existing
+            if isinstance(event, PackMLEvent) and event.run_id == self.run_id and event.rollout == self.rollout
+        )
         if len(recorded) > len(history) or recorded != history[: len(recorded)]:
             raise RunLogError("recorded PackML history does not match the controller history prefix")
         for event in history[len(recorded) :]:
@@ -103,21 +113,33 @@ class ControllerRunLogRecorder:
         return len(history) - len(recorded)
 
     def record_product_result(self, record: Mapping[str, object], *, recorded_at: datetime) -> ProductResultEvent:
-        payload = _mapping(record, "birth certificate")
-        required = {"product", "result", "assists", "cycle_time_s"}
-        if not required.issubset(payload):
-            raise RunLogError(f"birth certificate is missing fields {sorted(required - set(payload))}")
-        event = _product_event(recorded_at, self.source, {name: payload[name] for name in required})
+        try:
+            certificate = validate_birth_certificate(_mapping(record, "birth certificate"))
+        except BirthCertificateError as error:
+            raise RunLogError(f"invalid birth certificate: {error}") from error
+        self._require_certificate_identity(certificate)
+        event = _product_event(
+            recorded_at,
+            self.source,
+            self.run_id,
+            self.rollout,
+            _terminal_payload(certificate),
+        )
         self.writer.append(event)
         return event
 
+    def _require_certificate_identity(self, certificate: Mapping[str, object]) -> None:
+        identity = (certificate.get("run_id"), certificate.get("rollout"))
+        if identity != (self.run_id, self.rollout):
+            raise RunLogError("birth certificate run_id/rollout does not match recorder identity")
+
     def record_escape(self, product: int, detail: str, *, recorded_at: datetime) -> EscapeEvent:
-        event = EscapeEvent(recorded_at, self.source, product, detail)
+        event = EscapeEvent(recorded_at, self.source, self.run_id, self.rollout, product, detail)
         self.writer.append(event)
         return event
 
     def record_heartbeat(self, *, recorded_at: datetime) -> HeartbeatEvent:
-        event = HeartbeatEvent(recorded_at, self.source)
+        event = HeartbeatEvent(recorded_at, self.source, self.run_id, self.rollout)
         self.writer.append(event)
         return event
 
@@ -135,6 +157,8 @@ def encode_run_event(event: RunEvent) -> str:
         "source": event.source.value,
         "event": _event_name(event),
         "timestamp": _timestamp_text(event.timestamp),
+        "run_id": event.run_id,
+        "rollout": event.rollout,
         "payload": _event_payload(event),
     }
     return json.dumps(record, sort_keys=True, separators=(",", ":"))
@@ -147,7 +171,7 @@ def _parse_line(line: str, number: int) -> RunEvent:
         raise RunLogError(f"line {number} is not valid JSON: {error.msg}") from error
     try:
         return _parse_record(record)
-    except (RunLogError, DashboardMetricError) as error:
+    except (RunLogError, DashboardMetricError, RunEventError) as error:
         raise RunLogError(f"line {number}: {error}") from error
 
 
@@ -158,32 +182,41 @@ def _parse_record(record: object) -> RunEvent:
         raise RunLogError("version must be 1")
     source = _enum(EventSource, mapping["source"], "source")
     timestamp = _timestamp(mapping["timestamp"])
+    run_id, rollout = _scope(mapping["run_id"], mapping["rollout"])
     payload = _mapping(mapping["payload"], "payload")
     event_type = mapping["event"]
     if event_type == "packml":
-        return _packml_event(timestamp, source, payload)
+        return _packml_event(timestamp, source, run_id, rollout, payload)
     if event_type == "product_result":
-        return _product_event(timestamp, source, payload)
+        return _product_event(timestamp, source, run_id, rollout, payload)
     if event_type == "escape":
-        return _escape_event(timestamp, source, payload)
+        return _escape_event(timestamp, source, run_id, rollout, payload)
     if event_type == "heartbeat":
         _exact_keys(payload, frozenset(), "heartbeat payload")
-        return HeartbeatEvent(timestamp, source)
+        return HeartbeatEvent(timestamp, source, run_id, rollout)
     raise RunLogError(f"unsupported event type {event_type!r}")
 
 
-def _packml_event(timestamp: datetime, source: EventSource, payload: Mapping[str, object]) -> PackMLEvent:
+def _packml_event(
+    timestamp: datetime,
+    source: EventSource,
+    run_id: str,
+    rollout: int,
+    payload: Mapping[str, object],
+) -> PackMLEvent:
     _exact_keys(payload, frozenset({"state", "reason", "product"}), "PackML payload")
     state = _enum(PackMLState, payload["state"], "PackML state")
     reason = payload["reason"]
     if reason is not None and not isinstance(reason, str):
         raise RunLogError("PackML reason must be a string or null")
-    return PackMLEvent(timestamp, source, state, reason, _optional_product(payload["product"]))
+    return PackMLEvent(timestamp, source, run_id, rollout, state, reason, _optional_product(payload["product"]))
 
 
 def _product_event(
     timestamp: datetime,
     source: EventSource,
+    run_id: str,
+    rollout: int,
     payload: Mapping[str, object],
 ) -> ProductResultEvent:
     keys = frozenset({"product", "result", "assists", "cycle_time_s"})
@@ -194,6 +227,8 @@ def _product_event(
     return ProductResultEvent(
         timestamp,
         source,
+        run_id,
+        rollout,
         _product(payload["product"]),
         _enum(ProductResult, payload["result"], "product result"),
         _nonnegative_integer(payload["assists"], "assists"),
@@ -201,12 +236,18 @@ def _product_event(
     )
 
 
-def _escape_event(timestamp: datetime, source: EventSource, payload: Mapping[str, object]) -> EscapeEvent:
+def _escape_event(
+    timestamp: datetime,
+    source: EventSource,
+    run_id: str,
+    rollout: int,
+    payload: Mapping[str, object],
+) -> EscapeEvent:
     _exact_keys(payload, frozenset({"product", "detail"}), "escape payload")
     detail = payload["detail"]
     if not isinstance(detail, str):
         raise RunLogError("escape detail must be a string")
-    return EscapeEvent(timestamp, source, _product(payload["product"]), detail)
+    return EscapeEvent(timestamp, source, run_id, rollout, _product(payload["product"]), detail)
 
 
 def _event_name(event: RunEvent) -> str:
@@ -268,6 +309,13 @@ def _timestamp_text(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _scope(run_id: object, rollout: object) -> tuple[str, int]:
+    try:
+        return validate_scope(run_id, rollout)
+    except RunEventError as error:
+        raise RunLogError(str(error)) from error
+
+
 def _enum(enum_type: type[Any], value: object, label: str) -> Any:
     try:
         return enum_type(value)
@@ -296,6 +344,7 @@ def _parse_text(content: str, *, allow_empty: bool = False) -> tuple[RunEvent, .
     events = tuple(_parse_line(line, number) for number, line in enumerate(lines, start=1) if line.strip())
     if not events and not allow_empty:
         raise RunLogError("run log contains no events")
+    _validate_sequence(events)
     return events
 
 
@@ -345,15 +394,64 @@ def _load_path(path: Path, *, allow_missing: bool, allow_empty: bool) -> tuple[R
 
 def _validate_append(existing: tuple[RunEvent, ...], event: RunEvent) -> None:
     _require_event(event)
-    _require_source(existing, event.source)
+    _require_log_identity(existing, event.source, event.run_id)
+    if existing and event.timestamp < existing[-1].timestamp:
+        raise RunLogError("run-log events must preserve timestamp order")
     if event in existing:
         raise RunLogError("run log already contains this event")
+    if isinstance(event, ProductResultEvent):
+        _require_unique_terminal(existing, event)
+        _require_terminal_lifecycle(existing, event)
 
 
-def _require_source(events: tuple[RunEvent, ...], source: EventSource) -> None:
+def _require_log_identity(events: tuple[RunEvent, ...], source: EventSource, run_id: str) -> None:
     sources = {event.source for event in events}
     if sources and sources != {source}:
         raise RunLogError("run log source does not match the recorder source")
+    run_ids = {event.run_id for event in events}
+    if run_ids and run_ids != {run_id}:
+        raise RunLogError("run log run_id does not match the recorder identity")
+
+
+def _validate_sequence(events: tuple[RunEvent, ...]) -> None:
+    prefix: list[RunEvent] = []
+    for event in events:
+        _validate_append(tuple(prefix), event)
+        prefix.append(event)
+
+
+def _require_unique_terminal(existing: tuple[RunEvent, ...], event: ProductResultEvent) -> None:
+    identity = (event.run_id, event.rollout, event.product)
+    terminals = (
+        item
+        for item in existing
+        if isinstance(item, ProductResultEvent) and (item.run_id, item.rollout, item.product) == identity
+    )
+    if next(terminals, None) is not None:
+        raise RunLogError(f"terminal result already exists for identity {identity!r}")
+
+
+def _require_terminal_lifecycle(existing: tuple[RunEvent, ...], event: ProductResultEvent) -> None:
+    required = _terminal_states(event.result)
+    matched = any(
+        isinstance(item, PackMLEvent)
+        and item.run_id == event.run_id
+        and item.rollout == event.rollout
+        and item.product == event.product
+        and item.state in required
+        for item in existing
+    )
+    if not matched:
+        states = sorted(state.value for state in required)
+        raise RunLogError(f"terminal result lacks required PackML lifecycle state {states}")
+
+
+def _terminal_states(result: ProductResult) -> frozenset[PackMLState]:
+    if result in {ProductResult.GOOD_FIRST_PASS, ProductResult.GOOD_AFTER_REBUILD}:
+        return frozenset({PackMLState.COMPLETE})
+    if result is ProductResult.BLOCKED:
+        return frozenset({PackMLState.HELD})
+    return frozenset({PackMLState.ABORTED, PackMLState.STOPPED})
 
 
 def _require_event(event: object) -> None:
@@ -374,16 +472,26 @@ def _write_exact(descriptor: int, data: bytes, original_size: int) -> None:
             if written <= 0:
                 raise OSError("write returned no progress")
             offset += written
+        os.fsync(descriptor)
     except OSError as error:
         try:
             os.ftruncate(descriptor, original_size)
             os.fsync(descriptor)
         except OSError as rollback_error:
-            raise RunLogError(f"run-log append and rollback failed: {rollback_error}") from error
+            detail = f"run-log append failed; rollback durability is uncertain: {rollback_error}"
+            raise RunLogError(detail) from error
         raise RunLogError(f"run-log append failed and was rolled back: {error}") from error
 
 
-def _state_event(record: object, source: EventSource) -> PackMLEvent:
+def _state_event(record: object, source: EventSource, run_id: str, rollout: int) -> PackMLEvent:
     if not isinstance(record, StateRecord):
         raise RunLogError("PackML history must contain StateRecord values")
-    return PackMLEvent(_timestamp(record.timestamp), source, record.state, record.reason, record.product)
+    return PackMLEvent(_timestamp(record.timestamp), source, run_id, rollout, record.state, record.reason, record.product)
+
+
+def _terminal_payload(certificate: Mapping[str, object]) -> Mapping[str, object]:
+    required = frozenset({"product", "result", "assists", "cycle_time_s"})
+    missing = required - certificate.keys()
+    if missing:
+        raise RunLogError(f"validated birth certificate is missing dashboard fields {sorted(missing)}")
+    return {name: certificate[name] for name in required}

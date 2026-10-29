@@ -4,18 +4,21 @@ Newest first. One entry per finished task.
 
 ## 2026-10-29 · T16 · CODEX · live OEE and Andon dashboard
 
-- Changed: added strict append-only run events, a locked and bounded controller log writer/recorder, evidence-backed OEE
-  calculations, first/final yield, builds per assist, average cycle time, escapes, live PackML/Andon status, and a
-  responsive read-only loopback dashboard. The T09 recorder syncs public PackML history, accepts terminal T15 records,
-  records explicit evaluation escapes, and emits source-tagged liveness heartbeats without changing state or metrics.
+- Changed: added run/rollout-scoped append-only events, a locked and bounded controller log writer/recorder,
+  evidence-backed OEE calculations, first/final yield, builds per assist, average cycle time, escapes, live
+  PackML/Andon status, and a responsive read-only loopback dashboard. The recorder handles each actual T09 reset as a
+  new rollout history, validates terminal records through T15, records explicit evaluation escapes, and emits scoped
+  liveness heartbeats without changing state or metrics.
 - Integrity and safety: missing measurements remain unavailable rather than estimated; reporting windows are half-open;
   stale/malformed/mixed-source evidence fails red; live state continues after a reporting window closes; same-time
-  transitions preserve controller order. Shared/exclusive file locks prevent partial reads, failed writes roll back to
-  the prior valid byte length, the UI uses matching CSP hashes and safe text rendering, and it has no command endpoint.
-- Run: `uv run pytest -q tests/test_oee.py tests/test_run_log.py tests/test_dashboard.py` (47 passed);
-  `uv run pytest -q` (428 passed); `uv run ruff check .`, `uv lock --check`, `uv pip check`, `git diff --check`, file and
-  function size gates (all passed). Browser smoke confirmed the CSP-authorized script rendered and polled MOCK data.
-  `contracts/` and `robot/cell/cell_client.py` are unchanged.
+  transitions preserve controller order. Terminal identities are unique, timestamp-ordered, and require the matching
+  PackML lifecycle. Shared/exclusive locks prevent partial reads; write/fsync failures roll back and double-fsync
+  failures report uncertain durability. The UI uses matching CSP hashes and safe text rendering, with no command route.
+- Base and run: stacked on T15 `5b598d7` (including accepted T09 `d1bfd9c`); `uv run pytest -q tests/test_oee.py
+  tests/test_run_log.py tests/test_dashboard.py` (58 passed); `uv run pytest -q` (605 passed); `uv run ruff check .`,
+  `uv lock --check`, `uv pip check`, `git diff --check`, file/function gates, and unchanged-contract / unchanged-official
+  client checks passed. A 24-process append stress recorded 24 unique rollouts. Browser HTTP tests ran outside the
+  restricted loopback sandbox.
 - Next: Claude reviews the T16 PR. A live integration must schedule `record_heartbeat` more frequently than the chosen
   stale threshold and supply only measured ideal/cycle times; use mock/replay sources until real-cell evaluation.
 

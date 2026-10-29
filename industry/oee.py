@@ -8,103 +8,27 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
-from typing import TypeAlias
 
 from assembly.state_machine import PackMLState
+from industry.events import (
+    EscapeEvent,
+    EventSource,
+    HeartbeatEvent,
+    PackMLEvent,
+    ProductResult,
+    ProductResultEvent,
+    RunEvent,
+)
 
 
 class DashboardMetricError(ValueError):
     """A dashboard metric input is incomplete or malformed."""
 
 
-class EventSource(StrEnum):
-    MOCK = "mock"
-    SIM = "sim"
-    REPLAY = "replay"
-    CELL = "cell"
-
-
-class ProductResult(StrEnum):
-    GOOD_FIRST_PASS = "good_first_pass"
-    GOOD_AFTER_REBUILD = "good_after_rebuild"
-    BLOCKED = "blocked"
-    FAILED = "failed"
-
-
 class RagStatus(StrEnum):
     RED = "red"
     AMBER = "amber"
     GREEN = "green"
-
-
-@dataclass(frozen=True, slots=True)
-class PackMLEvent:
-    timestamp: datetime
-    source: EventSource
-    state: PackMLState
-    reason: str | None
-    product: int | None
-
-    def __post_init__(self) -> None:
-        _aware(self.timestamp, "PackML timestamp")
-        if not isinstance(self.source, EventSource):
-            raise DashboardMetricError("PackML source must be an EventSource")
-        if not isinstance(self.state, PackMLState):
-            raise DashboardMetricError("PackML state must be a PackMLState")
-        _product(self.product, optional=True)
-        if self.reason is not None and not isinstance(self.reason, str):
-            raise DashboardMetricError("PackML reason must be a string or null")
-
-
-@dataclass(frozen=True, slots=True)
-class ProductResultEvent:
-    timestamp: datetime
-    source: EventSource
-    product: int
-    result: ProductResult
-    assists: int
-    cycle_time_s: float | None
-
-    def __post_init__(self) -> None:
-        _aware(self.timestamp, "product-result timestamp")
-        if not isinstance(self.source, EventSource):
-            raise DashboardMetricError("product-result source must be an EventSource")
-        if not isinstance(self.result, ProductResult):
-            raise DashboardMetricError("product result must be a ProductResult")
-        _product(self.product)
-        _nonnegative_integer(self.assists, "assists")
-        if self.cycle_time_s is not None:
-            _positive_number(self.cycle_time_s, "cycle_time_s")
-
-
-@dataclass(frozen=True, slots=True)
-class EscapeEvent:
-    timestamp: datetime
-    source: EventSource
-    product: int
-    detail: str
-
-    def __post_init__(self) -> None:
-        _aware(self.timestamp, "escape timestamp")
-        if not isinstance(self.source, EventSource):
-            raise DashboardMetricError("escape source must be an EventSource")
-        _product(self.product)
-        if not isinstance(self.detail, str) or not self.detail.strip():
-            raise DashboardMetricError("escape detail must be a non-empty string")
-
-
-@dataclass(frozen=True, slots=True)
-class HeartbeatEvent:
-    timestamp: datetime
-    source: EventSource
-
-    def __post_init__(self) -> None:
-        _aware(self.timestamp, "heartbeat timestamp")
-        if not isinstance(self.source, EventSource):
-            raise DashboardMetricError("heartbeat source must be an EventSource")
-
-
-RunEvent: TypeAlias = PackMLEvent | ProductResultEvent | EscapeEvent | HeartbeatEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,6 +354,8 @@ def _single_source(events: tuple[RunEvent, ...]) -> EventSource:
     sources = {event.source for event in events}
     if len(sources) != 1:
         raise DashboardMetricError("one dashboard window cannot mix mock, sim, replay, and cell sources")
+    if len({event.run_id for event in events}) != 1:
+        raise DashboardMetricError("one dashboard window cannot mix run identities")
     return next(iter(sources))
 
 

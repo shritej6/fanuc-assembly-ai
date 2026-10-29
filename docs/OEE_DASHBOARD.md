@@ -18,14 +18,15 @@ time for every product represented in the reporting window. Values are not cappe
 
 ## Run-log format
 
-Each line has exactly `version`, `source`, `event`, `timestamp`, and `payload`. Supported sources are `mock`, `sim`,
-`replay`, and `cell`; one reporting window cannot mix them.
+Each line has exactly `version`, `source`, `event`, `timestamp`, `run_id`, `rollout`, and `payload`. Supported sources
+are `mock`, `sim`, `replay`, and `cell`; one log cannot mix sources or run IDs. Rollout identity lets one log retain
+multiple T09 histories even though the official controller creates a new state machine on every reset.
 
 ```json
-{"version":1,"source":"mock","event":"packml","timestamp":"2026-10-29T15:00:00Z","payload":{"state":"Execute","reason":null,"product":1}}
-{"version":1,"source":"mock","event":"product_result","timestamp":"2026-10-29T15:01:00Z","payload":{"product":1,"result":"good_first_pass","assists":0,"cycle_time_s":60.0}}
-{"version":1,"source":"mock","event":"escape","timestamp":"2026-10-29T15:01:01Z","payload":{"product":1,"detail":"fault-injection evaluation escape"}}
-{"version":1,"source":"mock","event":"heartbeat","timestamp":"2026-10-29T15:01:05Z","payload":{}}
+{"version":1,"source":"mock","event":"packml","timestamp":"2026-10-29T15:00:00Z","run_id":"run-001","rollout":0,"payload":{"state":"Execute","reason":null,"product":1}}
+{"version":1,"source":"mock","event":"product_result","timestamp":"2026-10-29T15:01:00Z","run_id":"run-001","rollout":0,"payload":{"product":1,"result":"good_first_pass","assists":0,"cycle_time_s":60.0}}
+{"version":1,"source":"mock","event":"escape","timestamp":"2026-10-29T15:01:01Z","run_id":"run-001","rollout":0,"payload":{"product":1,"detail":"fault-injection evaluation escape"}}
+{"version":1,"source":"mock","event":"heartbeat","timestamp":"2026-10-29T15:01:05Z","run_id":"run-001","rollout":0,"payload":{}}
 ```
 
 The first PackML event must be at or before the planned window start for Availability to be available. Product results
@@ -35,9 +36,10 @@ dashboard never infers one from a rejected product.
 ## Record a live run
 
 `ControllerRunLogRecorder` is the producer boundary between T09 and the dashboard. It synchronizes public
-`PackMLStateMachine.history`, accepts a validated T15 birth-certificate record at product completion, and records an
-explicit evaluation escape. The writer is local, append-only, file-locked, bounded to 16 MiB by default, source-pure,
-replay-resistant for exact events, and synced to disk before returning.
+`PackMLStateMachine.history`, validates terminal records with T15's public validator, and records an explicit evaluation
+escape. The writer is local, append-only, file-locked, bounded to 16 MiB by default, source/run-pure, timestamp-ordered,
+and synced to disk before returning. A `(run_id, rollout, product)` terminal identity can be recorded only once and
+must follow the matching PackML terminal state.
 
 ```python
 from pathlib import Path
@@ -45,16 +47,21 @@ from pathlib import Path
 from industry.oee import EventSource
 from industry.run_log import ControllerRunLogRecorder, RunLogWriter
 
-recorder = ControllerRunLogRecorder(RunLogWriter(Path("eval/runs/run-001.jsonl")), EventSource.CELL)
+writer = RunLogWriter(Path("eval/runs/run-001.jsonl"))
+rollout = 0
+recorder = ControllerRunLogRecorder(writer, EventSource.CELL, "run-001", rollout)
 recorder.sync_packml(controller.state_machine)
 recorder.record_product_result(validated_birth_certificate, recorded_at=finished_at)
 recorder.record_heartbeat(recorded_at=observed_at)
 ```
 
-Call `sync_packml` after each state transition and once during startup. On restart it verifies that recorded PackML
-events are an exact prefix of the controller history before appending anything; a divergent history fails closed.
-Schedule `record_heartbeat` periodically while the controller process is healthy, at an interval shorter than
-`--stale-after-s`. A heartbeat is liveness evidence only; it never changes PackML state or any OEE numerator.
+Create a new recorder with the next rollout number after every actual T09 `controller.reset()`. Call `sync_packml` after
+each state transition and once during startup. On restart it verifies that PackML events for that rollout are an exact
+prefix of the controller history before appending anything; a divergent history fails closed. Schedule
+`record_heartbeat` periodically while the controller process is healthy, at an interval shorter than `--stale-after-s`.
+A heartbeat is liveness evidence only; it never changes PackML state or any OEE numerator. Append or initial fsync
+failure rolls back to the prior byte length and syncs that rollback; if the rollback sync also fails, the writer reports
+that durability is uncertain rather than claiming success.
 
 ## Run locally
 

@@ -16,13 +16,16 @@ from industry.oee import (
     compute_dashboard_snapshot,
 )
 
+RUN_ID = "run-2026-10-29"
+ROLLOUT = 3
+
 
 def _time(seconds: int) -> datetime:
     return datetime(2026, 10, 29, 15, tzinfo=UTC) + timedelta(seconds=seconds)
 
 
 def _state(seconds: int, state: PackMLState, reason: str | None = None) -> PackMLEvent:
-    return PackMLEvent(_time(seconds), EventSource.MOCK, state, reason, 1)
+    return PackMLEvent(_time(seconds), EventSource.MOCK, RUN_ID, ROLLOUT, state, reason, 1)
 
 
 def _result(
@@ -33,7 +36,9 @@ def _result(
     assists: int = 0,
     cycle_time_s: float | None = 30.0,
 ) -> ProductResultEvent:
-    return ProductResultEvent(_time(seconds), EventSource.MOCK, product, result, assists, cycle_time_s)
+    return ProductResultEvent(
+        _time(seconds), EventSource.MOCK, RUN_ID, ROLLOUT, product, result, assists, cycle_time_s
+    )
 
 
 def _schedule(**ideals: float) -> DashboardSchedule:
@@ -47,7 +52,7 @@ def test_computes_evidence_backed_oee_and_andon_snapshot() -> None:
         _state(60, PackMLState.HELD, "restock M1_03"),
         _state(80, PackMLState.EXECUTE),
         _result(85, ProductResult.FAILED, cycle_time_s=35.0),
-        EscapeEvent(_time(90), EventSource.MOCK, 1, "fault injection was not caught"),
+        EscapeEvent(_time(90), EventSource.MOCK, RUN_ID, ROLLOUT, 1, "fault injection was not caught"),
     )
 
     snapshot = compute_dashboard_snapshot(events, _schedule(**{"1": 20.0}), now=_time(100), stale_after_s=20)
@@ -166,10 +171,19 @@ def test_packml_history_must_cover_planned_window() -> None:
 
 
 def test_mixed_sources_are_rejected() -> None:
-    cell_state = PackMLEvent(_time(1), EventSource.CELL, PackMLState.EXECUTE, None, 1)
+    cell_state = PackMLEvent(_time(1), EventSource.CELL, RUN_ID, ROLLOUT, PackMLState.EXECUTE, None, 1)
 
     with pytest.raises(DashboardMetricError, match="cannot mix"):
         compute_dashboard_snapshot((_state(0, PackMLState.EXECUTE), cell_state), _schedule(), now=_time(2), stale_after_s=1)
+
+
+def test_mixed_run_identities_are_rejected() -> None:
+    other_run = PackMLEvent(
+        _time(1), EventSource.MOCK, "other-run", ROLLOUT, PackMLState.EXECUTE, None, 1
+    )
+
+    with pytest.raises(DashboardMetricError, match="cannot mix run identities"):
+        compute_dashboard_snapshot((_state(0, PackMLState.EXECUTE), other_run), _schedule(), now=_time(2), stale_after_s=1)
 
 
 def test_future_log_event_is_rejected() -> None:
@@ -198,7 +212,7 @@ def test_stale_source_forces_fail_closed_red_status() -> None:
 
 
 def test_periodic_heartbeat_keeps_a_long_healthy_execute_live() -> None:
-    events = (_state(0, PackMLState.EXECUTE), HeartbeatEvent(_time(55), EventSource.MOCK))
+    events = (_state(0, PackMLState.EXECUTE), HeartbeatEvent(_time(55), EventSource.MOCK, RUN_ID, ROLLOUT))
 
     snapshot = compute_dashboard_snapshot(events, _schedule(), now=_time(60), stale_after_s=10)
 

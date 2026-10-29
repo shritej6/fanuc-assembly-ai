@@ -21,11 +21,13 @@ from industry.oee import (
 )
 
 NOW = datetime(2026, 10, 29, 15, tzinfo=UTC)
+RUN_ID = "run-2026-10-29"
+ROLLOUT = 3
 
 
 def _snapshot() -> object:
     schedule = DashboardSchedule(NOW, NOW.replace(minute=1), {})
-    events = (PackMLEvent(NOW, EventSource.MOCK, PackMLState.EXECUTE, None, 1),)
+    events = (PackMLEvent(NOW, EventSource.MOCK, RUN_ID, ROLLOUT, PackMLState.EXECUTE, None, 1),)
     return compute_dashboard_snapshot(events, schedule, now=NOW, stale_after_s=10)
 
 
