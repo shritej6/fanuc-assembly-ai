@@ -9,6 +9,7 @@ import struct
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from assembly.catalog import ROTATION_MATRIX_TOLERANCE
 from assembly.cell_runtime_safety import (
     ProductionSafetyConfigurationError,
     ProductionSafetyUnavailable,
@@ -39,7 +40,24 @@ def _matrix(value: object, label: str) -> tuple[tuple[float, ...], ...]:
     rows = tuple(_vector(row, 4, label) for row in value)
     if rows[3] != (0.0, 0.0, 0.0, 1.0):
         raise ProductionSafetyConfigurationError(f"{label} must be an affine transform")
+    if not _proper_rotation(tuple(row[:3] for row in rows[:3])):
+        raise ProductionSafetyConfigurationError(f"{label} must contain a finite proper rotation")
     return rows
+
+
+def _proper_rotation(rotation: tuple[tuple[float, ...], ...]) -> bool:
+    for left in range(3):
+        for right in range(3):
+            dot = sum(rotation[left][axis] * rotation[right][axis] for axis in range(3))
+            expected = 1.0 if left == right else 0.0
+            if abs(dot - expected) > ROTATION_MATRIX_TOLERANCE:
+                return False
+    determinant = (
+        rotation[0][0] * (rotation[1][1] * rotation[2][2] - rotation[1][2] * rotation[2][1])
+        - rotation[0][1] * (rotation[1][0] * rotation[2][2] - rotation[1][2] * rotation[2][0])
+        + rotation[0][2] * (rotation[1][0] * rotation[2][1] - rotation[1][1] * rotation[2][0])
+    )
+    return abs(determinant - 1.0) <= ROTATION_MATRIX_TOLERANCE
 
 
 def _binary_vertices(data: bytes) -> tuple[tuple[float, float, float], ...] | None:

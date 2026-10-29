@@ -109,6 +109,32 @@ def test_t29_sweep_rejects_malformed_frames(tmp_path: Path) -> None:
         HeldPartSTLSweepSource(frames, {"M1_01": mesh})
 
 
+@pytest.mark.parametrize(
+    "rotation",
+    [
+        [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        [[2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        [[1.0, 0.1, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    ],
+)
+def test_t29_sweep_rejects_non_rigid_rotation_blocks(
+    tmp_path: Path,
+    rotation: list[list[float]],
+) -> None:
+    from assembly.cell_runtime_safety import ProductionSafetyConfigurationError
+    from assembly.t29_collision_geometry import HeldPartSTLSweepSource
+
+    frames = tmp_path / "grasp_frames.json"
+    mesh = tmp_path / "M1_01.stl"
+    transform = [row + [0.0] for row in rotation] + [[0.0, 0.0, 0.0, 1.0]]
+    _frames(frames, transform=transform)
+    _binary_stl(mesh, ((0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (0.0, 100.0, 0.0)))
+
+    with pytest.raises(ProductionSafetyConfigurationError, match="proper rotation"):
+        HeldPartSTLSweepSource(frames, {"M1_01": mesh})
+
+
 def test_t29_sweep_wraps_invalid_ascii_stl_as_configuration_error(tmp_path: Path) -> None:
     from assembly.cell_runtime_safety import ProductionSafetyConfigurationError
     from assembly.t29_collision_geometry import HeldPartSTLSweepSource
