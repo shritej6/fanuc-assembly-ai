@@ -10,20 +10,20 @@ Newest first. One entry per finished task.
   verified transfer before a verified table replacement or spare is reserved. Unknown foreign objects Hold/Andon when
   no catalog identity and sourced grasp exist; installed/staged scan defects Hold for calibrated dismantle recovery.
 - Motion/recovery: every normal or recovery `pre_pick` happens only after the sourced straight-down inspection stop;
-  recovery no longer calls `grasp_for`. Safe-Z rise/XY/descent, nearest-equivalent W/P/R interpolation, shortest yaw,
-  configured per-step Cartesian speed checks, table-before-spare selection, operator acknowledge/rescan resume, and
-  installed/held occlusion ownership are covered. Inspection actions are authoritative: `ask_operator` Holds pre/post,
-  and physical reject actions are not inferred from raw scores.
+  recovery no longer calls `grasp_for`. Safe-Z rise/XY/descent, nearest-equivalent W/P/R interpolation bounded to the
+  official ±360° TCP contract, shortest yaw, configured per-step Cartesian speed checks, table-before-spare selection,
+  operator acknowledge/rescan resume, and installed/held occlusion ownership are covered. Inspection actions are
+  authoritative: `ask_operator` Holds pre/post, and physical reject actions are not inferred from raw scores.
 - Runtime boundary: `AssemblyController` requires caller-sourced `InspectionStopConfig` and `StartupHoldConfig`; the
   latter is validated against the official action contract and prevents malformed first observations from escaping
   `act()`. `reset()` clears prompt ownership, `requested_products` exposes the parsed tuple, and
   `acknowledge_resume()` requires a fresh scan before leaving Held. T29 object-to-TCP offsets stay inside the pose
   provider and are not compared incorrectly with the FoundationPose object origin.
-- Run: `uv run ruff check .` (passed); `uv run pytest -q` (437 passed); `git diff --check` (clean);
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (443 passed); `git diff --check` (clean);
   `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean).
-  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected and
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 601 actions, 0 rejected and
   `✓ Ready for the real robot`; adding `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
-  200 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
+  201 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
 - Next: Claude re-reviews PR #9. Agent 4 must supply the sourced startup hold, T28 recovery/staging targets, T29
   FoundationPose object-to-TCP transform, and production full-IK/collision providers; do not select `t09-mock` on the
   real cell. Agent 2's reviewed catalog/adapter commits remain a separate root integration step.

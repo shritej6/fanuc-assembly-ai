@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from numbers import Number
 
-from robot.adapter import MAX_ACTION_CHUNK
+from robot.adapter import MAX_ACTION_CHUNK, TCP_LIMITS
 
 
 class MotionError(ValueError):
@@ -47,7 +47,6 @@ class RestingState(StrEnum):
 @dataclass(frozen=True)
 class AbsolutePoseUF0:
     """Already calibrated absolute UTOOL1 pose in controller frame UF0."""
-
     x: float
     y: float
     z: float
@@ -234,13 +233,29 @@ def _nearest_angle(reference: float, target: float) -> float:
     return reference if abs(delta) < 1e-12 else reference + delta
 
 
+def _bounded_angle_pair(reference: float, target: float, field: str) -> tuple[float, float]:
+    low, high, _unit = TCP_LIMITS[{"w": 3, "p": 4, "r": 5}[field]]
+    if not low <= reference <= high:
+        raise MotionInputError(f"start {field} is outside official TCP bounds")
+    nearest = _nearest_angle(reference, target)
+    if low <= nearest <= high:
+        return reference, nearest
+    shift = -360.0 if nearest > high else 360.0
+    shifted = (reference + shift, nearest + shift)
+    if all(low <= angle <= high for angle in shifted):
+        return shifted
+    raise MotionInputError(f"shortest {field} path cannot stay inside official TCP bounds")
+
+
+def _bounded_segment_angles(start: Waypoint, end: Waypoint) -> tuple[Waypoint, Waypoint]:
+    pairs = {field: _bounded_angle_pair(getattr(start, field), getattr(end, field), field) for field in "wpr"}
+    bounded_start = replace(start, **{field: pair[0] for field, pair in pairs.items()})
+    bounded_end = replace(end, **{field: pair[1] for field, pair in pairs.items()})
+    return bounded_start, bounded_end
+
+
 def _segment(start: Waypoint, end: Waypoint, config: MotionConfig) -> tuple[Waypoint, ...]:
-    end = replace(
-        end,
-        w=_nearest_angle(start.w, end.w),
-        p=_nearest_angle(start.p, end.p),
-        r=_nearest_angle(start.r, end.r),
-    )
+    start, end = _bounded_segment_angles(start, end)
     count = _steps(start, end, config)
     fields = ("x", "y", "z", "w", "p", "r")
     points: list[Waypoint] = []
