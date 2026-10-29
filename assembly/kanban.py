@@ -49,6 +49,7 @@ _OBJECT_REQUIRED_KINDS = frozenset(
 _OBJECT_OPTIONAL_KINDS = frozenset({"rebuild"})
 _OBJECT_FORBIDDEN_KINDS = _KNOWN_EVENT_KINDS - _OBJECT_REQUIRED_KINDS - _OBJECT_OPTIONAL_KINDS
 _PRODUCT_REQUIRED_KINDS = _OBJECT_REQUIRED_KINDS | _OBJECT_OPTIONAL_KINDS | frozenset({"complete", "resume"})
+_SPARE_USE_EVENT_KINDS = frozenset({"reject_failed", "spare"})
 
 
 class KanbanInputError(ValueError):
@@ -257,7 +258,7 @@ def _require_spare_policies(
     policies: tuple[StockPolicy, ...],
 ) -> None:
     covered = {policy.object_id for policy in policies}
-    consumed = {event.object_id for event in events if event.kind == "spare"}
+    consumed = {event.object_id for event in events if event.kind in _SPARE_USE_EVENT_KINDS}
     missing = sorted(object_id for object_id in consumed if object_id not in covered)
     if missing:
         raise KanbanInputError(f"spare use has no stock policy: {', '.join(missing)}")
@@ -323,7 +324,7 @@ def _build_cards(
         for item in inventory.items()
         if item.zone is InventoryZone.SPARE and item.condition is ObjectCondition.VERIFIED
     )
-    uses = Counter(event.object_id for event in events if event.kind == "spare")
+    uses = Counter(event.object_id for event in events if event.kind in _SPARE_USE_EVENT_KINDS)
     cards: list[ReorderCard] = []
     for policy in sorted(policies, key=lambda item: item.object_id):
         count = available[policy.object_id]

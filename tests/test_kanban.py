@@ -94,6 +94,18 @@ def test_spare_use_replenishes_to_target_before_low_stock_point() -> None:
     assert view.cards[0].order_quantity == 1
 
 
+def test_recovery_reject_failed_records_consumed_spare_for_reorder() -> None:
+    inventory = _spares("M2_02", 3)
+    policy = StockPolicy("M2_02", reorder_point=1, target_stock=4, failure_rate=_rate())
+    events = (ControllerEvent("reject_failed", 2, "M2_02", "reserved-spare-instance"),)
+
+    view = build_operations_view(load_catalog(), inventory, events, (policy,))
+
+    assert view.cards == (
+        ReorderCard("M2_02", 3, 1, 4, 1, 1, ReorderTrigger.SPARE_USE, _rate()),
+    )
+
+
 def test_low_stock_without_spare_event_still_raises_reorder_card() -> None:
     inventory = _spares("M3_03", 1)
     policy = StockPolicy("M3_03", reorder_point=1, target_stock=3, failure_rate=_rate())
@@ -216,8 +228,11 @@ def test_pareto_counts_explicit_defects_and_t09_insertion_failures() -> None:
     )
 
     inventory = _spares("M1_01", 2)
-    policy = StockPolicy("M1_01", 0, 2, _rate())
-    view = build_operations_view(load_catalog(), inventory, events, (policy,))
+    policies = (
+        StockPolicy("M1_01", 0, 2, _rate()),
+        StockPolicy("M2_02", 0, 1, _rate()),
+    )
+    view = build_operations_view(load_catalog(), inventory, events, policies)
 
     assert view.pareto.total_defects == 5
     assert view.pareto.rows == (
@@ -261,8 +276,9 @@ def test_reject_failed_event_refines_matching_inventory_reject_without_double_co
         condition=ObjectCondition.DEFECTIVE,
     )
     events = (ControllerEvent("reject_failed", 2, "M2_02", "replacement-instance"),)
+    policy = StockPolicy("M2_02", 0, 1, _rate())
 
-    view = build_operations_view(load_catalog(), inventory, events, ())
+    view = build_operations_view(load_catalog(), inventory, events, (policy,))
 
     assert view.pareto.total_defects == 1
     assert view.pareto.rows == (
@@ -385,8 +401,9 @@ def test_non_defect_t09_events_remain_valid_and_do_not_inflate_pareto() -> None:
     assert view.pareto.total_defects == 0
 
 
-def test_spare_use_requires_a_stock_policy_for_the_consumed_part() -> None:
-    events = (ControllerEvent("spare", 5, "M5_04", "replacement"),)
+@pytest.mark.parametrize("kind", ["spare", "reject_failed"])
+def test_spare_use_requires_a_stock_policy_for_the_consumed_part(kind: str) -> None:
+    events = (ControllerEvent(kind, 5, "M5_04", "replacement"),)
 
     with pytest.raises(KanbanInputError, match="M5_04"):
         build_operations_view(load_catalog(), Inventory(load_catalog()), events, ())

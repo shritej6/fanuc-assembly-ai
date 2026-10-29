@@ -13,15 +13,16 @@ Newest first. One entry per finished task.
   registered explicit defect causes, bounded T09 retry/reject-failed occurrences, and physical inventory already
   committed to the reject zone. Fallen rejects retain the `fallen` cause; other rejected conditions use the conservative
   `inspection_reject` cause rather than an invented subtype. A correlated `reject_failed` occurrence refines one
-  generic inventory rejection into `insertion_failure` without counting the same incident twice. Free-form Andon text
-  is not parsed as factory data. Current T09 `rejected` and table-sourced `replacement` events are accepted as
-  non-additive operational facts, so the reject-zone inventory remains the single Pareto occurrence. Malformed or
+  generic inventory rejection into `insertion_failure` without counting the same incident twice, and records the
+  spare reserved by that recovery stage as one replenishment use. Free-form Andon text is not parsed as factory data.
+  Current T09 `rejected` and table-sourced `replacement` events are accepted as non-additive operational facts, so the
+  reject-zone inventory remains the single Pareto occurrence. Malformed or
   unknown events raise `KanbanInputError`; event kinds explicitly require, permit, or forbid object/product fields,
   and every present object is checked against its catalog product. Cross-product part ownership,
   unknown causes, unbounded retry shapes, duplicate/unknown policies, and a consumed spare without a policy also fail
   closed.
-- Run: `uv run pytest -q tests/test_kanban.py` (56 passed); `uv run pytest -q` (437 passed);
-  `.venv/bin/ruff check .` (passed); `git diff --check` (clean); measured files are 367 implementation / 415 test
+- Run: `uv run pytest -q tests/test_kanban.py` (58 passed); `uv run pytest -q` (439 passed);
+  `.venv/bin/ruff check .` (passed); `git diff --check` (clean); measured files are 368 implementation / 432 test
   lines and no function is over 40 lines. `contracts/` and
   `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
 - Next: Claude reviews the T20 PR and can render `OperationsView.cards` and `OperationsView.pareto` without duplicating
