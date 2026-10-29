@@ -1,5 +1,19 @@
-"""Assembly planning primitives."""
+"""Assembly planning and traceability primitives."""
 
+from assembly.birth_certificate import (
+    BirthCertificateError,
+    BirthCertificateInputError,
+    BirthCertificateResourceError,
+    BirthCertificateSchemaError,
+    BirthCertificateWriteError,
+    CertificateArtifacts,
+    ProductOutcome,
+    ProductResult,
+    StepInspectionEvidence,
+    build_birth_certificate,
+    validate_birth_certificate,
+    write_birth_certificate,
+)
 from assembly.catalog import (
     Catalog,
     CatalogError,
@@ -16,16 +30,28 @@ from assembly.catalog import (
 )
 
 __all__ = [
+    "BirthCertificateError",
+    "BirthCertificateInputError",
+    "BirthCertificateResourceError",
+    "BirthCertificateSchemaError",
+    "BirthCertificateWriteError",
     "Catalog",
     "CatalogError",
     "CatalogLoadError",
     "CatalogResourceError",
     "CatalogSchemaError",
     "CatalogSemanticError",
+    "CertificateArtifacts",
+    "ProductOutcome",
     "ProductRecipe",
+    "ProductResult",
     "RecipeGraph",
     "RecipeStep",
+    "StepInspectionEvidence",
     "UnknownBaseError",
     "UnknownProductError",
+    "build_birth_certificate",
     "load_catalog",
+    "validate_birth_certificate",
+    "write_birth_certificate",
 ]

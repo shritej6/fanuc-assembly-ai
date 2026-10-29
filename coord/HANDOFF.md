@@ -2,6 +2,30 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T15 · CODEX · immutable product birth certificates
+
+- Changed: added `assembly/birth_certificate.py` to assemble one contract-valid traceability record from T09
+  `PlanStepRecord` / `ControllerEvent` streams, archived post-placement inspections, and an explicit measured terminal
+  outcome. Added `assembly/birth_certificate_pdf.py` for a one-page ReportLab layout and exported the public API from
+  `assembly/__init__.py`. Artifacts publish to `eval/records/<run_id>/<product>.json` and `.pdf` without overwriting an
+  existing record; JSON and PDF publication is paired with rollback on a partial publish failure.
+- Behavior: product/inspection identities, recipe membership, terminal events, recovery classification, two final
+  checks, four passing seated checks for good products, safe run IDs, finite JSON values, and paired timing
+  measurements all fail closed. Attempts, spare use, rebuilds, and deduplicated Andon assist episodes derive from T09
+  evidence. Unmeasured cycle time and Cosmos checks remain `null`; no value is inferred. No contract file or official
+  `robot/cell/cell_client.py` file changed.
+- PDF QA: rendered the generated PDF with `pdftoppm` at 144 DPI and inspected the 1224×1584 PNG. The single page had
+  no clipped or overlapping text, all four step rows and evidence references were legible, status/final-check badges
+  were aligned, and the footer and page number rendered correctly.
+- Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (14 passed); `uv run --locked pytest -q`
+  (395 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
+  unchanged-contract / unchanged-official-client checks (passed). New production files are 436 and 209 lines; no
+  changed function exceeds 40 lines.
+- Next: Claude reviews the T15 PR. Runtime callers archive each final post-placement inspection as
+  `StepInspectionEvidence`, call `build_birth_certificate(...)`, then publish the validated record with
+  `write_birth_certificate(...)`. Training weights are not required; the same T27-shaped inspection payloads can be
+  supplied by deterministic stubs until the reviewed models land.
+
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
 - Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor
