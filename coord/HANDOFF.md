@@ -14,11 +14,12 @@ Newest first. One entry per finished task.
 - Installed rotations must be finite 3x3 proper rotations: orthonormal rows and determinant +1 within `1e-6`, the
   source generator's six-decimal serialization precision. Schema-valid but unsafe matrices fail semantic validation.
 - The catalog schema now rejects unknown top-level, product, and step keys. Source hashes and catalog/source values
-  are rechecked at load time, and source dates are explicitly labeled as Git commit timestamps. All six provenance
-  fields for both sources are compared with immutable trusted records; typed catalog objects return those records.
+  are rechecked at load time, and source dates are explicitly labeled as Git commit timestamps. Insert offsets must
+  contain exactly three axes at the contract boundary. All six provenance fields for both sources are compared with
+  immutable trusted records; typed catalog objects return those records.
 - Regression evidence: NaN, Inf, singular, non-orthogonal, reflection, hash mismatch, zero/multi-grip ambiguity, roll
   mismatch, all 12 source-provenance mutations, Team V finger provenance, and unknown-key cases fail closed.
-  `uv run ruff check .` passed; full `uv run pytest -q` passed 69 tests.
+  `uv run ruff check .` passed; full `uv run pytest -q` passed 70 tests.
 - Integration note: T09 must use `RecipeStep.gripper_roll_deg` only as a T29 offset added to measured part yaw and
   apply `installed_rotation_matrix` with `insert_offset_mm`; it must not preserve the superseded provisional values.
 

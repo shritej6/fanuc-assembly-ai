@@ -115,6 +115,17 @@ def test_catalog_yaml_conforms_to_contract() -> None:
     assert errors == []
 
 
+@pytest.mark.parametrize("offset", [[0, 0], [0, 0, 0, 0]])
+def test_catalog_contract_requires_exact_three_axis_insert_offset(offset: list[int]) -> None:
+    document = deepcopy(_catalog_data())
+    document["products"][0]["steps"][0]["insert_offset_mm"] = offset
+    schema = json.loads((CONTRACTS / "catalog.schema.json").read_text())
+
+    errors = list(Draft202012Validator(schema, registry=_schema_registry()).iter_errors(document))
+
+    assert errors
+
+
 def test_catalog_has_exact_products_names_and_base_types() -> None:
     products = _catalog_data()["products"]
     actual = [(item["product"], item["name"], item["base_type"]) for item in products]
@@ -280,7 +291,6 @@ def test_load_catalog_rejects_contract_violation_with_typed_error(tmp_path: Path
         (("products", 0, "steps", 3, "step"), 3, "steps must be exactly 1..4"),
         (("products", 0, "steps", 0, "object_id"), "M2_01", "expected M1_01"),
         (("products", 2, "base_type"), "A", "base type A does not match"),
-        (("products", 0, "steps", 0, "insert_offset_mm"), [0, 0], "three finite numbers"),
         (("products", 0, "steps", 0, "insert_offset_mm"), [0, float("inf"), 0], "three finite numbers"),
     ],
 )
