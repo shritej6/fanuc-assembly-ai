@@ -1,5 +1,5 @@
-"""Regenerate every STEP and STL file in one command:  python cad/build_all.py
-(Optional model numbers rebuild a subset, e.g. `python cad/build_all.py 1` for the first test print.)
+"""Regenerate every STEP and STL file in one command:  uv run python cad/products/build_all.py
+(Optional model numbers rebuild a subset, e.g. `uv run python cad/products/build_all.py 1` for the first test print.)
 
 STEP files: each part in its installed orientation, local origin at its lowest seating plane.
 STL files: same, except parts with a print_rotation (rear guards) are laid flat for slicing.
@@ -21,8 +21,8 @@ import cadquery as cq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common_geometry import BUILD_NOTES, Part  # noqa: E402
-from parameters import STL_ANGULAR_TOLERANCE, STL_LINEAR_TOLERANCE  # noqa: E402
+from common_geometry import BUILD_NOTES, Part
+from parameters import STL_ANGULAR_TOLERANCE, STL_LINEAR_TOLERANCE
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "output"

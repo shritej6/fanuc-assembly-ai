@@ -7,11 +7,18 @@ knob can be installed here as a camera wrong-part test.
 from __future__ import annotations
 
 import cadquery as cq
-
 from common_geometry import EPS, Part, box_span, cyl
 from control_family import (
-    CAP_Z0, cap_grip_zone, cap_pad, carrier_grip_zone, control_housing, cut_cap_socket,
-    housing_grip_zone, rear_guard, round_carrier, round_pocket,
+    CAP_Z0,
+    cap_grip_zone,
+    cap_pad,
+    carrier_grip_zone,
+    control_housing,
+    cut_cap_socket,
+    housing_grip_zone,
+    rear_guard,
+    round_carrier,
+    round_pocket,
 )
 from fixtures import make_fixture
 from parameters import CTRL_POCKET_FLOOR_Z, ENTRY_CHAMFER

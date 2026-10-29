@@ -3,18 +3,36 @@
 from __future__ import annotations
 
 import cadquery as cq
-
 from common_geometry import (
-    EPS, Part, box_span, fillet_edges_in_box, grip_pad, profile_xz, rect_taper, rounded_box,
+    EPS,
+    Part,
+    box_span,
+    fillet_edges_in_box,
+    grip_pad,
+    profile_xz,
+    rect_taper,
+    rounded_box,
 )
 from control_family import (
-    CAP_Z0, cap_grip_zone, cap_pad, carrier_grip_zone, control_housing, cut_cap_socket,
-    housing_grip_zone, rear_guard,
+    CAP_Z0,
+    cap_grip_zone,
+    cap_pad,
+    carrier_grip_zone,
+    control_housing,
+    cut_cap_socket,
+    housing_grip_zone,
+    rear_guard,
 )
 from fixtures import make_fixture
 from parameters import (
-    CARRIER_BOTTOM_CHAMFER, CARRIER_FLANGE_H, CARRIER_FLANGE_Z0, CTRL_HOUSING_Z,
-    CTRL_POCKET_FLOOR_Z, ENTRY_CHAMFER, KEY_POST_X, KEY_POST_Y,
+    CARRIER_BOTTOM_CHAMFER,
+    CARRIER_FLANGE_H,
+    CARRIER_FLANGE_Z0,
+    CTRL_HOUSING_Z,
+    CTRL_POCKET_FLOOR_Z,
+    ENTRY_CHAMFER,
+    KEY_POST_X,
+    KEY_POST_Y,
     LOCATING_CLEARANCE_PER_SIDE,
 )
 

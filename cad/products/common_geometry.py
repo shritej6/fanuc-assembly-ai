@@ -6,10 +6,19 @@ import logging
 from dataclasses import dataclass, field
 
 import cadquery as cq
-
+from OCP.Standard import Standard_Failure
 from parameters import (
-    GRIP_EDGE_RADIUS, GRIP_ROOT_FILLET, GRIP_TOP_CHAMFER, PEG_A_X, PEG_A_Y, PEG_B_X,
-    PEG_B_Y, SOCKET_A_D, SOCKET_B_D, SOCKET_DEPTH, SOCKET_MOUTH_CHAMFER,
+    GRIP_EDGE_RADIUS,
+    GRIP_ROOT_FILLET,
+    GRIP_TOP_CHAMFER,
+    PEG_A_X,
+    PEG_A_Y,
+    PEG_B_X,
+    PEG_B_Y,
+    SOCKET_A_D,
+    SOCKET_B_D,
+    SOCKET_DEPTH,
+    SOCKET_MOUTH_CHAMFER,
 )
 
 log = logging.getLogger("fanuc_cad")
@@ -116,7 +125,7 @@ def fillet_edges_in_box(wp: cq.Workplane, lo: tuple, hi: tuple, r: float, label:
     """
     try:
         return wp.edges(cq.selectors.BoxSelector(lo, hi)).fillet(r)
-    except Exception as exc:  # OCC raises StdFail_NotDone, which has no narrower Python base
+    except Standard_Failure as exc:  # OCC's fillet failure; an empty edge selection (ValueError) is a bug and raises
         msg = f"{label}: {r} mm fillet not applied ({type(exc).__name__})"
         log.warning(msg)
         BUILD_NOTES.append(msg)

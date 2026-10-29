@@ -3,13 +3,31 @@
 from __future__ import annotations
 
 import cadquery as cq
-
 from common_geometry import EPS, Part, box_span, cyl, rounded_box
 from parameters import (
-    FIXTURE_CORNER_R, FIXTURE_HOLE_D, FIXTURE_HOLE_X, FIXTURE_HOLE_Y, FIXTURE_X, FIXTURE_Y,
-    FIXTURE_Z, FRONT_STOP_LEG, FRONT_STOP_WALL, LOCATING_CLEARANCE_PER_SIDE, PEG_A_D, PEG_A_X,
-    PEG_A_Y, PEG_B_D, PEG_B_X, PEG_B_Y, PEG_HEIGHT, PEG_TOP_CHAMFER, SIDE_STOP_CENTER_Y,
-    SIDE_STOP_GAP, SIDE_STOP_X, SIDE_STOP_Y, STOP_HEIGHT,
+    FIXTURE_CORNER_R,
+    FIXTURE_HOLE_D,
+    FIXTURE_HOLE_X,
+    FIXTURE_HOLE_Y,
+    FIXTURE_X,
+    FIXTURE_Y,
+    FIXTURE_Z,
+    FRONT_STOP_LEG,
+    FRONT_STOP_WALL,
+    LOCATING_CLEARANCE_PER_SIDE,
+    PEG_A_D,
+    PEG_A_X,
+    PEG_A_Y,
+    PEG_B_D,
+    PEG_B_X,
+    PEG_B_Y,
+    PEG_HEIGHT,
+    PEG_TOP_CHAMFER,
+    SIDE_STOP_CENTER_Y,
+    SIDE_STOP_GAP,
+    SIDE_STOP_X,
+    SIDE_STOP_Y,
+    STOP_HEIGHT,
 )
 
 FIXTURE_NAMES = {

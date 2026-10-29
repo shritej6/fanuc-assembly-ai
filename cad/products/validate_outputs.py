@@ -1,6 +1,6 @@
 """Check every exported file and every assembly, then write BUILD_SUMMARY.txt.
 
-    python cad/validate_outputs.py        (run after build_all.py)
+    uv run python cad/products/validate_outputs.py        (run after build_all.py)
 
 Per file : exists, STEP re-opens (CadQuery and FreeCAD), STL re-opens, watertight,
            positive volume, one connected body, bounding box, mass estimate.
@@ -23,8 +23,8 @@ import cadquery as cq
 import trimesh
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common_geometry import GripZone, box_span  # noqa: E402
-from parameters import MAX_PART_MASS_G, PLA_DENSITY_G_PER_CM3  # noqa: E402
+from common_geometry import GripZone, box_span
+from parameters import MAX_PART_MASS_G, PLA_DENSITY_G_PER_CM3
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "output"
@@ -70,7 +70,7 @@ def freecad_checks(rows: list[dict]) -> dict:
         script = Path(__file__).resolve().parent / "freecad_check.py"
         env = dict(os.environ, FC_CHECK_IN=str(fin), FC_CHECK_OUT=str(fout))
         proc = subprocess.run([str(FREECADCMD), "-c", f"exec(open({str(script)!r}).read())"],
-                              env=env, capture_output=True, text=True, timeout=600)
+                              env=env, capture_output=True, text=True, timeout=600, check=False)   # exit code read below
         if not fout.is_file():
             return {"error": f"freecadcmd exit {proc.returncode}: {proc.stderr[-400:]}"}
         return json.loads(fout.read_text())
@@ -179,8 +179,8 @@ def verdict(fails: list[str]) -> str:
 
 def tally(rows: list[dict], fc: dict, asm: dict) -> dict:
     """Reduce per-file and per-assembly results to the counts the summary reports."""
-    ok = lambda r, k: r.get("exists") and r.get(k)  # noqa: E731
-    same_volume = lambda r: abs(fc[r["step"]]["volume"] - r["step_volume"]) < 1e-3 * r["step_volume"]  # noqa: E731
+    ok = lambda r, k: r.get("exists") and r.get(k)
+    same_volume = lambda r: abs(fc[r["step"]]["volume"] - r["step_volume"]) < 1e-3 * r["step_volume"]
     wrong = [a for a in asm.values() if a["wrong"]]
     return {
         "prod": [r for r in rows if not r["fixture"]],

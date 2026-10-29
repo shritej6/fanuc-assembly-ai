@@ -5,7 +5,8 @@ Newest first. One entry per finished task.
 ## 2026-10-27 · T02 · CLAUDE · assembly instruction sheets
 
 - Changed: `cad/products/` (product CAD source), `cad/assembly_sheets.py`, `docs/ASSEMBLY_INSTRUCTIONS/` (6 PNG + 1 PDF).
-- Run: `~/cad-workspace/.venv/bin/python cad/assembly_sheets.py`.
+- Run: `uv run python cad/assembly_sheets.py` (CadQuery + matplotlib are the locked `cad` dependency group, installed by
+  `uv sync`). Tests: `tests/test_assembly_sheets.py` (steps, look-alikes, 90° gripper rule, the 7 files).
 - Content per product: base, steps 01→04 (new part highlighted), exploded view, table with gripper roll (connector
   housings: turn gripper 90°) and look-alikes from `contracts/taxonomy.json`. Dismantle = 04→01.
 - Next: T03 CAD risk ranking.

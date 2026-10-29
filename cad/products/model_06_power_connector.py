@@ -9,11 +9,17 @@ from __future__ import annotations
 from dataclasses import replace
 
 import cadquery as cq
-
 from common_geometry import EPS, Part, box_span, profile_xz
 from connector_family import (
-    FRONT, INSERT_TOP, LOCK_BRIDGE_Z1, connector_housing, connector_insert, guide_corner_notch,
-    guide_frame, left_rib, top_lock,
+    FRONT,
+    INSERT_TOP,
+    LOCK_BRIDGE_Z1,
+    connector_housing,
+    connector_insert,
+    guide_corner_notch,
+    guide_frame,
+    left_rib,
+    top_lock,
 )
 from fixtures import make_fixture
 from model_05_io_connector import CAV_X, CAV_Y, INSERT_X, INSERT_Y, OPEN_W

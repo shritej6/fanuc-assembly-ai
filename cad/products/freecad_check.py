@@ -20,7 +20,7 @@ for path in step_paths:
         shape = Part.read(path)
         results[path] = {"ok": True, "valid": bool(shape.isValid()), "solids": len(shape.Solids),
                          "volume": float(shape.Volume)}
-    except Exception as exc:  # report per-file failure instead of aborting the whole check
+    except Exception as exc:  # noqa: BLE001 - record each file's error for the report; FreeCAD's error classes vary by build
         results[path] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 with open(os.environ["FC_CHECK_OUT"], "w") as fh:

@@ -1,6 +1,6 @@
 """Assembly instruction sheets for the 6 products, rendered from the product CAD.
 
-    ~/cad-workspace/.venv/bin/python cad/assembly_sheets.py
+    uv run python cad/assembly_sheets.py
 
 One page per product: base, then steps 01 -> 04 with the new part highlighted, plus an exploded view.
 Dismantling is the exact reverse (04 -> 01). Writes docs/ASSEMBLY_INSTRUCTIONS/Product_<n>.png and one PDF.
@@ -74,7 +74,18 @@ def _label(name: str) -> str:
     return f"{name.split('_')[0]}_{code}  {' '.join(words)}" if name.startswith("M") else name.replace("_", " ")
 
 
-def product_page(pdf, mod, taxonomy: dict) -> Path:
+def steps(parts, taxonomy: dict) -> list[dict]:
+    """What the sheet prints for each build step: part, gripper roll and the look-alikes from the taxonomy.
+
+    A part whose first grip zone runs along Y is gripped across its narrow side, so the gripper turns 90 degrees.
+    """
+    return [{"step": f"0{i}", "object_id": p.name[:5], "part": _label(p.name),
+             "gripper": "turn gripper 90°" if p.grips and p.grips[0].axis == "Y" else "normal",
+             "lookalikes": list(taxonomy[p.name[:5]]["lookalikes"])}
+            for i, p in enumerate(parts, start=1)]
+
+
+def product_page(pdf, mod, taxonomy: dict, out: Path = OUT) -> Path:
     fixture, parts = mod.build()
     base_id = fixture.name.split("_")[0]
     shapes = [_solid(fixture)] + [_solid(p) for p in parts]
@@ -95,7 +106,7 @@ def product_page(pdf, mod, taxonomy: dict) -> Path:
         ax.set_title(head, fontsize=11, weight="bold")
     _exploded(fig, fixture, parts)
     _part_table(fig, parts, taxonomy)
-    path = OUT / f"Product_{mod.MODEL_DIR[7]}.png"
+    path = out / f"Product_{mod.MODEL_DIR[7]}.png"
     pdf.savefig(fig)
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -118,12 +129,7 @@ def _exploded(fig, fixture, parts) -> None:
 
 
 def _part_table(fig, parts, taxonomy: dict) -> None:
-    rows = []
-    for i, p in enumerate(parts, start=1):
-        oid = p.name[:5]
-        twins = taxonomy[oid]["lookalikes"]
-        roll = "turn gripper 90°" if p.grips and p.grips[0].axis == "Y" else "normal"
-        rows.append([f"0{i}", _label(p.name), roll, ", ".join(twins) if twins else "none"])
+    rows = [[s["step"], s["part"], s["gripper"], ", ".join(s["lookalikes"]) or "none"] for s in steps(parts, taxonomy)]
     ax = fig.add_axes([0.44, 0.06, 0.54, 0.33])
     ax.axis("off")
     table = ax.table(cellText=rows, colLabels=["Step", "Part", "Gripper", "Look-alikes (check with wrist camera)"],
@@ -135,13 +141,17 @@ def _part_table(fig, parts, taxonomy: dict) -> None:
             fontsize=11, transform=ax.transAxes)
 
 
-def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
+def load_taxonomy() -> dict:
+    return {o["object_id"]: o for o in json.loads((ROOT / "contracts" / "taxonomy.json").read_text())["objects"]}
+
+
+def main(out: Path = OUT) -> None:
+    out.mkdir(parents=True, exist_ok=True)
     logging.getLogger("fanuc_cad").setLevel(logging.ERROR)
-    taxonomy = {o["object_id"]: o for o in json.loads((ROOT / "contracts" / "taxonomy.json").read_text())["objects"]}
-    with PdfPages(OUT / "Assembly_Instructions_All_Products.pdf") as pdf:
+    taxonomy = load_taxonomy()
+    with PdfPages(out / "Assembly_Instructions_All_Products.pdf") as pdf:
         for name in MODULES:
-            print(product_page(pdf, importlib.import_module(name), taxonomy).name)
+            print(product_page(pdf, importlib.import_module(name), taxonomy, out).name)
 
 
 if __name__ == "__main__":

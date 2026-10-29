@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 import cadquery as cq
-
 from common_geometry import EPS, Part, box_span, profile_xz
 from connector_family import (
-    FRONT, INSERT_TOP, LOCK_BRIDGE_Z1, connector_housing, connector_insert, guide_corner_notch,
-    guide_frame, left_rib, rear_rib, top_lock,
+    FRONT,
+    INSERT_TOP,
+    LOCK_BRIDGE_Z1,
+    connector_housing,
+    connector_insert,
+    guide_corner_notch,
+    guide_frame,
+    left_rib,
+    rear_rib,
+    top_lock,
 )
 from fixtures import make_fixture
 from parameters import (
-    CONN_FLOOR_Z, CONN_HOUSING_X, CONN_HOUSING_Y, CONN_HOUSING_Z, LOCATING_CLEARANCE_PER_SIDE,
+    CONN_FLOOR_Z,
+    CONN_HOUSING_X,
+    CONN_HOUSING_Y,
+    CONN_HOUSING_Z,
+    LOCATING_CLEARANCE_PER_SIDE,
     MARKER_H,
 )
 

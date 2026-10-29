@@ -6,11 +6,18 @@ M5_02 shares its outer body and seating with M6_02 on purpose (wrong-part recove
 from __future__ import annotations
 
 import cadquery as cq
-
 from common_geometry import EPS, Part, box_span, profile_xz
 from connector_family import (
-    FRONT, INSERT_TOP, LOCK_BRIDGE_Z1, connector_housing, connector_insert, guide_corner_notch,
-    guide_frame, left_rib, rear_rib, top_lock,
+    FRONT,
+    INSERT_TOP,
+    LOCK_BRIDGE_Z1,
+    connector_housing,
+    connector_insert,
+    guide_corner_notch,
+    guide_frame,
+    left_rib,
+    rear_rib,
+    top_lock,
 )
 from fixtures import make_fixture
 from parameters import CONN_HOUSING_X, CONN_HOUSING_Y, MARKER_H
