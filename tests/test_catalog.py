@@ -1,5 +1,6 @@
 """Behavioral tests for the CAD-derived product catalog and recipe graph."""
 
+import hashlib
 import json
 from collections import Counter
 from copy import deepcopy
@@ -23,7 +24,10 @@ from assembly.catalog import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
-CAD_TRANSFORMS_PATH = ROOT / "assembly" / "cad_installation_transforms.json"
+OBJECT_GEOMETRY_SOURCE_PATH = ROOT / "assembly" / "sources" / "object_geometry.5a24e10.json"
+GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.2d7cd51.json"
+OBJECT_GEOMETRY_SHA256 = "488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325"
+GRASP_FRAMES_SHA256 = "d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b"
 CONTRACTS = ROOT / "contracts"
 
 EXPECTED_PRODUCTS = [
@@ -67,6 +71,12 @@ def _catalog_data() -> dict:
     return yaml.safe_load(CATALOG_PATH.read_text())
 
 
+def _verified_json_source(path: Path, expected_sha256: str) -> dict:
+    contents = path.read_bytes()
+    assert hashlib.sha256(contents).hexdigest() == expected_sha256
+    return json.loads(contents)
+
+
 def _schema_registry() -> Registry:
     registry = Registry()
     for path in CONTRACTS.glob("*.schema.json"):
@@ -78,6 +88,12 @@ def _schema_registry() -> Registry:
 def _write_catalog(path: Path, data: dict) -> Path:
     path.write_text(yaml.safe_dump(data, sort_keys=False))
     return path
+
+
+def _write_json_source(path: Path, data: dict) -> str:
+    contents = json.dumps(data, indent=1)
+    path.write_text(contents)
+    return hashlib.sha256(contents.encode()).hexdigest()
 
 
 def _copy_schema_set(destination: Path) -> Path:
@@ -117,29 +133,102 @@ def test_catalog_covers_each_taxonomy_part_under_its_owner_once() -> None:
 
 
 def test_catalog_records_immutable_cad_geometry_provenance() -> None:
-    source = _catalog_data()["geometry_source"]
+    catalog = _catalog_data()
 
-    assert source == {
+    assert catalog["geometry_source"] == {
         "file": "sdg/data/object_geometry.json",
         "generator": "sdg/tools/object_geometry.py",
         "commit": "5a24e10d5ac7c9a6b15e9779385138678244819d",
-        "generated_at": "2026-10-27T22:11:27-05:00",
+        "commit_timestamp": "2026-10-27T22:11:27-05:00",
+        "snapshot": "assembly/sources/object_geometry.5a24e10.json",
+        "sha256": OBJECT_GEOMETRY_SHA256,
+    }
+    assert catalog["grasp_source"] == {
+        "file": "cad/grasp_frames.json",
+        "generator": "cad/grasp_frames.py",
+        "commit": "2d7cd511844a5123abf96ecd87937ea08a2a3b10",
+        "commit_timestamp": "2026-10-29T14:45:34-05:00",
+        "snapshot": "assembly/sources/grasp_frames.2d7cd51.json",
+        "sha256": GRASP_FRAMES_SHA256,
     }
 
 
 def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> None:
-    reference = json.loads(CAD_TRANSFORMS_PATH.read_text())
+    source = _verified_json_source(OBJECT_GEOMETRY_SOURCE_PATH, OBJECT_GEOMETRY_SHA256)
+    expected_objects = {
+        object_id: item["installed_in_base_frame"]
+        for object_id, item in source["objects"].items()
+        if object_id in EXPECTED_PART_OWNERS
+    }
     actual = {
         step["object_id"]: step
         for product in _catalog_data()["products"]
         for step in product["steps"]
     }
 
-    assert set(actual) == set(reference["objects"])
-    for object_id, expected in reference["objects"].items():
-        offset_error = max(abs(a - b) for a, b in zip(actual[object_id]["insert_offset_mm"], expected["translation_mm"]))
+    assert set(actual) == set(expected_objects)
+    for object_id, transform in expected_objects.items():
+        expected_offset = [row[3] for row in transform[:3]]
+        expected_rotation = [row[:3] for row in transform[:3]]
+        offset_error = max(abs(a - b) for a, b in zip(actual[object_id]["insert_offset_mm"], expected_offset))
+        rotation_error = max(
+            abs(a - b)
+            for actual_row, expected_row in zip(actual[object_id]["installed_rotation_matrix"], expected_rotation)
+            for a, b in zip(actual_row, expected_row)
+        )
         assert offset_error <= 0.05, object_id
-        assert actual[object_id]["installed_rotation_matrix"] == expected["rotation_matrix"]
+        assert rotation_error <= catalog_module.ROTATION_MATRIX_TOLERANCE, object_id
+
+
+def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
+    source = _verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256)
+    actual = {
+        step["object_id"]: step["gripper_roll_deg"]
+        for product in _catalog_data()["products"]
+        for step in product["steps"]
+    }
+
+    assert set(actual) == set(EXPECTED_PART_OWNERS)
+    for object_id, actual_roll in actual.items():
+        grips = source["objects"][object_id]["grips"]
+        assert len(grips) == 1, f"{object_id} has ambiguous T29 grips"
+        expected_roll = 90.0 if grips[0]["closing_axis"] == "X" else 0.0
+        assert grips[0]["roll_offset_deg"] == expected_roll
+        assert actual_roll == expected_roll
+
+
+def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path) -> None:
+    invalid = deepcopy(_catalog_data())
+    invalid["grasp_source"]["sha256"] = "0" * 64
+    path = _write_catalog(tmp_path / "bad-source-digest.yaml", invalid)
+
+    with pytest.raises(CatalogResourceError, match="grasp source sha256"):
+        load_catalog(path)
+
+
+def test_load_catalog_rejects_ambiguous_multiple_grips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = deepcopy(_verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256))
+    source["objects"]["M1_01"]["grips"].append(deepcopy(source["objects"]["M1_01"]["grips"][0]))
+    source_path = tmp_path / "ambiguous-grasp-source.json"
+    source_sha256 = _write_json_source(source_path, source)
+    catalog_data = deepcopy(_catalog_data())
+    catalog_data["grasp_source"]["sha256"] = source_sha256
+    catalog_path = _write_catalog(tmp_path / "ambiguous-grasp-catalog.yaml", catalog_data)
+    monkeypatch.setattr(catalog_module, "GRASP_SOURCE_SNAPSHOT_PATH", source_path, raising=False)
+
+    with pytest.raises(CatalogSemanticError, match="M1_01.*exactly one grip"):
+        load_catalog(catalog_path)
+
+
+def test_load_catalog_rejects_roll_not_matching_grasp_source(tmp_path: Path) -> None:
+    invalid = deepcopy(_catalog_data())
+    invalid["products"][0]["steps"][0]["gripper_roll_deg"] = 89
+    path = _write_catalog(tmp_path / "wrong-source-roll.yaml", invalid)
+
+    with pytest.raises(CatalogSemanticError, match="M1_01 gripper_roll_deg.*T29"):
+        load_catalog(path)
 
 
 def test_guard_installation_uses_cad_part_origin_and_rotation() -> None:
@@ -161,7 +250,8 @@ def test_load_catalog_returns_typed_products_and_steps() -> None:
         (0.0, 0.0, -1.0),
         (0.0, 1.0, 0.0),
     )
-    assert catalog.product(4).steps[0].gripper_roll_deg == 90.0
+    assert catalog.product(1).steps[0].gripper_roll_deg == 90.0
+    assert catalog.product(4).steps[0].gripper_roll_deg == 0.0
 
 
 def test_load_catalog_rejects_contract_violation_with_typed_error(tmp_path: Path) -> None:
@@ -198,12 +288,25 @@ def test_load_catalog_rejects_semantic_errors(
         load_catalog(path)
 
 
-def test_load_catalog_rejects_unknown_step_keys(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("keys", "unknown_key"),
+    [
+        ((), "unreviewed_catalog_field"),
+        (("products", 0), "unreviewed_product_field"),
+        (("products", 0, "steps", 0), "unreviewed_step_field"),
+    ],
+)
+def test_load_catalog_rejects_unknown_contract_keys(
+    tmp_path: Path, keys: tuple[str | int, ...], unknown_key: str
+) -> None:
     invalid = deepcopy(_catalog_data())
-    invalid["products"][0]["steps"][0]["unreviewed_pose"] = [1, 2, 3]
-    path = _write_catalog(tmp_path / "unknown-step-key.yaml", invalid)
+    target = invalid
+    for key in keys:
+        target = target[key]
+    target[unknown_key] = "unreviewed"
+    path = _write_catalog(tmp_path / "unknown-contract-key.yaml", invalid)
 
-    with pytest.raises(CatalogSemanticError, match="unknown keys.*unreviewed_pose"):
+    with pytest.raises(CatalogSchemaError, match=unknown_key):
         load_catalog(path)
 
 
@@ -213,6 +316,27 @@ def test_load_catalog_rejects_gripper_roll_outside_contract(tmp_path: Path) -> N
     path = _write_catalog(tmp_path / "unsafe-gripper-roll.yaml", invalid)
 
     with pytest.raises(CatalogSchemaError, match="gripper_roll_deg"):
+        load_catalog(path)
+
+
+@pytest.mark.parametrize(
+    "rotation",
+    [
+        pytest.param([[float("nan"), 0, 0], [0, 1, 0], [0, 0, 1]], id="nan"),
+        pytest.param([[float("inf"), 0, 0], [0, 1, 0], [0, 0, 1]], id="infinite"),
+        pytest.param([[1, 0, 0], [0, 1, 0], [0, 0, 0]], id="singular"),
+        pytest.param([[1, 0, 0], [0, 1, 0], [0.1, 0, 1]], id="non-orthogonal"),
+        pytest.param([[1, 0, 0], [0, 1, 0], [0, 0, -1]], id="reflection"),
+    ],
+)
+def test_load_catalog_rejects_invalid_installed_rotation_matrices(
+    tmp_path: Path, rotation: list[list[float]]
+) -> None:
+    invalid = deepcopy(_catalog_data())
+    invalid["products"][0]["steps"][0]["installed_rotation_matrix"] = rotation
+    path = _write_catalog(tmp_path / "invalid-installed-rotation.yaml", invalid)
+
+    with pytest.raises(CatalogSemanticError, match="proper rotation"):
         load_catalog(path)
 
 

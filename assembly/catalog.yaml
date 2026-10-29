@@ -1,13 +1,23 @@
 # CAD installation offsets locate the STL part origin in the product fixture's
 # CAD frame. Installed rotations map the STL print frame into that same frame.
 # Motion planning must transform both through the measured fixture pose; neither
-# value is an absolute UF0 TCP target. Gripper rolls remain PROVISIONAL pending
-# measured cell grasp frames; they are bounded but are not CAD installation poses.
+# value is an absolute UF0 TCP target. Gripper rolls are T29 grasp-frame offsets:
+# commanded TCP r = measured part yaw + roll_offset_deg. T29 defines X-closing
+# grips as 90 degrees and Y-closing grips as 0 degrees.
 geometry_source:
   file: sdg/data/object_geometry.json
   generator: sdg/tools/object_geometry.py
   commit: 5a24e10d5ac7c9a6b15e9779385138678244819d
-  generated_at: "2026-10-27T22:11:27-05:00"
+  commit_timestamp: "2026-10-27T22:11:27-05:00"
+  snapshot: assembly/sources/object_geometry.5a24e10.json
+  sha256: 488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325
+grasp_source:
+  file: cad/grasp_frames.json
+  generator: cad/grasp_frames.py
+  commit: 2d7cd511844a5123abf96ecd87937ea08a2a3b10
+  commit_timestamp: "2026-10-29T14:45:34-05:00"
+  snapshot: assembly/sources/grasp_frames.2d7cd51.json
+  sha256: d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b
 products:
   - product: 1
     name: Rotary Knob Module
@@ -17,22 +27,22 @@ products:
         object_id: M1_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 2
         object_id: M1_02
         insert_offset_mm: [-0.004923, 0.002188, 7]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M1_03
         insert_offset_mm: [0, 0, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M1_04
         insert_offset_mm: [0, 21.5, 21]
         installed_rotation_matrix: [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
 
   - product: 2
     name: Indicator Light Module
@@ -42,22 +52,22 @@ products:
         object_id: M2_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 2
         object_id: M2_02
         insert_offset_mm: [-0.004923, 0.002188, 7]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M2_03
         insert_offset_mm: [-0.004923, 0.002188, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M2_04
         insert_offset_mm: [0, 21.5, 21]
         installed_rotation_matrix: [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
 
   - product: 3
     name: Push Button Module
@@ -67,22 +77,22 @@ products:
         object_id: M3_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 2
         object_id: M3_02
         insert_offset_mm: [0, 0, 7]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M3_03
         insert_offset_mm: [0, 0, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M3_04
         insert_offset_mm: [0, 21.5, 21]
         installed_rotation_matrix: [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
 
   - product: 4
     name: Sensor Connector Module
@@ -92,22 +102,22 @@ products:
         object_id: M4_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 90
+        gripper_roll_deg: 0
       - step: 2
         object_id: M4_02
         insert_offset_mm: [0, 0, 5]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M4_03
         insert_offset_mm: [0, 0, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M4_04
         insert_offset_mm: [0, -11.5, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
 
   - product: 5
     name: Control I/O Connector Module
@@ -117,22 +127,22 @@ products:
         object_id: M5_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 90
+        gripper_roll_deg: 0
       - step: 2
         object_id: M5_02
         insert_offset_mm: [0, 0, 5]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M5_03
         insert_offset_mm: [0, 0, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M5_04
         insert_offset_mm: [0, -11.5, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
 
   - product: 6
     name: Power Connector Module
@@ -142,19 +152,19 @@ products:
         object_id: M6_01
         insert_offset_mm: [0, 0, 0]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 90
+        gripper_roll_deg: 0
       - step: 2
         object_id: M6_02
         insert_offset_mm: [0, 0, 5]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 3
         object_id: M6_03
         insert_offset_mm: [0, 0, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
       - step: 4
         object_id: M6_04
         insert_offset_mm: [0, -11.5, 18]
         installed_rotation_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        gripper_roll_deg: 0
+        gripper_roll_deg: 90
