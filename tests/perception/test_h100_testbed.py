@@ -9,6 +9,17 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[2] / "perception" / "brev" / "h100_testbed.sh"
 
 
+# A launcher stub: a full run (SMOKE=0) draws a training bar at $FAKE_SPI s/it over 120 steps, then runs on for
+# $FAKE_SECONDS, as a real trainer would while the gate measures it.
+LAUNCHER = """echo "$CONFIG"
+if [ "$SMOKE" = 0 ]; then
+  printf ' 50%%|#####     | 60/120 [00:30<00:30, %ss/it]\\r' "${{FAKE_SPI:-1.00}}"
+  sleep "${{FAKE_SECONDS:-0.3}}"
+fi
+exit {exit_code}
+"""
+
+
 def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dict[str, str]:
     """A repo whose launchers are stubs, and an nvidia-smi that reports GPUs of `gpu_mib` MiB.
 
@@ -19,8 +30,8 @@ def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dic
     (repo / "perception" / "rosie").mkdir(parents=True)
     bin_dir.mkdir()
     (repo / ".t13-code-commit").write_text("abc1234\n")
-    (repo / "perception" / "rosie" / "classifier.sbatch").write_text(f'echo "$CONFIG"\nexit {classifier_exit}\n')
-    (repo / "perception" / "rosie" / "detector.sbatch").write_text('echo "$CONFIG"\n')
+    (repo / "perception" / "rosie" / "classifier.sbatch").write_text(LAUNCHER.format(exit_code=classifier_exit))
+    (repo / "perception" / "rosie" / "detector.sbatch").write_text(LAUNCHER.format(exit_code=0))
     (bin_dir / "nvidia-smi").write_text(
         "#!/bin/sh\n"
         'case "$*" in\n'
@@ -37,6 +48,7 @@ def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dic
         "STATUS": str(tmp_path / "status.txt"),
         "ART": str(tmp_path / "art"),
         "RUNS": str(tmp_path / "runs"),
+        "GATE_POLL_SECONDS": "0.1",
     }
 
 
@@ -64,6 +76,8 @@ def test_start_at_skips_earlier_stages_and_runs_from_the_named_one(tmp_path: Pat
         "detector skipped (START_AT=build_classifier)",
         "classifier skipped (START_AT=build_classifier)",
         "build_classifier start",
+        "build_classifier smoke ok on 2 GPUs",
+        "build_classifier throughput ok 1.00 s/it x 120 steps = 0.0 h",
         "build_classifier ok",
         "PARTIAL_DONE missing: env prepare_main prepare_build detector classifier",
     ]
@@ -84,7 +98,7 @@ def test_a_failure_inside_a_stage_is_recorded_and_never_reaches_all_done(tmp_pat
     result, lines = _run(_fake_box(tmp_path, classifier_exit=3), "build_classifier")
 
     assert result.returncode != 0
-    assert lines[-2:] == ["build_classifier start", "build_classifier FAILED"]
+    assert lines[-2:] == ["build_classifier start", "build_classifier FAILED"]  # the 8-GPU smoke caught it
 
 
 def test_unknown_start_stage_is_refused_before_anything_is_marked(tmp_path: Path) -> None:
@@ -112,10 +126,14 @@ def test_skip_leaves_out_only_the_named_stages(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "detector skipped (SKIP)" in lines
     assert "detector start" not in lines
-    assert lines[-5:] == [
+    assert lines[-9:] == [
         "classifier start",
+        "classifier smoke ok on 2 GPUs",
+        "classifier throughput ok 1.00 s/it x 120 steps = 0.0 h",
         "classifier ok",
         "build_classifier start",
+        "build_classifier smoke ok on 2 GPUs",
+        "build_classifier throughput ok 1.00 s/it x 120 steps = 0.0 h",
         "build_classifier ok",
         "PARTIAL_DONE missing: env prepare_main prepare_build detector",
     ]
@@ -127,3 +145,15 @@ def test_unknown_skip_stage_is_refused_before_anything_is_marked(tmp_path: Path)
     assert result.returncode == 2
     assert "unknown stage detectr" in result.stderr
     assert lines == []
+
+
+def test_a_full_run_projected_over_the_limit_is_stopped_before_it_spends_the_box(tmp_path: Path) -> None:
+    env = {**_fake_box(tmp_path, classifier_exit=0), "FAKE_SPI": "300", "FAKE_SECONDS": "30", "MAX_STAGE_HOURS": "6"}
+
+    result, lines = _run(env, "build_classifier")
+
+    assert result.returncode != 0
+    assert lines[-2:] == [
+        "build_classifier throughput over limit: 300.00 s/it x 120 steps = 10.0 h > 6 h; stopped",
+        "build_classifier FAILED",
+    ]
