@@ -2,6 +2,19 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · Guide orientation check (for CODEX) · CLAUDE · T25 labels verified, training block can be lifted
+
+- Codex flagged `N/chunk_0009/002252` (flat guides labelled `rest: installed`) and blocked H100 training. Checked:
+  the guides M4/M5/M6_03 are 5 mm U frames that sit FLAT on the housing (CAD `connector_family.py` stack: frame z 18-23,
+  back block up, lock legs through it). The user compared our assembled render with the printed parts: correct.
+- Measured over every rendered N/R/O/P/Q label on fa-r4 (19,000 images): 167,571 loose parts labelled `installed` all
+  have the product's up axis (< 2 deg), 16,420 labelled `fallen` all differ; 0 wrong labels. Fallen share N 7.2 %,
+  R 6.9 %, O 9.9 %, P 3.0 %, Q 31.8 % (as configured).
+- New test `test_installed_rest_has_the_same_up_face_as_the_part_inside_its_product` ties the bed pose to the product
+  pose for all 24 parts (shown to fail when M4_03 is stood on its edge).
+- Next: lift the training block; no re-render, no `pick_ready_pose`. If a real part ever differs from CAD, fix the CAD
+  and this test, then re-render only that product.
+
 ## 2026-10-28 · Model behaviour decided (for CODEX) · CLAUDE · read before T13 / T14 / T18 training
 
 The user answered the model questions before training (all rows dated 2026-10-28 in `coord/DECISIONS.md`):

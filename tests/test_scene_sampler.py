@@ -288,6 +288,16 @@ def test_installed_parts_stand_exactly_as_in_their_product_at_any_yaw_on_the_tab
     assert len(sectors) == 12 and min(sectors.values()) > len(yaws) / 24   # every 30 degree sector, none starved
 
 
+def test_installed_rest_has_the_same_up_face_as_the_part_inside_its_product(inp):
+    """The bed pose must be the product pose: a guide that lies flat in the product lies flat on the bed."""
+    parts = [p for p, g in inp.geometry.items() if "installed_rest" in g and not p.startswith("F")]
+    assert len(parts) == 24
+    for p in parts:
+        product_up = np.array(inp.geometry[p]["installed_in_base_frame"])[2, :3]
+        bed_up = np.array(inp.geometry[p]["installed_rest"]["transform"])[2, :3]
+        np.testing.assert_allclose(bed_up, product_up, atol=1e-3, err_msg=p)
+
+
 def test_fallen_parts_lie_in_a_different_resting_pose_at_the_configured_share(bed, inp):
     for set_name in ("N", "Q"):
         loose = [o for s in bed[set_name] for o in _work_area_loose(s)]
