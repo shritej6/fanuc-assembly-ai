@@ -202,14 +202,36 @@ class SceneBuilder:
         slots = self.inp.layout["spare_store"]["slots"]
         n = self.rng.randint(*self.sc["spares_in_store"])
         test_bed = self.sc.get("pose_sampling") == "installed"   # spares are picked straight down too
-        for slot, part_id in zip(self.rng.sample(slots, n), self.rng.sample(self.defaults["spares"], n)):
+        if self.sc.get("spares_any_part"):
+            placed = self._any_part_spares(self.rng.sample(slots, n))
+        else:   # older sets: the high-risk list (all small parts), unchanged so their specs stay reproducible
+            placed = [(slot, part_id, None) for slot, part_id in
+                      zip(self.rng.sample(slots, n), self.rng.sample(self.defaults["spares"], n))]
+        for slot, part_id, at in placed:
             geo = self.inp.geometry[part_id]
             pose = geo["installed_rest"] if test_bed else geo["stable_poses"][0]
-            at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
+            if at is None:
+                at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
             self._occupied.append((*self._world_footprint(at, pose), "part"))
             extra = {"rest": "installed"} if test_bed else {}
             self._add("spare", part_id, at @ np.array(pose["transform"]), state="in_store", slot=slot["id"],
                       stable_pose=0, **extra)
+
+    def _any_part_spares(self, slots: list[dict]) -> list[tuple[dict, str, np.ndarray]]:
+        """The real spare area holds a few spares of any part type, never a base (user 2026-10-28). Slots are 50 mm
+        apart and the housings are ~49 mm wide, so each slot takes a random part that clears the spares already laid."""
+        pool = sorted(k for k in self.inp.geometry if k.startswith("M"))
+        laid: list[tuple[dict, str, np.ndarray]] = []
+        circles: list[tuple[np.ndarray, float]] = []
+        for slot in slots:
+            at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
+            for part_id in self.rng.sample(pool, len(pool)):
+                c, r = self._world_footprint(at, self.inp.geometry[part_id]["installed_rest"])
+                if part_id not in {p for _, p, _ in laid} and all(np.linalg.norm(c - c2) >= r + r2 for c2, r2 in circles):
+                    laid.append((slot, part_id, at))
+                    circles.append((c, r))
+                    break
+        return laid
 
     def _add_rejects(self) -> None:
         parts = sorted(k for k in self.inp.geometry if k.startswith("M"))

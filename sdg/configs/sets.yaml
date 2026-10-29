@@ -316,6 +316,7 @@ sets:
       cluster_prob: 0.4
       arm_in_view_prob: 0.4
       pose_sampling: installed
+      spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.1
 
   R:                       # detector on the test-bed under bad light, noise, clutter and look-alikes side by side
@@ -335,6 +336,7 @@ sets:
       cluster_prob: 0.8
       arm_in_view_prob: 0.5
       pose_sampling: installed
+      spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.1
     randomization: *hard_look
 
@@ -357,6 +359,7 @@ sets:
       cluster_prob: 0.7
       arm_in_view_prob: 0.0
       pose_sampling: installed
+      spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.1
     wrist: {standoff_mm: [147.0, 153.0], tilt_deg: [0.0, 3.0], target_offset_mm: 8.0}   # planner identity height 150 mm
 
@@ -383,6 +386,7 @@ sets:
       cluster_prob: 0.3
       arm_in_view_prob: 0.0
       pose_sampling: installed
+      spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.05
     wrist: {standoff_mm: [80.0, 160.0], tilt_deg: [0.0, 10.0], target_offset_mm: 6.0}
 
@@ -403,6 +407,7 @@ sets:
       cluster_prob: 0.4
       arm_in_view_prob: 0.4
       pose_sampling: installed
+      spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.5
 
 randomization:              # applied by the Isaac generator to every scene

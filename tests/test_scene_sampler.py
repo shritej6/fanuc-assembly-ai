@@ -331,3 +331,11 @@ def test_identity_close_ups_keep_one_wrist_height_so_pixel_size_stays_fixed(bed,
 
 def test_old_sets_never_carry_the_test_bed_label(scenes):
     assert not any("rest" in o for v in scenes.values() for s in v for o in s["objects"])
+
+
+def test_test_bed_spares_can_be_any_part_but_never_a_base(bed, scenes, inp):
+    spares = {o["object_id"] for s in bed["N"] + bed["Q"] for o in s["objects"] if o["kind"] == "spare"}
+    assert spares and not any(p.startswith("F") for p in spares)
+    assert {p[:2] for p in spares} == {f"M{i}" for i in range(1, 7)}       # every product, not a fixed short list
+    old = {o["object_id"] for s in scenes["A"] for o in s["objects"] if o["kind"] == "spare"}
+    assert old <= set(inp.sets["defaults"]["spares"])                       # older sets reproduce unchanged
