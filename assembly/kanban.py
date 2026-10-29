@@ -97,6 +97,7 @@ class DefectCause(StrEnum):
     MISSING_LAYER = "missing_layer"
     WRONG_PART = "wrong_part"
     FOREIGN_OBJECT = "foreign_object"
+    INSPECTION_REJECT = "inspection_reject"
     INSERTION_RETRY = "insertion_retry"
     INSERTION_FAILURE = "insertion_failure"
 
@@ -156,7 +157,7 @@ def build_operations_view(
     validated_events = _validate_events(catalog, events)
     _require_spare_policies(validated_events, validated)
     cards = _build_cards(inventory, validated_events, validated)
-    pareto = _build_pareto(validated_events)
+    pareto = _build_pareto(inventory, validated_events)
     return OperationsView(len(validated_events), cards, pareto)
 
 
@@ -244,11 +245,14 @@ def _require_spare_policies(
         raise KanbanInputError(f"spare use has no stock policy: {', '.join(missing)}")
 
 
-def _build_pareto(events: tuple[ControllerEvent, ...]) -> DefectPareto:
-    counts: Counter[tuple[str, DefectCause]] = Counter()
+def _build_pareto(inventory: Inventory, events: tuple[ControllerEvent, ...]) -> DefectPareto:
+    counts = Counter(
+        (item.object_id, _rejected_cause(item.condition)) for item in inventory.items(InventoryZone.REJECT)
+    )
     for event in events:
         cause = _cause_for_event(event)
         if cause is not None and event.object_id is not None:
+            _refine_inventory_reject(counts, event.object_id, cause)
             counts[(event.object_id, cause)] += 1
     total = sum(counts.values())
     if total == 0:
@@ -260,6 +264,25 @@ def _build_pareto(events: tuple[ControllerEvent, ...]) -> DefectPareto:
         cumulative += count
         rows.append(ParetoRow(object_id, cause, count, count / total, cumulative / total))
     return DefectPareto(total, tuple(rows))
+
+
+def _rejected_cause(condition: ObjectCondition) -> DefectCause:
+    if condition is ObjectCondition.FALLEN:
+        return DefectCause.FALLEN
+    return DefectCause.INSPECTION_REJECT
+
+
+def _refine_inventory_reject(
+    counts: Counter[tuple[str, DefectCause]],
+    object_id: str,
+    cause: DefectCause,
+) -> None:
+    key = (object_id, DefectCause.INSPECTION_REJECT)
+    if cause is not DefectCause.INSERTION_FAILURE or counts.get(key, 0) == 0:
+        return
+    counts[key] -= 1
+    if counts[key] == 0:
+        del counts[key]
 
 
 def _cause_for_event(event: ControllerEvent) -> DefectCause | None:

@@ -228,6 +228,48 @@ def test_pareto_counts_explicit_defects_and_t09_insertion_failures() -> None:
     )
 
 
+def test_pareto_counts_physical_inspection_rejects_without_recovery_events() -> None:
+    inventory = Inventory(load_catalog())
+    inventory.add(
+        "fallen-part",
+        "M1_01",
+        zone=InventoryZone.REJECT,
+        condition=ObjectCondition.FALLEN,
+    )
+    inventory.add(
+        "inspection-reject",
+        "M1_02",
+        zone=InventoryZone.REJECT,
+        condition=ObjectCondition.DEFECTIVE,
+    )
+
+    view = build_operations_view(load_catalog(), inventory, (), ())
+
+    assert view.pareto.total_defects == 2
+    assert [(row.object_id, row.cause.value, row.count) for row in view.pareto.rows] == [
+        ("M1_01", "fallen", 1),
+        ("M1_02", "inspection_reject", 1),
+    ]
+
+
+def test_reject_failed_event_refines_matching_inventory_reject_without_double_count() -> None:
+    inventory = Inventory(load_catalog())
+    inventory.add(
+        "failed-insert",
+        "M2_02",
+        zone=InventoryZone.REJECT,
+        condition=ObjectCondition.DEFECTIVE,
+    )
+    events = (ControllerEvent("reject_failed", 2, "M2_02", "replacement-instance"),)
+
+    view = build_operations_view(load_catalog(), inventory, events, ())
+
+    assert view.pareto.total_defects == 1
+    assert view.pareto.rows == (
+        ParetoRow("M2_02", DefectCause.INSERTION_FAILURE, 1, 1.0, 1.0),
+    )
+
+
 def test_andon_free_text_is_not_misreported_as_a_defect_cause() -> None:
     events = (ControllerEvent("andon", 1, None, "crack_at_layer_line"),)
 
@@ -237,13 +279,22 @@ def test_andon_free_text_is_not_misreported_as_a_defect_cause() -> None:
     assert view.pareto.rows == ()
 
 
+def test_unknown_event_kind_fails_closed_with_typed_context() -> None:
+    events = (ControllerEvent("future_kind", 1, None, "detail"),)
+
+    with pytest.raises(
+        KanbanInputError,
+        match="event kind 'future_kind' is not registered",
+    ):
+        build_operations_view(load_catalog(), Inventory(load_catalog()), events, ())
+
+
 @pytest.mark.parametrize(
     "events",
     [
         [ControllerEvent("complete", 1, None, "four verified steps")],
         (object(),),
         (ControllerEvent("", 1, None, "detail"),),
-        (ControllerEvent("future_kind", 1, None, "detail"),),
         (ControllerEvent("spare", 1, None, "replacement"),),
         (ControllerEvent("retry", 1, "F01", "1"),),
         (ControllerEvent("spare", 7, "M1_01", "replacement"),),

@@ -10,13 +10,16 @@ Newest first. One entry per finished task.
   chart/dashboard rendering; this task adds no UI.
 - Measurement boundaries: every card carries serialized failure/opportunity counts, source, computed rate, and the
   `PRELIMINARY` classification. Replayed events never decrement inventory or inflate order quantity. Pareto rows count
-  only registered explicit defect causes plus bounded T09 retry/reject-failed occurrences; free-form Andon text is not
-  parsed as factory data. Malformed events, cross-product part ownership, unknown causes, unbounded retry shapes,
-  duplicate/unknown policies, and a consumed spare without a policy fail closed.
-- Run: `UV_CACHE_DIR=/private/tmp/fanuc-uv-cache uv run pytest -q` (428 passed);
-  `UV_CACHE_DIR=/private/tmp/fanuc-uv-cache uv run ruff check .` (passed); `uv lock --check` and `uv pip check`
-  (compatible); `git diff --check` (clean); AST gate found 324-line implementation / 315-line test files and no
-  function over 40 lines. The reviewed implementation is 326 lines; `contracts/` and
+  registered explicit defect causes, bounded T09 retry/reject-failed occurrences, and physical inventory already
+  committed to the reject zone. Fallen rejects retain the `fallen` cause; other rejected conditions use the conservative
+  `inspection_reject` cause rather than an invented subtype. A correlated `reject_failed` occurrence refines one
+  generic inventory rejection into `insertion_failure` without counting the same incident twice. Free-form Andon text
+  is not parsed as factory data. Malformed or unknown events raise `KanbanInputError`; cross-product part ownership,
+  unknown causes, unbounded retry shapes, duplicate/unknown policies, and a consumed spare without a policy also fail
+  closed.
+- Run: `uv run pytest -q tests/test_kanban.py` (49 passed); `uv run pytest -q` (430 passed);
+  `.venv/bin/ruff check .` (passed); `git diff --check` (clean); AST gate found 349-line implementation / 367-line test
+  files and no function over 40 lines. The reviewed implementation is 349 lines; `contracts/` and
   `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
 - Next: Claude reviews the T20 PR and can render `OperationsView.cards` and `OperationsView.pareto` without duplicating
   domain logic. Production callers must supply reviewed stock thresholds and measured preliminary-rate evidence; this
