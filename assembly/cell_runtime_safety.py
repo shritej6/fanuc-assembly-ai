@@ -134,6 +134,18 @@ def _tool_sweep(start: Waypoint, end: Waypoint, radius: float) -> AABB:
     return AABB("tool-sweep", minimum, maximum)
 
 
+def _require_cad_bounds(body: object) -> AABB:
+    if not isinstance(body, AABB) or not body.name:
+        raise ProductionSafetyUnavailable("CAD bounds must be a named AABB")
+    for low, high in zip(body.minimum, body.maximum, strict=True):
+        values = (low, high)
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+            raise ProductionSafetyUnavailable(f"CAD bounds for {body.name!r} must be numeric")
+        if not all(math.isfinite(float(value)) for value in values) or low > high:
+            raise ProductionSafetyUnavailable(f"CAD bounds for {body.name!r} are inverted or nonfinite")
+    return body
+
+
 def _collision(
     bodies: Sequence[AABB],
     obstacles: Sequence[AABB],
@@ -141,6 +153,7 @@ def _collision(
     prefix: str | None,
 ) -> str | None:
     for body in bodies:
+        body = _require_cad_bounds(body)
         label = body.name if prefix is None else f"{prefix}:{body.name}"
         for obstacle in obstacles:
             if obstacle.name != owner.instance_id and _overlaps(body, obstacle):

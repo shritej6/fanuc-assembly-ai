@@ -150,6 +150,17 @@ def test_collision_checker_fails_closed_when_robot_link_sweep_is_empty() -> None
         checker.first_collision(_point(300.0, 0.0, -220.0), _point(310.0, 0.0, -220.0), (), 0.0, owner)
 
 
+def test_collision_checker_rejects_inverted_cad_bounds() -> None:
+    from assembly.cell_runtime_safety import CADCollisionChecker, ProductionSafetyUnavailable
+
+    invalid = AABB("J2_link", (20.0, 0.0, 0.0), (10.0, 1.0, 1.0))
+    checker = CADCollisionChecker(_Geometry(links=(invalid,), held=AABB("held", (1.0, 1.0, 1.0), (2.0, 2.0, 2.0))))
+    owner = MotionOwner("moving", "M1_01", True)
+
+    with pytest.raises(ProductionSafetyUnavailable, match="CAD bounds"):
+        checker.first_collision(_point(300.0, 0.0, -220.0), _point(310.0, 0.0, -220.0), (), 0.0, owner)
+
+
 def test_sourced_cad_geometry_combines_robot_and_t29_sources() -> None:
     from assembly.cell_runtime_safety import SourcedCADGeometry
 
