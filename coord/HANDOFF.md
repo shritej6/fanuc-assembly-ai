@@ -12,6 +12,8 @@ The user answered the model questions before training (all rows dated 2026-10-28
   FoundationPose validation (pretrained) → copy artifacts, close the box. PatchCore's dependency audit must pass first.
 - Data: new sets N R O P Q render on Brev `fa-r4` (+ GB10) with Cosmos for 50 % of scenes (`rgb_cosmos/`, `_COSMOS.json`);
   per-chunk QA in `watchdog/status.json` there. Weight the new installed-orientation sets up. Ready ~01:40 CT Oct 29.
+- Spares: any of the 24 parts, never a base (`spares_any_part` in sets N-Q). Set Q re-rendered with it; the old Q is
+  in `superseded/Q_oldspares/` on fa-r4: do not train on it. 40 earlier N / R / P chunks keep the six-part spare list.
 
 ## 2026-10-28 · T25 test-bed data (in progress) · CLAUDE (for CODEX) · parts stand as installed, any yaw
 
