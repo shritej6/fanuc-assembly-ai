@@ -20,8 +20,10 @@ Newest first. One entry per finished task.
   replay-protected. It
   deliberately has no TCP, joints, gripper, policy, adapter, or official-client call. Non-loopback endpoints fail
   closed until certificates, authentication, network policy, and a separate security review exist.
+- Integration base: rebased onto accepted T09 controller head `d1bfd9c`; the dependency set retains both T09 NumPy
+  pose math and T19 `asyncua` rather than dropping either side during the rebase.
 - Run: `uv run pytest tests/test_metrics.py tests/test_opcua_model.py tests/test_opcua_server.py -q` (48 passed);
-  `uv run pytest -q` (429 passed); `uv run ruff check .` and focused `ruff format --check` (passed);
+  `uv run pytest -q` (561 passed); `uv run ruff check .` and focused `ruff format --check` (passed);
   `uv lock --check`,
   `uv pip check`, `git diff --check`, file/function-size checks, and secret scan (passed); PyPA `pip-audit` against the
   isolated environment reported no known vulnerabilities. Official integration: `cd robot/cell && uv run --locked
