@@ -13,5 +13,5 @@ line-length = 120
 extend-exclude = ["robot/cell"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 pythonpath = ["."]
+testpaths = ["tests"]

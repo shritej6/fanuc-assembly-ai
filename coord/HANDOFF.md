@@ -2,6 +2,28 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-27 · T05 · CODEX · adapter layer and UF0 safety guard
+
+- Changed: `robot/adapter.py`, `robot/__init__.py`, `robot/cell/policy.py`, `tests/test_robot_adapter.py`, and
+  `pyproject.toml`. Sim, mock, and cell now share passive `reset()` / `act(observation)` adapters around an injected
+  controller; the vendored policy imports the repo adapter without `PYTHONPATH` and defaults to observed joint hold.
+- Run: `uv run pytest tests/test_robot_adapter.py -q` (61 passed); `uv run pytest` (73 passed);
+  `uv run ruff check .` (passed); `git diff --check` (passed);
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` (passed). Development smoke:
+  `cd robot/cell && uv run run.py --mock --trials 1 --trial-s 0.5` → 1 rollout, 6 actions, 0 rejected. Final documented
+  workflow: `cd robot/cell && uv sync && uv run run.py --mock` → exit 0, 3 rollouts, 601 actions, 0 rejected,
+  `✓ Ready for the real robot`.
+- Safety: TCP outputs are absolute UTOOL1 fingertip targets in UF0. The guard accepts one row or 1–100-row chunks,
+  preserves nesting without mutating input, and requires finite numeric values, dt 0.1–1.0 s, x 150–650 mm,
+  y −450–450 mm, z −334–300 mm, W/P/R within ±360°, and gripper 0–1, all inclusive. Violations raise contextual
+  typed errors; values are never clamped. Sim observations are projected to official top-level fields, with copied
+  nested mappings limited to public trial keys (`trial_id`, `index`, `layout`, `status`, `instruction`, `scored`),
+  RGB cameras (`table`, `side`, `wrist`), and supported depth cameras (`table`, `wrist`); simulator ground truth,
+  segmentation, and private depth metadata cannot reach controller callbacks. Joint mode holds the exact observed
+  position, including when `tcp_pose` is `None`; no TCP home target is invented.
+- Next: independent review, then open the T05 PR for Claude review and user merge. T09 can consume these adapters
+  after T04 and T05 merge; no contract or `robot/cell/cell_client.py` changes are required.
+
 ## 2026-10-27 · T04 · CODEX · product catalog and recipe graph
 
 - Changed: added `assembly/catalog.yaml`, typed/validated loading in `assembly/catalog.py`, public exports in

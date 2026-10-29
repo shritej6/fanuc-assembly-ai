@@ -5,7 +5,14 @@ called again with a new observation. act has no time limit: the arm holds still 
 """
 from __future__ import annotations
 
-import numpy as np
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from robot import CellAdapter, JointPositionHoldController
 
 
 class Policy:
@@ -14,15 +21,18 @@ class Policy:
                                           # (not cropped), as in the sim and the recorded datasets
     IMAGE_FORMAT = "png"                  # or "jpeg": about 7x smaller, for a slow connection
     ACTION = "joints"                     # what act returns: "joints" or "tcp" (see below)
+    DT = 0.1                               # seconds between absolute targets
     PREFETCH = False                      # True: if act returns many actions at once, plan the next ones while
                                           # these still play, so the arm does not stop between them
     DEPTH = []                            # ["table"] and/or ["wrist"]: also those cameras' depth, in obs["depth"]
 
     def __init__(self, checkpoint: str | None = None):
-        pass  # load your model here
+        self.checkpoint = checkpoint
+        self.adapter = CellAdapter(JointPositionHoldController(), action_mode=self.ACTION, dt=self.DT)
 
     def reset(self) -> None:
         """Called at the start of every rollout."""
+        self.adapter.reset()
 
     def act(self, obs: dict):
         """obs["images"]   {camera: (H, W, 3) uint8 RGB}
@@ -42,4 +52,4 @@ class Policy:
             return [450, 0, -305, -180, 0, 0, 0]
         Return where the arm should be, not a step from where it is.
         """
-        return obs["joints"]  # placeholder: stay where you are
+        return self.adapter.act(obs)
