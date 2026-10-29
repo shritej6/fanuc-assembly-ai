@@ -2,6 +2,30 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T21 latest-head correction · CODEX · trusted prompt and build evidence
+
+- Base: rebased cleanly onto accepted T09 `d1bfd9c` (T21 depends directly on T09, not T15). Product authority now
+  comes only from fresh typed evidence for `obs["trial"]["instruction"]`; explicit operator intent must exactly equal
+  that parsed sequence. T09's empty-before-bind and exact-after-bind `requested_products` states are verified, so a
+  visible scan, command, stale prompt, or changed controller prompt cannot choose a different product set.
+- Final evidence: the operator accepts only a product ID. A trusted provider is queried with catalog-derived recipe IDs
+  plus run, rollout, task, product, and latest mechanical time. Immutable capture ID/SHA-256, expiry, and unique
+  physical installed-instance lineage are preserved through Cosmos and recording; run/rollout/task/product/capture,
+  digest, time, or lineage substitution and reuse fail closed. Recipe identity comes from the validated catalog, not a
+  hardcoded object-name formula. The coordinator alone owns atomic prepare → Cosmos gate → record and exposes no public
+  prepare/record API, preventing a label-only forged `done`. No production Cosmos endpoint is claimed; the deterministic
+  stub still cannot release. Failed/expired attempts discard their prepared evidence so a later fresh capture can retry.
+- Physical authority: `ControllerSource.CELL` is unavailable by construction. T21 has no reviewed capability that owns
+  and inhibits the physical `act()` loop between products, and the diagnostic `execution_authorized` report boolean is
+  not accepted as that capability. Mock/sim/replay remain explicit. Real-cell enablement is blocked until the cell
+  runtime supplies that reviewed act gate and a trusted observation/final-evidence provider; this branch does not
+  weaken the boundary or invent an adapter.
+- Verification: focused operator/authority/evidence suite `118 passed`; full suite `631 passed`; `ruff check .`,
+  `uv lock --check`, `uv pip check`, `git diff --check`, 40-line function / 500-line file audit, and protected diffs for
+  `contracts/` plus `robot/cell/cell_client.py` all passed. Official `uv run --locked run.py --mock` completed 3
+  rollouts / 603 actions / 0 rejected and printed `Ready for the real robot`; that is client compatibility evidence,
+  not T21 cell authorization. No contract or official-client file changed.
+
 ## 2026-10-29 · T21 · CODEX · fail-closed operator interface
 
 - Changed: added an exact allowlisted plain-language compiler for status, one-product, and all-visible assembly requests;

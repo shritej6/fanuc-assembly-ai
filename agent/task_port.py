@@ -11,17 +11,41 @@ from threading import RLock
 from typing import Protocol
 from uuid import uuid4
 
+from agent.authority import AuthorityEvidenceError, TrialInstructionEvidence, authorized_trial_products
 from agent.commands import AssemblyScope, TaskRequest
-from agent.cosmos_reason import BuildCheckOutcome, CosmosEvidenceSource, FinalGateDecision
+from agent.cosmos_reason import (
+    BuildCheckOutcome,
+    FinalBuildCheckError,
+    FinalBuildGate,
+    FinalBuildRequest,
+    FinalGateDecision,
+)
+from agent.task_evidence import (
+    FinalBuildEvidenceProvider,
+    FinalEvidenceQuery,
+    TrustedBuildEvidenceError,
+    capture_final_build_request,
+    require_prepared_decision,
+)
+from agent.task_validation import (
+    OperatorTaskPortError,
+    clock_value,
+    decision_dict,
+    iso,
+    products,
+    safe_id,
+    validate_events,
+    validate_final_decision,
+    validate_records,
+    validate_state_record,
+)
+from agent.task_validation import product as validate_product
+from assembly.catalog import Catalog, load_catalog
 from assembly.controller_ports import ControllerEvent
 from assembly.planner import PlanStepRecord
 from assembly.state_machine import PackMLState, StateRecord
 
 LOGGER = logging.getLogger(__name__)
-
-
-class OperatorTaskPortError(RuntimeError):
-    """Task submission or live controller reporting failed safely."""
 
 
 class ControllerSource(StrEnum):
@@ -41,6 +65,9 @@ class QualityRelease(StrEnum):
 
 class ControllerView(Protocol):
     @property
+    def requested_products(self) -> tuple[int, ...]: ...
+
+    @property
     def completed_products(self) -> tuple[int, ...]: ...
 
     @property
@@ -57,7 +84,7 @@ class ControllerView(Protocol):
 
 
 ControllerFactory = Callable[[tuple[int, ...]], ControllerView]
-VisibleProductProvider = Callable[[], tuple[int, ...]]
+TrialInstructionProvider = Callable[[], TrialInstructionEvidence]
 
 
 class OperatorTaskPort(Protocol):
@@ -65,7 +92,7 @@ class OperatorTaskPort(Protocol):
 
     def report(self) -> LiveCellReport: ...
 
-    def record_final_check(self, decision: FinalGateDecision) -> LiveCellReport: ...
+    def evaluate_final_build(self, product: int) -> FinalBuildEvaluation: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,9 +128,15 @@ class LiveCellReport:
             "current_step_id": self.current_step_id,
             "event_count": self.event_count, "controller_finished": self.controller_finished,
             "execution_authorized": self.execution_authorized, "quality_release": self.quality_release.value,
-            "final_checks": [_decision_dict(decision) for decision in self.final_checks],
+            "final_checks": [decision_dict(decision) for decision in self.final_checks],
             "active_fault": self.active_fault,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class FinalBuildEvaluation:
+    decision: FinalGateDecision
+    report: LiveCellReport
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,17 +156,29 @@ class T09TaskCoordinator:
         *,
         source: ControllerSource,
         controller_factory: ControllerFactory,
-        visible_products: VisibleProductProvider,
+        trial_instruction: TrialInstructionProvider,
+        final_evidence: FinalBuildEvidenceProvider | None = None,
+        final_gate: FinalBuildGate | None = None,
+        catalog: Catalog | None = None,
         clock: Callable[[], datetime] | None = None,
         task_id_factory: Callable[[], str] | None = None,
     ) -> None:
         if not isinstance(source, ControllerSource):
             raise OperatorTaskPortError("source must be a ControllerSource")
-        if not callable(controller_factory) or not callable(visible_products):
-            raise OperatorTaskPortError("controller_factory and visible_products must be callable")
+        if source is ControllerSource.CELL:
+            raise OperatorTaskPortError("cell source requires a reviewed physical act gate; integration unavailable")
+        if not callable(controller_factory) or not callable(trial_instruction):
+            raise OperatorTaskPortError("controller_factory and trial_instruction must be callable")
+        if catalog is not None and type(catalog) is not Catalog:
+            raise OperatorTaskPortError("catalog must be a validated Catalog")
+        if final_gate is not None and type(final_gate) is not FinalBuildGate:
+            raise OperatorTaskPortError("final_gate must be exactly FinalBuildGate")
         self._source = source
         self._factory = controller_factory
-        self._visible_products = visible_products
+        self._trial_instruction = trial_instruction
+        self._final_evidence = final_evidence
+        self._final_gate = final_gate
+        self._catalog = catalog or load_catalog()
         self._clock = clock or _utc_now
         self._task_id_factory = task_id_factory or _new_task_id
         self._lock = RLock()
@@ -142,7 +187,9 @@ class T09TaskCoordinator:
         self._accepted_at: datetime | None = None
         self._selected_products: tuple[int, ...] = ()
         self._final_checks: dict[int, FinalGateDecision] = {}
+        self._prepared_final: dict[str, FinalBuildRequest] = {}
         self._used_task_ids: set[str] = set()
+        self._trial_evidence: TrialInstructionEvidence | None = None
 
     def submit(self, request: TaskRequest) -> TaskReceipt:
         with self._lock:
@@ -153,7 +200,7 @@ class T09TaskCoordinator:
             raise OperatorTaskPortError("task submission requires a TaskRequest")
         if self._controller is not None and not self._is_quality_released():
             raise OperatorTaskPortError("an active task must be quality-released before another task starts")
-        products = self._resolve_products(request)
+        products, trial_evidence = self._resolve_products(request)
         task_id = self._next_task_id()
         try:
             controller = self._factory(products)
@@ -163,13 +210,15 @@ class T09TaskCoordinator:
         except Exception as error:
             LOGGER.exception("T09 controller creation failed", extra={"products": products})
             raise OperatorTaskPortError("T09 controller creation failed; cell held") from error
-        accepted_at_value = _clock_value(self._clock, "task acceptance clock")
-        accepted_at = _iso(accepted_at_value)
+        accepted_at_value = clock_value(self._clock, "task acceptance clock")
+        accepted_at = iso(accepted_at_value)
         self._controller = controller
         self._active_task_id = task_id
         self._accepted_at = accepted_at_value
         self._selected_products = products
+        self._trial_evidence = trial_evidence
         self._final_checks.clear()
+        self._prepared_final.clear()
         self._used_task_ids.add(task_id)
         return TaskReceipt(task_id, self._source, products, accepted_at)
 
@@ -178,8 +227,8 @@ class T09TaskCoordinator:
             return self._report()
 
     def _report(self) -> LiveCellReport:
-        report_time = _clock_value(self._clock, "report clock")
-        reported_at = _iso(report_time)
+        report_time = clock_value(self._clock, "report clock")
+        reported_at = iso(report_time)
         if self._controller is None:
             return _idle_report(self._source, reported_at)
         snapshot = _read_controller(self._controller, self._selected_products)
@@ -204,14 +253,65 @@ class T09TaskCoordinator:
             _active_fault(snapshot.state, release, decision_order),
         )
 
-    def record_final_check(self, decision: FinalGateDecision) -> LiveCellReport:
+    def evaluate_final_build(self, product: int) -> FinalBuildEvaluation:
         with self._lock:
-            return self._record_final_check(decision)
+            if self._final_gate is None:
+                raise OperatorTaskPortError("final-build gate is unavailable; cell held")
+            request = self._prepare_final_build(product)
+            try:
+                try:
+                    decision = self._final_gate.evaluate(request)
+                except FinalBuildCheckError as error:
+                    raise OperatorTaskPortError("final-build gate rejected trusted evidence; cell held") from error
+                report = self._record_final_check(decision)
+                return FinalBuildEvaluation(decision, report)
+            finally:
+                self._prepared_final.pop(request.request_id, None)
+
+    def _prepare_final_build(self, product: int) -> FinalBuildRequest:
+        validate_product(product)
+        if self._controller is None or self._active_task_id is None or self._trial_evidence is None:
+            raise OperatorTaskPortError("no active task can provide final-build evidence")
+        if product not in self._selected_products:
+            raise OperatorTaskPortError("final-build product is outside the active task")
+        snapshot = _read_controller(self._controller, self._selected_products)
+        if product not in snapshot.completed:
+            raise OperatorTaskPortError("a product must be mechanically complete before evidence capture")
+        if any(item.product == product for item in self._prepared_final.values()):
+            raise OperatorTaskPortError("a final-build check is already prepared for this product")
+        mechanical_at = datetime.fromisoformat(snapshot.state.timestamp).astimezone(UTC)
+        expected = tuple(step.object_id for step in self._catalog.product(product).steps)
+        query = FinalEvidenceQuery(
+            self._trial_evidence.run_id,
+            self._trial_evidence.rollout,
+            self._active_task_id,
+            product,
+            expected,
+            mechanical_at,
+        )
+        try:
+            request = capture_final_build_request(
+                self._final_evidence,
+                query,
+                clock_value(self._clock, "final evidence clock"),
+            )
+        except TrustedBuildEvidenceError as error:
+            raise OperatorTaskPortError(str(error)) from error
+        self._require_unused_evidence(request)
+        self._prepared_final[request.request_id] = request
+        return request
 
     def _record_final_check(self, decision: FinalGateDecision) -> LiveCellReport:
         if type(decision) is not FinalGateDecision:
             raise OperatorTaskPortError("final check must be exactly FinalGateDecision")
-        _validate_final_decision(decision)
+        validate_final_decision(decision)
+        prepared = self._prepared_final.get(decision.request_id)
+        if prepared is None:
+            raise OperatorTaskPortError("final check was not prepared by the trusted evidence port")
+        try:
+            require_prepared_decision(decision, prepared)
+        except TrustedBuildEvidenceError as error:
+            raise OperatorTaskPortError(str(error)) from error
         if decision.task_id != self._active_task_id:
             raise OperatorTaskPortError("final check does not belong to the active task")
         if self._controller is None or decision.product not in self._selected_products:
@@ -219,11 +319,27 @@ class T09TaskCoordinator:
         snapshot = _read_controller(self._controller, self._selected_products)
         state_at = datetime.fromisoformat(snapshot.state.timestamp).astimezone(UTC)
         observed_at = decision.observed_at.astimezone(UTC)
-        now = _clock_value(self._clock, "final-check clock")
+        now = clock_value(self._clock, "final-check clock")
         if self._accepted_at is None or observed_at < max(self._accepted_at, state_at) or observed_at > now:
             raise OperatorTaskPortError("final check evidence predates mechanical state or is from the future")
+        if now > decision.expires_at:
+            raise OperatorTaskPortError("final check evidence is stale")
         if decision.product not in snapshot.completed:
             raise OperatorTaskPortError("a product must be mechanically complete before its final check")
+        existing = self._validated_existing_decision(decision)
+        self._final_checks.pop(decision.product, None)
+        self._final_checks[decision.product] = decision
+        try:
+            report = self._report()
+        except Exception:
+            self._final_checks.pop(decision.product, None)
+            if existing is not None:
+                self._final_checks[decision.product] = existing
+            raise
+        self._prepared_final.pop(decision.request_id, None)
+        return report
+
+    def _validated_existing_decision(self, decision: FinalGateDecision) -> FinalGateDecision | None:
         existing = self._final_checks.get(decision.product)
         if existing is not None and existing.outcome is BuildCheckOutcome.DONE:
             raise OperatorTaskPortError("a quality-released product cannot be overwritten")
@@ -231,25 +347,32 @@ class T09TaskCoordinator:
             decision.request_id == existing.request_id or decision.observed_at <= existing.observed_at
         ):
             raise OperatorTaskPortError("a retried final check requires fresh image evidence and request ID")
-        self._final_checks.pop(decision.product, None)
-        self._final_checks[decision.product] = decision
-        try:
-            return self._report()
-        except Exception:
-            self._final_checks.pop(decision.product, None)
-            if existing is not None:
-                self._final_checks[decision.product] = existing
-            raise
+        return existing
 
-    def _resolve_products(self, request: TaskRequest) -> tuple[int, ...]:
-        if request.scope is AssemblyScope.EXPLICIT:
-            return request.products
+    def _require_unused_evidence(self, request: FinalBuildRequest) -> None:
+        prepared = tuple(self._prepared_final.values())
+        decisions = tuple(self._final_checks.values())
+        if any(item.request_id == request.request_id for item in prepared) or any(
+            item.request_id == request.request_id for item in decisions
+        ):
+            raise OperatorTaskPortError("final-build request ID was already used")
+        lineage = (request.image_capture_id, request.image_sha256)
+        if any((item.image_capture_id, item.image_sha256) == lineage for item in (*prepared, *decisions)):
+            raise OperatorTaskPortError("final-build image evidence was already used")
+
+    def _resolve_products(self, request: TaskRequest) -> tuple[tuple[int, ...], TrialInstructionEvidence]:
         try:
-            products = self._visible_products()
+            evidence = self._trial_instruction()
         except Exception as error:
-            LOGGER.exception("visible-product scan failed")
-            raise OperatorTaskPortError("visible-product scan failed; cell held") from error
-        return _products(products, "visible products")
+            LOGGER.exception("trial instruction evidence failed")
+            raise OperatorTaskPortError("trial instruction evidence failed; cell held") from error
+        try:
+            trial_products = authorized_trial_products(evidence, self._catalog, clock_value(self._clock, "trial clock"))
+        except AuthorityEvidenceError as error:
+            raise OperatorTaskPortError(str(error)) from error
+        if request.scope is AssemblyScope.EXPLICIT and request.products != trial_products:
+            raise OperatorTaskPortError("operator intent does not match the trial instruction")
+        return trial_products, evidence
 
     def _next_task_id(self) -> str:
         try:
@@ -257,7 +380,7 @@ class T09TaskCoordinator:
         except Exception as error:
             LOGGER.exception("task ID generation failed")
             raise OperatorTaskPortError("task ID generation failed; cell held") from error
-        task_id = _safe_id(value)
+        task_id = safe_id(value)
         if task_id in self._used_task_ids:
             raise OperatorTaskPortError("task ID factory returned a previously used ID")
         return task_id
@@ -273,6 +396,7 @@ class T09TaskCoordinator:
 def _read_controller(controller: object, selected: tuple[int, ...]) -> _ControllerSnapshot:
     try:
         state = controller.state_machine.current_record
+        requested = controller.requested_products
         completed = controller.completed_products
         events = controller.events
         records = controller.plan_records
@@ -282,20 +406,26 @@ def _read_controller(controller: object, selected: tuple[int, ...]) -> _Controll
         raise OperatorTaskPortError("T09 controller status failed; cell held") from error
     if type(state) is not StateRecord:
         raise OperatorTaskPortError("T09 current state must be exactly StateRecord")
-    completed = _products(completed, "completed products", allow_empty=True, preserve_order=True)
+    requested = products(requested, "requested products", allow_empty=True, preserve_order=True)
+    completed = products(completed, "completed products", allow_empty=True, preserve_order=True)
     if any(product not in selected for product in completed):
         raise OperatorTaskPortError("T09 reported a completed product outside the selected task")
     if not isinstance(events, tuple) or any(type(event) is not ControllerEvent for event in events):
         raise OperatorTaskPortError("T09 events must be a tuple of ControllerEvent")
     if not isinstance(records, tuple) or any(type(record) is not PlanStepRecord for record in records):
         raise OperatorTaskPortError("T09 plan records must be a tuple of PlanStepRecord")
-    _validate_events(events, selected)
-    _validate_records(records, selected)
+    validate_events(events, selected)
+    validate_records(records, selected)
     if type(finished) is not bool:
         raise OperatorTaskPortError("T09 finished must be a boolean")
     if finished and (completed != selected or state.state is not PackMLState.COMPLETE):
         raise OperatorTaskPortError("finished T09 task must report every selected product and Complete state")
-    _validate_state_record(state, selected)
+    validate_state_record(state, selected)
+    pristine = state.state is PackMLState.IDLE and not completed and not events and not records and not finished
+    if not requested and not pristine:
+        raise OperatorTaskPortError("T09 must bind requested products before leaving pristine Idle")
+    if requested and requested != selected:
+        raise OperatorTaskPortError("T09 requested products do not match the trial instruction")
     return _ControllerSnapshot(state, completed, events, records, finished)
 
 
@@ -337,106 +467,6 @@ def _execution_authorized(state: StateRecord, release: QualityRelease) -> bool:
     return release is QualityRelease.IN_PROGRESS and state.state in active_states
 
 
-def _validate_final_decision(decision: FinalGateDecision) -> None:
-    _product(decision.product)
-    _safe_id(decision.task_id)
-    _safe_id(decision.request_id)
-    aware = isinstance(decision.observed_at, datetime) and decision.observed_at.tzinfo is not None
-    if not aware or decision.observed_at.utcoffset() is None:
-        raise OperatorTaskPortError("final-check observation time must include a timezone")
-    if not isinstance(decision.outcome, BuildCheckOutcome):
-        raise OperatorTaskPortError("final-check outcome is invalid")
-    if type(decision.recipe_passed) is not bool:
-        raise OperatorTaskPortError("final-check evidence flags are invalid")
-    if decision.cosmos_passed is not None and type(decision.cosmos_passed) is not bool:
-        raise OperatorTaskPortError("final-check evidence flags are invalid")
-    if not isinstance(decision.detail, str) or not decision.detail.strip():
-        raise OperatorTaskPortError("final-check detail must be a non-empty string")
-    if decision.outcome is BuildCheckOutcome.DONE and not (decision.recipe_passed and decision.cosmos_passed is True):
-        raise OperatorTaskPortError("DONE requires both independent checks to pass")
-    _validate_cosmos_provenance(decision)
-    if decision.evidence_source is CosmosEvidenceSource.COSMOS_REASON_2 and decision.model_id != "Cosmos-Reason2-2B":
-        raise OperatorTaskPortError("Cosmos evidence must identify Cosmos Reason 2 (2B)")
-    if decision.evidence_source is CosmosEvidenceSource.STUB and decision.model_id != "deterministic-stub":
-        raise OperatorTaskPortError("stub evidence must identify the deterministic stub")
-    if decision.outcome is BuildCheckOutcome.DONE and (
-        decision.evidence_source is not CosmosEvidenceSource.COSMOS_REASON_2 or decision.model_id != "Cosmos-Reason2-2B"
-    ):
-        raise OperatorTaskPortError("DONE requires Cosmos Reason 2 (2B) provenance")
-
-
-def _validate_cosmos_provenance(decision: FinalGateDecision) -> None:
-    source = decision.evidence_source
-    model_id = decision.model_id
-    absent = decision.cosmos_passed is None and source is None and model_id is None
-    complete = (
-        type(decision.cosmos_passed) is bool
-        and isinstance(source, CosmosEvidenceSource)
-        and isinstance(model_id, str)
-        and bool(model_id.strip())
-    )
-    if not (absent or complete):
-        raise OperatorTaskPortError("final-check Cosmos evidence and provenance are inconsistent")
-
-
-def _validate_events(events: tuple[ControllerEvent, ...], selected: tuple[int, ...]) -> None:
-    for event in events:
-        if not isinstance(event.kind, str) or not event.kind.strip():
-            raise OperatorTaskPortError("T09 event kind must be a non-empty string")
-        if event.product is not None and event.product not in selected:
-            raise OperatorTaskPortError("T09 event product is outside the selected task")
-        if event.object_id is not None and (not isinstance(event.object_id, str) or not event.object_id.strip()):
-            raise OperatorTaskPortError("T09 event object_id must be a string or null")
-        if not isinstance(event.detail, str) or not event.detail.strip():
-            raise OperatorTaskPortError("T09 event detail must be a non-empty string")
-
-
-def _validate_records(records: tuple[PlanStepRecord, ...], selected: tuple[int, ...]) -> None:
-    for record in records:
-        if record.product not in selected:
-            raise OperatorTaskPortError("T09 plan record product is outside the selected task")
-        _safe_id(record.step_id)
-
-
-def _validate_state_record(state: StateRecord, selected: tuple[int, ...]) -> None:
-    if not isinstance(state.state, PackMLState):
-        raise OperatorTaskPortError("T09 state must be a PackMLState")
-    if state.reason is not None and not isinstance(state.reason, str):
-        raise OperatorTaskPortError("T09 state reason must be a string or null")
-    if (state.state is PackMLState.IDLE) != (state.product is None):
-        raise OperatorTaskPortError("Idle must have no product and every non-Idle PackML state must own one product")
-    if state.product is not None and state.product not in selected:
-        raise OperatorTaskPortError("T09 state product is outside the selected task")
-    try:
-        timestamp = datetime.fromisoformat(state.timestamp)
-    except (TypeError, ValueError) as error:
-        raise OperatorTaskPortError("T09 state timestamp must be ISO 8601") from error
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        raise OperatorTaskPortError("T09 state timestamp must include a timezone")
-
-
-def _products(
-    values: object,
-    label: str,
-    *,
-    allow_empty: bool = False,
-    preserve_order: bool = False,
-) -> tuple[int, ...]:
-    if not isinstance(values, tuple) or (not allow_empty and not values):
-        raise OperatorTaskPortError(f"{label} must be a {'possibly empty' if allow_empty else 'non-empty'} tuple")
-    if len(values) != len(set(values)):
-        raise OperatorTaskPortError(f"{label} must be unique")
-    for value in values:
-        _product(value)
-    return values if preserve_order else tuple(sorted(values))
-
-
-def _product(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 6:
-        raise OperatorTaskPortError("product IDs must be integers from 1 through 6")
-    return value
-
-
 def _idle_report(source: ControllerSource, timestamp: str) -> LiveCellReport:
     packml = {"state": PackMLState.IDLE.value, "reason": None, "product": None, "timestamp": timestamp}
     return LiveCellReport(
@@ -454,41 +484,6 @@ def _idle_report(source: ControllerSource, timestamp: str) -> LiveCellReport:
         (),
         None,
     )
-
-
-def _decision_dict(decision: FinalGateDecision) -> dict[str, object]:
-    return {
-        "product": decision.product, "task_id": decision.task_id, "request_id": decision.request_id,
-        "observed_at": _iso(decision.observed_at), "outcome": decision.outcome.value,
-        "recipe_passed": decision.recipe_passed, "cosmos_passed": decision.cosmos_passed,
-        "evidence_source": None if decision.evidence_source is None else decision.evidence_source.value,
-        "model_id": decision.model_id,
-        "detail": decision.detail,
-    }
-
-
-def _safe_id(value: object) -> str:
-    if not isinstance(value, str) or not value or len(value) > 128:
-        raise OperatorTaskPortError("task ID must be a non-empty string no longer than 128 characters")
-    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
-    if any(character not in allowed for character in value):
-        raise OperatorTaskPortError("task ID contains unsafe characters")
-    return value
-
-
-def _clock_value(clock: Callable[[], datetime], label: str) -> datetime:
-    try:
-        value = clock()
-    except Exception as error:
-        LOGGER.exception("operator clock failed", extra={"clock_label": label})
-        raise OperatorTaskPortError(f"{label} failed; cell held") from error
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
-        raise OperatorTaskPortError(f"{label} must return a timezone-aware datetime")
-    return value.astimezone(UTC)
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _utc_now() -> datetime:

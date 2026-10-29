@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
+from assembly.catalog import Catalog
+
 LOGGER = logging.getLogger(__name__)
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class FinalBuildCheckError(ValueError):
@@ -32,32 +37,63 @@ class CosmosEvidenceSource(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class InstalledInstanceLineage:
+    instance_id: str
+    object_id: str
+
+    def __post_init__(self) -> None:
+        _safe_id(self.instance_id, "instance_id")
+        _safe_id(self.object_id, "object_id")
+
+
+@dataclass(frozen=True, slots=True)
 class FinalBuildRequest:
+    run_id: str
+    rollout: int
     task_id: str
     request_id: str
     product: int
-    installed_object_ids: tuple[str, ...]
-    image_refs: tuple[str, ...]
+    installed_instances: tuple[InstalledInstanceLineage, ...]
+    image_capture_id: str
+    image_sha256: str
     observed_at: datetime
+    expires_at: datetime
+    evidence_source: str
 
     def __post_init__(self) -> None:
+        _safe_id(self.run_id, "run_id")
+        _rollout(self.rollout)
         _safe_id(self.task_id, "task_id")
         _safe_id(self.request_id, "request_id")
         _product(self.product)
-        _string_tuple(self.installed_object_ids, "installed_object_ids", allow_empty=True)
-        _string_tuple(self.image_refs, "image_refs", allow_empty=False)
-        object.__setattr__(self, "observed_at", _aware(self.observed_at, "observed_at"))
+        if not isinstance(self.installed_instances, tuple) or any(
+            type(item) is not InstalledInstanceLineage for item in self.installed_instances
+        ):
+            raise FinalBuildCheckError("installed_instances must contain trusted lineage values")
+        _safe_id(self.image_capture_id, "image_capture_id")
+        _sha256(self.image_sha256)
+        observed = _aware(self.observed_at, "observed_at")
+        expires = _aware(self.expires_at, "expires_at")
+        if expires < observed:
+            raise FinalBuildCheckError("final-build evidence expires before capture")
+        object.__setattr__(self, "observed_at", observed)
+        object.__setattr__(self, "expires_at", expires)
+        _safe_id(self.evidence_source, "evidence_source")
 
     @property
-    def expected_object_ids(self) -> tuple[str, ...]:
-        return tuple(f"M{self.product}_{step:02d}" for step in range(1, 5))
+    def installed_object_ids(self) -> tuple[str, ...]:
+        return tuple(item.object_id for item in self.installed_instances)
 
 
 @dataclass(frozen=True, slots=True)
 class CosmosReasonResult:
+    run_id: str
+    rollout: int
     task_id: str
     request_id: str
     product: int
+    image_capture_id: str
+    image_sha256: str
     passed: bool
     explanation: str
     model_id: str
@@ -65,13 +101,17 @@ class CosmosReasonResult:
     observed_at: datetime
 
     def __post_init__(self) -> None:
+        _safe_id(self.run_id, "Cosmos run_id")
+        _rollout(self.rollout)
         _safe_id(self.task_id, "Cosmos task_id")
         _safe_id(self.request_id, "request_id")
         _product(self.product)
+        _safe_id(self.image_capture_id, "Cosmos image_capture_id")
+        _sha256(self.image_sha256)
         if type(self.passed) is not bool:
             raise FinalBuildCheckError("Cosmos passed must be a boolean")
-        _nonempty(self.explanation, "Cosmos explanation")
-        _nonempty(self.model_id, "Cosmos model_id")
+        _bounded_text(self.explanation, "Cosmos explanation")
+        _safe_id(self.model_id, "Cosmos model_id")
         if not isinstance(self.evidence_source, CosmosEvidenceSource):
             raise FinalBuildCheckError("Cosmos evidence_source is invalid")
         object.__setattr__(self, "observed_at", _aware(self.observed_at, "Cosmos observed_at"))
@@ -83,10 +123,17 @@ class CosmosReasonPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class FinalGateDecision:
+    run_id: str
+    rollout: int
     product: int
     task_id: str
     request_id: str
     observed_at: datetime
+    expires_at: datetime
+    installed_instances: tuple[InstalledInstanceLineage, ...]
+    image_capture_id: str
+    image_sha256: str
+    build_evidence_source: str
     outcome: BuildCheckOutcome
     recipe_passed: bool
     cosmos_passed: bool | None
@@ -98,13 +145,17 @@ class FinalGateDecision:
 class FinalBuildGate:
     """Require both checks; stub evidence can never quality-release a product."""
 
-    def __init__(self, cosmos: CosmosReasonPort) -> None:
+    def __init__(self, cosmos: CosmosReasonPort, catalog: Catalog) -> None:
+        if not isinstance(catalog, Catalog):
+            raise FinalBuildCheckError("final build gate requires a validated Catalog")
         self._cosmos = cosmos
+        self._catalog = catalog
 
     def evaluate(self, request: FinalBuildRequest) -> FinalGateDecision:
         if not isinstance(request, FinalBuildRequest):
             raise FinalBuildCheckError("final build request must be a FinalBuildRequest")
-        recipe_passed = request.installed_object_ids == request.expected_object_ids
+        expected = tuple(step.object_id for step in self._catalog.product(request.product).steps)
+        recipe_passed = request.installed_object_ids == expected
         if not recipe_passed:
             return _decision(
                 request, BuildCheckOutcome.REBUILD, False, None, None, None, "installed objects do not match the recipe"
@@ -157,9 +208,13 @@ class DeterministicCosmosReasonStub:
             raise CosmosReasonUnavailable(f"no stub result for {request.request_id!r}") from error
         explanation = "configured mock pass" if passed else "configured mock failure"
         return CosmosReasonResult(
+            request.run_id,
+            request.rollout,
             request.task_id,
             request.request_id,
             request.product,
+            request.image_capture_id,
+            request.image_sha256,
             passed,
             explanation,
             "deterministic-stub",
@@ -172,9 +227,13 @@ def _validate_result(request: FinalBuildRequest, result: object) -> CosmosReason
     if type(result) is not CosmosReasonResult:
         raise FinalBuildCheckError("Cosmos port must return exactly CosmosReasonResult")
     if (
-        result.task_id != request.task_id
+        result.run_id != request.run_id
+        or result.rollout != request.rollout
+        or result.task_id != request.task_id
         or result.request_id != request.request_id
         or result.product != request.product
+        or result.image_capture_id != request.image_capture_id
+        or result.image_sha256 != request.image_sha256
     ):
         raise FinalBuildCheckError("Cosmos response does not match the request")
     if result.observed_at != request.observed_at:
@@ -194,10 +253,17 @@ def _decision(
     detail: str,
 ) -> FinalGateDecision:
     return FinalGateDecision(
+        request.run_id,
+        request.rollout,
         request.product,
         request.task_id,
         request.request_id,
         request.observed_at,
+        request.expires_at,
+        request.installed_instances,
+        request.image_capture_id,
+        request.image_sha256,
+        request.evidence_source,
         outcome,
         recipe_passed,
         cosmos_passed,
@@ -220,12 +286,16 @@ def _safe_id(value: object, field: str) -> str:
     return text
 
 
-def _string_tuple(values: object, field: str, *, allow_empty: bool) -> tuple[str, ...]:
-    if not isinstance(values, tuple) or (not allow_empty and not values):
-        raise FinalBuildCheckError(f"{field} must be a {'possibly empty' if allow_empty else 'non-empty'} tuple")
-    if any(not isinstance(value, str) or not value.strip() for value in values):
-        raise FinalBuildCheckError(f"{field} must contain non-empty strings")
-    return values
+def _rollout(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise FinalBuildCheckError("rollout must be a nonnegative integer")
+    return value
+
+
+def _sha256(value: object) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise FinalBuildCheckError("image_sha256 must be 64 lowercase hexadecimal characters")
+    return value
 
 
 def _product(value: object) -> int:
@@ -238,6 +308,13 @@ def _nonempty(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise FinalBuildCheckError(f"{field} must be a non-empty string")
     return value
+
+
+def _bounded_text(value: object, field: str) -> str:
+    text = _nonempty(value, field)
+    if len(text) > 2048 or any(unicodedata.category(character).startswith("C") for character in text):
+        raise FinalBuildCheckError(f"{field} must be control-free text no longer than 2048 characters")
+    return text
 
 
 def _aware(value: object, field: str) -> datetime:

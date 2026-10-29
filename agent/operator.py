@@ -7,8 +7,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from agent.commands import OperatorCommandError, OperatorCommandKind, parse_operator_command
-from agent.cosmos_reason import BuildCheckOutcome, FinalBuildCheckError, FinalBuildGate, FinalGateDecision
-from agent.task_port import LiveCellReport, OperatorTaskPort, OperatorTaskPortError, TaskReceipt
+from agent.cosmos_reason import BuildCheckOutcome, FinalGateDecision
+from agent.task_port import (
+    FinalBuildEvaluation,
+    LiveCellReport,
+    OperatorTaskPort,
+    OperatorTaskPortError,
+    TaskReceipt,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,14 +48,11 @@ class OperatorResponse:
 class OperatorAgent:
     """Compile operator text; all physical authority remains in the injected T09 port."""
 
-    def __init__(self, tasks: OperatorTaskPort, final_gate: FinalBuildGate) -> None:
-        if not isinstance(final_gate, FinalBuildGate):
-            raise TypeError("final_gate must be a FinalBuildGate")
-        required = ("submit", "report", "record_final_check")
+    def __init__(self, tasks: OperatorTaskPort) -> None:
+        required = ("submit", "report", "evaluate_final_build")
         if any(not callable(getattr(tasks, name, None)) for name in required):
             raise TypeError("tasks must implement the OperatorTaskPort methods")
         self._tasks = tasks
-        self._final_gate = final_gate
 
     def handle(self, text: object) -> OperatorResponse:
         try:
@@ -70,19 +73,19 @@ class OperatorAgent:
         products = ", ".join(str(product) for product in receipt.selected_products)
         return OperatorResponse(OperatorResponseKind.ACCEPTED, f"accepted products {products}", receipt=receipt)
 
-    def evaluate_final_build(self, request: object) -> OperatorResponse:
+    def evaluate_final_build(self, product: object) -> OperatorResponse:
+        if isinstance(product, bool) or not isinstance(product, int) or not 1 <= product <= 6:
+            return OperatorResponse(OperatorResponseKind.REJECTED, "final build check requires a product ID from 1-6")
         try:
-            decision = self._final_gate.evaluate(request)  # type: ignore[arg-type]
-        except FinalBuildCheckError as error:
-            return OperatorResponse(OperatorResponseKind.REJECTED, str(error))
-        try:
-            report = self._tasks.record_final_check(decision)
+            evaluation = self._tasks.evaluate_final_build(product)
         except OperatorTaskPortError as error:
-            return OperatorResponse(OperatorResponseKind.HELD, str(error), final_check=decision)
+            return OperatorResponse(OperatorResponseKind.HELD, str(error))
         except Exception:
-            LOGGER.exception("final-build decision recording failed")
-            message = "final-build decision could not be recorded; cell held"
-            return OperatorResponse(OperatorResponseKind.HELD, message, final_check=decision)
+            LOGGER.exception("trusted final-build evaluation failed")
+            return OperatorResponse(OperatorResponseKind.HELD, "final-build evidence service failed; cell held")
+        if type(evaluation) is not FinalBuildEvaluation:
+            return OperatorResponse(OperatorResponseKind.HELD, "final-build evaluation service is malformed; cell held")
+        decision = evaluation.decision
         response_kind = (
             OperatorResponseKind.HELD
             if decision.outcome is BuildCheckOutcome.HOLD_ANDON
@@ -91,7 +94,7 @@ class OperatorAgent:
         return OperatorResponse(
             response_kind,
             decision.detail,
-            report=report,
+            report=evaluation.report,
             final_check=decision,
         )
 
@@ -129,10 +132,20 @@ def _final_check_dict(decision: FinalGateDecision | None) -> dict[str, object] |
     if decision is None:
         return None
     return {
+        "run_id": decision.run_id,
+        "rollout": decision.rollout,
         "product": decision.product,
         "task_id": decision.task_id,
         "request_id": decision.request_id,
         "observed_at": decision.observed_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": decision.expires_at.isoformat().replace("+00:00", "Z"),
+        "installed_instances": [
+            {"instance_id": item.instance_id, "object_id": item.object_id}
+            for item in decision.installed_instances
+        ],
+        "image_capture_id": decision.image_capture_id,
+        "image_sha256": decision.image_sha256,
+        "build_evidence_source": decision.build_evidence_source,
         "outcome": decision.outcome.value,
         "recipe_passed": decision.recipe_passed,
         "cosmos_passed": decision.cosmos_passed,
