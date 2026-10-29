@@ -17,6 +17,8 @@ class Annotation:
     state: str
     variant: str
     build_state: str | None
+    rest: str | None = None
+    label: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -28,6 +30,8 @@ class Annotation:
             "state": self.state,
             "variant": self.variant,
             "build_state": self.build_state,
+            "rest": self.rest,
+            "label": self.label or self.object_id,
         }
 
 

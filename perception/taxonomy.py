@@ -11,6 +11,14 @@ FOREIGN_LABELS = (
     "foreign_tape_roll",
     "foreign_cube_10mm",
 )
+FALLEN_SUFFIX = "__fallen"
+
+
+def fallen_label(object_id: str) -> str:
+    """Detector class for a product part lying in a pose other than its installed one (bases never fall)."""
+    if object_id.startswith("F"):
+        raise ValueError(f"base {object_id} has no fallen class")
+    return f"{object_id}{FALLEN_SUFFIX}"
 
 
 @dataclass(frozen=True)
@@ -53,8 +61,11 @@ def _connected_groups(
     return tuple(groups)
 
 
-def load_ontology(path: Path) -> Ontology:
-    """Load class order and reject ambiguous look-alike graphs."""
+def load_ontology(path: Path, fallen_classes: bool = False) -> Ontology:
+    """Load class order and reject ambiguous look-alike graphs.
+
+    With `fallen_classes` the detector also gets one `<part>__fallen` class per product part, so a single RT-DETR box
+    carries both the exact identity and the fallen flag of the test-bed sets."""
     data = json.loads(path.read_text())
     objects = data["objects"]
     labels = tuple(item["object_id"] for item in objects)
@@ -68,8 +79,9 @@ def load_ontology(path: Path) -> Ontology:
                 raise ValueError(f"unknown look-alike {other!r} for {label}")
             if label not in links[other]:
                 raise ValueError(f"look-alike link {label}->{other} is not symmetric")
+    fallen = tuple(fallen_label(label) for label in labels if not label.startswith("F")) if fallen_classes else ()
     return Ontology(
         classifier_labels=labels,
-        detector_labels=labels + FOREIGN_LABELS,
+        detector_labels=labels + FOREIGN_LABELS + fallen,
         lookalike_groups=_connected_groups(labels, links),
     )

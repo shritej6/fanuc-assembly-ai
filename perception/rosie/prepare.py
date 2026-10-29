@@ -13,6 +13,14 @@ from perception.manifest import ManifestConfig, build_manifests
 
 DETECTOR_SETS = ("A", "F", "G")
 CLASSIFIER_SETS = ("B", "H", "K")
+# Test-bed sets (user 2026-10-28: train only on these): parts stand as in their product, fallen ones are labelled.
+# Cosmos restyled one camera of half the scenes in N/R/Q (measured 0.25 of images) and half the wrist images in O.
+TESTBED = {
+    "detector_sets": ("N", "R", "Q"),
+    "classifier_sets": ("O",),
+    "cosmos_ranges": (("N", 0.20, 0.30), ("R", 0.20, 0.30), ("Q", 0.20, 0.30), ("O", 0.45, 0.55)),
+}
+PROFILES = ("legacy", "testbed")
 
 
 def preparation_plan(
@@ -20,10 +28,19 @@ def preparation_plan(
     output_root: Path,
     taxonomy_path: Path,
     smoke: bool,
+    profile: str = "legacy",
 ) -> dict[str, Any]:
     """Return the exact immutable-data policy before touching source data."""
+    if profile not in PROFILES:
+        raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILES}")
     root = output_root.resolve()
+    testbed = profile == "testbed"
+    detector_sets = TESTBED["detector_sets"] if testbed else DETECTOR_SETS
+    classifier_sets = TESTBED["classifier_sets"] if testbed else CLASSIFIER_SETS
     return {
+        "profile": profile,
+        "fallen_classes": testbed,
+        "cosmos_ranges": [list(item) for item in TESTBED["cosmos_ranges"]] if testbed else [],
         "mode": "smoke" if smoke else "full",
         "data_root": str(data_root.resolve()),
         "output_root": str(root),
@@ -31,8 +48,8 @@ def preparation_plan(
         "coco_dir": str(root / "coco"),
         "crops_dir": str(root / "crops"),
         "taxonomy_path": str(taxonomy_path.resolve()),
-        "detector_sets": ["A"] if smoke else list(DETECTOR_SETS),
-        "classifier_sets": ["B"] if smoke else list(CLASSIFIER_SETS),
+        "detector_sets": list(detector_sets[:1]) if smoke else list(detector_sets),
+        "classifier_sets": list(classifier_sets[:1]) if smoke else list(classifier_sets),
         "require_cosmos": not smoke,
         "include_cosmos": not smoke,
         "max_scenes_per_set": 128 if smoke else None,
@@ -49,6 +66,9 @@ def _manifest_config(plan: dict[str, Any]) -> ManifestConfig:
         require_cosmos=plan["require_cosmos"],
         include_cosmos=plan["include_cosmos"],
         max_scenes_per_set=plan["max_scenes_per_set"],
+        profile=plan.get("profile", "legacy"),
+        fallen_classes=plan.get("fallen_classes", False),
+        cosmos_ranges=tuple((name, low, high) for name, low, high in plan.get("cosmos_ranges", [])),
     )
 
 
@@ -77,13 +97,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--taxonomy", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--profile", choices=PROFILES, default="legacy")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
 
 def main() -> None:
     args = _parser().parse_args()
-    plan = preparation_plan(args.data_root, args.output_root, args.taxonomy, args.smoke)
+    plan = preparation_plan(args.data_root, args.output_root, args.taxonomy, args.smoke, args.profile)
     print(json.dumps(plan, indent=2, sort_keys=True))
     if not args.dry_run:
         result = execute_preparation(plan)

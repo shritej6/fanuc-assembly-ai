@@ -10,6 +10,8 @@ from typing import Any
 EXPECTED_SETS = ("A", "F", "G", "B", "H", "K")
 MIN_COSMOS_FRACTION = 0.10
 MAX_COSMOS_FRACTION = 0.20
+# Kept independent of prepare.py so a wrongly prepared manifest cannot loosen its own gate.
+TESTBED_RANGES = {"N": (0.20, 0.30), "R": (0.20, 0.30), "Q": (0.20, 0.30), "O": (0.45, 0.55)}
 
 
 class RosieGateError(ValueError):
@@ -38,7 +40,7 @@ def _cosmos_fraction(set_name: str, raw: Any) -> float:
 
 
 def verify_production_manifest(path: Path) -> dict[str, Any]:
-    """Require all six sets to carry a measured 10-20% Cosmos acceptance share."""
+    """Require every set of the manifest's profile to carry its measured Cosmos acceptance share."""
     metadata = _read_metadata(path)
     if metadata.get("schema_version") != 2 or metadata.get("content_hash_algorithm") != "sha256":
         raise RosieGateError("production manifest requires schema 2 with SHA-256 image binding")
@@ -47,14 +49,22 @@ def verify_production_manifest(path: Path) -> dict[str, Any]:
     sets = metadata.get("sets")
     if not isinstance(sets, dict):
         raise RosieGateError("production manifest lacks per-set statistics")
-    for set_name in EXPECTED_SETS:
+    for set_name, (low, high) in _expected_ranges(metadata).items():
         fraction = _cosmos_fraction(set_name, sets.get(set_name))
-        if not MIN_COSMOS_FRACTION <= fraction <= MAX_COSMOS_FRACTION:
-            raise RosieGateError(
-                f"Cosmos acceptance for set {set_name} is {fraction:.4f}; "
-                f"expected {MIN_COSMOS_FRACTION:.2f}-{MAX_COSMOS_FRACTION:.2f}"
-            )
+        if not low <= fraction <= high:
+            raise RosieGateError(f"Cosmos acceptance for set {set_name} is {fraction:.4f}; expected {low:.2f}-{high:.2f}")
     return metadata
+
+
+def _expected_ranges(metadata: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    profile = metadata.get("profile", "legacy")
+    if profile == "testbed":
+        if metadata.get("fallen_classes") is not True:
+            raise RosieGateError("test-bed production manifest must carry the fallen classes")
+        return TESTBED_RANGES
+    if profile != "legacy":
+        raise RosieGateError(f"unknown manifest profile {profile!r}")
+    return {name: (MIN_COSMOS_FRACTION, MAX_COSMOS_FRACTION) for name in EXPECTED_SETS}
 
 
 def main() -> None:

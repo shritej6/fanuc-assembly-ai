@@ -65,7 +65,7 @@ def _annotation(
 ) -> dict[str, Any]:
     class_id = raw.get("class_id")
     object_id = raw.get("object_id")
-    if not isinstance(class_id, int) or not 0 <= class_id < len(labels) or labels[class_id] != object_id:
+    if not isinstance(class_id, int) or not 0 <= class_id < len(labels) or labels[class_id] != raw.get("label", object_id):
         raise ConversionError(f"class mapping mismatch in {context}: {class_id!r}/{object_id!r}")
     x, y, width, height = _xywh(raw.get("bbox_xyxy"), context)
     return {

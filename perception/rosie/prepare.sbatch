@@ -19,6 +19,7 @@ ARTIFACT_ROOT="${ARTIFACT_ROOT:-$HOME/fanuc-t13/artifacts}"
 PYTHON="${PYTHON:-$HOME/fanuc-t13-venv-secure/bin/python}"
 SMOKE="${SMOKE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
+PROFILE="${PROFILE:-legacy}"
 
 if [[ "$SMOKE" != "0" && "$SMOKE" != "1" ]]; then
   echo "SMOKE must be 0 or 1" >&2
@@ -33,7 +34,8 @@ fi
 COMMAND=("$PYTHON" -m perception.rosie.prepare
   --data-root "$DATA_ROOT"
   --output-root "$ARTIFACT_ROOT/$MODE"
-  --taxonomy "$REPO/contracts/taxonomy.json")
+  --taxonomy "$REPO/contracts/taxonomy.json"
+  --profile "$PROFILE")
 if [[ "$SMOKE" == "1" ]]; then
   COMMAND+=(--smoke)
 fi
