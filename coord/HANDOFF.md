@@ -2,6 +2,26 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T21 · CODEX · fail-closed operator interface
+
+- Changed: added an exact allowlisted plain-language compiler for status, one-product, and all-visible assembly requests;
+  a typed read-side T09 task coordinator with explicit mock/sim/replay/cell provenance; live PackML, completion, step,
+  event, fault, and quality-release reporting; and a two-stage final-build gate that checks deterministic recipe contents
+  before an injected Cosmos Reason 2 (2B) port. The deterministic Cosmos stub is labelled and can never release a build.
+- Authority and safety: text cannot express waypoints, call adapters, or bypass T09. Unsupported, ambiguous, malformed,
+  or unsafe commands fail closed. Mechanical completion never implies quality release; missing, stale, mismatched,
+  substituted, partial, or unavailable Cosmos evidence holds Andon. `done` requires both independent checks plus exact
+  `cosmos_reason_2` / `Cosmos-Reason2-2B` provenance. Operator-facing failures do not expose endpoint exception details.
+- Run: focused operator suite `uv run pytest -q tests/test_operator_commands.py tests/test_cosmos_reason.py
+  tests/test_operator_agent.py` → 78 passed; `uv run ruff check .` → passed; `uv run pytest -q` → 459 passed;
+  root `uv lock --check` and `uv pip check` → compatible; 40-line function / 500-line file audit → clean;
+  `git diff --check` and protected-file checks for `contracts/` and `robot/cell/cell_client.py` → clean. Official client:
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected,
+  `✓ Ready for the real robot`.
+- Next: Claude reviews the stacked T21 PR after T09. Production integration still requires the reviewed T09 pause hook
+  before cross-product advancement and the real Cosmos endpoint; until then this interface is mock/replay-ready only,
+  never real-cell authorization. Training/model availability did not gate or affect this task.
+
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
 - Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor
