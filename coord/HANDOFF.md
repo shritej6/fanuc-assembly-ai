@@ -19,7 +19,8 @@ Newest first. One entry per finished task.
   immutable trusted records; typed catalog objects return those records.
 - Regression evidence: NaN, Inf, singular, non-orthogonal, reflection, hash mismatch, zero/multi-grip ambiguity, roll
   mismatch, all 12 source-provenance mutations, Team V finger provenance, and unknown-key cases fail closed.
-  `uv run ruff check .` passed; full `uv run pytest -q` passed 70 tests.
+  Contract/provenance and recipe-graph tests are split into focused modules (461/64 lines) to preserve the 500-line
+  gate. `uv run ruff check .` passed; full `uv run pytest -q` passed 70 tests.
 - Integration note: T09 must use `RecipeStep.gripper_roll_deg` only as a T29 offset added to measured part yaw and
   apply `installed_rotation_matrix` with `insert_offset_mm`; it must not preserve the superseded provisional values.
 

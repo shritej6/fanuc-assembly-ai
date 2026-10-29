@@ -17,8 +17,6 @@ from assembly.catalog import (
     CatalogResourceError,
     CatalogSchemaError,
     CatalogSemanticError,
-    UnknownBaseError,
-    UnknownProductError,
     load_catalog,
 )
 
@@ -65,6 +63,7 @@ EXPECTED_PART_OWNERS = {
     "M6_03": 6,
     "M6_04": 6,
 }
+
 
 def _catalog_data() -> dict:
     assert CATALOG_PATH.exists(), "assembly/catalog.yaml has not been created"
@@ -134,11 +133,7 @@ def test_catalog_has_exact_products_names_and_base_types() -> None:
 
 def test_catalog_covers_each_taxonomy_part_under_its_owner_once() -> None:
     products = _catalog_data()["products"]
-    actual_pairs = [
-        (step["object_id"], product["product"])
-        for product in products
-        for step in product["steps"]
-    ]
+    actual_pairs = [(step["object_id"], product["product"]) for product in products for step in product["steps"]]
     assert Counter(part for part, _ in actual_pairs) == Counter(EXPECTED_PART_OWNERS.keys())
     assert dict(actual_pairs) == EXPECTED_PART_OWNERS
 
@@ -171,11 +166,7 @@ def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> Non
         for object_id, item in source["objects"].items()
         if object_id in EXPECTED_PART_OWNERS
     }
-    actual = {
-        step["object_id"]: step
-        for product in _catalog_data()["products"]
-        for step in product["steps"]
-    }
+    actual = {step["object_id"]: step for product in _catalog_data()["products"] for step in product["steps"]}
 
     assert set(actual) == set(expected_objects)
     for object_id, transform in expected_objects.items():
@@ -349,9 +340,7 @@ def test_load_catalog_rejects_gripper_roll_outside_contract(tmp_path: Path) -> N
         pytest.param([[1, 0, 0], [0, 1, 0], [0, 0, -1]], id="reflection"),
     ],
 )
-def test_load_catalog_rejects_invalid_installed_rotation_matrices(
-    tmp_path: Path, rotation: list[list[float]]
-) -> None:
+def test_load_catalog_rejects_invalid_installed_rotation_matrices(tmp_path: Path, rotation: list[list[float]]) -> None:
     invalid = deepcopy(_catalog_data())
     invalid["products"][0]["steps"][0]["installed_rotation_matrix"] = rotation
     path = _write_catalog(tmp_path / "invalid-installed-rotation.yaml", invalid)
@@ -470,51 +459,3 @@ def test_load_catalog_validates_every_registry_schema(
 
     with pytest.raises(CatalogResourceError, match="common.schema.json"):
         load_catalog()
-
-
-def test_shared_bases_select_products_by_type_not_exact_fixture_id() -> None:
-    catalog = load_catalog()
-    actual = {
-        base_id: tuple(product.product for product in catalog.compatible_products_for_base(base_id))
-        for base_id in ("F01", "F02", "F03", "F04", "F05", "F06")
-    }
-
-    assert actual == {
-        "F01": (1, 2),
-        "F02": (1, 2),
-        "F03": (3,),
-        "F04": (4, 5, 6),
-        "F05": (4, 5, 6),
-        "F06": (4, 5, 6),
-    }
-
-
-def test_catalog_lookup_failures_use_typed_domain_errors() -> None:
-    catalog = load_catalog()
-
-    with pytest.raises(UnknownProductError, match="99"):
-        catalog.product(99)
-    with pytest.raises(UnknownBaseError, match="F99"):
-        catalog.compatible_products_for_base("F99")
-
-
-def test_recipe_graph_traverses_forward_then_exact_reverse() -> None:
-    graph = load_catalog().recipe_graph(4)
-
-    assert graph.nodes == ("base:C", "M4_01", "M4_02", "M4_03", "M4_04")
-    assert graph.edges == (
-        ("base:C", "M4_01"),
-        ("M4_01", "M4_02"),
-        ("M4_02", "M4_03"),
-        ("M4_03", "M4_04"),
-    )
-    assert graph.assembly_traversal() == ("base:C", "M4_01", "M4_02", "M4_03", "M4_04")
-    assert graph.dismantling_traversal() == ("M4_04", "M4_03", "M4_02", "M4_01")
-
-
-def test_load_catalog_accepts_unique_products_in_any_yaml_order(tmp_path: Path) -> None:
-    reordered = deepcopy(_catalog_data())
-    reordered["products"].reverse()
-    path = _write_catalog(tmp_path / "reordered.yaml", reordered)
-
-    assert tuple(product.product for product in load_catalog(path).products) == (6, 5, 4, 3, 2, 1)
