@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from numbers import Number
+from pathlib import Path
 
 from assembly.catalog import Catalog, ProductRecipe, RecipeStep, UnknownBaseError
 from assembly.inventory import InventoryItem
@@ -24,6 +27,51 @@ class ApprovedInstalledOrientation:
     p_deg: float
     yaw_offset_deg: float
     up_face: str
+
+
+Matrix4 = tuple[tuple[float, float, float, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SourcedGraspFrame:
+    """One T29 mesh-to-part transform and fingertip point."""
+
+    object_id: str
+    local_from_stl: Matrix4
+    tcp_local_mm: tuple[float, float, float]
+    roll_offset_deg: float
+    source: str
+
+
+class GraspFrameRegistry:
+    """Immutable, hash-verified T29 grasp frames for catalog parts."""
+
+    def __init__(self, frames: Mapping[str, SourcedGraspFrame]) -> None:
+        if not isinstance(frames, Mapping) or not frames:
+            raise CalibratedPoseError("grasp frame registry must be a non-empty mapping")
+        self._frames = dict(frames)
+
+    @classmethod
+    def from_catalog(cls, catalog: Catalog) -> GraspFrameRegistry:
+        source = catalog.grasp_source
+        path = Path(__file__).resolve().parents[1] / source.snapshot
+        try:
+            contents = path.read_bytes()
+        except OSError as error:
+            raise CalibratedPoseError(f"cannot read pinned grasp source {path}: {error}") from error
+        if sha256(contents).hexdigest() != source.sha256:
+            raise CalibratedPoseError("pinned grasp source sha256 mismatch")
+        try:
+            document = json.loads(contents)
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise CalibratedPoseError("pinned grasp source is not valid JSON") from error
+        return cls(_frames_from_document(catalog, document))
+
+    def frame_for(self, object_id: str) -> SourcedGraspFrame:
+        try:
+            return self._frames[object_id]
+        except KeyError as error:
+            raise CalibratedPoseError(f"sourced grasp frame for {object_id!r} is missing") from error
 
 
 class MeasuredPoseRegistry:
@@ -78,6 +126,75 @@ def _finite(value: object, field: str) -> float:
     return number
 
 
+def _vector3(value: object, field: str) -> tuple[float, float, float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise CalibratedPoseError(f"{field} must contain three finite values")
+    return tuple(_finite(item, field) for item in value)  # type: ignore[return-value]
+
+
+def _matrix4(value: object, field: str) -> Matrix4:
+    if not isinstance(value, list) or len(value) != 4:
+        raise CalibratedPoseError(f"{field} must be a 4x4 rigid transform")
+    rows = tuple(_matrix_row(row, field) for row in value)
+    if any(abs(actual - expected) > 1e-6 for actual, expected in zip(rows[3], (0.0, 0.0, 0.0, 1.0))):
+        raise CalibratedPoseError(f"{field} must be a homogeneous rigid transform")
+    rotation = tuple(row[:3] for row in rows[:3])
+    if not _proper_rotation(rotation):
+        raise CalibratedPoseError(f"{field} rotation must be orthonormal with determinant +1")
+    return rows
+
+
+def _matrix_row(value: object, field: str) -> tuple[float, float, float, float]:
+    if not isinstance(value, list) or len(value) != 4:
+        raise CalibratedPoseError(f"{field} must be a 4x4 rigid transform")
+    return tuple(_finite(item, field) for item in value)  # type: ignore[return-value]
+
+
+def _proper_rotation(rotation: tuple[tuple[float, ...], ...]) -> bool:
+    for left in range(3):
+        for right in range(3):
+            dot = sum(rotation[left][axis] * rotation[right][axis] for axis in range(3))
+            if abs(dot - (1.0 if left == right else 0.0)) > 1e-6:
+                return False
+    determinant = (
+        rotation[0][0] * (rotation[1][1] * rotation[2][2] - rotation[1][2] * rotation[2][1])
+        - rotation[0][1] * (rotation[1][0] * rotation[2][2] - rotation[1][2] * rotation[2][0])
+        + rotation[0][2] * (rotation[1][0] * rotation[2][1] - rotation[1][1] * rotation[2][0])
+    )
+    return abs(determinant - 1.0) <= 1e-6
+
+
+def _frames_from_document(catalog: Catalog, document: object) -> dict[str, SourcedGraspFrame]:
+    if not isinstance(document, dict) or not isinstance(document.get("objects"), dict):
+        raise CalibratedPoseError("pinned grasp source has no objects mapping")
+    objects = document["objects"]
+    source = f"{catalog.grasp_source.file}@{catalog.grasp_source.commit}"
+    return {
+        step.object_id: _frame_from_entry(step, objects.get(step.object_id), source)
+        for product in catalog.products
+        for step in product.steps
+    }
+
+
+def _frame_from_entry(step: RecipeStep, entry: object, source: str) -> SourcedGraspFrame:
+    if not isinstance(entry, dict):
+        raise CalibratedPoseError(f"pinned grasp entry for {step.object_id!r} is missing")
+    grips = entry.get("grips")
+    if not isinstance(grips, list) or len(grips) != 1 or not isinstance(grips[0], dict):
+        raise CalibratedPoseError(f"pinned grasp entry for {step.object_id!r} must contain one grip")
+    grip = grips[0]
+    roll = _finite(grip.get("roll_offset_deg"), f"{step.object_id}.roll_offset_deg")
+    if roll != step.gripper_roll_deg:
+        raise CalibratedPoseError(f"{step.object_id} grasp roll does not match the catalog")
+    return SourcedGraspFrame(
+        step.object_id,
+        _matrix4(entry.get("T_local_from_stl"), f"{step.object_id}.T_local_from_stl"),
+        _vector3(grip.get("tcp_local_mm"), f"{step.object_id}.tcp_local_mm"),
+        roll,
+        source,
+    )
+
+
 def _angle_error(left: float, right: float) -> float:
     return abs((left - right + 180.0) % 360.0 - 180.0)
 
@@ -117,6 +234,62 @@ def _validate_tolerance(value: object) -> float:
     return tolerance
 
 
+def _rigid_inverse(matrix: Matrix4) -> Matrix4:
+    rotation = tuple(tuple(matrix[row][column] for row in range(3)) for column in range(3))
+    translation = tuple(matrix[row][3] for row in range(3))
+    inverse_translation = tuple(-sum(rotation[row][axis] * translation[axis] for axis in range(3)) for row in range(3))
+    return tuple(
+        (*rotation[row], inverse_translation[row]) if row < 3 else (0.0, 0.0, 0.0, 1.0)
+        for row in range(4)
+    )  # type: ignore[return-value]
+
+
+def _matmul(left: Matrix4, right: Matrix4) -> Matrix4:
+    return tuple(
+        tuple(sum(left[row][axis] * right[axis][column] for axis in range(4)) for column in range(4))
+        for row in range(4)
+    )  # type: ignore[return-value]
+
+
+def _pose_matrix(pose: AbsolutePoseUF0) -> Matrix4:
+    angle = math.radians(pose.r)
+    cosine, sine = math.cos(angle), math.sin(angle)
+    return (
+        (cosine, -sine, 0.0, pose.x),
+        (sine, cosine, 0.0, pose.y),
+        (0.0, 0.0, 1.0, pose.z),
+        (0.0, 0.0, 0.0, 1.0),
+    )
+
+
+def _step_matrix(step: RecipeStep) -> Matrix4:
+    dx, dy, dz = (_finite(value, "insert_offset_mm") for value in step.insert_offset_mm)
+    rotation = step.installed_rotation_matrix
+    return tuple(
+        (*rotation[row], (dx, dy, dz)[row]) if row < 3 else (0.0, 0.0, 0.0, 1.0)
+        for row in range(4)
+    )  # type: ignore[return-value]
+
+
+def _transform_point(matrix: Matrix4, point: tuple[float, float, float]) -> tuple[float, float, float]:
+    homogeneous = (*point, 1.0)
+    return tuple(sum(matrix[row][axis] * homogeneous[axis] for axis in range(4)) for row in range(3))  # type: ignore[return-value]
+
+
+def _yaw_from_matrix(matrix: Matrix4) -> float:
+    x_axis_xy = math.hypot(matrix[0][0], matrix[1][0])
+    if x_axis_xy < 1e-6:
+        raise CalibratedPoseError("installed part frame has no well-defined table yaw")
+    return (math.degrees(math.atan2(matrix[1][0], matrix[0][0])) + 180.0) % 360.0 - 180.0
+
+
+def _detection_pose(detection: Mapping[str, object]) -> tuple[float, float, float, float]:
+    pose = detection.get("pose")
+    if not isinstance(pose, Mapping):
+        raise CalibratedPoseError("FoundationPose detection must contain an absolute UF0 pose")
+    return tuple(_finite(pose.get(field), f"FoundationPose pose.{field}") for field in ("x", "y", "z", "yaw"))  # type: ignore[return-value]
+
+
 class MeasuredRecipePoses:
     """Implement the planner pose protocol from measured poses and CAD offsets."""
 
@@ -127,11 +300,13 @@ class MeasuredRecipePoses:
         measurements: MeasuredPoseRegistry,
         installed_orientations: Mapping[str, ApprovedInstalledOrientation],
         orientation_tolerance_deg: float,
+        grasp_frames: GraspFrameRegistry | None = None,
     ) -> None:
         self._catalog = catalog
         self._measurements = measurements
         self._orientations = dict(installed_orientations)
         self._orientation_tolerance = _validate_tolerance(orientation_tolerance_deg)
+        self._grasp_frames = grasp_frames or GraspFrameRegistry.from_catalog(catalog)
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         measured = _validate_pose(
@@ -144,6 +319,30 @@ class MeasuredRecipePoses:
         self._check_roll_pitch(part.instance_id, measured.tcp, approved)
         return measured
 
+    def grasp_from_foundationpose(
+        self,
+        part: InventoryItem,
+        detection: dict[str, object],
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        _finite(observed_at_s, "FoundationPose observation time")
+        if not isinstance(detection, Mapping):
+            raise CalibratedPoseError("FoundationPose detection must be a mapping")
+        if detection.get("instance_id") != part.instance_id or detection.get("object_id") != part.object_id:
+            raise CalibratedPoseError("FoundationPose identity does not match the reserved part")
+        if detection.get("pose_source") != "foundationpose":
+            raise CalibratedPoseError("grasp pose must come from FoundationPose")
+        if detection.get("resting_side") != "upright":
+            raise CalibratedPoseError("fallen part requires a sourced full 6D grasp")
+        x, y, z, yaw = _detection_pose(detection)
+        frame = self._grasp_frames.frame_for(part.object_id)
+        approved = self._approved(part.object_id)
+        world_from_local = _pose_matrix(AbsolutePoseUF0(x, y, z, 0.0, 0.0, yaw, "UF0", "calibrated"))
+        tcp_x, tcp_y, tcp_z = _transform_point(world_from_local, frame.tcp_local_mm)
+        tcp = AbsolutePoseUF0(tcp_x, tcp_y, tcp_z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
+        return OrientedPartPose(tcp, RestingState.INSTALLED, approved.up_face)
+
     def target_for(
         self,
         product: ProductRecipe,
@@ -155,7 +354,8 @@ class MeasuredRecipePoses:
         self._validate_recipe_request(product, base, step)
         base_pose = self.base_for(base, observed_at_s=observed_at_s)
         approved = self._approved(step.object_id)
-        return self._target(base_pose.tcp, step.insert_offset_mm, approved)
+        frame = self._grasp_frames.frame_for(step.object_id)
+        return self._target(base_pose.tcp, step, approved, frame)
 
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         """Return the current measured base pose used to derive insertion targets."""
@@ -195,13 +395,15 @@ class MeasuredRecipePoses:
     @staticmethod
     def _target(
         base: AbsolutePoseUF0,
-        offset: tuple[float, float, float],
+        step: RecipeStep,
         approved: ApprovedInstalledOrientation,
+        frame: SourcedGraspFrame,
     ) -> OrientedPartPose:
-        dx, dy, dz = (_finite(value, "insert_offset_mm") for value in offset)
-        radians = math.radians(base.r)
-        x = base.x + math.cos(radians) * dx - math.sin(radians) * dy
-        y = base.y + math.sin(radians) * dx + math.cos(radians) * dy
-        yaw = (base.r + approved.yaw_offset_deg + 180.0) % 360.0 - 180.0
-        tcp = AbsolutePoseUF0(x, y, base.z + dz, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
+        if abs(approved.yaw_offset_deg) > 1e-9:
+            raise CalibratedPoseError("catalog transform owns installed yaw; approved yaw offset must be zero")
+        world_from_stl = _matmul(_pose_matrix(base), _step_matrix(step))
+        world_from_local = _matmul(world_from_stl, _rigid_inverse(frame.local_from_stl))
+        x, y, z = _transform_point(world_from_local, frame.tcp_local_mm)
+        yaw = _yaw_from_matrix(world_from_local)
+        tcp = AbsolutePoseUF0(x, y, z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
         return OrientedPartPose(tcp, RestingState.INSTALLED, approved.up_face)
