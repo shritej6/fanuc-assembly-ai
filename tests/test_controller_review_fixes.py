@@ -406,6 +406,32 @@ class VerdictRejectPerception(ScriptedPerception):
         return EvidencePair(evidence.detection, inspection, evidence.observed_at_s)
 
 
+class WrongRejectZonePerception(ScriptedPerception):
+    def post_transfer(self, observation, part, target_zone):
+        evidence = super().post_transfer(observation, part, target_zone)
+        if target_zone is InventoryZone.REJECT:
+            return replace(evidence, target_zone=InventoryZone.STAGED)
+        return evidence
+
+
+def test_reject_transfer_wrong_zone_holds_without_inventory_commit() -> None:
+    observed = tuple(
+        item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
+    )
+    perception = WrongRejectZonePerception(observed, {"p1-2"}, Counter(), set())
+    controller = _controller(perception)
+    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
+    observation = _observation((1,))
+
+    for _ in range(500):
+        _apply(observation, adapter.act(observation))
+        if controller.state_machine.state is PackMLState.HELD:
+            break
+
+    assert controller.state_machine.state is PackMLState.HELD
+    assert controller.inventory.item("p1-2").zone is not InventoryZone.REJECT
+
+
 @pytest.mark.parametrize("verdict", ["broken", "wrong_part", "uncertain"])
 def test_explicit_reject_verdict_is_physically_transferred_before_replacement(verdict: str) -> None:
     observed = (*_observed_products((1,)), _spare("p1-1-spare", "M1_01"))

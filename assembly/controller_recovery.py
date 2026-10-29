@@ -271,10 +271,14 @@ class RecoveryControllerMixin:
         if evidence.target_zone is not zone:
             return False
         part = planned.part
-        expected = oriented_pose_values(planned.target)
-        target_agrees = evidence.pose_agrees and pose_agrees(
-            evidence.detection.get("pose"), expected, self._perception_tolerances
-        )
+        target_agrees = evidence.pose_agrees
+        if zone is not InventoryZone.REJECT:
+            if planned.verification_target is None:
+                return False
+            expected = oriented_pose_values(planned.verification_target)
+            target_agrees = target_agrees and pose_agrees(
+                evidence.detection.get("pose"), expected, self._perception_tolerances
+            )
         decision = verify_recovery_transfer(
             part.object_id,
             evidence.detection,
@@ -292,7 +296,9 @@ class RecoveryControllerMixin:
         evidence: PlacementEvidence,
     ) -> bool:
         part = planned.part
-        expected = oriented_pose_values(planned.target)
+        if planned.verification_target is None:
+            return False
+        expected = oriented_pose_values(planned.verification_target)
         target_agrees = evidence.pose_agrees and pose_agrees(
             evidence.detection.get("pose"), expected, self._perception_tolerances
         )

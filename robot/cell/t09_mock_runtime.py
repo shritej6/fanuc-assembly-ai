@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from assembly.catalog import ProductRecipe, RecipeStep, load_catalog
 from assembly.controller import AssemblyController
-from assembly.controller_startup import StartupHoldConfig
 from assembly.controller_ports import (
     CollisionScene,
     ControllerEvent,
@@ -24,6 +23,7 @@ from assembly.controller_ports import (
     PlacementEvidence,
     RecoveryTransferEvidence,
 )
+from assembly.controller_startup import StartupHoldConfig
 from assembly.instruction import parse_requested_products
 from assembly.inventory import InventoryItem, InventoryZone
 from assembly.motion import (
@@ -92,6 +92,16 @@ class MockCalibratedPoses:
         del base, observed_at_s
         return _oriented(360.0 + 20.0 * product.product, 80.0, -300.0 + step.step, 90.0)
 
+    def verification_target_for(
+        self,
+        product: ProductRecipe,
+        base: InventoryItem,
+        step: RecipeStep,
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        return self.target_for(product, base, step, observed_at_s=observed_at_s)
+
 
 class MockRecoveryTargets:
     """Fixed recovery zones used only by the local mock fixture."""
@@ -99,6 +109,14 @@ class MockRecoveryTargets:
     def staging_target_for(self, product: int, part: InventoryItem, slot: int) -> OrientedPartPose:
         del product, part
         return _oriented(500.0, -300.0 + 35.0 * slot, -300.0, 0.0)
+
+    def staging_verification_target_for(
+        self,
+        product: int,
+        part: InventoryItem,
+        slot: int,
+    ) -> OrientedPartPose:
+        return self.staging_target_for(product, part, slot)
 
     def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
         del part

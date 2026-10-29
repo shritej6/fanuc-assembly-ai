@@ -7,6 +7,7 @@ import pytest
 from assembly.calibrated_poses import (
     ApprovedInstalledOrientation,
     CalibratedPoseError,
+    FoundationPoseFrameBoundary,
     MeasuredPoseRegistry,
     MeasuredRecipePoses,
 )
@@ -57,6 +58,9 @@ class BrokenProvider:
     def target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
         return _valid_pose()
 
+    def verification_target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
+        return _valid_pose()
+
 
 @pytest.mark.parametrize("kind", ["tcp", "up_face"])
 def test_planner_rejects_malformed_nested_pose(kind: str) -> None:
@@ -84,6 +88,7 @@ def test_calibrated_provider_rejects_malformed_nested_measurement(kind: str) -> 
         measurements=registry,
         installed_orientations={"M1_01": ApprovedInstalledOrientation(-180.0, 0.0, 0.0, "installed:+z")},
         orientation_tolerance_deg=0.5,
+        foundationpose_boundary=FoundationPoseFrameBoundary("installed_local", "test fixture"),
     )
 
     with pytest.raises(CalibratedPoseError):

@@ -32,6 +32,10 @@ class CalibratedPoses:
         assert observed_at_s == 10.0
         return _pose(420.0, 40.0, -290.0 + step.step, 90.0)
 
+    def verification_target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
+        assert observed_at_s == 10.0
+        return _pose(400.0, 40.0, -300.0 + step.step, 90.0)
+
 
 def _pose(x: float, y: float, z: float, yaw: float) -> OrientedPartPose:
     return OrientedPartPose(
@@ -81,6 +85,8 @@ def test_next_step_is_contract_valid_and_keeps_enriched_calibrated_poses() -> No
     }
     assert prepared.grasp.tcp.w == prepared.target.tcp.w == -180.0
     assert prepared.grasp.tcp.p == prepared.target.tcp.p == 0.0
+    verification_tcp = prepared.verification_target.tcp
+    assert (verification_tcp.x, verification_tcp.y, verification_tcp.z) == (400.0, 40.0, -299.0)
 
 
 def test_next_step_follows_recipe_order_and_finishes_after_all_four_parts() -> None:

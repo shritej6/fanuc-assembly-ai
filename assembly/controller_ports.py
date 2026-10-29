@@ -56,12 +56,16 @@ class EvidencePair:
 
 @dataclass(frozen=True, slots=True)
 class PlacementEvidence(EvidencePair):
+    """Independent seated and canonical object-pose checks after insertion."""
+
     seated: bool
     pose_agrees: bool
 
 
 @dataclass(frozen=True, slots=True)
 class RecoveryTransferEvidence(EvidencePair):
+    """Transfer check where pose_agrees means calibrated zone/slot agreement, never TCP equality."""
+
     target_zone: InventoryZone
     pose_agrees: bool
 

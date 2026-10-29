@@ -11,8 +11,6 @@ from assembly.controller_ports import (
     EvidencePair,
     RecoveryTransferEvidence,
     call_port,
-    oriented_pose_values,
-    pose_agrees,
     require_fresh,
 )
 from assembly.inventory import (
@@ -155,7 +153,7 @@ class InspectionControllerMixin:
         base = self._reference_base()
         base_pose = self._poses.base_for(base, observed_at_s=observed_at)
         target = self._recovery_targets.reject_target_for(part)
-        return PlanCandidate(product, recipe_step, base, part, base_pose, target, 1, observed_at)
+        return PlanCandidate(product, recipe_step, base, part, base_pose, target, None, 1, observed_at)
 
     def _reference_base(self) -> InventoryItem:
         if self.inventory.active_product is not None:
@@ -296,17 +294,13 @@ class InspectionControllerMixin:
         if pending is None:
             raise RuntimeError("reject transfer has no pending item")
         evidence = self._reject_transfer_evidence(pending, observation, observed_at)
-        expected = oriented_pose_values(pending.target)
-        agrees = evidence.pose_agrees and pose_agrees(
-            evidence.detection.get("pose"), expected, self._perception_tolerances
-        )
         decision = verify_recovery_transfer(
             pending.prepared.part.object_id,
             evidence.detection,
             evidence.inspection,
             expected_instance_id=pending.prepared.part.instance_id,
             thresholds=self._verification_thresholds,
-            pose_agrees=agrees,
+            pose_agrees=(evidence.target_zone is InventoryZone.REJECT and evidence.pose_agrees),
             allow_rejected=True,
         )
         if decision.outcome is not VerificationOutcome.ACCEPT or current.gripper != 0.0:

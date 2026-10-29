@@ -29,6 +29,20 @@ class ApprovedInstalledOrientation:
     up_face: str
 
 
+@dataclass(frozen=True, slots=True)
+class FoundationPoseFrameBoundary:
+    """Recorded guarantee that raw STL poses were normalized before yaw-only use."""
+
+    frame: str
+    source: str
+
+    def __post_init__(self) -> None:
+        if self.frame != "installed_local":
+            raise CalibratedPoseError("FoundationPose frame must be canonical installed_local")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise CalibratedPoseError("FoundationPose installed_local frame requires a recorded source")
+
+
 Matrix4 = tuple[tuple[float, float, float, float], ...]
 
 
@@ -300,12 +314,16 @@ class MeasuredRecipePoses:
         measurements: MeasuredPoseRegistry,
         installed_orientations: Mapping[str, ApprovedInstalledOrientation],
         orientation_tolerance_deg: float,
+        foundationpose_boundary: FoundationPoseFrameBoundary,
         grasp_frames: GraspFrameRegistry | None = None,
     ) -> None:
         self._catalog = catalog
         self._measurements = measurements
         self._orientations = dict(installed_orientations)
         self._orientation_tolerance = _validate_tolerance(orientation_tolerance_deg)
+        if not isinstance(foundationpose_boundary, FoundationPoseFrameBoundary):
+            raise CalibratedPoseError("FoundationPose installed_local frame boundary is required")
+        self._foundationpose_boundary = foundationpose_boundary
         self._grasp_frames = grasp_frames or GraspFrameRegistry.from_catalog(catalog)
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
@@ -326,6 +344,11 @@ class MeasuredRecipePoses:
         *,
         observed_at_s: float,
     ) -> OrientedPartPose:
+        """Convert a canonical installed-local object pose to its fingertip TCP.
+
+        The configured frame boundary must normalize raw FoundationPose STL output
+        with ``inverse(T_local_from_stl)`` before the yaw-only contract reaches here.
+        """
         _finite(observed_at_s, "FoundationPose observation time")
         if not isinstance(detection, Mapping):
             raise CalibratedPoseError("FoundationPose detection must be a mapping")
@@ -356,6 +379,25 @@ class MeasuredRecipePoses:
         approved = self._approved(step.object_id)
         frame = self._grasp_frames.frame_for(step.object_id)
         return self._target(base_pose.tcp, step, approved, frame)
+
+    def verification_target_for(
+        self,
+        product: ProductRecipe,
+        base: InventoryItem,
+        step: RecipeStep,
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        """Return the canonical part origin expected from camera pose estimation."""
+        self._validate_recipe_request(product, base, step)
+        base_pose = self.base_for(base, observed_at_s=observed_at_s)
+        approved = self._approved(step.object_id)
+        frame = self._grasp_frames.frame_for(step.object_id)
+        world_from_local = self._world_from_local(base_pose.tcp, step, approved, frame)
+        x, y, z = _transform_point(world_from_local, (0.0, 0.0, 0.0))
+        yaw = _yaw_from_matrix(world_from_local)
+        pose = AbsolutePoseUF0(x, y, z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
+        return OrientedPartPose(pose, RestingState.INSTALLED, approved.up_face)
 
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         """Return the current measured base pose used to derive insertion targets."""
@@ -399,11 +441,20 @@ class MeasuredRecipePoses:
         approved: ApprovedInstalledOrientation,
         frame: SourcedGraspFrame,
     ) -> OrientedPartPose:
-        if abs(approved.yaw_offset_deg) > 1e-9:
-            raise CalibratedPoseError("catalog transform owns installed yaw; approved yaw offset must be zero")
-        world_from_stl = _matmul(_pose_matrix(base), _step_matrix(step))
-        world_from_local = _matmul(world_from_stl, _rigid_inverse(frame.local_from_stl))
+        world_from_local = MeasuredRecipePoses._world_from_local(base, step, approved, frame)
         x, y, z = _transform_point(world_from_local, frame.tcp_local_mm)
         yaw = _yaw_from_matrix(world_from_local)
         tcp = AbsolutePoseUF0(x, y, z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
         return OrientedPartPose(tcp, RestingState.INSTALLED, approved.up_face)
+
+    @staticmethod
+    def _world_from_local(
+        base: AbsolutePoseUF0,
+        step: RecipeStep,
+        approved: ApprovedInstalledOrientation,
+        frame: SourcedGraspFrame,
+    ) -> Matrix4:
+        if abs(approved.yaw_offset_deg) > 1e-9:
+            raise CalibratedPoseError("catalog transform owns installed yaw; approved yaw offset must be zero")
+        world_from_stl = _matmul(_pose_matrix(base), _step_matrix(step))
+        return _matmul(world_from_stl, _rigid_inverse(frame.local_from_stl))

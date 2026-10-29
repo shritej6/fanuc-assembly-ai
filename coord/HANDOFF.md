@@ -21,12 +21,16 @@ Newest first. One entry per finished task.
   every emitted joint/TCP action uses the live official guard, and the catalog pins T29's Team V printed-finger
   source at `20c6f9b` / SHA-256 `99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1`.
 - Pose conversion: the provider composes measured UF0 base pose × CAD STL installation transform × inverse T29
-  mesh-to-installed-local transform, then applies `tcp_local_mm`. FoundationPose identity/source/finite checks fail
-  closed, and fallen parts Hold when the yaw-only shared contract cannot supply a sourced full-6D grasp.
-- Run: `uv run ruff check .` (passed); `uv run pytest -q` (509 passed); `git diff --check` (clean);
+  mesh-to-installed-local transform. It now carries two distinct internal frames: the canonical object origin used for
+  camera verification and the T29 fingertip TCP used for motion. Reject verification uses calibrated zone occupancy,
+  not equality to the pre-release TCP; staging/rebuild carry an explicit object verification target. A recorded
+  `FoundationPoseFrameBoundary("installed_local", source)` is mandatory, so raw STL-frame output cannot silently enter
+  the yaw-only path. Identity/source/finite checks fail closed, and fallen parts Hold when the shared contract cannot
+  supply a sourced full-6D grasp.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (513 passed); `git diff --check` (clean);
   `git diff --exit-code origin/main -- robot/cell/cell_client.py` (clean). The integrated T04 catalog-schema change
   still requires Claude's latest-head contract review on PR #5; no additional T09 contract change was made.
-  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 601 actions, 0 rejected and
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 602 actions, 0 rejected and
   `✓ Ready for the real robot`; adding `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
   200 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
 - Next: Claude re-reviews PR #9 at the integrated head. The cell-runtime branch must rebase here and remain disabled

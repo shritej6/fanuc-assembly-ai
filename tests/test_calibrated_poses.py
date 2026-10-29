@@ -10,6 +10,7 @@ import pytest
 from assembly.calibrated_poses import (
     ApprovedInstalledOrientation,
     CalibratedPoseError,
+    FoundationPoseFrameBoundary,
     MeasuredPoseRegistry,
     MeasuredRecipePoses,
 )
@@ -67,7 +68,16 @@ def _provider(
         measurements=MeasuredPoseRegistry(measurements, observed_at_s=observed_at_s, complete=complete),
         installed_orientations=orientations,
         orientation_tolerance_deg=0.5,
+        foundationpose_boundary=FoundationPoseFrameBoundary(
+            "installed_local",
+            "test canonical-pose adapter",
+        ),
     )
+
+
+def test_raw_stl_foundationpose_frame_cannot_be_silently_configured() -> None:
+    with pytest.raises(CalibratedPoseError, match="installed_local"):
+        FoundationPoseFrameBoundary("stl_mesh", "raw FoundationPose output")
 
 
 def test_target_transforms_cad_local_offset_through_measured_base_yaw() -> None:
@@ -83,6 +93,47 @@ def test_target_transforms_cad_local_offset_through_measured_base_yaw() -> None:
     assert target.tcp.z == pytest.approx(-290.6)
     assert target.tcp.r == pytest.approx(90.0)
     assert target.tcp.source == "calibrated"
+
+
+def test_verification_target_is_canonical_object_pose_not_fingertip_tcp() -> None:
+    catalog = load_catalog()
+    product = catalog.product(4)
+    step = product.steps[0]
+    provider = _provider(base=_pose(400.0, 100.0, -320.0, 90.0))
+
+    motion_target = provider.target_for(product, _item("base-4", "F04"), step, observed_at_s=10.0)
+    object_target = provider.verification_target_for(
+        product,
+        _item("base-4", "F04"),
+        step,
+        observed_at_s=10.0,
+    )
+
+    assert object_target.tcp.x == pytest.approx(400.0)
+    assert object_target.tcp.y == pytest.approx(100.0)
+    assert object_target.tcp.z == pytest.approx(-320.0)
+    assert object_target.tcp.r == pytest.approx(90.0)
+    assert motion_target.tcp.y == pytest.approx(124.06)
+    assert motion_target.tcp.z == pytest.approx(-309.6)
+
+
+def test_rear_guard_verification_target_preserves_nonidentity_mesh_frame() -> None:
+    catalog = load_catalog()
+    product = catalog.product(1)
+    step = product.steps[3]
+    provider = _provider(product_id=1, base=_pose(400.0, 100.0, -320.0, 90.0))
+
+    object_target = provider.verification_target_for(
+        product,
+        _item("base-4", "F01"),
+        step,
+        observed_at_s=10.0,
+    )
+
+    assert object_target.tcp.x == pytest.approx(382.5)
+    assert object_target.tcp.y == pytest.approx(100.0)
+    assert object_target.tcp.z == pytest.approx(-316.0)
+    assert object_target.tcp.r == pytest.approx(90.0)
 
 
 def test_rear_guard_target_composes_installed_and_mesh_frame_transforms() -> None:

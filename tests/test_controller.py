@@ -48,12 +48,19 @@ class CalibratedScenarioPoses:
 
     def target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
         del base, observed_at_s
+        return _oriented(360.0 + 20.0 * product.product, 100.0, -290.0 + step.step, 90.0)
+
+    def verification_target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
+        del base, observed_at_s
         return _oriented(360.0 + 20.0 * product.product, 80.0, -300.0 + step.step, 90.0)
 
 
 class CalibratedRecoveryTargets:
     def staging_target_for(self, product, part, slot):
         return _oriented(500.0, -300.0 + 35.0 * slot, -300.0, 0.0)
+
+    def staging_verification_target_for(self, product, part, slot):
+        return _oriented(496.0, -300.0 + 35.0 * slot, -317.0, 0.0)
 
     def reject_target_for(self, part):
         return _oriented(550.0, -350.0, -300.0, 0.0)
@@ -135,15 +142,15 @@ class ScriptedPerception:
         self.transfer_calls[(part.instance_id, target_zone)] += 1
         if target_zone is InventoryZone.STAGED:
             target_pose = {
-                "x": 500.0,
+                "x": 496.0,
                 "y": -300.0 + 35.0 * self.next_staging_slot,
-                "z": -300.0,
+                "z": -317.0,
                 "yaw": 0.0,
             }
             self.staged_poses[part.instance_id] = target_pose
             self.next_staging_slot += 1
         else:
-            target_pose = {"x": 550.0, "y": -350.0, "z": -300.0, "yaw": 0.0}
+            target_pose = {"x": 540.0, "y": -340.0, "z": -310.0, "yaw": 15.0}
         detection = _detection(part.instance_id, part.object_id)
         detection["pose"] = target_pose
         return RecoveryTransferEvidence(
@@ -346,6 +353,7 @@ def test_three_product_loop_recovers_fallen_failed_and_missing_parts() -> None:
     assert controller.inventory.item("p1-2").condition is ObjectCondition.FALLEN
     assert controller.inventory.item("p1-2-spare").zone is InventoryZone.INSTALLED
     assert controller.inventory.item("p4-3-spare").zone is InventoryZone.INSTALLED
+    assert perception.transfer_calls[("p1-2", InventoryZone.REJECT)] == 1
     assert perception.post_calls["p3-3"] == 2
     assert any(event.kind == "retry" and event.object_id == "M3_03" for event in controller.events)
 
@@ -457,6 +465,7 @@ def test_two_failed_reinsertions_dismantle_rebuild_and_use_exact_spare() -> None
     assert "rebuild_installed" in event_kinds
     assert controller.inventory.item("p1-2").zone is InventoryZone.REJECT
     assert controller.inventory.item("p1-2-spare").zone is InventoryZone.INSTALLED
+    assert perception.transfer_calls[("p1-1", InventoryZone.STAGED)] == 1
 
 
 def test_two_failed_reinsertions_without_spare_hold_andon_while_gripping() -> None:

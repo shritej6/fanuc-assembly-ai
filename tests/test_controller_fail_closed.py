@@ -138,6 +138,9 @@ class MalformedRecoveryTargets:
     def staging_target_for(self, product, part, slot):
         return None
 
+    def staging_verification_target_for(self, product, part, slot):
+        return None
+
 
 class OutOfBoundsTargetPoses(CalibratedScenarioPoses):
     def target_for(self, product, base, step, *, observed_at_s: float):
