@@ -7,6 +7,7 @@ called again with a new observation. act has no time limit: the arm holds still 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -35,13 +36,17 @@ class Policy:
         controller: Controller | None = None,
         action_mode: Literal["joints", "tcp"] | None = None,
         runtime: Literal["mock", "cell"] = "cell",
+        cell_runtime_factory: Callable[[], Controller] | None = None,
     ):
         self.checkpoint = checkpoint
         self.mock_only = checkpoint == "t09-mock"
+        self.cell_enabled = checkpoint == "t09-cell"
         if runtime not in ("mock", "cell"):
             raise ValueError(f"unsupported runtime: {runtime!r}")
         if self.mock_only:
             controller, action_mode = self._mock_controller(runtime, controller, action_mode)
+        if self.cell_enabled:
+            controller, action_mode = self._cell_controller(runtime, controller, action_mode, cell_runtime_factory)
         if controller is None and action_mode is not None:
             raise ValueError("action_mode requires an explicitly injected controller")
         if controller is not None and action_mode is None:
@@ -64,6 +69,21 @@ class Policy:
         from robot.cell.t09_mock_runtime import T09MockController
 
         return T09MockController(), "tcp"
+
+    @staticmethod
+    def _cell_controller(
+        runtime: str,
+        controller: Controller | None,
+        action_mode: str | None,
+        factory: Callable[[], Controller] | None,
+    ) -> tuple[Controller, Literal["tcp"]]:
+        if runtime != "cell":
+            raise ValueError("the t09-cell checkpoint is forbidden outside the real cell runtime")
+        if controller is not None or action_mode is not None:
+            raise ValueError("the t09-cell checkpoint does not accept controller overrides")
+        if factory is None:
+            raise RuntimeError("t09-cell requires a configured production cell runtime factory")
+        return factory(), "tcp"
 
     def reset(self) -> None:
         """Called at the start of every rollout."""
