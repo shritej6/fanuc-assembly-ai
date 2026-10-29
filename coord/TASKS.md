@@ -30,6 +30,7 @@ An agent may only start a task that is READY and owned by it.
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
 | T27 | Train on the test-bed sets only: RT-DETR on N R Q with `<part>__fallen` classes, wrist classifier on O, set-P build-state classifier; 8xH100 launcher (user override: Claude edits Codex's T13 code this once, Codex reviews) | CLAUDE | IN PR (user, 2026-10-28) | feature/T27-newset-training | T13, T25 | Thu |
+| T28 | Cell perception port: table-depth localisation + cell zones, part tracking, T27 model inference, `PerceptionPort` for the T09 controller, measured thresholds, cloud-GPU runtime for the CSI slot (Sat 2026-11-01 14:00) | CLAUDE | IN PROGRESS (user, 2026-10-29) | feature/T28-cell-perception | T09, T27 | Thu–Fri |
 
 ## User-only actions (physical / accounts)
 

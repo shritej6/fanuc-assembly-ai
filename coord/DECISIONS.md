@@ -19,3 +19,5 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Brev cap for training, Cosmos and GR00T: $50 (separate from the ~$21 spent on rendering) | user |
 | 2026-10-28 | Detector, classifier and PatchCore train on Rosie's V100 (`dgx`, idle) since the H100 queue estimates a start after the deadline | Claude (proposal, user said "do everything") |
 | 2026-10-29 | Rendered sets A–D keep their sampled product combinations (measured per-combination spread A 372–427, B 1169–1252, C 362–434, D 129–188) instead of the equal frequency in PLAN 6.2; re-rendering 43,000 scenes would change the specs behind data already trained on. Sets rendered from now on stratify the combinations | Claude (user delegated the call: "you have to know it") |
+| 2026-10-29 | The CSI-slot client and the T27 models run on a RunPod A100 cloud pod (FoundationPose needs CUDA); the user watches from the laptop | user |
+| 2026-10-29 | Controller rules for the slot: no hardcoded scenarios (products from the instruction, parts from perception), a fallen part is picked as it lies and rejected (operator hold if no approved grasp), each product on its own base F0x | user |
