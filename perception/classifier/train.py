@@ -22,6 +22,7 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
+from perception.rosie.gates import RosieGateError, verify_training_metadata
 from perception.taxonomy import BUILD_STATES
 from perception.train_common import configure_mixed_precision, load_manifest_metadata, trainer_arguments
 from perception.training_config import apply_smoke_step_override, load_training_config
@@ -135,6 +136,11 @@ def _validate_manifest_mode(metadata: dict[str, Any], smoke: bool) -> None:
     includes_cosmos = metadata.get("include_cosmos")
     if not smoke and (not require_cosmos or includes_cosmos is not True):
         raise ClassifierTrainingError("production classifier training requires a Cosmos-complete manifest")
+    if not smoke:
+        try:
+            verify_training_metadata(metadata, metadata.get("classifier_target", "identity"))
+        except RosieGateError as exc:
+            raise ClassifierTrainingError(str(exc)) from exc
 
 
 def _check_finite_metrics(metrics: dict[str, Any], phase: str) -> None:

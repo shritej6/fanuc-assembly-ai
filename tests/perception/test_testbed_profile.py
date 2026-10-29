@@ -88,8 +88,16 @@ def test_per_set_cosmos_range_replaces_the_default_only_for_that_set(tmp_path: P
     assert json.loads(summary.metadata_path.read_text())["sets"]["N"]["cosmos_accepted"] == 5
 
 
-def _metadata(tmp_path: Path, fractions: dict[str, float], **extra) -> Path:
-    sets = {name: {"native_records": 1000, "cosmos_accepted": round(f * 1000)} for name, f in fractions.items()}
+CHUNK_COUNTS = {"N": 40, "R": 20, "Q": 8, "O": 48, "P": 24}
+
+
+def _metadata(tmp_path: Path, fractions: dict[str, float], chunks: dict[str, int] | None = None, **extra) -> Path:
+    counts = {**CHUNK_COUNTS, **(chunks or {})}
+    sets = {
+        name: {"native_records": 1000, "cosmos_accepted": round(f * 1000),
+               "chunks": [f"chunk_{i:04d}" for i in range(counts.get(name, 1))]}
+        for name, f in fractions.items()
+    }
     path = tmp_path / "metadata.json"
     path.write_text(json.dumps({"schema_version": 2, "content_hash_algorithm": "sha256", "require_cosmos": True,
                                 "include_cosmos": True, "sets": sets, **extra}))
@@ -193,3 +201,62 @@ def test_build_state_configs_load_and_other_label_counts_stay_rejected(tmp_path:
     (tmp_path / "bad.yaml").write_text(yaml.safe_dump(bad))
     with pytest.raises(ConfigError, match="30 part labels or the 6"):
         load_training_config(tmp_path / "bad.yaml")
+
+
+def test_testbed_gates_refuse_a_set_with_a_missing_chunk_or_an_extra_set(tmp_path: Path) -> None:
+    good = {"N": 0.25, "R": 0.25, "Q": 0.25, "O": 0.50}
+    with pytest.raises(RosieGateError, match=r"set O is incomplete: 47 chunks, expected 48; missing \['chunk_0047'\]"):
+        verify_production_manifest(_metadata(tmp_path, good, {"O": 47}, profile="testbed", fallen_classes=True))
+    with pytest.raises(RosieGateError, match="set P is incomplete: 14 chunks, expected 24"):
+        verify_production_manifest(_metadata(tmp_path, {"P": 0.5}, {"P": 14}, profile="testbed_build",
+                                             classifier_target="build_state"))
+    with pytest.raises(RosieGateError, match="must hold exactly sets"):
+        verify_production_manifest(_metadata(tmp_path, {**good, "A": 0.25}, profile="testbed", fallen_classes=True))
+
+
+def test_frozen_manifest_records_the_chunks_it_read(tmp_path: Path) -> None:
+    _write_build_chunk(tmp_path, ["seated"])
+    summary = build_manifests(_config(tmp_path, detector_sets=(), classifier_sets=("P",),
+                                      classifier_target="build_state", profile="testbed_build"))
+    assert json.loads(summary.metadata_path.read_text())["sets"]["P"]["chunks"] == ["chunk_0000"]
+
+
+def _training_metadata(profile: str, chunks: dict[str, int] | None = None, **extra) -> dict:
+    fractions = {"testbed": {"N": 0.25, "R": 0.25, "Q": 0.25, "O": 0.50}, "testbed_build": {"P": 0.5}}.get(profile, {"A": 0.15})
+    counts = {**CHUNK_COUNTS, **(chunks or {})}
+    sets = {
+        name: {"native_records": 1000, "cosmos_accepted": round(f * 1000),
+               "chunks": [f"chunk_{i:04d}" for i in range(counts.get(name, 1))]}
+        for name, f in fractions.items()
+    }
+    return {"schema_version": 2, "content_hash_algorithm": "sha256", "require_cosmos": True, "include_cosmos": True,
+            "profile": profile, "sets": sets, **extra}
+
+
+def test_production_trainers_read_only_their_approved_complete_profile() -> None:
+    from perception.classifier.train import ClassifierTrainingError
+    from perception.classifier.train import _validate_manifest_mode as classifier_gate
+    from perception.detector.train import DetectorTrainError
+    from perception.detector.train import _validate_manifest_mode as detector_gate
+
+    main = _training_metadata("testbed", fallen_classes=True)
+    build = _training_metadata("testbed_build", classifier_target="build_state")
+    detector_gate(main, smoke=False)
+    classifier_gate(main, smoke=False)
+    classifier_gate(build, smoke=False)
+    with pytest.raises(DetectorTrainError, match="requires a 'testbed' manifest, got profile 'legacy'"):
+        detector_gate(_training_metadata("legacy"), smoke=False)
+    with pytest.raises(DetectorTrainError, match="set O is incomplete"):
+        detector_gate(_training_metadata("testbed", {"O": 47}, fallen_classes=True), smoke=False)
+    with pytest.raises(ClassifierTrainingError, match="requires a 'testbed_build' manifest"):
+        classifier_gate({**main, "classifier_target": "build_state"}, smoke=False)
+    with pytest.raises(ClassifierTrainingError, match="set P is incomplete: 14 chunks"):
+        classifier_gate(_training_metadata("testbed_build", {"P": 14}, classifier_target="build_state"), smoke=False)
+    detector_gate({**_training_metadata("legacy"), "require_cosmos": False}, smoke=True)   # smoke stays exempt
+
+
+def test_a_loose_part_without_a_rest_state_is_refused_not_trained_as_installed(tmp_path: Path) -> None:
+    _write_testbed_chunk(tmp_path, "N", 1, {"o00": None, "o01": None})
+
+    with pytest.raises(ManifestError, match="part M1_01 on_table has no rest state"):
+        build_manifests(_config(tmp_path, fallen_classes=True, profile="testbed"))

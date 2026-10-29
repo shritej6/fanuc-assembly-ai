@@ -65,8 +65,19 @@ def test_start_at_skips_earlier_stages_and_runs_from_the_named_one(tmp_path: Pat
         "classifier skipped (START_AT=build_classifier)",
         "build_classifier start",
         "build_classifier ok",
-        "ALL_DONE",
+        "PARTIAL_DONE missing: env prepare_main prepare_build detector classifier",
     ]
+
+
+def test_all_done_needs_every_stage_ok_in_this_or_an_earlier_run(tmp_path: Path) -> None:
+    env = _fake_box(tmp_path, classifier_exit=0)
+    earlier = ["env", "prepare_main", "prepare_build", "detector"]
+    Path(env["STATUS"]).write_text("".join(f"2026-10-29T12:00:00Z {name} ok\n" for name in earlier))
+
+    result, lines = _run(env, "classifier")
+
+    assert result.returncode == 0, result.stderr
+    assert lines[-1] == "ALL_DONE"
 
 
 def test_a_failure_inside_a_stage_is_recorded_and_never_reaches_all_done(tmp_path: Path) -> None:
@@ -106,7 +117,7 @@ def test_skip_leaves_out_only_the_named_stages(tmp_path: Path) -> None:
         "classifier ok",
         "build_classifier start",
         "build_classifier ok",
-        "ALL_DONE",
+        "PARTIAL_DONE missing: env prepare_main prepare_build detector",
     ]
 
 

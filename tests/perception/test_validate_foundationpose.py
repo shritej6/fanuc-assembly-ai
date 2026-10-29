@@ -8,7 +8,7 @@ pytest.importorskip("trimesh")
 pytest.importorskip("scipy")
 pytest.importorskip("pxr")
 
-from perception.pose import validate_foundationpose as v  # noqa: E402
+from perception.pose import validate_foundationpose as v
 
 REPO = Path(__file__).resolve().parents[2]
 NO_JITTER = {"translate_mm": [0.0, 0.0, 0.0], "rotate_deg": [0.0, 0.0, 0.0]}

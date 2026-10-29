@@ -5,7 +5,9 @@
 #   nohup bash perception/brev/h100_testbed.sh > ~/t27_h100.log 2>&1 &
 # Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED`), so a watcher can report progress.
 # START_AT=<stage> reruns from that stage after a fix, reusing the env and artifacts of the earlier stages.
-# SKIP="<stage> ..." leaves out stages that another box runs in parallel.
+# SKIP="<stage> ..." leaves out stages that already ran on this box (e.g. a finished detector when only the
+# classifiers rerun). ALL_DONE is written only when $STATUS holds an "ok" for every required stage, from this
+# run or an earlier one; otherwise the run ends with PARTIAL_DONE and the missing stages.
 set -Eeuo pipefail   # -E: the ERR trap also fires inside stage functions, so a failure always reaches $STATUS
 
 REPO="${REPO:-$HOME/fanuc-t27}"
@@ -80,7 +82,13 @@ stage detector train detector.sbatch "$DETECTOR_CONFIG" "$ART/main" "$RUNS/main"
 stage classifier train classifier.sbatch classifier_h100.yaml "$ART/main" "$RUNS/main"
 stage build_classifier train classifier.sbatch classifier_build_h100.yaml "$ART/build" "$RUNS/build"
 # PatchCore + FoundationPose validation (user order steps 4-5) run here when their launcher has been delivered by now.
+required=(env prepare_main prepare_build detector classifier build_classifier)
 if [[ -f "$REPO/perception/brev/h100_t14.sh" ]]; then
   stage t14 bash "$REPO/perception/brev/h100_t14.sh"
+  required+=(t14)
 fi
-mark "ALL_DONE"
+missing=()
+for name in "${required[@]}"; do
+  grep -q "Z $name ok\$" "$STATUS" || missing+=("$name")
+done
+if (( ${#missing[@]} )); then mark "PARTIAL_DONE missing: ${missing[*]}"; else mark "ALL_DONE"; fi

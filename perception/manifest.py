@@ -182,6 +182,7 @@ class _ManifestBuilder:
             "cosmos_accepted": 0,
             "cosmos_used": 0,
             "code_commits": set(),
+            "chunks": [],
         }
         self.stats[set_name] = stats
         root = self.config.data_root.resolve()
@@ -196,6 +197,7 @@ class _ManifestBuilder:
                 labels = labels[:remaining]
                 remaining -= len(labels)
             stats["code_commits"].add(code_commit)
+            stats["chunks"].append(chunk.name)
             stats["scenes"] += len(labels)
             entries = _cosmos_entries(chunk) if self.config.include_cosmos else {}
             stats["cosmos_checked"] += len(entries)

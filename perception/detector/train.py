@@ -26,6 +26,7 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
+from perception.rosie.gates import RosieGateError, verify_training_metadata
 from perception.train_common import (
     configure_mixed_precision,
     load_manifest_metadata,
@@ -98,6 +99,11 @@ def _validate_manifest_mode(metadata: dict[str, Any], smoke: bool) -> None:
     includes_cosmos = metadata.get("include_cosmos")
     if not smoke and (not require_cosmos or includes_cosmos is not True):
         raise DetectorTrainError("production detector training requires a Cosmos-complete manifest")
+    if not smoke:
+        try:
+            verify_training_metadata(metadata, "detector")
+        except RosieGateError as exc:
+            raise DetectorTrainError(str(exc)) from exc
 
 
 def _checkpoint_dirs(output_dir: Path) -> list[Path]:
