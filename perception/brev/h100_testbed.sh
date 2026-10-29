@@ -5,6 +5,7 @@
 #   nohup bash perception/brev/h100_testbed.sh > ~/t27_h100.log 2>&1 &
 # Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED`), so a watcher can report progress.
 # START_AT=<stage> reruns from that stage after a fix, reusing the env and artifacts of the earlier stages.
+# SKIP="<stage> ..." leaves out stages that another box runs in parallel.
 set -Eeuo pipefail   # -E: the ERR trap also fires inside stage functions, so a failure always reaches $STATUS
 
 REPO="${REPO:-$HOME/fanuc-t27}"
@@ -26,16 +27,20 @@ mark() { echo "$(date -u +%FT%TZ) $*" >> "$STATUS"; }
 trap 'mark "${STAGE:-setup} FAILED"' ERR
 
 START_AT="${START_AT:-env}"
+SKIP="${SKIP:-}"   # stages run on another box, e.g. SKIP=detector
 started=0
-case "$START_AT" in   # an unknown name would skip every stage and still reach ALL_DONE
-  env|prepare_main|prepare_build|detector|classifier|build_classifier|t14) ;;
-  *) echo "unknown START_AT=$START_AT" >&2; exit 2 ;;
-esac
+for name in "$START_AT" $SKIP; do   # an unknown name would silently run or skip the wrong stages
+  case "$name" in
+    env|prepare_main|prepare_build|detector|classifier|build_classifier|t14) ;;
+    *) echo "unknown stage $name in START_AT/SKIP" >&2; exit 2 ;;
+  esac
+done
 
 stage() {
   STAGE="$1"; shift
   [[ "$STAGE" == "$START_AT" ]] && started=1
   if (( ! started )); then mark "$STAGE skipped (START_AT=$START_AT)"; return; fi
+  if [[ " $SKIP " == *" $STAGE "* ]]; then mark "$STAGE skipped (SKIP)"; return; fi
   mark "$STAGE start"
   "$@"
   mark "$STAGE ok"

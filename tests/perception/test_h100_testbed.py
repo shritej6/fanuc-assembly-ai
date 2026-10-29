@@ -40,9 +40,13 @@ def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dic
     }
 
 
-def _run(env: dict[str, str], start_at: str) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+def _run(env: dict[str, str], start_at: str, skip: str = "") -> tuple[subprocess.CompletedProcess[str], list[str]]:
     result = subprocess.run(
-        ["bash", str(SCRIPT)], env={**env, "START_AT": start_at}, check=False, capture_output=True, text=True
+        ["bash", str(SCRIPT)],
+        env={**env, "START_AT": start_at, "SKIP": skip},
+        check=False,
+        capture_output=True,
+        text=True,
     )
     status = Path(env["STATUS"])
     lines = [line.split(" ", 1)[1] for line in status.read_text().splitlines()] if status.exists() else []
@@ -76,7 +80,7 @@ def test_unknown_start_stage_is_refused_before_anything_is_marked(tmp_path: Path
     result, lines = _run(_fake_box(tmp_path, classifier_exit=0), "detectr")
 
     assert result.returncode == 2
-    assert "unknown START_AT=detectr" in result.stderr
+    assert "unknown stage detectr" in result.stderr
     assert lines == []
 
 
@@ -89,3 +93,26 @@ def test_detector_config_follows_gpu_memory(tmp_path: Path) -> None:
         assert result.returncode == 0, result.stderr
         assert lines[0].endswith(f"gpu_mib={gpu_mib} detector_config={expected}")
         assert result.stdout.splitlines()[0].endswith(f"perception/configs/{expected}")
+
+
+def test_skip_leaves_out_only_the_named_stages(tmp_path: Path) -> None:
+    result, lines = _run(_fake_box(tmp_path, classifier_exit=0), "detector", skip="detector")
+
+    assert result.returncode == 0, result.stderr
+    assert "detector skipped (SKIP)" in lines
+    assert "detector start" not in lines
+    assert lines[-5:] == [
+        "classifier start",
+        "classifier ok",
+        "build_classifier start",
+        "build_classifier ok",
+        "ALL_DONE",
+    ]
+
+
+def test_unknown_skip_stage_is_refused_before_anything_is_marked(tmp_path: Path) -> None:
+    result, lines = _run(_fake_box(tmp_path, classifier_exit=0), "env", skip="detectr")
+
+    assert result.returncode == 2
+    assert "unknown stage detectr" in result.stderr
+    assert lines == []
