@@ -20,7 +20,7 @@ An agent may only start a task that is READY and owned by it.
 | T13 | Detector (Faster R-CNN or RT-DETR) + wrist look-alike classifier training/eval | CODEX | BACKLOG | feature/T13-detector | T08 | Wed |
 | T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | BACKLOG | feature/T14-pose-anomaly | T07 | Wed |
 | T15 | Product birth certificate (JSON) + PDF layout | CODEX + CLAUDE | REVIEW | feature/T15-birth-cert | T09 | Wed |
-| T16 | Live OEE + Andon dashboard | CLAUDE + CODEX | BACKLOG | feature/T16-dashboard | T09 | Wed–Thu |
+| T16 | Live OEE + Andon dashboard | CLAUDE + CODEX | READY | feature/T16-dashboard | T09 | Wed–Thu |
 | T17 | Scenario fleet (3 products × 20 layouts × injected faults) + KPIs | CODEX | BACKLOG | feature/T17-fleet | T09, T13 | Thu |
 | T18 | GR00T N1.7 / SmolVLA / ACT fine-tune vs the scripted baseline | CODEX | BACKLOG | feature/T18-policy-learn | T12 | Thu |
 | T19 | OPC UA PLC-style tags (`asyncua`) | CODEX | BACKLOG | feature/T19-opcua | T09 | Thu |
