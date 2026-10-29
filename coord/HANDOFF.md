@@ -10,16 +10,17 @@ Newest first. One entry per finished task.
   `assembly/__init__.py`. Artifacts publish to `eval/records/<run_id>/<product>.json` and `.pdf` without overwriting an
   existing record; JSON and PDF publication is paired with rollback on a partial publish failure.
 - Behavior: product/inspection identities, recipe membership, terminal events, recovery classification, two final
-  checks, four passing seated checks for good products, safe run IDs, finite JSON values, and paired timing
-  measurements all fail closed. Attempts, spare use, rebuilds, and deduplicated Andon assist episodes derive from T09
-  evidence. Unmeasured cycle time and Cosmos checks remain `null`; no value is inferred. No contract file or official
+  checks, four passing seated checks for good products, safe run IDs, finite JSON values, paired timing measurements,
+  and an actively held terminal Andon for blocked outcomes all fail closed. Attempts, spare use, rebuilds, and
+  deduplicated Andon assist episodes derive from T09 evidence. Unmeasured cycle time and Cosmos checks remain `null`;
+  no value is inferred. No contract file or official
   `robot/cell/cell_client.py` file changed.
 - PDF QA: rendered the generated PDF with `pdftoppm` at 144 DPI and inspected the 1224×1584 PNG. The single page had
   no clipped or overlapping text, all four step rows and evidence references were legible, status/final-check badges
   were aligned, and the footer and page number rendered correctly.
-- Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (14 passed); `uv run --locked pytest -q`
-  (395 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
-  unchanged-contract / unchanged-official-client checks (passed). New production files are 436 and 209 lines; no
+- Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (15 passed); `uv run --locked pytest -q`
+  (396 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
+  unchanged-contract / unchanged-official-client checks (passed). New production files are 446 and 209 lines; no
   changed function exceeds 40 lines.
 - Next: Claude reviews the T15 PR. Runtime callers archive each final post-placement inspection as
   `StepInspectionEvidence`, call `build_birth_certificate(...)`, then publish the validated record with

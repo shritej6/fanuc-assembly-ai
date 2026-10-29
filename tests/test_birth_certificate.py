@@ -187,6 +187,27 @@ def test_blocked_record_keeps_failed_partial_step_and_deduplicates_andon() -> No
     assert record["final_checks"] == {"recipe": False, "cosmos_reason": None}
 
 
+def test_blocked_outcome_requires_andon_to_remain_active_at_terminal_state() -> None:
+    plan = _plan(2, 1, "part-2-1")
+    events = (
+        ControllerEvent("andon", 2, "M2_01", "checks disagree"),
+        ControllerEvent("resume", 2, None, "inventory restored"),
+    )
+
+    with pytest.raises(BirthCertificateInputError, match="Andon evidence"):
+        build_birth_certificate(
+            catalog=load_catalog(),
+            run_id="resumed-not-blocked",
+            rollout=1,
+            product=2,
+            base_instance="base-2",
+            plan_records=(plan,),
+            events=events,
+            inspections=(_inspection(2, 1, "part-2-1", passed=False),),
+            outcome=ProductOutcome(ProductResult.BLOCKED, False, None),
+        )
+
+
 @pytest.mark.parametrize("run_id", ["../escape", "has/slash", "", "x" * 129])
 def test_rejects_unsafe_run_id(run_id: str) -> None:
     plans, inspections, events = _first_pass_inputs()

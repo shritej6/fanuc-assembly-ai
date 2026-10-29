@@ -318,7 +318,7 @@ def _assist_count(events: Sequence[ControllerEvent]) -> int:
 def _validate_terminal(result, steps, rebuilds, events, base_instance) -> None:
     completed = any(event.kind == "complete" for event in events)
     aborted = any(event.kind == "abort" for event in events)
-    held = any(event.kind == "andon" for event in events)
+    held = _andon_active(events)
     good = result in {ProductResult.GOOD_FIRST_PASS, ProductResult.GOOD_AFTER_REBUILD}
     if good and (not completed or aborted or base_instance is None or len(steps) != 4):
         raise BirthCertificateInputError("good outcome requires a base, four recorded steps, and a clean completion event")
@@ -337,6 +337,16 @@ def _validate_terminal(result, steps, rebuilds, events, base_instance) -> None:
         raise BirthCertificateInputError("blocked outcome requires Andon evidence and no completion")
     if result is ProductResult.FAILED and (completed or not aborted):
         raise BirthCertificateInputError("failed outcome requires abort evidence and no completion")
+
+
+def _andon_active(events: Sequence[ControllerEvent]) -> bool:
+    active = False
+    for event in events:
+        if event.kind == "andon":
+            active = True
+        elif event.kind in {"resume", "complete", "abort"}:
+            active = False
+    return active
 
 
 def _cycle_time(outcome: ProductOutcome) -> float | None:
