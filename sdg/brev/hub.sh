@@ -1,7 +1,7 @@
 #!/bin/bash
 # Render -> Cosmos pipeline hub, run on the render host. Renders with sdg/brev/render_queue.sh and, as each chunk
 # finishes, exports a Cosmos share of it (sdg.cosmos.restyle export --chunks), sends the bundle to a Cosmos host
-# (sdg/brev/cosmos_worker.sh, round robin over ~/fa-cosmos-hosts.txt, one ssh target per line; hosts can be added
+# (sdg/brev/cosmos_worker.sh, the least loaded host in ~/fa-cosmos-hosts.txt, one ssh target per line; hosts can be added
 # while it runs), fetches finished bundles and imports them (--min-fscore 0.85: edge F gate + per-part composite).
 # Writes $DATA_ROOT/PIPELINE_DONE when every chunk is rendered and every sent bundle is imported.
 #
@@ -23,9 +23,21 @@ mkdir -p "$BUNDLES"
 
 [[ -n "${NO_RENDER:-}" ]] || "$REPO/sdg/brev/render_queue.sh" "$@" > "$DATA_ROOT/render_queue.log" 2>&1 &
 
+# The Cosmos host with the fewest bundles per GPU (waiting + running); hosts that do not answer are skipped.
+pick_host() {
+  local h q g best="" bq=1 bg=0
+  for h in "${hosts[@]}"; do
+    read -r q g < <("${SSH[@]}" -n "$h" 'echo $(ls ~/fa-cosmos/inbox ~/fa-cosmos/work | grep -c __) $(nvidia-smi -L | wc -l)' \
+      2>/dev/null) || continue
+    [[ -n "$g" && "$g" -gt 0 ]] || continue
+    if [[ -z "$best" ]] || (( q * bg < bq * g )); then best=$h; bq=$q; bg=$g; fi
+  done
+  echo "$best"
+}
+
 send_finished_chunks() {
   local done_file chunk set name host
-  mapfile -t hosts < <(grep -v '^\s*$' "$HOSTS" 2>/dev/null)
+  mapfile -t hosts < <(grep -v '^\s*$' "$HOSTS" 2>/dev/null | sort -u)
   [[ ${#hosts[@]} -eq 0 ]] && return
   for done_file in "$DATA_ROOT"/synthetic/*/chunk_*/_DONE.json; do
     chunk=$(dirname "$done_file"); set=$(basename "$(dirname "$chunk")")
@@ -34,11 +46,11 @@ send_finished_chunks() {
     rm -rf "${BUNDLES:?}/$name"
     (cd "$REPO" && "$PY" -m sdg.cosmos.restyle export --sets "$set" --chunks "$(basename "$chunk")" \
       --fraction "$SHARE" --data-root "$DATA_ROOT" --out "$BUNDLES/$name") > /dev/null || { echo "$(date +%T) export $name failed"; continue; }
-    host=${hosts[$(( $(cat "$BUNDLES/.next" 2>/dev/null || echo 0) % ${#hosts[@]} ))]}
+    host=$(pick_host)
+    [[ -z "$host" ]] && { echo "$(date +%T) no Cosmos host answers; retry next round"; return; }
     if rsync -a -e "${SSH[*]}" "$BUNDLES/$name" "$host:fa-cosmos/incoming/" \
        && "${SSH[@]}" -n "$host" "mv ~/fa-cosmos/incoming/$name ~/fa-cosmos/inbox/$name"; then
       echo "$host" > "$chunk/_COSMOS_SENT"
-      echo $(( $(cat "$BUNDLES/.next" 2>/dev/null || echo 0) + 1 )) > "$BUNDLES/.next"
       echo "$(date +%T) sent $name to $host"
     else
       echo "$(date +%T) sending $name to $host failed; retry next round"
