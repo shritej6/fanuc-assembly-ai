@@ -21,10 +21,12 @@ Newest first. One entry per finished task.
   and every present object is checked against its catalog product. Cross-product part ownership,
   unknown causes, unbounded retry shapes, duplicate/unknown policies, and a consumed spare without a policy also fail
   closed.
-- Run: `uv run pytest -q tests/test_kanban.py` (58 passed); `uv run pytest -q` (439 passed);
+- Integration base: rebased onto accepted T09 controller head `d1bfd9c` so event/inventory behavior is tested against
+  the current controller protocol rather than the original T09 snapshot.
+- Run: `uv run pytest -q tests/test_kanban.py` (58 passed); `uv run pytest -q` (571 passed);
   `.venv/bin/ruff check .` (passed); `git diff --check` (clean); measured files are 368 implementation / 432 test
   lines and no function is over 40 lines. `contracts/` and
-  `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
+  `robot/cell/cell_client.py` are unchanged from T09 commit `d1bfd9c`.
 - Next: Claude reviews the T20 PR and can render `OperationsView.cards` and `OperationsView.pareto` without duplicating
   domain logic. Production callers must supply reviewed stock thresholds and measured preliminary-rate evidence; this
   branch remains stacked on the open T09 controller PR.
