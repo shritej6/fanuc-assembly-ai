@@ -25,9 +25,9 @@ from assembly.catalog import (
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
 OBJECT_GEOMETRY_SOURCE_PATH = ROOT / "assembly" / "sources" / "object_geometry.5a24e10.json"
-GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.2d7cd51.json"
+GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.20c6f9b.json"
 OBJECT_GEOMETRY_SHA256 = "488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325"
-GRASP_FRAMES_SHA256 = "d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b"
+GRASP_FRAMES_SHA256 = "99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1"
 CONTRACTS = ROOT / "contracts"
 
 EXPECTED_PRODUCTS = [
@@ -146,9 +146,9 @@ def test_catalog_records_immutable_cad_geometry_provenance() -> None:
     assert catalog["grasp_source"] == {
         "file": "cad/grasp_frames.json",
         "generator": "cad/grasp_frames.py",
-        "commit": "2d7cd511844a5123abf96ecd87937ea08a2a3b10",
-        "commit_timestamp": "2026-10-29T14:45:34-05:00",
-        "snapshot": "assembly/sources/grasp_frames.2d7cd51.json",
+        "commit": "20c6f9bab0aa44b3bae4cd915a1c957705d74da4",
+        "commit_timestamp": "2026-10-29T15:34:19-05:00",
+        "snapshot": "assembly/sources/grasp_frames.20c6f9b.json",
         "sha256": GRASP_FRAMES_SHA256,
     }
 
@@ -195,6 +195,16 @@ def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
         expected_roll = 90.0 if grips[0]["closing_axis"] == "X" else 0.0
         assert grips[0]["roll_offset_deg"] == expected_roll
         assert actual_roll == expected_roll
+
+
+def test_catalog_grasp_source_uses_team_v_printed_finger_contacts() -> None:
+    source = _verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256)
+
+    assert source["source"] == (
+        "cad/products build() (printed CAD) + cad/fingers (Team V fingers), cad/grasp_frames.py"
+    )
+    assert source["gripper_gap_mm"] == {"closed_max": 4.5, "open_min": 16.5}
+    assert source["objects"]["M1_04"]["grips"][0]["tcp_local_mm"] == [0.0, 0.0, 27.9]
 
 
 def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

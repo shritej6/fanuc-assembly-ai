@@ -13,8 +13,8 @@ from assembly.catalog import CatalogSemanticError, load_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
-GRASP_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.2d7cd51.json"
-GRASP_SOURCE_SHA256 = "d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b"
+GRASP_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.20c6f9b.json"
+GRASP_SOURCE_SHA256 = "99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1"
 
 
 def _catalog_data() -> dict:
