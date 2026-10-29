@@ -4,6 +4,7 @@
 # are in $DATA_ROOT/synthetic/{N,R,Q,O,P}:
 #   nohup bash perception/brev/h100_testbed.sh > ~/t27_h100.log 2>&1 &
 # Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED`), so a watcher can report progress.
+# START_AT=<stage> reruns from that stage after a fix, reusing the env and artifacts of the earlier stages.
 set -Eeuo pipefail   # -E: the ERR trap also fires inside stage functions, so a failure always reaches $STATUS
 
 REPO="${REPO:-$HOME/fanuc-t27}"
@@ -19,8 +20,17 @@ export PYTHON_BIN="$VENV_PATH/bin/python"
 mark() { echo "$(date -u +%FT%TZ) $*" >> "$STATUS"; }
 trap 'mark "${STAGE:-setup} FAILED"' ERR
 
+START_AT="${START_AT:-env}"
+started=0
+case "$START_AT" in   # an unknown name would skip every stage and still reach ALL_DONE
+  env|prepare_main|prepare_build|detector|classifier|build_classifier|t14) ;;
+  *) echo "unknown START_AT=$START_AT" >&2; exit 2 ;;
+esac
+
 stage() {
   STAGE="$1"; shift
+  [[ "$STAGE" == "$START_AT" ]] && started=1
+  if (( ! started )); then mark "$STAGE skipped (START_AT=$START_AT)"; return; fi
   mark "$STAGE start"
   "$@"
   mark "$STAGE ok"
