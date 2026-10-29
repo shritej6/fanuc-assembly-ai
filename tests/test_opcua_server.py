@@ -16,6 +16,7 @@ from robot.opcua import (
     OpcUaServerConfig,
     OpcUaServerError,
 )
+from robot.opcua_model import ControllerSnapshotMailbox
 from tests.test_opcua_model import _executing_source
 
 
@@ -37,7 +38,7 @@ def test_asyncua_server_publishes_read_only_tags_and_queues_validated_command() 
 async def _exercise_server() -> None:
     source = _executing_source()
     config = OpcUaServerConfig(endpoint=_free_loopback_endpoint())
-    gateway = OpcUaCellServer(source, config=config)
+    gateway = OpcUaCellServer(ControllerSnapshotMailbox.from_source(source), config=config)
     await gateway.start()
     try:
         await gateway.publish_once()
@@ -45,12 +46,13 @@ async def _exercise_server() -> None:
             index = await client.get_namespace_index(config.namespace_uri)
             await _assert_initial_snapshot(client, index)
             response = await _submit(client, index, "Hold", "plc-1", "operator camera review")
-            assert json.loads(response) == {"accepted": True, "command_id": "plc-1", "error": ""}
+            assert json.loads(response) == {"command_id": "plc-1", "error": "", "queued": True}
+            assert "accepted" not in json.loads(response)
             assert source.state_machine.state is PackMLState.EXECUTE
             assert await _node(client, index, "Commands.PendingCount").read_value() == 1
-            assert await _node(client, index, "Commands.LastAcceptedName").read_value() == "Hold"
+            assert await _node(client, index, "Commands.LastQueuedName").read_value() == "Hold"
             rejected = await _submit(client, index, "MoveJoints", "plc-2", "raw robot request")
-            assert json.loads(rejected)["accepted"] is False
+            assert json.loads(rejected)["queued"] is False
             assert await _node(client, index, "Commands.PendingCount").read_value() == 1
             assert gateway.commands.pop(state=PackMLState.EXECUTE) is not None
             await gateway.publish_once()
@@ -82,6 +84,7 @@ async def _submit(client: Client, index: int, name: str, command_id: str, reason
 
 async def _assert_state_update_and_read_only(client: Client, index: int, gateway, source) -> None:
     source.state_machine.hold("camera evidence disagrees")
+    gateway.snapshots.update_from(source)
     await gateway.publish_once()
     assert await _node(client, index, "PackML.State").read_value() == "Held"
     assert await _node(client, index, "PackML.AlarmActive").read_value() is True
@@ -107,7 +110,8 @@ def test_configuration_rejects_remote_insecure_or_malformed_endpoints(endpoint: 
 
 
 def test_publish_requires_initialized_address_space() -> None:
-    gateway = OpcUaCellServer(_executing_source(), config=OpcUaServerConfig(endpoint=_free_loopback_endpoint()))
+    mailbox = ControllerSnapshotMailbox.from_source(_executing_source())
+    gateway = OpcUaCellServer(mailbox, config=OpcUaServerConfig(endpoint=_free_loopback_endpoint()))
 
     with pytest.raises(OpcUaServerError, match="initialize"):
         asyncio.run(gateway.publish_once())
@@ -124,7 +128,7 @@ class _FailingNode:
 
 async def _exercise_publish_recovery() -> None:
     gateway = OpcUaCellServer(
-        _executing_source(),
+        ControllerSnapshotMailbox.from_source(_executing_source()),
         config=OpcUaServerConfig(endpoint=_free_loopback_endpoint()),
     )
     await gateway.initialize()

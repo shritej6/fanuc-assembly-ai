@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import unicodedata
 from collections import Counter, OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from numbers import Number
+from threading import RLock
 from typing import Protocol
 
 from assembly.controller_ports import ControllerEvent
 from assembly.inventory import Inventory, InventoryItem, InventoryZone
+from assembly.metrics import count_assist_episodes
 from assembly.planner import PlanStepRecord
 from assembly.state_machine import PackMLState, PackMLStateMachine
 
@@ -82,6 +86,30 @@ class ControllerSnapshot:
         return dict(self.inventory_counts)[zone]
 
 
+class ControllerSnapshotMailbox:
+    """Transfer immutable snapshots from the controller owner to OPC UA."""
+
+    def __init__(self, snapshot: ControllerSnapshot) -> None:
+        if type(snapshot) is not ControllerSnapshot:
+            raise OpcUaModelError("snapshot mailbox requires a ControllerSnapshot")
+        self._snapshot = snapshot
+        self._lock = RLock()
+
+    @classmethod
+    def from_source(cls, source: ControllerStatusSource) -> ControllerSnapshotMailbox:
+        return cls(build_controller_snapshot(source))
+
+    def update_from(self, source: ControllerStatusSource) -> ControllerSnapshot:
+        snapshot = build_controller_snapshot(source)
+        with self._lock:
+            self._snapshot = snapshot
+        return snapshot
+
+    def read(self) -> ControllerSnapshot:
+        with self._lock:
+            return self._snapshot
+
+
 def build_controller_snapshot(source: ControllerStatusSource) -> ControllerSnapshot:
     """Read only public T09 state; never invoke policy, adapters, or motion."""
     record = source.state_machine.current_record
@@ -98,7 +126,7 @@ def build_controller_snapshot(source: ControllerStatusSource) -> ControllerSnaps
         active_fault=record.reason if alarm_active and record.reason is not None else "",
         good_count=len(source.completed_products),
         reject_count=counts[InventoryZone.REJECT],
-        assist_count=_assist_count(source.events),
+        assist_count=count_assist_episodes(source.events),
         inventory_counts=inventory_counts,
         inventory_json=_inventory_json(items),
     )
@@ -129,7 +157,7 @@ def _inventory_json(items: tuple[InventoryItem, ...]) -> str:
 
 
 class CommandName(StrEnum):
-    """Non-motion controller requests accepted from a PLC or HMI."""
+    """Non-motion controller requests that may be queued from a PLC or HMI."""
 
     HOLD = "Hold"
     RESUME = "Resume"
@@ -190,6 +218,7 @@ class SafeCommandBoundary:
         *,
         max_pending: int = 32,
         replay_history: int = 4096,
+        pending_ttl_s: float = 30.0,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         valid_capacities = type(max_pending) is int and type(replay_history) is int
@@ -197,15 +226,27 @@ class SafeCommandBoundary:
             raise CommandValidationError(
                 "max_pending must be a positive UInt16-sized integer no larger than replay_history"
             )
+        if (
+            isinstance(pending_ttl_s, bool)
+            or not isinstance(pending_ttl_s, Number)
+            or not math.isfinite(float(pending_ttl_s))
+            or float(pending_ttl_s) <= 0.0
+        ):
+            raise CommandValidationError("pending_ttl_s must be a finite positive duration")
         self._max_pending = max_pending
         self._replay_history = replay_history
+        self._pending_ttl_s = float(pending_ttl_s)
         self._clock = clock or _utc_now
         self._pending: deque[ControllerCommand] = deque()
+        self._deadlines: dict[str, datetime] = {}
         self._seen: OrderedDict[str, None] = OrderedDict()
+        self._lock = RLock()
 
     @property
     def pending(self) -> tuple[ControllerCommand, ...]:
-        return tuple(self._pending)
+        with self._lock:
+            self._expire_stale()
+            return tuple(self._pending)
 
     def submit(
         self,
@@ -219,22 +260,41 @@ class SafeCommandBoundary:
         normalized_id = _command_id(command_id)
         normalized_reason = _reason(reason)
         _require_allowed(normalized, state)
-        if normalized_id in self._seen:
-            raise CommandValidationError(f"command_id {normalized_id!r} was already submitted")
-        if len(self._pending) >= self._max_pending:
-            raise CommandQueueFullError("command queue is full")
-        command = ControllerCommand(normalized, normalized_id, normalized_reason, _timestamp(self._clock()))
-        self._pending.append(command)
-        self._remember(normalized_id)
-        return command
+        with self._lock:
+            if normalized_id in self._seen:
+                raise CommandValidationError(f"command_id {normalized_id!r} was already submitted")
+            self._expire_stale()
+            if len(self._pending) >= self._max_pending:
+                raise CommandQueueFullError("command queue is full")
+            now = _aware_utc(self._clock())
+            command = ControllerCommand(normalized, normalized_id, normalized_reason, _timestamp(now))
+            self._pending.append(command)
+            self._deadlines[normalized_id] = now + timedelta(seconds=self._pending_ttl_s)
+            self._remember(normalized_id)
+            return command
 
     def pop(self, *, state: PackMLState) -> ControllerCommand | None:
         """Return the oldest request only if it is still valid at consumption time."""
+        with self._lock:
+            self._expire_stale()
+            if not self._pending:
+                return None
+            command = self._pending.popleft()
+            self._deadlines.pop(command.command_id, None)
+            _require_allowed(command.name, state)
+            return command
+
+    def _expire_stale(self) -> None:
         if not self._pending:
-            return None
-        command = self._pending.popleft()
-        _require_allowed(command.name, state)
-        return command
+            return
+        now = _aware_utc(self._clock())
+        retained: deque[ControllerCommand] = deque()
+        for command in self._pending:
+            if self._deadlines[command.command_id] > now:
+                retained.append(command)
+            else:
+                self._deadlines.pop(command.command_id, None)
+        self._pending = retained
 
     def _remember(self, command_id: str) -> None:
         self._seen[command_id] = None
@@ -270,18 +330,10 @@ def _require_allowed(name: CommandName, state: PackMLState) -> None:
 
 
 def _timestamp(value: object) -> str:
+    return _aware_utc(value).isoformat().replace("+00:00", "Z")
+
+
+def _aware_utc(value: object) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise CommandValidationError("command clock must return a timezone-aware datetime")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _assist_count(events: tuple[ControllerEvent, ...]) -> int:
-    count = 0
-    active = False
-    for event in events:
-        if event.kind == "andon" and not active:
-            count += 1
-            active = True
-        elif event.kind in {"resume", "complete", "abort"}:
-            active = False
-    return count
+    return value.astimezone(UTC)

@@ -17,9 +17,8 @@ from asyncua.common.node import Node
 from robot.opcua_model import (
     CommandValidationError,
     ControllerSnapshot,
-    ControllerStatusSource,
+    ControllerSnapshotMailbox,
     SafeCommandBoundary,
-    build_controller_snapshot,
 )
 
 
@@ -94,12 +93,14 @@ class OpcUaCellServer:
 
     def __init__(
         self,
-        source: ControllerStatusSource,
+        snapshots: ControllerSnapshotMailbox,
         *,
         config: OpcUaServerConfig | None = None,
         commands: SafeCommandBoundary | None = None,
     ) -> None:
-        self.source = source
+        if type(snapshots) is not ControllerSnapshotMailbox:
+            raise OpcUaConfigurationError("OPC UA requires a controller-owned snapshot mailbox")
+        self.snapshots = snapshots
         self.config = config or OpcUaServerConfig()
         self.commands = commands or SafeCommandBoundary()
         self.server = Server()
@@ -115,7 +116,7 @@ class OpcUaCellServer:
     async def initialize(self) -> None:
         if self._initialized:
             return
-        snapshot = build_controller_snapshot(self.source)
+        snapshot = self.snapshots.read()
         await self.server.init()
         self.server.set_endpoint(self.config.endpoint)
         self.server.set_server_name("Team V FANUC Assembly Cell")
@@ -149,7 +150,7 @@ class OpcUaCellServer:
     async def publish_once(self) -> ControllerSnapshot:
         self._require_initialized()
         try:
-            snapshot = build_controller_snapshot(self.source)
+            snapshot = self.snapshots.read()
         except Exception as error:
             await self._mark_unhealthy(error)
             raise OpcUaPublishError(f"controller snapshot failed: {error}") from error
@@ -216,7 +217,7 @@ class OpcUaCellServer:
                 name,
                 command_id,
                 reason,
-                state=self.source.state_machine.state,
+                state=self.snapshots.read().state,
             )
         except CommandValidationError as error:
             await self._write_command_status(error=str(error))
@@ -233,8 +234,8 @@ class OpcUaCellServer:
     ) -> None:
         await self._nodes["Commands.PendingCount"].write_value(len(self.commands.pending), ua.VariantType.UInt16)
         if command_id is not None and command_name is not None:
-            await self._nodes["Commands.LastAcceptedId"].write_value(command_id, ua.VariantType.String)
-            await self._nodes["Commands.LastAcceptedName"].write_value(command_name, ua.VariantType.String)
+            await self._nodes["Commands.LastQueuedId"].write_value(command_id, ua.VariantType.String)
+            await self._nodes["Commands.LastQueuedName"].write_value(command_name, ua.VariantType.String)
         await self._nodes["Commands.LastError"].write_value(error[:240], ua.VariantType.String)
 
     async def _write_snapshot(self, snapshot: ControllerSnapshot) -> None:
@@ -276,8 +277,8 @@ def _tag_specs(
     specs.extend(
         [
             ("Commands.PendingCount", len(commands.pending), ua.VariantType.UInt16),
-            ("Commands.LastAcceptedId", "", ua.VariantType.String),
-            ("Commands.LastAcceptedName", "", ua.VariantType.String),
+            ("Commands.LastQueuedId", "", ua.VariantType.String),
+            ("Commands.LastQueuedName", "", ua.VariantType.String),
             ("Commands.LastError", "", ua.VariantType.String),
             ("Health.Healthy", True, ua.VariantType.Boolean),
             ("Health.LastPublishError", "", ua.VariantType.String),
@@ -320,7 +321,7 @@ def _next_odd_sequence(current: int) -> int:
     return current + 1 if current % 2 == 0 else current + 2
 
 
-def _command_response(accepted: bool, command_id: object, *, error: str = "") -> str:
+def _command_response(queued: bool, command_id: object, *, error: str = "") -> str:
     safe_id = command_id if isinstance(command_id, str) and len(command_id) <= 64 else ""
-    payload = {"accepted": accepted, "command_id": safe_id, "error": error[:240]}
+    payload = {"queued": queued, "command_id": safe_id, "error": error[:240]}
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)

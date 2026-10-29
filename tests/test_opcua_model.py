@@ -1,7 +1,8 @@
 """Behavioral tests for deterministic PLC telemetry and command validation."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from threading import Event, Lock, Thread
 
 import pytest
 
@@ -14,6 +15,7 @@ from robot.opcua_model import (
     CommandQueueFullError,
     CommandStateError,
     CommandValidationError,
+    ControllerSnapshotMailbox,
     SafeCommandBoundary,
     build_controller_snapshot,
 )
@@ -79,6 +81,17 @@ def test_snapshot_exposes_packml_counts_inventory_and_current_step() -> None:
     assert snapshot.inventory_count(InventoryZone.TABLE) == 1
     assert snapshot.inventory_count(InventoryZone.SPARE) == 1
     assert snapshot.inventory_count(InventoryZone.REJECT) == 1
+
+
+def test_snapshot_mailbox_changes_only_when_the_controller_owner_updates_it() -> None:
+    source = _executing_source()
+    mailbox = ControllerSnapshotMailbox.from_source(source)
+
+    source.state_machine.hold("camera evidence disagrees")
+
+    assert mailbox.read().state is PackMLState.EXECUTE
+    mailbox.update_from(source)
+    assert mailbox.read().state is PackMLState.HELD
 
 
 def test_snapshot_inventory_json_is_stable_and_contains_no_motion_commands() -> None:
@@ -191,6 +204,78 @@ def test_command_ids_are_replay_protected_and_queue_is_bounded() -> None:
     boundary.pop(state=PackMLState.EXECUTE)
     with pytest.raises(CommandValidationError, match="already submitted"):
         boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+
+def test_stale_commands_expire_without_releasing_replay_protection() -> None:
+    now = datetime(2026, 10, 29, 16, 0, tzinfo=UTC)
+    current = [now]
+    boundary = SafeCommandBoundary(
+        max_pending=1,
+        replay_history=2,
+        pending_ttl_s=5.0,
+        clock=lambda: current[0],
+    )
+    boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+    current[0] = now + timedelta(seconds=6)
+
+    assert boundary.pending == ()
+    assert boundary.pop(state=PackMLState.EXECUTE) is None
+    boundary.submit("Stop", "cmd-2", "operator request", state=PackMLState.EXECUTE)
+    with pytest.raises(CommandValidationError, match="already submitted"):
+        boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+
+@pytest.mark.parametrize("pending_ttl_s", [True, 0.0, -1.0, float("inf"), float("nan")])
+def test_command_expiry_must_be_a_finite_positive_duration(pending_ttl_s: object) -> None:
+    with pytest.raises(CommandValidationError, match="pending_ttl_s"):
+        SafeCommandBoundary(pending_ttl_s=pending_ttl_s)  # type: ignore[arg-type]
+
+
+def test_command_capacity_is_atomic_across_submitter_and_consumer_threads() -> None:
+    now = datetime(2026, 10, 29, 16, 0, tzinfo=UTC)
+    first_after_capacity = Event()
+    release_first = Event()
+    competing_submit = Event()
+    call_lock = Lock()
+    calls = 0
+
+    def clock() -> datetime:
+        nonlocal calls
+        with call_lock:
+            calls += 1
+            current_call = calls
+        if current_call == 1:
+            first_after_capacity.set()
+            assert release_first.wait(timeout=2.0)
+        elif current_call == 2:
+            competing_submit.set()
+        return now
+
+    boundary = SafeCommandBoundary(max_pending=1, replay_history=2, clock=clock)
+    queued: list[str] = []
+    rejected: list[str] = []
+
+    def submit(command_id: str) -> None:
+        try:
+            boundary.submit("Hold", command_id, "operator request", state=PackMLState.EXECUTE)
+            queued.append(command_id)
+        except CommandQueueFullError:
+            rejected.append(command_id)
+
+    first = Thread(target=submit, args=("cmd-1",))
+    second = Thread(target=submit, args=("cmd-2",))
+    first.start()
+    assert first_after_capacity.wait(timeout=2.0)
+    second.start()
+    competing_submit.wait(timeout=0.1)
+    release_first.set()
+    first.join(timeout=2.0)
+    second.join(timeout=2.0)
+
+    assert len(boundary.pending) == 1
+    assert len(queued) == 1
+    assert len(rejected) == 1
 
 
 def test_command_is_revalidated_and_dropped_if_state_changes_before_consumption() -> None:
