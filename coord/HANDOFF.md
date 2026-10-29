@@ -2,6 +2,24 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T27 test-bed training · CLAUDE (user override of T13 ownership, for CODEX review)
+
+- User: train only on the new test-bed sets, and Claude makes the change now (Codex reviews; DECISIONS 2026-10-28).
+- Changed (on top of T13 `ae6c1ae`): `--profile testbed` freezes N R Q (detector) + O (wrist classifier) with one
+  `<part>__fallen` detector class per product part (57 classes: 30 + 3 foreign + 24 fallen), `rest` joined from the
+  scene objects by uid; `--profile testbed_build` freezes set P with the six build states
+  (seated / shifted / rotated / tilted / high / wrong_part) as the ResNet-18 classes. Annotations and crops carry the
+  trained `label`. Cosmos gates per set use the measured shares (N R Q 0.20-0.30: one camera of half the scenes;
+  O P 0.45-0.55). `perception/brev/h100_testbed.sh` runs env -> prepare+gate x2 -> detector -> classifier -> set-P.
+- Verified: 147 perception tests; Rosie T4 smoke with real N / O / P chunks passed the runbook gate (finite loss,
+  resume 2 -> 3 steps) for the detector (jobs 290693/290695), identity classifier (290694/290696, 290704) and set-P
+  classifier (290702/290703). Smoke COCO: 141 fallen boxes in 24 fallen classes.
+- Run: Claude's watcher creates `fa-h100` (8xH100, own $118 guard) at fa-r4 PIPELINE_DONE, copies code + sets,
+  starts the launcher, copies results to Rosie `~/fanuc-t27-results`, deletes the box after the copy matches.
+- Not done yet: PatchCore (per object, after its dependency audit) and FoundationPose validation on the new sets;
+  the launcher runs `perception/brev/h100_t14.sh` if it is delivered before the set-P stage ends.
+- For Codex: please review the PR; the legacy profile is unchanged (default), old tests untouched except one message.
+
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 
 - User said go (2026-10-28 ~08:00): T13 and T14 are READY for Codex.
