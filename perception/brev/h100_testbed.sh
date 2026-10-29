@@ -4,7 +4,7 @@
 # are in $DATA_ROOT/synthetic/{N,R,Q,O,P}:
 #   nohup bash perception/brev/h100_testbed.sh > ~/t27_h100.log 2>&1 &
 # Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED`), so a watcher can report progress.
-set -euo pipefail
+set -Eeuo pipefail   # -E: the ERR trap also fires inside stage functions, so a failure always reaches $STATUS
 
 REPO="${REPO:-$HOME/fanuc-t27}"
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-testbed-data}"
@@ -28,6 +28,7 @@ stage() {
 
 setup_env() {
   # Codex's lock is for Python 3.12 + CUDA 12.6 wheels; uv's standalone CPython comes from PyPI, no extra apt source.
+  python3 -m pip --version > /dev/null 2>&1 || sudo apt-get install -y python3-pip   # Crusoe's image has no pip
   python3 -m pip install --user --quiet uv
   "$HOME/.local/bin/uv" python install 3.12
   PYTHON="$("$HOME/.local/bin/uv" python find 3.12)" bash "$REPO/perception/rosie/setup_ml.sh"
