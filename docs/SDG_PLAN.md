@@ -10,7 +10,7 @@ optional (T11). Real-cell images are for evaluation only, never training.
 | CAD geometry: installed pose of every part on its base + resting poses when loose | `sdg/tools/object_geometry.py` → `sdg/data/object_geometry.json` | **Done, verified.** All 30 STLs register onto the CAD assembly within 0.003 mm. Every resting pose is checked to sit on z = 0 |
 | Table zones (work area, spare store, reject tray) | `sdg/configs/cell_layout.yaml` | **Proposed.** Must be checked on the real cell before T22 |
 | Set sizes and randomization | `sdg/configs/sets.yaml` | Done (sizes from PLAN 6.1) |
-| Scene sampler (layout, defects, look-alike traps, build states, wrist poses) | `sdg/scene_sampler.py` | **Done, tested.** All 54,000 scenes lay out in about 16 s on a laptop; 16 behaviour tests |
+| Scene sampler (layout, defects, look-alike traps, build states, wrist poses) | `sdg/scene_sampler.py` | **Done, tested.** All 43,000 scenes (54,000 images) lay out in about 16 s on a laptop; 16 behaviour tests |
 | Post-processing + label assembly | `sdg/postprocess.py` | Done, tested (6 tests) |
 | Isaac stage builder + render loop | `sdg/isaac/stage.py`, `sdg/isaac/generate.py` | **Runs on the GB10** (Isaac 6.0.0): images, masks and labels come out; boxes now come from the masks. Rosie T4 run in progress |
 | Render hosts | `sdg/rosie/*` (T4, Slurm, Isaac 6.0.0 sandbox), `sdg/spark/render_chunk.sh` (GB10, Docker) | Both start Isaac 6.0.0; see section 5 |
@@ -32,7 +32,7 @@ A scene renders one image per listed camera. Chunks hold 500 images.
 | B | Wrist look-alike classifier | wrist | 24,000 | 24,000 | 48 | Exactly 800 per object (all 30). The target is always loose; wrist 120–260 mm above it, tilt up to 20° |
 | C | PatchCore good parts + defect test set | wrist | 8,000 | 8,000 | 16 | Cycles the 24 parts; 75% good (training set), 25% one defect on the target (test set only) |
 | D | Build check (recipe check + Cosmos Reason 2) | wrist + side | 6,000 | 3,000 | 12 | Top installed part is seated / high 1.5–4 mm / tilted 4–12° / wrong part (same family, other product) |
-| Pilot | all | all | 1,500 | — | — | First 375 images of chunk 0 of each set. **The full run reuses them** |
+| Pilot | all | all | 1,498 | 1,124 | — | First 375 images of chunk 0 of each set, rounded down to whole scenes: A and D 374 (187 two-camera scenes), B and C 375. **The full run reuses them** |
 
 Total: **54,000 images in 108 chunks**, plus the edge-case sets F–J (40,000) and the close-ups K–L (4,000) in
 section 11. E (GR00T demos) is sized after the scripted baseline works (T12).

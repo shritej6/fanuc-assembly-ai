@@ -6,7 +6,8 @@ UNTESTED until the Rosie pilot (T08). Written against the Isaac Sim 6.x API; the
 
 Output per chunk:  rgb/<cam>/<index>.jpg   depth/<cam>/<index>.png (uint16 mm)   seg/<cam>/<index>.png (uint16 uid+1)
                    labels/<index>.json (written last: a scene with labels is complete)   _DONE.json (timing)
-A re-run skips scenes that already have labels and skips the chunk if _DONE.json exists.
+A re-run skips scenes whose label and images are complete for the same spec, and skips the chunk only when
+_DONE.json names the digest of these specs (sdg/chunk_marks.py); labels and _DONE.json are written atomically.
 """
 
 import argparse
@@ -45,6 +46,7 @@ import cell
 import ik
 import scene_config as C
 
+from sdg.chunk_marks import chunk_done, scene_complete, specs_digest, write_json_atomic
 from sdg.isaac.stage import SceneStage
 from sdg.postprocess import apply_post, box_labels, depth_mm_u16, instance_mask, mask_box_labels, resize_nearest
 from sdg.wrist_ik import solve_tcp
@@ -134,8 +136,7 @@ def write_scene(spec: dict, cams: Cameras, paths: dict, out: Path) -> int:
         for b in boxes:
             b["occlusion"] = occ.get(b["uid"])
         labels["cameras"][cam] = boxes
-    (out / "labels").mkdir(parents=True, exist_ok=True)
-    (out / "labels" / f"{idx}.json").write_text(json.dumps(labels))
+    write_json_atomic(out / "labels" / f"{idx}.json", labels)   # last: the label is what marks the scene done
     return len(spec["cameras"])
 
 
@@ -152,9 +153,10 @@ def _deployed_commit() -> str:
 
 
 def main() -> None:
-    if (args.out / "_DONE.json").exists():
-        print(f"[sdg] {args.out} already done")
+    if chunk_done(args.out, args.specs):
+        print(f"[sdg] {args.out} already done from these specs")
         return
+    (args.out / "_FAILED.txt").unlink(missing_ok=True)   # an earlier attempt's failure is not this run's
     specs = [json.loads(line) for line in args.specs.read_text().splitlines() if line.strip()]
     specs = specs[: args.limit] if args.limit else specs
     world = World(stage_units_in_meters=1.0)
@@ -167,7 +169,7 @@ def main() -> None:
         app.update()
     t0, images = time.time(), 0
     for spec in specs:
-        if (args.out / "labels" / f"{spec['index']:06d}.json").exists():
+        if scene_complete(args.out, spec, set(DEPTH_SIZE)):
             continue
         paths = scene.load(spec)
         arm.pose(spec["arm"])
@@ -178,9 +180,10 @@ def main() -> None:
     done = {"scenes": len(specs), "images_this_run": images, "wall_s": round(wall, 1),
             "s_per_image": round(wall / images, 3) if images else None, "rt_subframes": args.rt_subframes,
             "container": os.environ.get("ISAAC_SIF", "unknown"), "limit": args.limit,
-            "code_commit": _deployed_commit()}
+            "code_commit": _deployed_commit(), "specs_sha256": specs_digest(args.specs),
+            "depth_cams": sorted(DEPTH_SIZE)}
     if not args.limit:
-        (args.out / "_DONE.json").write_text(json.dumps(done, indent=1))
+        write_json_atomic(args.out / "_DONE.json", done)
     print(f"[sdg] {json.dumps(done)}")
 
 

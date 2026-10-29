@@ -143,7 +143,7 @@ The state machine and all perception code run **identically** against Isaac Sim,
 | C. PatchCore good-part renders + defect test set | anomalib learns from good parts; defect renders used to evaluate it | wrist | 8,000 |
 | D. Build-check set | per product and step: seated / high / tilted / wrong part (recipe check + Cosmos Reason 2 evaluation) | wrist, side | 6,000 |
 | E. GR00T demos | scripted sim demos multiplied by Isaac Lab Mimic, LeRobot format | all | sized after the scripted baseline works |
-| Pilot | all of the above, label check on | all | 1,500 |
+| Pilot | all of the above, label check on | all | 1,498 (375 per set, whole scenes) |
 | **Total** | | | **about 55,500** |
 
 ### 6.2 Scenes (Replicator randomization)

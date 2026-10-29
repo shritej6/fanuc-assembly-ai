@@ -19,8 +19,9 @@ LIMIT="${LIMIT:-0}"
 CHUNK=$(printf "%04d" "$SLURM_ARRAY_TASK_ID")
 SPECS="$DATA_ROOT/specs/$SET/chunk_$CHUNK.jsonl"
 OUT="$DATA_ROOT/synthetic/$SET/chunk_$CHUNK"
-if [[ -f "$OUT/_DONE.json" ]]; then
-  echo "chunk $SET/$CHUNK already done"
+cd "$REPO"
+if python3 -m sdg.chunk_marks check "$OUT" "$SPECS" 2> /dev/null; then
+  echo "chunk $SET/$CHUNK already done from these specs"
   exit 0
 fi
 mkdir -p "$OUT" "$DATA_ROOT/cache/ov" "$DATA_ROOT/cache/nv"
@@ -54,7 +55,7 @@ done
 # OptiX denoiser weights (nvoptix.bin) and NGX application profiles.
 [[ -d /usr/share/nvidia ]] && GPU_BINDS+=(-B /usr/share/nvidia:/usr/share/nvidia)
 # Kit's shader / asset caches go to DATA_ROOT so they persist between chunks.
-singularity exec --nv "${GPU_BINDS[@]}" --overlay "$OVERLAY" \
+singularity exec --nv ${GPU_BINDS[@]+"${GPU_BINDS[@]}"} --overlay "$OVERLAY" \
   --env ACCEPT_EULA=Y,PRIVACY_CONSENT=Y,ISAAC_SIF="$ISAAC_SIF",FANUC_ROBOT_USD="${FANUC_ROBOT_USD:-}" \
   --env LD_LIBRARY_PATH=/.singularity.d/libs:/opt/nvhost \
   -B "$REPO" -B "$DATA_ROOT" \
@@ -62,3 +63,10 @@ singularity exec --nv "${GPU_BINDS[@]}" --overlay "$OVERLAY" \
   -B "$DATA_ROOT/cache/nv:$HOME/.nv" \
   "$ISAAC_SIF" /isaac-sim/python.sh "$REPO/sdg/isaac/generate.py" \
   --specs "$SPECS" --out "$OUT" --limit "$LIMIT"
+# Isaac can exit 0 after an exception (SimulationApp.close ends the process), so success is the chunk itself.
+if [[ -f "$OUT/_FAILED.txt" ]]; then
+  echo "chunk $SET/$CHUNK FAILED:"; tail -20 "$OUT/_FAILED.txt"; exit 1
+fi
+if [[ "$LIMIT" == "0" ]]; then
+  python3 -m sdg.chunk_marks check "$OUT" "$SPECS" || exit 1
+fi
