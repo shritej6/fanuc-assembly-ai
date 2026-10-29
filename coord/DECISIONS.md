@@ -26,3 +26,12 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-28 | Parts stand on the test-bed in their installed orientation at any yaw; the arm cannot turn a part over, so a fallen part is rejected and replaced from the spare store (replaces "flipped → rework") | user |
 | 2026-10-28 | ~70,000 more images in installed orientation (sets N R O P Q: test-bed detector nominal + hard, identity close-ups at one wrist height, insertion alignment, fallen/spares), rendered on GB10 + Brev | user |
 | 2026-10-28 | Brev ($400 credit) carries the new rendering, Cosmos and training; RunPod finishes the running Cosmos run and is the fallback. Brev guard proposed at $350 | user ($350 guard: Claude proposal) |
+| 2026-10-28 | Brev split: $270 for render + Cosmos (guard deletes Cosmos boxes at $265, never the render box), $120 kept for one 8× H100 training run. Cosmos restyles 50 % of the scenes of the new sets only (N R O P Q); old-set Cosmos stopped at 4,990 / 5,093 | user |
+| 2026-10-28 | Detector (RT-DETR, table/side) reports the exact part (all 30) + location; look-alikes must be confirmed by the wrist close-up before a pick (two independent cues) | user |
+| 2026-10-28 | Look-alike still unresolved after a second wrist look from another angle → set the part aside and take a known spare (LOOKALIKE_UNRESOLVED), never guess | user |
+| 2026-10-28 | Seated check passes only within the CAD insertion tolerance (`sdg/data/insertion_tolerance.json`: yaw ±1.4–2.4°, caps ±6.8°, shift 0.4–0.5 mm, no lift) | user |
+| 2026-10-28 | Accuracy first: bigger / slower models and extra checks are acceptable | user |
+| 2026-10-28 | PatchCore-flagged part → reject zone + spare | user |
+| 2026-10-28 | Identity checked before the pick AND re-checked on the stack after placing (fit ≠ identity: M1_01 / M2_01 seat fully in F03); mismatch → WRONG_PART, remove and replace | user |
+| 2026-10-28 | Detector has a `fallen` flag per part (sets N / Q teach it); planner rejects fallen parts and takes a spare | user |
+| 2026-10-28 | H100 order: 1 RT-DETR production, 2 wrist classifier, 3 set-P alignment model if ready, 4 PatchCore (single-GPU per object, object jobs in parallel over the 8 GPUs ≈ 3 waves; its dependency-security audit must pass first), 5 FoundationPose validation (pretrained, one H100, own pinned environment), 6 copy artifacts and close the box | user |

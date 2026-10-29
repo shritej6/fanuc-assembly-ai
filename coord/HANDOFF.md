@@ -2,6 +2,17 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · Model behaviour decided (for CODEX) · CLAUDE · read before T13 / T14 / T18 training
+
+The user answered the model questions before training (all rows dated 2026-10-28 in `coord/DECISIONS.md`):
+- Detector: exact part of 30 + location + `fallen` flag; look-alikes need the wrist classifier to agree before a pick.
+- Unsure look-alike after a second wrist view → spare (LOOKALIKE_UNRESOLVED). PatchCore flag → reject + spare.
+- Identity re-checked after placing (a wrong housing seats fully in F03); seated = within `insertion_tolerance.json`.
+- Accuracy first. H100 order: RT-DETR → wrist classifier → set-P model → PatchCore (per object, parallel) →
+  FoundationPose validation (pretrained) → copy artifacts, close the box. PatchCore's dependency audit must pass first.
+- Data: new sets N R O P Q render on Brev `fa-r4` (+ GB10) with Cosmos for 50 % of scenes (`rgb_cosmos/`, `_COSMOS.json`);
+  per-chunk QA in `watchdog/status.json` there. Weight the new installed-orientation sets up. Ready ~01:40 CT Oct 29.
+
 ## 2026-10-28 · T25 test-bed data (in progress) · CLAUDE (for CODEX) · parts stand as installed, any yaw
 
 - Rule from the user: the arm only picks/places straight down and cannot turn a part over, so every loose part and
