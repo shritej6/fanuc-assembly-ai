@@ -15,7 +15,8 @@ STATUS="${STATUS:-$HOME/t27_status.txt}"
 VENV_PATH="${VENV_PATH:-$HOME/fanuc-t13-venv-secure}"
 GPUS="$(nvidia-smi -L | wc -l)"
 # 40 GB A100s cannot hold the H100 detector batch; their config keeps the same images per step via accumulation.
-GPU_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)"
+# --id=0, not `| head -1`: head closing the pipe gives nvidia-smi SIGPIPE, which pipefail turns into a silent exit.
+GPU_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits --id=0)"
 if (( GPU_MIB < 70000 )); then DEFAULT_DETECTOR=rtdetr_a100_40g.yaml; else DEFAULT_DETECTOR=rtdetr_h100.yaml; fi
 DETECTOR_CONFIG="${DETECTOR_CONFIG:-$DEFAULT_DETECTOR}"
 export REPO DATA_ROOT VENV_PATH

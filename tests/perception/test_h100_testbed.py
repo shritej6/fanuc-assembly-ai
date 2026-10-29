@@ -10,7 +10,11 @@ SCRIPT = Path(__file__).resolve().parents[2] / "perception" / "brev" / "h100_tes
 
 
 def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dict[str, str]:
-    """A repo whose launchers are stubs, and an nvidia-smi that reports two GPUs of `gpu_mib` MiB."""
+    """A repo whose launchers are stubs, and an nvidia-smi that reports GPUs of `gpu_mib` MiB.
+
+    Like the real tool, a memory query without --id writes one line per GPU over time, so a reader that closes the
+    pipe early makes it die of SIGPIPE.
+    """
     repo, bin_dir = tmp_path / "repo", tmp_path / "bin"
     (repo / "perception" / "rosie").mkdir(parents=True)
     bin_dir.mkdir()
@@ -18,7 +22,12 @@ def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dic
     (repo / "perception" / "rosie" / "classifier.sbatch").write_text(f'echo "$CONFIG"\nexit {classifier_exit}\n')
     (repo / "perception" / "rosie" / "detector.sbatch").write_text('echo "$CONFIG"\n')
     (bin_dir / "nvidia-smi").write_text(
-        f'#!/bin/sh\nif [ "$1" = -L ]; then echo GPU 0; echo GPU 1; else echo {gpu_mib}; echo {gpu_mib}; fi\n'
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        "  *-L*) echo GPU 0; echo GPU 1 ;;\n"
+        f"  *--id=0*) echo {gpu_mib} ;;\n"
+        f"  *) for gpu in 0 1 2 3 4 5 6 7; do echo {gpu_mib}; sleep 0.05; done ;;\n"
+        "esac\n"
     )
     (bin_dir / "nvidia-smi").chmod(0o755)
     return {
