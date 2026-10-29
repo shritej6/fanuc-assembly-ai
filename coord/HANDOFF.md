@@ -18,9 +18,11 @@ Newest first. One entry per finished task.
 - Reporting: incomplete Held/Suspended/Aborted/Error/callback-limit runs have `escapes=null`, explicit unresolved-hazard
   counts, and `acceptance_ready=false`; they can no longer silently report zero escapes. Known escapes remain separately
   measured. EOF/diff checks and direct XY bounds/diversity regressions are included.
-- Run: `uv run pytest -q tests/test_scenario_fleet.py` (21 passed); `uv run pytest -q` (464 passed);
+- Run: `uv run pytest -q tests/test_scenario_fleet.py` (21 passed); `uv run pytest -q` (530 passed);
   `uv run ruff check .`, `git diff --check`, and the 500-line/40-line source limits passed.
-- Measured baseline at seed 90210, 20 scenarios, on reviewed T09 `915bbd2`: 60 requested, 56 completed, final yield
+- Integration: rebased onto current T09 `0efd596`, including the guarded T04/T05 catalog and current
+  hash-pinned T29 printed-finger grasp transforms. The two measured reports below were rerun after that rebase.
+- Measured baseline at seed 90210, 20 scenarios, on T09 `0efd596`: 60 requested, 56 completed, final yield
   0.9333333333333333, 3,812 action rows, 4 assists, 14.0 builds/assist, 0 retries, 0 known escapes, 0 unresolved hazards;
   statuses were 16 Complete and 4 Suspended. `escapes` is null and acceptance is blocked by the four incomplete runs.
 - Measured unseen seed 24681357, 20 scenarios: 60 requested, 49 completed, final yield 0.8166666666666667, 3,351 action
