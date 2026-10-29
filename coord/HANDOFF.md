@@ -16,12 +16,13 @@ Newest first. One entry per finished task.
   generic inventory rejection into `insertion_failure` without counting the same incident twice. Free-form Andon text
   is not parsed as factory data. Current T09 `rejected` and table-sourced `replacement` events are accepted as
   non-additive operational facts, so the reject-zone inventory remains the single Pareto occurrence. Malformed or
-  unknown events raise `KanbanInputError`; cross-product part ownership,
+  unknown events raise `KanbanInputError`; event kinds explicitly require, permit, or forbid object/product fields,
+  and every present object is checked against its catalog product. Cross-product part ownership,
   unknown causes, unbounded retry shapes, duplicate/unknown policies, and a consumed spare without a policy also fail
   closed.
-- Run: `uv run pytest -q tests/test_kanban.py` (50 passed); `uv run pytest -q` (431 passed);
-  `.venv/bin/ruff check .` (passed); `git diff --check` (clean); AST gate found 349-line implementation / 367-line test
-  files and no function over 40 lines. The reviewed implementation is 349 lines; `contracts/` and
+- Run: `uv run pytest -q tests/test_kanban.py` (56 passed); `uv run pytest -q` (437 passed);
+  `.venv/bin/ruff check .` (passed); `git diff --check` (clean); measured files are 367 implementation / 415 test
+  lines and no function is over 40 lines. `contracts/` and
   `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
 - Next: Claude reviews the T20 PR and can render `OperationsView.cards` and `OperationsView.pareto` without duplicating
   domain logic. Production callers must supply reviewed stock thresholds and measured preliminary-rate evidence; this

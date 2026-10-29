@@ -312,6 +312,32 @@ def test_unknown_event_kind_fails_closed_with_typed_context() -> None:
 
 
 @pytest.mark.parametrize(
+    "event",
+    [
+        ControllerEvent("rebuild", 1, "M2_01", "started"),
+        ControllerEvent("rebuild", None, "M1_01", "started"),
+        ControllerEvent("complete", 1, "M1_01", "four verified steps"),
+        ControllerEvent("complete", None, None, "four verified steps"),
+        ControllerEvent("resume", None, None, "operator acknowledged"),
+    ],
+)
+def test_event_shapes_fail_closed_on_cross_product_or_forbidden_fields(event: ControllerEvent) -> None:
+    with pytest.raises(KanbanInputError):
+        build_operations_view(load_catalog(), Inventory(load_catalog()), (event,), ())
+
+
+def test_rebuild_supports_only_owned_object_or_product_level_forms() -> None:
+    events = (
+        ControllerEvent("rebuild", 1, "M1_01", "started"),
+        ControllerEvent("rebuild", 1, None, "verified complete"),
+    )
+
+    view = build_operations_view(load_catalog(), Inventory(load_catalog()), events, ())
+
+    assert view.source_event_count == 2
+
+
+@pytest.mark.parametrize(
     "events",
     [
         [ControllerEvent("complete", 1, None, "four verified steps")],

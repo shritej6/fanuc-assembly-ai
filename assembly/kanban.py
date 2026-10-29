@@ -32,7 +32,7 @@ _KNOWN_EVENT_KINDS = frozenset(
         "stage_installed",
     }
 )
-_OBJECT_EVENT_KINDS = frozenset(
+_OBJECT_REQUIRED_KINDS = frozenset(
     {
         "defect",
         "installed",
@@ -46,6 +46,9 @@ _OBJECT_EVENT_KINDS = frozenset(
         "stage_installed",
     }
 )
+_OBJECT_OPTIONAL_KINDS = frozenset({"rebuild"})
+_OBJECT_FORBIDDEN_KINDS = _KNOWN_EVENT_KINDS - _OBJECT_REQUIRED_KINDS - _OBJECT_OPTIONAL_KINDS
+_PRODUCT_REQUIRED_KINDS = _OBJECT_REQUIRED_KINDS | _OBJECT_OPTIONAL_KINDS | frozenset({"complete", "resume"})
 
 
 class KanbanInputError(ValueError):
@@ -215,9 +218,7 @@ def _validate_event(event: object, owners: dict[str, int], product_ids: set[int]
     kind = _nonempty(event.kind, "event.kind")
     if kind not in _KNOWN_EVENT_KINDS:
         raise KanbanInputError(f"event kind {kind!r} is not registered")
-    _validate_event_product(event.product, product_ids)
-    if kind in _OBJECT_EVENT_KINDS and event.product is None:
-        raise KanbanInputError(f"event kind {kind!r} requires a catalog product")
+    _validate_event_product(kind, event.product, product_ids)
     _validate_event_object(kind, event.object_id, event.product, owners)
     detail = _nonempty(event.detail, "event.detail")
     if kind == "defect":
@@ -229,8 +230,10 @@ def _validate_event(event: object, owners: dict[str, int], product_ids: set[int]
         raise KanbanInputError("retry detail must be bounded retry number '1' or '2'")
 
 
-def _validate_event_product(product: object, product_ids: set[int]) -> None:
+def _validate_event_product(kind: str, product: object, product_ids: set[int]) -> None:
     if product is None:
+        if kind in _PRODUCT_REQUIRED_KINDS:
+            raise KanbanInputError(f"event kind {kind!r} requires a catalog product")
         return
     if isinstance(product, bool) or not isinstance(product, int) or product not in product_ids:
         raise KanbanInputError(f"event product {product!r} is not in the catalog")
@@ -238,12 +241,14 @@ def _validate_event_product(product: object, product_ids: set[int]) -> None:
 
 def _validate_event_object(kind: str, object_id: object, product: int | None, owners: dict[str, int]) -> None:
     if object_id is None:
-        if kind in _OBJECT_EVENT_KINDS:
+        if kind in _OBJECT_REQUIRED_KINDS:
             raise KanbanInputError(f"event kind {kind!r} requires a catalog part")
         return
+    if kind in _OBJECT_FORBIDDEN_KINDS:
+        raise KanbanInputError(f"event kind {kind!r} forbids a catalog part")
     if not isinstance(object_id, str) or object_id not in owners:
         raise KanbanInputError(f"event object {object_id!r} is not a catalog part")
-    if kind in _OBJECT_EVENT_KINDS and owners[object_id] != product:
+    if product is None or owners[object_id] != product:
         raise KanbanInputError(f"event object {object_id!r} does not belong to product {product!r}")
 
 
