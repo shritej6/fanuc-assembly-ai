@@ -24,7 +24,7 @@ An agent may only start a task that is READY and owned by it.
 | T17 | Scenario fleet (3 products × 20 layouts × injected faults) + KPIs | CODEX | BACKLOG | feature/T17-fleet | T09, T13 | Thu |
 | T18 | GR00T N1.7 / SmolVLA / ACT fine-tune vs the scripted baseline | CODEX | BACKLOG | feature/T18-policy-learn | T12 | Thu |
 | T19 | OPC UA PLC-style tags (`asyncua`) | CODEX | BACKLOG | feature/T19-opcua | T09 | Thu |
-| T20 | Kanban reorder cards + defect Pareto | CODEX + CLAUDE | BACKLOG | feature/T20-kanban | T09 | Thu |
+| T20 | Kanban reorder cards + defect Pareto | CODEX + CLAUDE | REVIEW | feature/T20-kanban | T09 | Thu |
 | T21 | Operator agent: plain-language command → task, live report; Cosmos Reason 2 build check endpoint | CODEX + CLAUDE | BACKLOG | feature/T21-operator | T09 | Thu |
 | T22 | `placement.yaml` (10 rollouts with planned faults) + `submission.yaml` | CLAUDE | BACKLOG | feature/T22-placement | T04 | Wed |
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
