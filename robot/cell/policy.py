@@ -28,7 +28,7 @@ class Policy:
 
     def __init__(self, checkpoint: str | None = None):
         self.checkpoint = checkpoint
-        self.adapter = CellAdapter(JointPositionHoldController(), action_mode=self.ACTION, dt=self.DT)
+        self.adapter = CellAdapter(JointPositionHoldController(), action_mode=self.ACTION, dt=lambda: self.DT)
 
     def reset(self) -> None:
         """Called at the start of every rollout."""

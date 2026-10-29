@@ -24,7 +24,8 @@ from robot import (
     guard_tcp_action,
 )
 
-SAFE_TCP_ROW = [400.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5]
+SAFE_TCP_ROW = [400.0, 0.0, 0.0, -180.0, 0.0, 0.0, 0.5]
+SAFE_JOINT_ROW = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5]
 CELL_DIR = Path(__file__).resolve().parents[1] / "robot" / "cell"
 POLICY_DELEGATION_SCRIPT = textwrap.dedent(
     """
@@ -69,6 +70,48 @@ DEFAULT_POLICY_SCRIPT = textwrap.dedent(
     joints = [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0]
     action = Policy().act({"joints": joints, "tcp_pose": None})
     print(json.dumps({"action": action, "copied": action is not joints}))
+    """
+)
+TCP_POLICY_GUARD_SCRIPT = textwrap.dedent(
+    """
+    import json
+
+    from policy import Policy
+    from robot import ActionBoundsError
+
+    class UnsafeController:
+        def reset(self):
+            pass
+
+        def act(self, observation):
+            return [149.0, 0.0, 0.0, -180.0, 0.0, 0.0, 0.0]
+
+    Policy.ACTION = "tcp"
+    policy = Policy()
+    policy.adapter._controller = UnsafeController()
+    try:
+        policy.act({"joints": [0.0] * 7, "tcp_pose": None})
+    except ActionBoundsError as error:
+        print(json.dumps({"field": error.field, "value": error.value}))
+    else:
+        raise AssertionError("unsafe TCP action passed through Policy")
+    """
+)
+POLICY_CURRENT_DT_SCRIPT = textwrap.dedent(
+    """
+    import json
+
+    from policy import Policy
+    from robot import ActionBoundsError
+
+    policy = Policy()
+    Policy.DT = 1.1
+    try:
+        policy.act({"joints": [0.0] * 7, "tcp_pose": None})
+    except ActionBoundsError as error:
+        print(json.dumps({"field": error.field, "value": error.value}))
+    else:
+        raise AssertionError("Policy reused stale DT")
     """
 )
 
@@ -287,17 +330,17 @@ def test_tcp_values_must_be_finite_numbers(value: object) -> None:
 @pytest.mark.parametrize(
     ("index", "field", "value"),
     [
-        (3, "w", math.nextafter(-360.0, -math.inf)),
-        (3, "w", math.nextafter(360.0, math.inf)),
-        (4, "p", math.nextafter(-360.0, -math.inf)),
-        (4, "p", math.nextafter(360.0, math.inf)),
+        (3, "w", math.nextafter(-177.0, math.inf)),
+        (3, "w", math.nextafter(177.0, -math.inf)),
+        (4, "p", math.nextafter(-3.0, -math.inf)),
+        (4, "p", math.nextafter(3.0, math.inf)),
         (5, "r", math.nextafter(-360.0, -math.inf)),
         (5, "r", math.nextafter(360.0, math.inf)),
         (6, "gripper", math.nextafter(0.0, -math.inf)),
         (6, "gripper", math.nextafter(1.0, math.inf)),
     ],
 )
-def test_tcp_orientation_and_gripper_outside_bounds_are_rejected(index: int, field: str, value: float) -> None:
+def test_tcp_tool_down_and_gripper_outside_bounds_are_rejected(index: int, field: str, value: float) -> None:
     with pytest.raises(ActionBoundsError, match=rf"row 0.*'{field}'") as raised:
         guard_tcp_action(tcp_row(index, value), dt=0.1)
 
@@ -308,17 +351,19 @@ def test_tcp_orientation_and_gripper_outside_bounds_are_rejected(index: int, fie
 @pytest.mark.parametrize(
     ("index", "value"),
     [
-        (3, -360.0),
-        (3, 360.0),
-        (4, -360.0),
-        (4, 360.0),
+        (3, -183.0),
+        (3, -177.0),
+        (3, 177.0),
+        (3, 183.0),
+        (4, -3.0),
+        (4, 3.0),
         (5, -360.0),
         (5, 360.0),
         (6, 0.0),
         (6, 1.0),
     ],
 )
-def test_tcp_orientation_and_gripper_bounds_are_inclusive(index: int, value: float) -> None:
+def test_tcp_tool_down_and_gripper_bounds_are_inclusive(index: int, value: float) -> None:
     row = tcp_row(index, value)
 
     assert guard_tcp_action(row, dt=0.1) == row
@@ -382,6 +427,28 @@ def test_tcp_adapter_guards_controller_output_with_configured_dt() -> None:
         adapter.act(official_observation())
 
 
+def test_joint_adapter_guards_controller_output() -> None:
+    controller = RecordingController([0.0, 0.0, 0.0, 0.0, 999.0, 0.0, 7.0])
+    adapter = CellAdapter(controller, action_mode="joints", dt=0.1)
+
+    with pytest.raises(ActionBoundsError, match="'J5'"):
+        adapter.act(official_observation())
+
+
+def test_adapter_resolves_current_dt_on_every_call() -> None:
+    current_dt = {"value": 0.1}
+    adapter = CellAdapter(
+        RecordingController(SAFE_JOINT_ROW),
+        action_mode="joints",
+        dt=lambda: current_dt["value"],
+    )
+
+    assert adapter.act(official_observation()) == SAFE_JOINT_ROW
+    current_dt["value"] = 1.1
+    with pytest.raises(ActionBoundsError, match="'dt'"):
+        adapter.act(official_observation())
+
+
 def run_policy_script(script: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
@@ -414,3 +481,17 @@ def test_default_policy_holds_current_joints_when_tcp_pose_is_none() -> None:
         "action": [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0],
         "copied": True,
     }
+
+
+def test_policy_rejects_out_of_box_tcp_controller_output() -> None:
+    result = run_policy_script(TCP_POLICY_GUARD_SCRIPT)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"field": "x", "value": 149.0}
+
+
+def test_policy_uses_current_dt_instead_of_constructor_snapshot() -> None:
+    result = run_policy_script(POLICY_CURRENT_DT_SCRIPT)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"field": "dt", "value": 1.1}
