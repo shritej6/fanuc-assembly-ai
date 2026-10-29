@@ -12,6 +12,23 @@ ROOT="$HOME/fa-cosmos"
 export PATH="$HOME/.local/bin:$PATH"   # uv / uvx (Cosmos calls uvx); nohup shells do not read the login profile
 mkdir -p "$ROOT"/{incoming,inbox,work,done,failed}
 
+# COSMOS_RUNTIME=fa-cosmos-runtime (sdg/brev/cosmos_runtime.Dockerfile): run the host venv inside that image, for VMs
+# whose OS lacks FFmpeg 6 / CUDA 13 libraries. On these VMs ~/.cache and ~/.cache/huggingface are symlinks to other
+# disks, so their real folders are mounted at their real paths too. Our uid has no passwd entry in the image, and
+# torch's compile cache needs a user name: USER / LOGNAME give it one.
+run_bundle() {  # gpu bundle
+  if [[ -z "${COSMOS_RUNTIME:-}" ]]; then
+    CUDA_VISIBLE_DEVICES=$1 RUNNER=venv BUNDLE="$2" bash "$REPO/sdg/cosmos/run_transfer.sh"
+    return
+  fi
+  local mounts=(-v /data:/data -v "$HOME:$HOME") p
+  for p in "$HOME/.cache" "$HOME/.cache/huggingface"; do mounts+=(-v "$(readlink -f "$p"):$(readlink -f "$p")"); done
+  docker run --rm --gpus "device=$1" --ipc=host -u "$(id -u):$(id -g)" -w "$REPO" "${mounts[@]}" \
+    -e HOME -e USER="$(id -un)" -e LOGNAME="$(id -un)" -e PATH="$HOME/.local/bin:/usr/local/cuda/bin:/usr/bin:/bin" \
+    -e LD_LIBRARY_PATH=/usr/local/cuda/compat -e RUNNER=venv -e REPO_DIR="${REPO_DIR:?}" -e BUNDLE="$2" \
+    "$COSMOS_RUNTIME" bash sdg/cosmos/run_transfer.sh
+}
+
 worker() {  # gpu
   local gpu=$1 b name
   while [[ ! -f "$ROOT/STOP" ]]; do
@@ -23,7 +40,7 @@ worker() {  # gpu
     done
     [[ -z "$b" ]] && { sleep 30; continue; }
     for try in 1 2 3; do
-      CUDA_VISIBLE_DEVICES=$gpu RUNNER=venv BUNDLE="$b" bash "$REPO/sdg/cosmos/run_transfer.sh" > /dev/null 2>&1
+      run_bundle "$gpu" "$b" > /dev/null 2>&1
       [[ $(find "$b/out" -name '*.jpg' | wc -l) -ge $(find "$b/specs" -name '*.json' | wc -l) ]] && break
       echo "$(date +%T) gpu$gpu $name attempt $try incomplete"
     done
