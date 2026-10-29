@@ -9,6 +9,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 ROOT="$HOME/fa-cosmos"
+export PATH="$HOME/.local/bin:$PATH"   # uv / uvx (Cosmos calls uvx); nohup shells do not read the login profile
 mkdir -p "$ROOT"/{incoming,inbox,work,done,failed}
 
 worker() {  # gpu
