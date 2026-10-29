@@ -335,7 +335,7 @@ class Inventory:
             original = self.reject(instance_id, condition=condition)
         elif original.zone is not InventoryZone.REJECT:
             raise InvalidInventoryMoveError(f"Instance {instance_id!r} must be reserved or rejected")
-        replacement = self._find_spare(original.object_id)
+        replacement = self._find_replacement(original.object_id)
         if replacement is None:
             raise InventoryShortageError(active.product, required_object_id=original.object_id)
         reserved = self._reserve(replacement, active.product)
@@ -428,10 +428,11 @@ class Inventory:
                     return item
         raise InventoryShortageError(product, required_object_id=object_id)
 
-    def _find_spare(self, object_id: str) -> InventoryItem | None:
-        for item in self._items.values():
-            if item.object_id == object_id and self._is_usable(item, InventoryZone.SPARE):
-                return item
+    def _find_replacement(self, object_id: str) -> InventoryItem | None:
+        for zone in (InventoryZone.TABLE, InventoryZone.SPARE):
+            for item in self._items.values():
+                if item.object_id == object_id and self._is_usable(item, zone):
+                    return item
         return None
 
     @staticmethod

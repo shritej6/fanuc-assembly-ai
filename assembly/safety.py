@@ -53,6 +53,10 @@ class EmptyPlanViolation(SafetyViolation):
     """No executable waypoint was supplied."""
 
 
+class CartesianSpeedViolation(SafetyViolation):
+    """A waypoint segment exceeds the configured per-step TCP speed."""
+
+
 @dataclass(frozen=True, slots=True)
 class ReachabilityCapabilities:
     """Declared kinematic coverage of an injected reachability checker."""
@@ -111,6 +115,8 @@ class SafetyConfig:
     expected_p_deg: float
     orientation_tolerance_deg: float
     sweep_radius_mm: float
+    max_cartesian_speed_mm_s: float
+    max_cartesian_speed_source: str
 
 
 @dataclass(frozen=True)
@@ -187,10 +193,15 @@ def _validate_config(config: SafetyConfig) -> None:
     clearance = _finite(config.min_table_clearance_mm, "min_table_clearance_mm")
     tolerance = _finite(config.orientation_tolerance_deg, "orientation_tolerance_deg")
     radius = _finite(config.sweep_radius_mm, "sweep_radius_mm")
+    speed = _finite(config.max_cartesian_speed_mm_s, "max_cartesian_speed_mm_s")
+    if not isinstance(config.max_cartesian_speed_source, str) or not config.max_cartesian_speed_source.strip():
+        raise SafetyConfigurationViolation("safety max_cartesian_speed_mm_s requires a recorded source")
     if dt_s <= 0.0:
         raise SafetyConfigurationViolation("safety dt_s must be positive")
     if clearance < 0.0 or radius < 0.0:
         raise SafetyConfigurationViolation("safety clearances must be nonnegative")
+    if speed <= 0.0:
+        raise SafetyConfigurationViolation("safety max_cartesian_speed_mm_s must be positive")
     if _angle_error(expected_w, -180.0) > 1e-9 or _angle_error(expected_p, 0.0) > 1e-9:
         raise SafetyConfigurationViolation("safety orientation must remain official UTOOL1 tool-down")
     if not 0.0 <= tolerance < 90.0:
@@ -300,6 +311,9 @@ class SafetySupervisor:
         owner: MotionOwner,
         index: int,
     ) -> None:
+        speed = math.dist(start.xyz, end.xyz) / self._config.dt_s
+        if speed > self._config.max_cartesian_speed_mm_s:
+            raise CartesianSpeedViolation(f"segment {index} speed {speed!r} exceeds configured limit")
         try:
             collision = self._collision.first_collision(start, end, obstacles, self._config.sweep_radius_mm, owner)
         except Exception as error:

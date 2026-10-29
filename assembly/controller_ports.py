@@ -37,6 +37,7 @@ class ObservedInventoryItem:
     object_id: str
     zone: InventoryZone = InventoryZone.TABLE
     condition: ObjectCondition = ObjectCondition.VERIFIED
+    coarse_xy_mm: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +154,13 @@ def observation_time(observation: Observation) -> float:
     return _finite(observation.get("t"), "observation.t")
 
 
-def reconcile_inventory(inventory: Inventory, snapshot: object, expected_time_s: float) -> None:
+def reconcile_inventory(
+    inventory: Inventory,
+    snapshot: object,
+    expected_time_s: float,
+    *,
+    held_instance_id: str | None = None,
+) -> None:
     if not isinstance(snapshot, InventorySnapshot):
         raise ControllerPortError("perception scan must return InventorySnapshot")
     require_fresh(snapshot.observed_at_s, expected_time_s, "inventory snapshot")
@@ -170,10 +177,10 @@ def reconcile_inventory(inventory: Inventory, snapshot: object, expected_time_s:
                 InventoryZone.TABLE,
                 InventoryZone.SPARE,
                 InventoryZone.RESERVED,
-                InventoryZone.INSTALLED,
                 InventoryZone.STAGED,
             }
             and item.instance_id not in seen
+            and item.instance_id != held_instance_id
         ):
             inventory.mark_unobserved(item.instance_id)
     _require_claimed_items_verified(inventory)
@@ -181,8 +188,14 @@ def reconcile_inventory(inventory: Inventory, snapshot: object, expected_time_s:
 
 def _require_claimed_items_verified(inventory: Inventory) -> None:
     claimed = {InventoryZone.RESERVED, InventoryZone.INSTALLED, InventoryZone.STAGED}
+    actionable = {ObjectCondition.FALLEN, ObjectCondition.DEFECTIVE}
     for item in inventory.items():
-        if item.reserved_for is not None and item.zone in claimed and item.condition is not ObjectCondition.VERIFIED:
+        if (
+            item.reserved_for is not None
+            and item.zone in claimed
+            and item.condition is not ObjectCondition.VERIFIED
+            and item.condition not in actionable
+        ):
             raise ControllerPortError(f"claimed instance {item.instance_id!r} is not verified in the complete scan")
 
 
@@ -191,6 +204,8 @@ def _reconcile_item(inventory: Inventory, observed: object, seen: set[str]) -> N
         raise ControllerPortError("inventory snapshot contains an invalid item")
     if observed.instance_id in seen:
         raise ControllerPortError(f"duplicate observed instance {observed.instance_id!r}")
+    if observed.coarse_xy_mm is not None:
+        _numeric_values(observed.coarse_xy_mm, 2, "coarse_xy_mm must contain x and y", "coarse_xy_mm")
     seen.add(observed.instance_id)
     try:
         inventory.reconcile_observation(

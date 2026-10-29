@@ -12,9 +12,9 @@ from assembly.controller_ports import (
     pose_agrees,
 )
 from assembly.inventory import InventoryError, InventoryZone, ObjectCondition
-from assembly.motion import MotionError, Waypoint, compile_release_retreat
+from assembly.motion import MotionError, OrientedPartPose, Waypoint, compile_inspection_stop, compile_release_retreat
 from assembly.planner import PlannerError, PreparedPlanStep
-from assembly.recovery import RecoveryError, RecoveryStageKind, RecoveryStagePlan, compile_retry_recovery
+from assembly.recovery import RecoveryError, RecoveryStage, RecoveryStageKind, RecoveryStagePlan, compile_retry_recovery
 from assembly.verification import (
     RecoveryAction,
     RecoveryDecision,
@@ -107,44 +107,52 @@ class RecoveryControllerMixin:
         current: Waypoint,
         observed_at: float,
     ) -> bool:
-        try:
-            planned = self._recovery.prepare_stage(
-                inventory=self.inventory,
-                catalog=self._catalog,
-                poses=self._poses,
-                current=current,
-                config=self._motion_config,
-                observed_at_s=observed_at,
-            )
-        except (MotionError, PlannerError, RecoveryError) as error:
-            self._hold(str(error))
-            return False
-        if planned is None:
-            self._finish_rebuild()
-            return False
-        if not self._recovery_pick_passes(planned, observation, observed_at):
-            return False
-        self._pending_recovery_stage = planned
-        return self._set_guarded_motion(
-            planned.chunks,
-            observation,
-            current,
-            observed_at,
-            planned.part.instance_id,
-            planned.part.object_id,
-            self.inventory.active_reservation.base.instance_id,
-            planned.base_pose,
-        )
+        stage = self._recovery.current_stage
+        if stage.kind in {RecoveryStageKind.REJECT_FAILED, RecoveryStageKind.INSERT_SPARE}:
+            return self._queue_recovery_stage(observation, current, observed_at, None)
+        return self._queue_recovery_inspection(stage, observation, current, observed_at)
 
-    def _recovery_pick_passes(
+    def _queue_recovery_inspection(
         self,
-        planned: RecoveryStagePlan,
+        stage: RecoveryStage,
         observation: Observation,
+        current: Waypoint,
         observed_at: float,
     ) -> bool:
-        if planned.stage.kind is RecoveryStageKind.REJECT_FAILED:
-            return True
-        part = planned.part
+        part = self.inventory.item(stage.instance_id)
+        coarse_xy = self._coarse_xy_by_instance.get(part.instance_id)
+        if coarse_xy is None:
+            self._hold(f"coarse perception center unavailable for recovery part {part.instance_id!r}")
+            return False
+        try:
+            plan = compile_inspection_stop(
+                current, coarse_xy, inspection=self._inspection_stop, motion=self._motion_config
+            )
+            base = self.inventory.active_reservation.base
+            base_pose = self._poses.base_for(base, observed_at_s=observed_at)
+        except (MotionError, PlannerError, RecoveryError, ValueError, TypeError, AttributeError) as error:
+            self._hold(f"recovery inspection calibration unavailable: {error}")
+            return False
+        self._pending_recovery_inspection = stage
+        queued = self._set_guarded_motion(
+            plan, observation, current, observed_at, part.instance_id, part.object_id, base.instance_id, base_pose
+        )
+        if not queued:
+            self._pending_recovery_inspection = None
+        return queued
+
+    def _prepare_recovery_after_inspection(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> bool:
+        stage = self._pending_recovery_inspection
+        if stage is None:
+            raise RuntimeError("recovery inspection has no pending stage")
+        self._motion_queue.finish()
+        self._pending_recovery_inspection = None
+        part = self.inventory.item(stage.instance_id)
         evidence = call_port("recovery pre-pick perception", self._perception.pre_pick, observation, part)
         self._require_fresh_evidence(evidence, EvidencePair, observed_at, "recovery pre-pick evidence")
         decision = verify_pre_pick(
@@ -154,16 +162,47 @@ class RecoveryControllerMixin:
             expected_instance_id=part.instance_id,
             thresholds=self._verification_thresholds,
         )
-        grasp = planned.grasp
-        agrees = grasp is not None and pose_agrees(
-            evidence.detection.get("pose"),
-            oriented_pose_values(grasp),
-            self._perception_tolerances,
+        if decision.outcome is not VerificationOutcome.ACCEPT:
+            self._hold(f"recovery pre-pick rejected {part.instance_id!r}")
+            return False
+        grasp = self._foundationpose_grasp(part, evidence, observed_at)
+        return self._queue_recovery_stage(observation, current, observed_at, grasp)
+
+    def _queue_recovery_stage(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+        grasp: OrientedPartPose | None,
+    ) -> bool:
+        try:
+            planned = self._recovery.prepare_stage(
+                inventory=self.inventory,
+                catalog=self._catalog,
+                poses=self._poses,
+                current=current,
+                config=self._motion_config,
+                observed_at_s=observed_at,
+                grasp=grasp,
+            )
+        except (MotionError, PlannerError, RecoveryError) as error:
+            self._hold(str(error))
+            return False
+        if planned is None:
+            self._finish_rebuild()
+            return False
+        queued = self._set_guarded_motion(
+            planned.chunks,
+            observation,
+            current,
+            observed_at,
+            planned.part.instance_id,
+            planned.part.object_id,
+            self.inventory.active_reservation.base.instance_id,
+            planned.base_pose,
         )
-        if decision.outcome is VerificationOutcome.ACCEPT and agrees:
-            return True
-        self._hold(f"recovery pre-pick rejected {part.instance_id!r}")
-        return False
+        self._pending_recovery_stage = planned if queued else None
+        return queued
 
     def _verify_recovery_stage(self, observation: Observation, current: Waypoint, observed_at: float) -> bool:
         planned = self._pending_recovery_stage

@@ -11,9 +11,16 @@ def test_connector_step_applies_catalog_gripper_roll() -> None:
         item for item in _observed_three_products() if item.object_id.startswith("M4") or item.object_id == "F04"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
-    controller = _controller(perception, products=(4,))
+    controller = _controller(perception)
+    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
+    observation = _observation((4,))
 
-    first = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
+    inspect = adapter.act(observation)
+    inspect_rows = inspect if isinstance(inspect[0], list) else [inspect]
+    observation["tcp_pose"] = inspect_rows[-1][:6]
+    observation["joints"] = [0.0] * 6 + [inspect_rows[-1][6]]
+    observation["t"] = 1.0
+    first = adapter.act(observation)
     rows = first if isinstance(first[0], list) else [first]
 
     assert rows[-1][5] == 100.0
@@ -24,7 +31,7 @@ def test_collision_scene_is_refreshed_for_every_emitted_chunk() -> None:
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     first = adapter.act(observation)
@@ -37,4 +44,4 @@ def test_collision_scene_is_refreshed_for_every_emitted_chunk() -> None:
     adapter.act(observation)
 
     assert first_count == 2
-    assert perception.collision_calls == 3
+    assert perception.collision_calls == 4

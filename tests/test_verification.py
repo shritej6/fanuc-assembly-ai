@@ -139,7 +139,7 @@ def test_unusable_model_scores_never_accept() -> None:
     pre = _verify_pre("M4_03", detection, inspection)
     post = _verify_post("M4_03", detection, inspection, seated=True, pose_agrees=True)
 
-    assert pre.outcome is VerificationOutcome.HOLD_ANDON
+    assert pre.outcome is VerificationOutcome.REJECT_TO_SPARE
     assert post.outcome is VerificationOutcome.HOLD_ANDON
 
 
@@ -174,7 +174,6 @@ def test_pre_pick_rejects_non_installed_orientation_to_spare(orientation: str) -
         ("missing_layer", "reject"),
         ("wrong_part", "reject"),
         ("foreign", "reject"),
-        ("uncertain", "ask_operator"),
         ("uncertain", "reject"),
     ],
 )
@@ -184,6 +183,15 @@ def test_pre_pick_rejects_unusable_inspection_to_spare(verdict: str, action: str
     decision = _verify_pre("M4_03", _detection(), inspection)
 
     assert decision.outcome is VerificationOutcome.REJECT_TO_SPARE
+    assert decision.reason is VerificationReason.INSPECTION_REJECTED
+
+
+def test_pre_pick_holds_when_validated_action_asks_operator() -> None:
+    inspection = _failed_inspection("uncertain", "ask_operator")
+
+    decision = _verify_pre("M4_03", _detection(), inspection)
+
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
     assert decision.reason is VerificationReason.INSPECTION_REJECTED
 
 
@@ -197,6 +205,16 @@ def test_pre_pick_rejects_agreed_wrong_identity_to_spare() -> None:
 
     assert decision.outcome is VerificationOutcome.REJECT_TO_SPARE
     assert decision.reason is VerificationReason.IDENTITY_MISMATCH
+
+
+
+    inspection = _inspection()
+    inspection["checks_agree"] = False
+
+    decision = _verify_pre("M4_03", _detection(), inspection)
+
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
+    assert decision.reason is VerificationReason.CHECK_DISAGREEMENT
 
 
 @pytest.mark.parametrize("disagreement", ["checks", "object_id", "instance_id", "action"])

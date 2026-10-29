@@ -91,13 +91,13 @@ class SlippedGraspPerception(ScriptedPerception):
         return scene
 
 
-class RecoveryPoseMismatchPerception(ScriptedPerception):
+class RecoveryUntrustedPosePerception(ScriptedPerception):
     def pre_pick(self, observation, part):
         evidence = super().pre_pick(observation, part)
         if part.zone not in {InventoryZone.INSTALLED, InventoryZone.STAGED}:
             return evidence
         detection = dict(evidence.detection)
-        detection["pose"] = {**detection["pose"], "x": detection["pose"]["x"] + 5.0}
+        detection["pose_source"] = "detector"
         return EvidencePair(detection, evidence.inspection, evidence.observed_at_s)
 
 
@@ -145,6 +145,7 @@ class OutOfBoundsTargetPoses(CalibratedScenarioPoses):
         return replace(pose, tcp=replace(pose.tcp, x=700.0))
 
 
+
 class MalformedScanPerception(ScriptedPerception):
     malformed = False
 
@@ -171,7 +172,7 @@ class UnsizedArray:
 
 def test_stale_complete_scan_holds_andon_without_raising() -> None:
     perception = MutableScanPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -186,7 +187,7 @@ def test_stale_complete_scan_holds_andon_without_raising() -> None:
 
 def test_port_runtime_failure_holds_andon_without_raising() -> None:
     perception = UnavailableScanPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -201,7 +202,7 @@ def test_port_runtime_failure_holds_andon_without_raising() -> None:
 
 def test_malformed_inventory_collection_holds_andon_without_raising() -> None:
     perception = MalformedScanPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -218,7 +219,7 @@ def test_malformed_inventory_collection_holds_andon_without_raising() -> None:
 def test_malformed_collision_collection_aborts_without_raising(field: str) -> None:
     perception = MalformedScenePerception(_product_one_items(), set(), Counter(), set())
     perception.malformed_field = field
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
     held = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
 
@@ -229,7 +230,7 @@ def test_malformed_collision_collection_aborts_without_raising(field: str) -> No
 
 def test_unsized_tcp_array_holds_last_safe_waypoint_without_raising() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -244,7 +245,7 @@ def test_unsized_tcp_array_holds_last_safe_waypoint_without_raising() -> None:
 
 def test_malformed_tcp_after_release_reissues_open_gripper_endpoint() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: controller._release_dispatched)
     observation["tcp_pose"] = UnsizedArray()
 
@@ -257,7 +258,7 @@ def test_malformed_tcp_after_release_reissues_open_gripper_endpoint() -> None:
 
 def test_inventory_identity_mutation_holds_andon_without_raising() -> None:
     perception = IdentityMutationPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -272,7 +273,7 @@ def test_inventory_identity_mutation_holds_andon_without_raising() -> None:
 
 def test_small_independent_pose_noise_uses_measured_tolerance() -> None:
     perception = SlightPoseNoisePerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,), perception_tolerances=PerceptionTolerances(0.01, 0.01))
+    controller = _controller(perception, perception_tolerances=PerceptionTolerances(0.01, 0.01))
 
     result = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
 
@@ -282,7 +283,7 @@ def test_small_independent_pose_noise_uses_measured_tolerance() -> None:
 
 def test_moved_base_aborts_before_the_next_chunk() -> None:
     perception = MovingBasePerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     _apply(observation, adapter.act(observation))
@@ -295,7 +296,7 @@ def test_moved_base_aborts_before_the_next_chunk() -> None:
 
 def test_lost_attachment_holds_with_gripped_part_ownership() -> None:
     perception = SlippedGraspPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     for _ in range(20):
@@ -310,7 +311,7 @@ def test_lost_attachment_holds_with_gripped_part_ownership() -> None:
 
 def test_abort_with_staged_part_becomes_operator_hold() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
     controller._motion_queue.clear()
     controller.inventory.install("p1-1")
@@ -323,9 +324,9 @@ def test_abort_with_staged_part_becomes_operator_hold() -> None:
     assert "operator reconciliation" in controller.events[-1].detail
 
 
-def test_recovery_pick_pose_mismatch_holds_before_dismantle_motion() -> None:
-    perception = RecoveryPoseMismatchPerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+def test_recovery_pick_without_foundationpose_holds_before_dismantle_motion() -> None:
+    perception = RecoveryUntrustedPosePerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     for _ in range(500):
@@ -339,7 +340,7 @@ def test_recovery_pick_pose_mismatch_holds_before_dismantle_motion() -> None:
 
 def test_base_failure_after_first_install_preserves_product_ownership() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: any(event.kind == "installed" for event in controller.events))
     perception.observed = tuple(
         replace(item, condition=ObjectCondition.FALLEN) if item.instance_id == "base-1" else item
@@ -350,7 +351,7 @@ def test_base_failure_after_first_install_preserves_product_ownership() -> None:
 
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.inventory.active_reservation.product == 1
-    assert "not verified" in controller.events[-1].detail
+    assert "must remain verified" in controller.events[-1].detail
     assert "operator reconciliation" in controller.events[-1].detail
 
 
@@ -363,17 +364,20 @@ def test_same_class_wrong_physical_instance_holds_before_motion() -> None:
                 float(observation["t"]),
             )
 
-    controller = _controller(WrongInstancePerception(_product_one_items(), set(), Counter(), set()), products=(1,))
-    output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
+    controller = _controller(WrongInstancePerception(_product_one_items(), set(), Counter(), set()))
+    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
+    observation = _observation()
+    _apply(observation, adapter.act(observation))
+    output = adapter.act(observation)
 
-    assert output == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
+    assert output == observation["tcp_pose"] + [0.0]
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.plan_records == ()
 
 
 def test_wrong_post_place_evidence_subtype_holds_without_attribute_error() -> None:
     perception = WrongPostPlaceTypePerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
     _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)
 
@@ -383,7 +387,7 @@ def test_wrong_post_place_evidence_subtype_holds_without_attribute_error() -> No
 
 def test_wrong_transfer_evidence_after_release_preserves_reservation() -> None:
     perception = WrongTransferTypePerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
     _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)
 
@@ -396,7 +400,7 @@ def test_wrong_transfer_evidence_after_release_preserves_reservation() -> None:
 def test_stale_recovery_calibration_holds_without_raising() -> None:
     poses = StaleRecoveryPoses()
     perception = ScriptedPerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     controller._poses = poses
     controller._planner = RecipePlanner(load_catalog(), poses)
 
@@ -413,7 +417,7 @@ def test_stale_recovery_calibration_holds_without_raising() -> None:
 
 def test_malformed_recovery_target_holds_without_attribute_error() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     controller._recovery._targets = MalformedRecoveryTargets()
 
     _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)
@@ -425,11 +429,11 @@ def test_malformed_recovery_target_holds_without_attribute_error() -> None:
 def test_official_action_bounds_failure_is_caught_by_controller() -> None:
     poses = OutOfBoundsTargetPoses()
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     controller._poses = poses
     controller._planner = RecipePlanner(load_catalog(), poses)
 
-    CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
+    _drive_until(controller, lambda: controller.state_machine.state is PackMLState.ABORTED)
 
     assert controller.state_machine.state is PackMLState.ABORTED
     assert "official UF0 action guard" in controller.events[-1].detail
@@ -438,7 +442,7 @@ def test_official_action_bounds_failure_is_caught_by_controller() -> None:
 def test_verified_endpoint_drift_releases_without_roll_pitch_correction() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
     tolerances = ExecutionTolerances(0.5, 0.5)
-    controller = _controller(perception, products=(1,), execution_tolerances=tolerances)
+    controller = _controller(perception, execution_tolerances=tolerances)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation()
     for _ in range(200):
@@ -457,7 +461,7 @@ def test_verified_endpoint_drift_releases_without_roll_pitch_correction() -> Non
 
 def test_release_endpoint_failure_holds_and_keeps_active_reservation() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: controller._release_dispatched)
     observation["tcp_pose"][0] += 10.0
 
@@ -470,7 +474,7 @@ def test_release_endpoint_failure_holds_and_keeps_active_reservation() -> None:
 
 def test_endpoint_failure_while_gripping_preserves_reservation() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: controller._part_held)
     observation["tcp_pose"][0] += 10.0
 

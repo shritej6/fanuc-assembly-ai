@@ -1,13 +1,18 @@
-"""Boundary tests for official-client observation and pose containers."""
+"""Controller perception boundary regressions."""
 
 import pytest
 
+from assembly.catalog import load_catalog
 from assembly.controller_ports import (
     ControllerPortError,
+    InventorySnapshot,
+    ObservedInventoryItem,
     PerceptionTolerances,
     current_waypoint,
     pose_agrees,
+    reconcile_inventory,
 )
+from assembly.inventory import Inventory, InventoryZone, ObjectCondition
 
 
 class ArrayLike:
@@ -31,6 +36,58 @@ class ZeroDimArray:
 
     def __getitem__(self, index: int) -> float:
         raise IndexError(index)
+
+
+def _reserved_inventory() -> Inventory:
+    inventory = Inventory(load_catalog())
+    inventory.add("base", "F01")
+    for step in range(1, 5):
+        inventory.add(f"part-{step}", f"M1_{step:02d}")
+    inventory.reserve_product(1)
+    return inventory
+
+
+def _visible_except(*instance_ids: str) -> tuple[ObservedInventoryItem, ...]:
+    omitted = set(instance_ids)
+    items = [ObservedInventoryItem("base", "F01")]
+    items.extend(ObservedInventoryItem(f"part-{step}", f"M1_{step:02d}") for step in range(1, 5))
+    return tuple(item for item in items if item.instance_id not in omitted)
+
+
+def test_complete_scan_does_not_invalidate_occluded_installed_part() -> None:
+    inventory = _reserved_inventory()
+    inventory.install("part-1")
+    snapshot = InventorySnapshot(1.0, True, _visible_except("part-1"))
+
+    reconcile_inventory(inventory, snapshot, 1.0)
+
+    assert inventory.item("part-1").condition is ObjectCondition.VERIFIED
+
+
+def test_complete_scan_does_not_invalidate_part_known_to_be_in_gripper() -> None:
+    inventory = _reserved_inventory()
+    snapshot = InventorySnapshot(1.0, True, _visible_except("part-1"))
+
+    reconcile_inventory(inventory, snapshot, 1.0, held_instance_id="part-1")
+
+    assert inventory.item("part-1").condition is ObjectCondition.VERIFIED
+
+
+def test_claimed_fallen_part_keeps_ownership_for_physical_reject() -> None:
+    inventory = _reserved_inventory()
+    observed = tuple(
+        ObservedInventoryItem(item.instance_id, item.object_id, condition=ObjectCondition.FALLEN)
+        if item.instance_id == "part-1"
+        else item
+        for item in _visible_except()
+    )
+
+    reconcile_inventory(inventory, InventorySnapshot(1.0, True, observed), 1.0)
+
+    part = inventory.item("part-1")
+    assert part.zone is InventoryZone.RESERVED
+    assert part.reserved_for == 1
+    assert part.condition is ObjectCondition.FALLEN
 
 
 def test_current_waypoint_accepts_official_client_array_shape() -> None:

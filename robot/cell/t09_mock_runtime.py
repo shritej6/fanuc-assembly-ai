@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from assembly.catalog import ProductRecipe, RecipeStep, load_catalog
 from assembly.controller import AssemblyController
+from assembly.controller_startup import StartupHoldConfig
 from assembly.controller_ports import (
     CollisionScene,
     ControllerEvent,
@@ -23,13 +24,20 @@ from assembly.controller_ports import (
     PlacementEvidence,
     RecoveryTransferEvidence,
 )
+from assembly.instruction import parse_requested_products
 from assembly.inventory import InventoryItem, InventoryZone
-from assembly.motion import AbsolutePoseUF0, MotionConfig, OrientedPartPose, RestingState
+from assembly.motion import (
+    AbsolutePoseUF0,
+    InspectionStopConfig,
+    MotionConfig,
+    OrientedPartPose,
+    RestingState,
+    Waypoint,
+)
 from assembly.safety import AABBCollisionChecker, ReachabilityCapabilities, SafetyConfig, SafetySupervisor
 from assembly.verification import VerificationThresholds
 from robot.adapter import TCP_LIMITS, Action, Observation
 
-PRODUCTS = (1, 3, 4)
 BOOTSTRAP_ACTION = [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
 MOCK_THRESHOLDS = VerificationThresholds(0.9, 0.8, 0.9, 0.1, 1.0)
 
@@ -58,6 +66,20 @@ class MockCalibratedPoses:
         del observed_at_s
         product = int(base.instance_id.rsplit("-", maxsplit=1)[-1])
         return _oriented(400.0 + 20.0 * product, 80.0, -320.0, 90.0)
+
+    def grasp_from_foundationpose(
+        self,
+        part: InventoryItem,
+        detection: dict[str, object],
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        del part, observed_at_s
+        pose = detection["pose"]
+        oriented = _oriented(float(pose["x"]), float(pose["y"]), float(pose["z"]), float(pose["yaw"]))
+        if detection.get("resting_side") in {"side", "flipped"}:
+            return OrientedPartPose(oriented.tcp, RestingState.FALLEN, "mock-fallen:observed")
+        return oriented
 
     def target_for(
         self,
@@ -129,21 +151,36 @@ def _inspection(instance_id: str, object_id: str) -> dict[str, object]:
     }
 
 
-def _observed_items() -> tuple[ObservedInventoryItem, ...]:
+def _observed_items(products: tuple[int, ...]) -> tuple[ObservedInventoryItem, ...]:
     items: list[ObservedInventoryItem] = []
-    for product, base in ((1, "F01"), (3, "F03"), (4, "F04")):
-        items.append(ObservedInventoryItem(f"base-{product}", base))
-        items.extend(_observed_parts(product))
-    items.append(ObservedInventoryItem("p1-2-spare", "M1_02", zone=InventoryZone.SPARE))
-    items.append(ObservedInventoryItem("p4-3-spare", "M4_03", zone=InventoryZone.SPARE))
+    missing = (products[-1], 3) if len(products) >= 3 else None
+    for product in products:
+        items.append(ObservedInventoryItem(f"base-{product}", f"F{product:02d}", coarse_xy_mm=(400.0, 80.0)))
+        items.extend(_observed_parts(product, missing_step=3 if missing == (product, 3) else None))
+    items.append(_mock_spare(products[0], 2))
+    if missing is not None:
+        items.append(_mock_spare(*missing))
     return tuple(items)
 
 
-def _observed_parts(product: int) -> list[ObservedInventoryItem]:
+def _mock_spare(product: int, step: int) -> ObservedInventoryItem:
+    return ObservedInventoryItem(
+        f"p{product}-{step}-spare",
+        f"M{product}_{step:02d}",
+        zone=InventoryZone.SPARE,
+        coarse_xy_mm=(210.0 + 30.0 * product, -160.0 + 35.0 * step),
+    )
+
+
+def _observed_parts(product: int, *, missing_step: int | None) -> list[ObservedInventoryItem]:
     return [
-        ObservedInventoryItem(f"p{product}-{step}", f"M{product}_{step:02d}")
+        ObservedInventoryItem(
+            f"p{product}-{step}",
+            f"M{product}_{step:02d}",
+            coarse_xy_mm=(210.0 + 30.0 * product, -160.0 + 35.0 * step),
+        )
         for step in range(1, 5)
-        if not (product == 4 and step == 3)
+        if step != missing_step
     ]
 
 
@@ -151,17 +188,32 @@ class MockPerception:
     """Contract-valid scripted evidence; no image or ground-truth access."""
 
     def __init__(self) -> None:
-        self.observed = _observed_items()
+        self._catalog = load_catalog()
         self.reset()
 
     def reset(self) -> None:
-        self.fallen_once = {"p1-2"}
-        self.failed_insertions = Counter({"p3-3": 1})
+        self._instruction: object = None
+        self.observed: tuple[ObservedInventoryItem, ...] = ()
+        self.fallen_once: set[str] = set()
+        self.failed_insertions: Counter[str] = Counter()
         self.staged_poses: dict[str, dict[str, float]] = {}
         self.next_staging_slot = 1
 
     def scan(self, observation: Observation) -> InventorySnapshot:
+        self._configure_from_prompt(observation)
         return InventorySnapshot(float(observation["t"]), True, self.observed)
+
+    def _configure_from_prompt(self, observation: Observation) -> None:
+        trial = observation.get("trial")
+        instruction = trial.get("instruction") if isinstance(trial, dict) else None
+        if self._instruction is not None:
+            return
+        products = parse_requested_products(instruction, self._catalog)
+        self._instruction = instruction
+        self.observed = _observed_items(products)
+        self.fallen_once = {f"p{products[0]}-2"}
+        if len(products) >= 2:
+            self.failed_insertions = Counter({f"p{products[1]}-3": 1})
 
     def pre_pick(self, observation: Observation, part: InventoryItem) -> EvidencePair:
         resting = "side" if part.instance_id in self.fallen_once else "upright"
@@ -241,7 +293,17 @@ class MockPerception:
 
 
 def _mock_safety() -> SafetySupervisor:
-    config = SafetyConfig(0.1, -335.0, 1.0, -180.0, 0.0, 0.5, 1.0)
+    config = SafetyConfig(
+        0.1,
+        -335.0,
+        1.0,
+        -180.0,
+        0.0,
+        0.5,
+        1.0,
+        10000.0,
+        "mock-only deterministic runtime fixture",
+    )
     return SafetySupervisor(
         config=config,
         reachability=MockBoxReachability(),
@@ -251,13 +313,32 @@ def _mock_safety() -> SafetySupervisor:
 
 
 def _build_controller(perception: MockPerception) -> AssemblyController:
-    motion = MotionConfig(10.0, 10.0, 10.0, 10.0, 1000.0, 360.0, 100)
+    motion = MotionConfig(
+        10.0,
+        10.0,
+        10.0,
+        10.0,
+        1000.0,
+        360.0,
+        100,
+        -180.0,
+        "mock-only deterministic runtime fixture",
+    )
     return AssemblyController(
         catalog=load_catalog(),
-        products=PRODUCTS,
         perception=perception,
         poses=MockCalibratedPoses(),
         motion_config=motion,
+        inspection_stop=InspectionStopConfig(
+            -168.0,
+            -180.0,
+            0.0,
+            "PR9 follow-up measured CSI wrist inspection stop",
+        ),
+        startup_hold=StartupHoldConfig(
+            Waypoint(200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0),
+            "mock-only deterministic runtime fixture",
+        ),
         safety=_mock_safety(),
         verification_thresholds=MOCK_THRESHOLDS,
         execution_tolerances=ExecutionTolerances(0.0, 0.0),

@@ -55,6 +55,10 @@ class GuardedMotionQueue:
         return self._last_emitted_phase
 
     @property
+    def base_instance_id(self) -> str | None:
+        return self._base_instance_id
+
+    @property
     def pending_endpoint(self) -> Waypoint | None:
         return self._expected_endpoint
 

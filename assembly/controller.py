@@ -2,49 +2,55 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping
 
 from assembly.catalog import Catalog
+from assembly.controller_execution import ExecutionControllerMixin
+from assembly.controller_inspection import InspectionControllerMixin, PendingReject
 from assembly.controller_placement import PlacementControllerMixin
 from assembly.controller_ports import (
     ControllerEvent,
     ControllerPortError,
-    EvidencePair,
     ExecutionTolerances,
     PerceptionPort,
     PerceptionTolerances,
     call_port,
     current_waypoint,
     observation_time,
-    oriented_pose_values,
-    pose_agrees,
     reconcile_inventory,
-    require_fresh,
 )
 from assembly.controller_recovery import RecoveryControllerMixin
+from assembly.controller_startup import StartupHoldConfig, validated_startup_hold
 from assembly.execution import ExecutionError, GuardedMotionQueue
+from assembly.instruction import InstructionError, parse_requested_products
 from assembly.inventory import (
+    InvalidInventoryObjectError,
     Inventory,
     InventoryError,
     InventoryShortageError,
     InventoryZone,
-    ObjectCondition,
     ProductReservation,
 )
 from assembly.motion import (
-    MotionChunk,
+    InspectionStopConfig,
     MotionConfig,
     MotionError,
-    MotionPhase,
-    OrientedPartPose,
     Waypoint,
-    compile_pick_to_insert,
 )
-from assembly.planner import CalibratedPoseProvider, PlannerError, PlanStepRecord, PreparedPlanStep, RecipePlanner
-from assembly.recovery import RecoveryCoordinator, RecoveryStagePlan, RecoveryTargetProvider
-from assembly.safety import SafetySupervisor, SafetyViolation
-from assembly.state_machine import PackMLState, PackMLStateMachine, ReservationReleaseError
-from assembly.verification import VerificationInputError, VerificationOutcome, VerificationThresholds, verify_pre_pick
+from assembly.planner import (
+    CalibratedPoseProvider,
+    PlannerError,
+    PlanStepRecord,
+    PreparedPlanStep,
+    RecipePlanner,
+)
+from assembly.recovery import RecoveryCoordinator, RecoveryStage, RecoveryStagePlan, RecoveryTargetProvider
+from assembly.safety import SafetySupervisor
+from assembly.state_machine import PackMLState, PackMLStateMachine, ReservationReleaseError, StateMachineError
+from assembly.verification import (
+    VerificationInputError,
+    VerificationThresholds,
+)
 from robot.adapter import Action, Observation
 
 
@@ -52,33 +58,35 @@ class ControllerInputError(ValueError):
     """Observation or perception-port data is unsafe to execute."""
 
 
-class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
+class AssemblyController(
+    ExecutionControllerMixin,
+    InspectionControllerMixin,
+    PlacementControllerMixin,
+    RecoveryControllerMixin,
+):
     """Execute one reserved product at a time with fresh verification gates."""
 
     def __init__(
         self,
         *,
         catalog: Catalog,
-        products: Sequence[int],
         perception: PerceptionPort,
         poses: CalibratedPoseProvider,
         motion_config: MotionConfig,
+        inspection_stop: InspectionStopConfig,
+        startup_hold: StartupHoldConfig,
         safety: SafetySupervisor,
         verification_thresholds: VerificationThresholds,
         execution_tolerances: ExecutionTolerances,
         perception_tolerances: PerceptionTolerances,
         recovery_targets: RecoveryTargetProvider,
     ) -> None:
-        normalized = tuple(products)
-        if not normalized or len(set(normalized)) != len(normalized):
-            raise ControllerInputError("products must be a non-empty unique sequence")
-        for product in normalized:
-            catalog.product(product)
         self._catalog = catalog
-        self._products = normalized
         self._perception = perception
         self._poses = poses
         self._motion_config = motion_config
+        self._inspection_stop = inspection_stop
+        self._startup_hold = validated_startup_hold(startup_hold)
         self._safety = safety
         self._verification_thresholds = verification_thresholds
         self._execution_tolerances = execution_tolerances
@@ -87,6 +95,8 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
         self.reset()
 
     def reset(self) -> None:
+        self._products: tuple[int, ...] = ()
+        self._instruction: str | None = None
         self.inventory = Inventory(self._catalog)
         self.state_machine = PackMLStateMachine(reservation_releaser=self.inventory)
         self._planner = RecipePlanner(self._catalog, self._poses)
@@ -101,8 +111,12 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
             perception_tolerances=self._perception_tolerances,
         )
         self._prepared: PreparedPlanStep | None = None
-        self._pending_install: PreparedPlanStep | None = None
+        self._pending_pre_pick = None
+        self._forced_reject_condition = None
+        self._pending_reject: PendingReject | None = None
+        self._pending_install = None
         self._recovery = RecoveryCoordinator(self._recovery_targets)
+        self._pending_recovery_inspection: RecoveryStage | None = None
         self._pending_recovery_stage: RecoveryStagePlan | None = None
         self._pending_recovery_release: RecoveryStagePlan | None = None
         self._awaiting_post = False
@@ -113,10 +127,17 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
         self._last_safe_waypoint: Waypoint | None = None
         self._release_dispatched = False
         self._part_held = False
+        self._held_instance_id: str | None = None
+        self._resume_acknowledged = False
+        self._coarse_xy_by_instance: dict[str, tuple[float, float]] = {}
 
     @property
     def completed_products(self) -> tuple[int, ...]:
         return tuple(self._completed)
+
+    @property
+    def requested_products(self) -> tuple[int, ...]:
+        return self._products
 
     @property
     def events(self) -> tuple[ControllerEvent, ...]:
@@ -130,24 +151,72 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
     def finished(self) -> bool:
         return self._finished
 
+    def acknowledge_resume(self) -> None:
+        """Record an operator acknowledgement; the next fresh scan performs resume."""
+        if self.state_machine.state is not PackMLState.HELD:
+            raise ControllerInputError("operator resume acknowledgement requires Held state")
+        self._resume_acknowledged = True
+
     def act(self, observation: Observation) -> Action:
         try:
             current = current_waypoint(observation)
         except ControllerPortError as error:
             return self._hold_last_safe(str(error))
         self._last_safe_waypoint = current
-        if current.gripper == 1.0:
-            self._part_held = True
+        self._part_held = current.gripper == 1.0
         try:
             observed_at = observation_time(observation)
+            self._bind_instruction(observation)
             return self._act_current(observation, current, observed_at)
-        except (ControllerPortError, InventoryError, MotionError, VerificationInputError) as error:
+        except InvalidInventoryObjectError as error:
+            reason = (
+                f"foreign object cannot be picked without validated catalog identity and sourced FoundationPose grasp: "
+                f"{error.object_id!r}"
+            )
+            self._hold(reason)
+            return current.as_action()
+        except (
+            ControllerPortError,
+            InstructionError,
+            InventoryError,
+            MotionError,
+            PlannerError,
+            RuntimeError,
+            StateMachineError,
+            VerificationInputError,
+        ) as error:
             self._hold(str(error))
             return current.as_action()
 
+    def _bind_instruction(self, observation: Observation) -> None:
+        trial = observation.get("trial")
+        if not isinstance(trial, Mapping):
+            raise InstructionError("observation.trial must be a mapping")
+        instruction = trial.get("instruction")
+        if self._instruction is None:
+            products = parse_requested_products(instruction, self._catalog)
+            self._instruction = instruction
+            self._products = products
+            return
+        if instruction != self._instruction:
+            raise InstructionError("trial.instruction changed before controller reset")
+
     def _act_current(self, observation: Observation, current: Waypoint, observed_at: float) -> Action:
         snapshot = call_port("inventory scan", self._perception.scan, observation)
-        reconcile_inventory(self.inventory, snapshot, observed_at)
+        reconcile_inventory(
+            self.inventory,
+            snapshot,
+            observed_at,
+            held_instance_id=self._held_instance_id,
+        )
+        self._coarse_xy_by_instance = {
+            item.instance_id: item.coarse_xy_mm
+            for item in snapshot.items
+            if item.coarse_xy_mm is not None
+        }
+        if not self._surface_claimed_conditions():
+            return current.as_action()
+        self._resume_after_scan()
         try:
             self._motion_queue.confirm_previous_endpoint(current)
         except ExecutionError as error:
@@ -155,104 +224,116 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
             return current.as_action()
         return self._progress(observation, current, observed_at)
 
+    def _resume_after_scan(self) -> None:
+        if self.state_machine.state is not PackMLState.HELD or not self._resume_acknowledged:
+            return
+        if self.state_machine.current_product is None:
+            self.state_machine.reset("operator corrected trial instruction")
+            self.state_machine.transition(PackMLState.IDLE)
+        else:
+            self.state_machine.resume()
+        self._resume_acknowledged = False
+        self._events.append(
+            ControllerEvent("resume", self.state_machine.current_product, None, "operator acknowledged after rescan")
+        )
+
     def _progress(self, observation: Observation, current: Waypoint, observed_at: float) -> Action:
-        for _ in range(len(self._products) + 2):
-            terminal = {PackMLState.HELD, PackMLState.ABORTED}
-            if self._finished or self.state_machine.state in terminal:
-                return current.as_action()
-            if not self._ensure_product_started():
-                return current.as_action()
-            if self._motion_queue.active:
-                return self._emit_motion_chunk(observation, current, observed_at)
-            if self._pending_install is not None:
-                self._commit_install()
+        for _ in range(len(self._products) + 4):
+            handled, action = self._progress_cycle(observation, current, observed_at)
+            if action is not None:
+                return action
+            if handled:
                 continue
-            if self._pending_recovery_release is not None:
-                self._commit_recovery_release()
-                continue
-            if self._pending_recovery_stage is not None:
-                if not self._verify_recovery_stage(observation, current, observed_at):
-                    return current.as_action()
-                continue
-            if self._recovery.active:
-                if self._prepare_recovery_stage(observation, current, observed_at):
-                    return self._emit_motion_chunk(observation, current, observed_at)
-                continue
-            if self._awaiting_post:
-                if self._verify_placement(observation, current, observed_at):
-                    return current.as_action()
-                continue
-            if self._prepare_motion(observation, current, observed_at):
-                return self._emit_motion_chunk(observation, current, observed_at)
         raise RuntimeError("controller failed to make bounded progress")
 
+    def _progress_cycle(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> tuple[bool, Action | None]:
+        terminal = {PackMLState.HELD, PackMLState.ABORTED}
+        if self._finished or self.state_machine.state in terminal:
+            return True, current.as_action()
+        if not self._ensure_product_started():
+            return True, current.as_action()
+        if self._motion_queue.active:
+            return True, self._emit_motion_chunk(observation, current, observed_at)
+        handled, action = self._progress_pending(observation, current, observed_at)
+        if handled:
+            return handled, action
+        return self._progress_ready(observation, current, observed_at)
+
+    def _progress_pending(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> tuple[bool, Action | None]:
+        if self._pending_reject is not None:
+            self._verify_reject_transfer(observation, current, observed_at)
+            return True, None
+        if self._pending_pre_pick is not None:
+            queued = self._prepare_after_inspection(observation, current, observed_at)
+            action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
+            return True, action
+        if self._pending_install is not None:
+            self._commit_install()
+            return True, None
+        if self._pending_recovery_release is not None:
+            self._commit_recovery_release()
+            return True, None
+        if self._pending_recovery_inspection is not None:
+            queued = self._prepare_recovery_after_inspection(observation, current, observed_at)
+            action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
+            return True, action
+        if self._pending_recovery_stage is not None:
+            verified = self._verify_recovery_stage(observation, current, observed_at)
+            return True, None if verified else current.as_action()
+        return False, None
+
+    def _progress_ready(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> tuple[bool, Action | None]:
+        if self.inventory.active_product is None:
+            handled, action = self._queue_environment_cleanup(observation, current, observed_at)
+            if handled:
+                return True, action
+            if not self._ensure_reservation():
+                return True, current.as_action()
+        if self._recovery.active:
+            queued = self._prepare_recovery_stage(observation, current, observed_at)
+            action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
+            return True, action
+        if self._awaiting_post:
+            verified = self._verify_placement(observation, current, observed_at)
+            return True, current.as_action() if verified else None
+        queued = self._prepare_motion(observation, current, observed_at)
+        action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
+        return True, action
+
+    def _queue_environment_cleanup(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> tuple[bool, Action | None]:
+        forced = self._environment_reject_candidate(observed_at)
+        if forced is None:
+            return False, None
+        candidate, condition = forced
+        queued = self._queue_inspection(candidate, condition, observation, current, observed_at)
+        if not queued:
+            return True, None
+        return True, self._emit_motion_chunk(observation, current, observed_at)
+
     def _hold_last_safe(self, reason: str) -> Action:
-        hold = self._motion_queue.pending_endpoint or self._last_safe_waypoint
-        if hold is None:
-            raise ControllerInputError(f"no trusted TCP is available for safe hold: {reason}")
+        hold = self._motion_queue.pending_endpoint or self._last_safe_waypoint or self._startup_hold
         self._hold(reason)
         return hold.as_action()
-
-    def _emit_motion_chunk(
-        self,
-        observation: Observation,
-        current: Waypoint,
-        observed_at: float,
-    ) -> Action:
-        instance_id = self._motion_queue.instance_id
-        if instance_id is None:
-            raise RuntimeError("queued motion has no physical instance owner")
-        base = self.inventory.active_reservation.base
-        if base.zone is not InventoryZone.RESERVED or base.condition is not ObjectCondition.VERIFIED:
-            self._abort("active product base must remain reserved and verified during motion")
-            return current.as_action()
-        item = self.inventory.item(instance_id)
-        if item.condition is not ObjectCondition.VERIFIED:
-            self._abort(f"moving instance {item.instance_id!r} is no longer verified")
-            return current.as_action()
-        try:
-            action = self._motion_queue.emit(
-                observation=observation,
-                current=current,
-                observed_at_s=observed_at,
-            )
-            if self._motion_queue.last_emitted_phase is MotionPhase.GRIP:
-                self._part_held = True
-            if self._motion_queue.last_emitted_phase is MotionPhase.RELEASE:
-                self._part_held = False
-                self._release_dispatched = True
-            return action
-        except (ControllerPortError, ExecutionError, SafetyViolation) as error:
-            self._abort(str(error))
-            return current.as_action()
-
-    def _set_guarded_motion(
-        self,
-        plan: Sequence[MotionChunk],
-        observation: Observation,
-        current: Waypoint,
-        observed_at: float,
-        instance_id: str,
-        object_id: str,
-        base_instance_id: str,
-        base_pose: OrientedPartPose,
-    ) -> bool:
-        try:
-            self._motion_queue.queue(
-                plan,
-                observation=observation,
-                current=current,
-                observed_at_s=observed_at,
-                instance_id=instance_id,
-                object_id=object_id,
-                base_instance_id=base_instance_id,
-                base_pose=oriented_pose_values(base_pose),
-            )
-        except (ControllerPortError, ExecutionError, SafetyViolation) as error:
-            self._abort(str(error))
-            return False
-        return True
-
     def _ensure_product_started(self) -> bool:
         state = self.state_machine.state
         if state is PackMLState.COMPLETE:
@@ -265,6 +346,11 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
             self.state_machine.transition(PackMLState.EXECUTE)
         if self.state_machine.state is PackMLState.SUSPENDED:
             return self._retry_reservation()
+        return True
+
+    def _ensure_reservation(self) -> bool:
+        if self.inventory.active_product is not None:
+            return True
         try:
             reservation = self._planner.reserve_product(self.inventory, self._products[self._product_index])
         except InventoryShortageError as error:
@@ -306,97 +392,6 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
         self._product_index += 1
         return True
 
-    def _prepare_motion(self, observation: Observation, current: Waypoint, observed_at: float) -> bool:
-        try:
-            prepared = self._planner.next_step(
-                self.inventory,
-                observed_at_s=observed_at,
-                attempt=self._failed_attempts + 1,
-            )
-        except PlannerError as error:
-            self._abort(str(error))
-            return False
-        if prepared is None:
-            self._finish_product()
-            return False
-        if not self._pre_pick_allows(prepared, observation, observed_at):
-            return False
-        return self._queue_prepared(prepared, observation, current, observed_at)
-
-    def _pre_pick_allows(
-        self,
-        prepared: PreparedPlanStep,
-        observation: Observation,
-        observed_at: float,
-    ) -> bool:
-        evidence = call_port("pre-pick perception", self._perception.pre_pick, observation, prepared.part)
-        self._require_fresh_evidence(evidence, EvidencePair, observed_at, "pre-pick evidence")
-        decision = verify_pre_pick(
-            prepared.record.object_id,
-            evidence.detection,
-            evidence.inspection,
-            expected_instance_id=prepared.part.instance_id,
-            thresholds=self._verification_thresholds,
-        )
-        expected = oriented_pose_values(prepared.grasp)
-        agrees = pose_agrees(evidence.detection.get("pose"), expected, self._perception_tolerances)
-        if decision.outcome is VerificationOutcome.HOLD_ANDON or not agrees:
-            self._hold(f"pre-pick checks disagree for {prepared.record.object_id}")
-            return False
-        if decision.outcome is VerificationOutcome.REJECT_TO_SPARE:
-            if decision.instance_id != prepared.part.instance_id:
-                self._hold("pre-pick evidence does not match the reserved physical instance")
-                return False
-            self._replace_rejected(prepared, decision)
-            return False
-        return True
-
-    def _queue_prepared(
-        self,
-        prepared: PreparedPlanStep,
-        observation: Observation,
-        current: Waypoint,
-        observed_at: float,
-    ) -> bool:
-        try:
-            plan = compile_pick_to_insert(
-                current,
-                prepared.grasp,
-                prepared.target,
-                gripper_roll_deg=prepared.record.gripper_roll_deg,
-                config=self._motion_config,
-            )
-        except MotionError as error:
-            self._abort(str(error))
-            return False
-        self._prepared = prepared
-        self._awaiting_post = True
-        queued = self._set_guarded_motion(
-            plan,
-            observation,
-            current,
-            observed_at,
-            prepared.part.instance_id,
-            prepared.part.object_id,
-            prepared.base.instance_id,
-            prepared.base_pose,
-        )
-        if queued:
-            self._records.append(prepared.record)
-            event = ControllerEvent("motion", prepared.record.product, prepared.record.object_id, "guarded")
-            self._events.append(event)
-        return queued
-
-    @staticmethod
-    def _require_fresh_evidence(
-        evidence: object,
-        expected_type: type[EvidencePair],
-        observed_at: float,
-        label: str,
-    ) -> None:
-        if type(evidence) is not expected_type:
-            raise ControllerPortError(f"{label} must be exactly {expected_type.__name__}")
-        require_fresh(evidence.observed_at_s, observed_at, label)
 
     def _finish_product(self) -> None:
         product = self.state_machine.current_product
@@ -421,7 +416,8 @@ class AssemblyController(PlacementControllerMixin, RecoveryControllerMixin):
             elif self._release_dispatched or self._has_physical_progress():
                 reason = f"{reason}; physical progress requires operator reconciliation"
         self._motion_queue.clear()
-        if self.state_machine.state is PackMLState.EXECUTE:
+        self._resume_acknowledged = False
+        if self.state_machine.state in {PackMLState.IDLE, PackMLState.EXECUTE, PackMLState.SUSPENDED}:
             self.state_machine.hold(reason)
         event = ControllerEvent("andon", self.state_machine.current_product, None, reason)
         self._events.append(event)

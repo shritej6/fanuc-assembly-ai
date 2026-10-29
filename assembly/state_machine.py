@@ -77,7 +77,7 @@ class PackMLState(StrEnum):
 
 
 _ALLOWED_TRANSITIONS = {
-    PackMLState.IDLE: frozenset({PackMLState.STARTING}),
+    PackMLState.IDLE: frozenset({PackMLState.STARTING, PackMLState.HELD}),
     PackMLState.STARTING: frozenset({PackMLState.EXECUTE, PackMLState.STOPPING, PackMLState.ABORTING}),
     PackMLState.EXECUTE: frozenset(
         {
@@ -88,8 +88,12 @@ _ALLOWED_TRANSITIONS = {
             PackMLState.ABORTING,
         }
     ),
-    PackMLState.HELD: frozenset({PackMLState.EXECUTE, PackMLState.STOPPING, PackMLState.ABORTING}),
-    PackMLState.SUSPENDED: frozenset({PackMLState.EXECUTE, PackMLState.STOPPING, PackMLState.ABORTING}),
+    PackMLState.HELD: frozenset(
+        {PackMLState.EXECUTE, PackMLState.RESETTING, PackMLState.STOPPING, PackMLState.ABORTING}
+    ),
+    PackMLState.SUSPENDED: frozenset(
+        {PackMLState.EXECUTE, PackMLState.HELD, PackMLState.STOPPING, PackMLState.ABORTING}
+    ),
     PackMLState.COMPLETING: frozenset({PackMLState.COMPLETE, PackMLState.STOPPING, PackMLState.ABORTING}),
     PackMLState.COMPLETE: frozenset({PackMLState.RESETTING, PackMLState.ABORTING}),
     PackMLState.STOPPING: frozenset({PackMLState.STOPPED, PackMLState.ABORTING}),

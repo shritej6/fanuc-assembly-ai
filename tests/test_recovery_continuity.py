@@ -19,10 +19,14 @@ class TrackingPoses:
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         assert observed_at_s == 5.0
-        self.grasp_calls.append(part.instance_id)
-        if part.object_id == "M1_01":
-            return _pose(380.0, 80.0, -300.0)
         return _pose(240.0, -125.0, -300.0)
+
+    def grasp_from_foundationpose(self, part, detection, *, observed_at_s: float) -> OrientedPartPose:
+        assert detection["pose_source"] == "foundationpose" and observed_at_s == 5.0
+        self.grasp_calls.append(part.instance_id)
+        if part.zone is InventoryZone.STAGED:
+            return _pose(500.0, -265.0, -300.0)
+        return _pose(380.0, 80.0, -300.0)
 
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         assert base.instance_id == "base-1" and observed_at_s == 5.0
@@ -55,6 +59,11 @@ def _inventory() -> Inventory:
 
 
 def _prepare(coordinator, inventory, catalog, poses, config, current):
+    stage = coordinator.current_stage
+    grasp = None
+    if stage.kind not in {RecoveryStageKind.REJECT_FAILED, RecoveryStageKind.INSERT_SPARE}:
+        part = inventory.item(stage.instance_id)
+        grasp = poses.grasp_from_foundationpose(part, {"pose_source": "foundationpose"}, observed_at_s=5.0)
     return coordinator.prepare_stage(
         inventory=inventory,
         catalog=catalog,
@@ -62,6 +71,7 @@ def _prepare(coordinator, inventory, catalog, poses, config, current):
         current=current,
         config=config,
         observed_at_s=5.0,
+        grasp=grasp,
     )
 
 
@@ -72,7 +82,7 @@ def test_rebuild_grasps_verified_staging_slot_and_holds_until_verification() -> 
     decision = decide_recovery("M1_02", 2, True, installed_object_ids=("M1_01",))
     coordinator = RecoveryCoordinator(RecoveryTargets())
     coordinator.begin(inventory, prepared, decision)
-    config = MotionConfig(10.0, 20.0, 10.0, 10.0, 1000.0, 360.0, 100)
+    config = MotionConfig(10.0, 20.0, 10.0, 10.0, 1000.0, 360.0, 100, -180.0, "test fixture")
 
     held = Waypoint(380.0, 80.0, -298.0, -180.0, 0.0, 0.0, 1.0)
     rejected = _prepare(coordinator, inventory, catalog, poses, config, held)
@@ -90,5 +100,5 @@ def test_rebuild_grasps_verified_staging_slot_and_holds_until_verification() -> 
     assert rebuilt is not None and rebuilt.stage.kind is RecoveryStageKind.REBUILD_INSTALLED
     grip = next(chunk for chunk in rebuilt.chunks if chunk.phase is MotionPhase.GRIP).waypoints[-1]
     assert grip.xyz == (500.0, -265.0, -300.0)
-    assert poses.grasp_calls.count("p1-1") == 1
+    assert poses.grasp_calls.count("p1-1") == 2
     assert MotionPhase.RELEASE not in {chunk.phase for chunk in rebuilt.chunks}

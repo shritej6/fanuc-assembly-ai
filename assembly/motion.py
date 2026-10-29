@@ -25,6 +25,7 @@ class MotionConfigError(MotionError):
 class MotionPhase(StrEnum):
     """Required pick-and-insert phase order."""
 
+    INSPECT = "inspect"
     APPROACH = "approach"
     DESCEND = "descend"
     GRIP = "grip"
@@ -77,6 +78,18 @@ class MotionConfig:
     max_linear_step_mm: float
     max_yaw_step_deg: float
     max_waypoints_per_chunk: int
+    safe_z_mm: float
+    safe_z_source: str
+
+
+@dataclass(frozen=True)
+class InspectionStopConfig:
+    """Measured wrist inspection pose; values and provenance are deployment inputs."""
+
+    tcp_z_mm: float
+    tool_w_deg: float
+    tool_p_deg: float
+    source: str
 
 
 @dataclass(frozen=True)
@@ -122,13 +135,18 @@ def _finite(value: object, *, field: str, error_type: type[MotionError]) -> floa
     return numeric
 
 
-def _validate_pose(label: str, part_pose: object) -> None:
+def _validate_pose(
+    label: str,
+    part_pose: object,
+    *,
+    allowed_states: frozenset[RestingState] = frozenset({RestingState.INSTALLED}),
+) -> None:
     if not isinstance(part_pose, OrientedPartPose):
         raise MotionInputError(f"{label} pose must be an OrientedPartPose")
     pose = part_pose.tcp
     if not isinstance(pose, AbsolutePoseUF0):
         raise MotionInputError(f"{label} TCP must be an AbsolutePoseUF0")
-    if part_pose.resting_state != RestingState.INSTALLED:
+    if part_pose.resting_state not in allowed_states:
         raise MotionInputError(f"{label} pose must be installed, got {part_pose.resting_state!r}")
     if pose.frame != "UF0":
         raise MotionInputError(f"{label} pose must be in absolute UF0, got {pose.frame!r}")
@@ -141,6 +159,9 @@ def _validate_pose(label: str, part_pose: object) -> None:
 
 
 def _validate_config(config: MotionConfig) -> None:
+    _finite(config.safe_z_mm, field="safe_z_mm", error_type=MotionConfigError)
+    if not isinstance(config.safe_z_source, str) or not config.safe_z_source.strip():
+        raise MotionConfigError("safe_z_mm requires a recorded source")
     for field in ("approach_mm", "lift_mm", "hover_mm", "retreat_mm"):
         if _finite(getattr(config, field), field=field, error_type=MotionConfigError) < 0.0:
             raise MotionConfigError(f"motion clearance {field} must be nonnegative")
@@ -152,12 +173,28 @@ def _validate_config(config: MotionConfig) -> None:
         raise MotionConfigError(f"max_waypoints_per_chunk must be an integer in 1..{MAX_ACTION_CHUNK}")
 
 
+def _validate_inspection_config(config: InspectionStopConfig) -> None:
+    for field in ("tcp_z_mm", "tool_w_deg", "tool_p_deg"):
+        _finite(getattr(config, field), field=field, error_type=MotionConfigError)
+    if abs(abs(config.tool_w_deg) - 180.0) > 1e-9 or abs(config.tool_p_deg) > 1e-9:
+        raise MotionConfigError("inspection stop must keep UTOOL1 straight down")
+    if not isinstance(config.source, str) or not config.source.strip():
+        raise MotionConfigError("inspection stop requires a recorded measurement source")
+
+
 def _validate_request(grasp: OrientedPartPose, target: OrientedPartPose, config: MotionConfig) -> None:
     _validate_pose("grasp", grasp)
     _validate_pose("target", target)
     _validate_config(config)
     if grasp.up_face != target.up_face:
         raise MotionInputError("grasp and target installed up-face must match")
+    _validate_safe_z(grasp, target, config)
+
+
+def _validate_safe_z(grasp: OrientedPartPose, target: OrientedPartPose, config: MotionConfig) -> None:
+    required = max(grasp.tcp.z + config.lift_mm, target.tcp.z + config.hover_mm)
+    if config.safe_z_mm < required:
+        raise MotionConfigError("safe_z_mm must be on or above all pick-transfer clearances")
 
 
 def _preserve_roll_pitch(reference: AbsolutePoseUF0, target: AbsolutePoseUF0) -> AbsolutePoseUF0:
@@ -192,7 +229,18 @@ def _steps(start: Waypoint, end: Waypoint, config: MotionConfig) -> int:
     return max(1, math.ceil(max(linear, yaw)))
 
 
+def _nearest_angle(reference: float, target: float) -> float:
+    delta = (target - reference + 180.0) % 360.0 - 180.0
+    return reference if abs(delta) < 1e-12 else reference + delta
+
+
 def _segment(start: Waypoint, end: Waypoint, config: MotionConfig) -> tuple[Waypoint, ...]:
+    end = replace(
+        end,
+        w=_nearest_angle(start.w, end.w),
+        p=_nearest_angle(start.p, end.p),
+        r=_nearest_angle(start.r, end.r),
+    )
     count = _steps(start, end, config)
     fields = ("x", "y", "z", "w", "p", "r")
     points: list[Waypoint] = []
@@ -209,14 +257,47 @@ def _chunk(phase: MotionPhase, points: tuple[Waypoint, ...], size: int) -> tuple
     return tuple(MotionChunk(phase, points[index : index + size]) for index in range(0, len(points), size))
 
 
+def compile_inspection_stop(
+    current: Waypoint,
+    coarse_xy_mm: tuple[float, float],
+    *,
+    inspection: InspectionStopConfig,
+    motion: MotionConfig,
+) -> tuple[MotionChunk, ...]:
+    """Move to the measured wrist viewpoint using only coarse table XY."""
+    _validate_config(motion)
+    _validate_inspection_config(inspection)
+    if not isinstance(coarse_xy_mm, tuple) or len(coarse_xy_mm) != 2:
+        raise MotionInputError("coarse perception center must be an x/y tuple")
+    x = _finite(coarse_xy_mm[0], field="coarse_x_mm", error_type=MotionInputError)
+    y = _finite(coarse_xy_mm[1], field="coarse_y_mm", error_type=MotionInputError)
+    endpoint = Waypoint(
+        x,
+        y,
+        inspection.tcp_z_mm,
+        inspection.tool_w_deg,
+        inspection.tool_p_deg,
+        current.r,
+        0.0,
+    )
+    transit_z = max(current.z, motion.safe_z_mm)
+    rise = _segment(current, replace(current, z=transit_z), motion)
+    transit_target = replace(endpoint, z=transit_z)
+    transit = _segment(rise[-1], transit_target, motion)
+    descend = _segment(transit[-1], endpoint, motion)
+    return _chunk(MotionPhase.INSPECT, (*rise, *transit, *descend), motion.max_waypoints_per_chunk)
+
+
 def _anchors(grasp: AbsolutePoseUF0, target: AbsolutePoseUF0, config: MotionConfig) -> dict[str, Waypoint]:
-    aligned_lift = replace(grasp, r=target.r)
+    aligned_safe = replace(grasp, z=config.safe_z_mm, r=target.r)
     return {
         "approach": _waypoint(grasp, gripper=0.0, z_offset=config.approach_mm),
         "grasp_open": _waypoint(grasp, gripper=0.0),
         "grasp_closed": _waypoint(grasp, gripper=1.0),
         "lift": _waypoint(grasp, gripper=1.0, z_offset=config.lift_mm),
-        "aligned_lift": _waypoint(aligned_lift, gripper=1.0, z_offset=config.lift_mm),
+        "safe_pick": _waypoint(replace(grasp, z=config.safe_z_mm), gripper=1.0),
+        "aligned_safe": _waypoint(aligned_safe, gripper=1.0),
+        "safe_target": _waypoint(replace(target, z=config.safe_z_mm), gripper=1.0),
         "hover": _waypoint(target, gripper=1.0, z_offset=config.hover_mm),
         "target_closed": _waypoint(target, gripper=1.0),
         "target_open": _waypoint(target, gripper=0.0),
@@ -231,9 +312,15 @@ def _phase_points(
         (MotionPhase.APPROACH, (anchors["approach"],)),
         (MotionPhase.DESCEND, _segment(anchors["approach"], anchors["grasp_open"], config)),
         (MotionPhase.GRIP, (anchors["grasp_closed"],)),
-        (MotionPhase.LIFT, _segment(anchors["grasp_closed"], anchors["lift"], config)),
-        (MotionPhase.CARRY_YAW, _segment(anchors["lift"], anchors["aligned_lift"], config)),
-        (MotionPhase.HOVER, _segment(anchors["aligned_lift"], anchors["hover"], config)),
+        (
+            MotionPhase.LIFT,
+            (*_segment(anchors["grasp_closed"], anchors["lift"], config), *_segment(anchors["lift"], anchors["safe_pick"], config)),
+        ),
+        (MotionPhase.CARRY_YAW, _segment(anchors["safe_pick"], anchors["aligned_safe"], config)),
+        (
+            MotionPhase.HOVER,
+            (*_segment(anchors["aligned_safe"], anchors["safe_target"], config), *_segment(anchors["safe_target"], anchors["hover"], config)),
+        ),
         (MotionPhase.VERTICAL_INSERT, _segment(anchors["hover"], anchors["target_closed"], config)),
         (MotionPhase.RELEASE, (anchors["target_open"],)),
         (MotionPhase.RETREAT, _segment(anchors["target_open"], anchors["retreat"], config)),
@@ -248,7 +335,13 @@ def _pick_phase_points(
     if current.gripper != 0.0:
         raise MotionInputError("a new pick must start with an open gripper")
     phases = _phase_points(anchors, config)
-    approach = _segment(current, anchors["approach"], config)
+    transit_z = max(current.z, config.safe_z_mm)
+    current_safe = replace(current, z=transit_z)
+    approach_safe = replace(anchors["approach"], z=transit_z)
+    rise = _segment(current, current_safe, config)
+    transit = _segment(rise[-1], approach_safe, config)
+    descend = _segment(transit[-1], anchors["approach"], config)
+    approach = (*rise, *transit, *descend)
     return ((MotionPhase.APPROACH, approach), *phases[1:])
 
 
@@ -290,6 +383,30 @@ def compile_pick_to_insert(
         config=config,
     )
     return tuple(chunk for chunk in chunks if chunk.phase not in {MotionPhase.RELEASE, MotionPhase.RETREAT})
+
+
+def compile_pick_to_reject(
+    current: Waypoint,
+    grasp: OrientedPartPose,
+    reject: OrientedPartPose,
+    *,
+    gripper_roll_deg: float,
+    config: MotionConfig,
+) -> tuple[MotionChunk, ...]:
+    """Pick an approved resting side without reorientation and drop it in reject."""
+    _validate_pose("grasp", grasp, allowed_states=frozenset(RestingState))
+    _validate_pose("reject", reject)
+    _validate_config(config)
+    _validate_safe_z(grasp, reject, config)
+    grasp_tcp = _apply_gripper_roll(grasp.tcp, gripper_roll_deg)
+    reject_tcp = _apply_gripper_roll(reject.tcp, gripper_roll_deg)
+    reject_tcp = _preserve_roll_pitch(grasp_tcp, reject_tcp)
+    grasp_tcp, reject_tcp = _short_yaw_poses(grasp_tcp, reject_tcp)
+    anchors = _anchors(grasp_tcp, reject_tcp, config)
+    chunks: list[MotionChunk] = []
+    for phase, points in _pick_phase_points(current, anchors, config):
+        chunks.extend(_chunk(phase, points, config.max_waypoints_per_chunk))
+    return tuple(chunks)
 
 
 def compile_release_retreat(

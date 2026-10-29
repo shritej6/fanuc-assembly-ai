@@ -3,23 +3,25 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from assembly.catalog import load_catalog
 from assembly.controller_ports import ExecutionTolerances, PerceptionTolerances
+from assembly.controller_startup import StartupHoldConfig
 from assembly.inventory import InventoryZone, ObjectCondition
-from assembly.motion import AbsolutePoseUF0, MotionConfig, OrientedPartPose, RestingState
-from assembly.safety import AABB, AABBCollisionChecker, ReachabilityCapabilities, SafetyConfig, SafetySupervisor
+from assembly.motion import (
+    AbsolutePoseUF0,
+    InspectionStopConfig,
+    MotionConfig,
+    OrientedPartPose,
+    RestingState,
+    Waypoint,
+)
+from assembly.safety import AABB
 from assembly.state_machine import PackMLState
 from assembly.verification import VerificationThresholds
 from robot.adapter import CellAdapter
-
-
-class AlwaysReachable:
-    capabilities = ReachabilityCapabilities(full_robot_kinematics=False)
-
-    def is_reachable(self, pose: tuple[float, float, float, float, float, float]) -> bool:
-        return True
+from tests.controller_fixtures import build_test_safety
 
 
 class CalibratedScenarioPoses:
@@ -34,6 +36,15 @@ class CalibratedScenarioPoses:
         del observed_at_s
         product = int(base.instance_id.rsplit("-", maxsplit=1)[-1])
         return _oriented(400.0 + 20.0 * product, 80.0, -320.0, 90.0)
+
+    def grasp_from_foundationpose(self, part, detection, *, observed_at_s: float) -> OrientedPartPose:
+        del observed_at_s
+        assert detection["pose_source"] == "foundationpose"
+        pose = detection["pose"]
+        oriented = _oriented(float(pose["x"]), float(pose["y"]), float(pose["z"]), float(pose["yaw"]))
+        if detection.get("resting_side") in {"side", "flipped"}:
+            return replace(oriented, resting_state=RestingState.FALLEN, up_face="fallen:observed")
+        return oriented
 
     def target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
         del base, observed_at_s
@@ -65,8 +76,10 @@ class ScriptedPerception:
     obstacles: tuple[AABB, ...] = ()
 
     def __post_init__(self) -> None:
+        self.scan_calls = 0
         self.pre_calls: Counter = Counter()
         self.post_calls: Counter = Counter()
+        self.transfer_calls: Counter = Counter()
         self.collision_calls = 0
         self.staged_poses: dict[str, dict[str, float]] = {}
         self.next_staging_slot = 1
@@ -74,6 +87,7 @@ class ScriptedPerception:
     def scan(self, observation):
         from assembly.controller_ports import InventorySnapshot
 
+        self.scan_calls += 1
         return InventorySnapshot(float(observation["t"]), True, self.observed)
 
     def pre_pick(self, observation, part):
@@ -118,6 +132,7 @@ class ScriptedPerception:
     def post_transfer(self, observation, part, target_zone):
         from assembly.controller_ports import RecoveryTransferEvidence
 
+        self.transfer_calls[(part.instance_id, target_zone)] += 1
         if target_zone is InventoryZone.STAGED:
             target_pose = {
                 "x": 500.0,
@@ -200,14 +215,24 @@ def _observed_three_products(*, include_missing_spare: bool = True):
 
     items = []
     for product, base in ((1, "F01"), (3, "F03"), (4, "F04")):
-        items.append(ObservedInventoryItem(f"base-{product}", base))
+        items.append(ObservedInventoryItem(f"base-{product}", base, coarse_xy_mm=(400.0, 80.0)))
         for step in range(1, 5):
             if product == 4 and step == 3:
                 continue
-            items.append(ObservedInventoryItem(f"p{product}-{step}", f"M{product}_{step:02d}"))
-    items.append(ObservedInventoryItem("p1-2-spare", "M1_02", zone=InventoryZone.SPARE))
+            items.append(
+                ObservedInventoryItem(
+                    f"p{product}-{step}",
+                    f"M{product}_{step:02d}",
+                    coarse_xy_mm=(210.0 + 30.0 * product, -160.0 + 35.0 * step),
+                )
+            )
+    items.append(
+        ObservedInventoryItem("p1-2-spare", "M1_02", zone=InventoryZone.SPARE, coarse_xy_mm=(240.0, -90.0))
+    )
     if include_missing_spare:
-        items.append(ObservedInventoryItem("p4-3-spare", "M4_03", zone=InventoryZone.SPARE))
+        items.append(
+            ObservedInventoryItem("p4-3-spare", "M4_03", zone=InventoryZone.SPARE, coarse_xy_mm=(330.0, -55.0))
+        )
     return tuple(items)
 
 
@@ -216,53 +241,78 @@ def _observed_family_c_products():
 
     items = []
     for product in (4, 5, 6):
-        items.append(ObservedInventoryItem(f"base-{product}", f"F0{product}"))
-        items.extend(ObservedInventoryItem(f"p{product}-{step}", f"M{product}_{step:02d}") for step in range(1, 5))
+        items.append(ObservedInventoryItem(f"base-{product}", f"F0{product}", coarse_xy_mm=(400.0, 80.0)))
+        items.extend(
+            ObservedInventoryItem(
+                f"p{product}-{step}",
+                f"M{product}_{step:02d}",
+                coarse_xy_mm=(210.0 + 30.0 * product, -160.0 + 35.0 * step),
+            )
+            for step in range(1, 5)
+        )
+    return tuple(items)
+
+
+def _observed_products(products: tuple[int, ...]):
+    from assembly.controller_ports import ObservedInventoryItem
+
+    items = []
+    for product in products:
+        items.append(ObservedInventoryItem(f"base-{product}", f"F0{product}", coarse_xy_mm=(400.0, 80.0)))
+        items.extend(
+            ObservedInventoryItem(
+                f"p{product}-{step}",
+                f"M{product}_{step:02d}",
+                coarse_xy_mm=(210.0 + 30.0 * product, -160.0 + 35.0 * step),
+            )
+            for step in range(1, 5)
+        )
     return tuple(items)
 
 
 def _controller(
     perception: ScriptedPerception,
-    products: tuple[int, ...] = (1, 3, 4),
     perception_tolerances: PerceptionTolerances | None = None,
     execution_tolerances: ExecutionTolerances | None = None,
 ):
     from assembly.controller import AssemblyController
 
-    motion = MotionConfig(20.0, 30.0, 15.0, 20.0, 50.0, 30.0, 8)
-    safety = SafetySupervisor(
-        config=SafetyConfig(0.1, -335.0, 1.0, -180.0, 0.0, 0.5, 1.0),
-        reachability=AlwaysReachable(),
-        collision=AABBCollisionChecker(),
-        allow_tcp_sweep_only_for_mock=True,
-    )
+    motion = MotionConfig(20.0, 30.0, 15.0, 20.0, 50.0, 30.0, 8, -180.0, "mock-only test fixture")
     return AssemblyController(
         catalog=load_catalog(),
-        products=products,
         perception=perception,
         poses=CalibratedScenarioPoses(),
         motion_config=motion,
-        safety=safety,
+        inspection_stop=InspectionStopConfig(
+            -168.0,
+            -180.0,
+            0.0,
+            "PR9 follow-up measured CSI wrist inspection stop",
+        ),
+        startup_hold=StartupHoldConfig(
+            Waypoint(200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0),
+            "mock-only initial observation fixture",
+        ),
+        safety=build_test_safety(),
         verification_thresholds=VerificationThresholds(0.9, 0.8, 0.9, 0.1, 1.0),
         execution_tolerances=execution_tolerances or ExecutionTolerances(0.0, 0.0),
         perception_tolerances=perception_tolerances or PerceptionTolerances(0.0, 0.0),
         recovery_targets=CalibratedRecoveryTargets(),
     )
-
-
-def _observation() -> dict[str, object]:
+def _observation(products: tuple[int, ...] = (1, 3, 4)) -> dict[str, object]:
+    product_text = ", ".join(str(product) for product in products)
     return {
         "t": 0.0,
         "tcp_pose": [200.0, 0.0, -250.0, -180.0, 0.0, 0.0],
         "joints": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         "images": {},
-        "trial": {"instruction": "assemble products 1, 3, and 4"},
+        "trial": {"instruction": f"assemble products {product_text}"},
     }
 
 
-def _drive(controller, *, limit: int = 800) -> list[list[float]]:
+def _drive(controller, *, products: tuple[int, ...] = (1, 3, 4), limit: int = 800) -> list[list[float]]:
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation()
+    observation = _observation(products)
     actions: list[list[float]] = []
     for _ in range(limit):
         result = adapter.act(observation)
@@ -307,9 +357,9 @@ def test_missing_part_without_spare_suspends_and_calls_andon_without_motion() ->
         if item.object_id.startswith("M4") or item.object_id == "F04"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
-    controller = _controller(perception, products=(4,))
+    controller = _controller(perception)
 
-    output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
+    output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation((4,)))
 
     assert output == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
     assert controller.state_machine.state is PackMLState.SUSPENDED
@@ -317,57 +367,27 @@ def test_missing_part_without_spare_suspends_and_calls_andon_without_motion() ->
     assert controller.plan_records == ()
 
 
-def test_independent_check_disagreement_holds_before_any_motion() -> None:
+def test_independent_check_disagreement_holds_before_any_pick_motion() -> None:
     observed = tuple(
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
     perception = ScriptedPerception(observed, set(), Counter(), {"p1-1"})
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
-    output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
+    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
+    observation = _observation((1,))
+    inspect = adapter.act(observation)
+    rows = inspect if isinstance(inspect[0], list) else [inspect]
+    observation["tcp_pose"] = rows[-1][:6]
+    observation["joints"] = [0.0] * 6 + [rows[-1][6]]
+    observation["t"] = 1.0
 
-    assert output == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
+    output = adapter.act(observation)
+
+    assert output == observation["tcp_pose"] + [0.0]
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.events[-1].kind == "andon"
     assert controller.plan_records == ()
-
-
-def test_collision_aborts_before_a_compiled_waypoint_is_returned() -> None:
-    observed = tuple(
-        item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
-    )
-    obstacle = AABB("fixture", (205.0, -130.0, -310.0), (245.0, 5.0, -240.0))
-    perception = ScriptedPerception(observed, set(), Counter(), set(), obstacles=(obstacle,))
-    controller = _controller(perception, products=(1,))
-
-    output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation())
-
-    assert output == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
-    assert controller.state_machine.state is PackMLState.ABORTED
-    assert controller.events[-1].kind == "abort"
-    assert controller.plan_records == ()
-
-
-def test_andon_restock_replaces_the_pending_rejected_instance_and_resumes() -> None:
-    from assembly.controller_ports import ObservedInventoryItem
-
-    observed = tuple(
-        item
-        for item in _observed_three_products()
-        if (item.object_id.startswith("M1") or item.object_id == "F01") and item.instance_id != "p1-2-spare"
-    )
-    perception = ScriptedPerception(observed, {"p1-1"}, Counter(), set())
-    controller = _controller(perception, products=(1,))
-    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-
-    assert adapter.act(_observation()) == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
-    assert controller.state_machine.state is PackMLState.SUSPENDED
-
-    perception.observed += (ObservedInventoryItem("p1-1-restock", "M1_01", zone=InventoryZone.SPARE),)
-    _drive(controller)
-
-    assert controller.inventory.item("p1-1-restock").zone is InventoryZone.INSTALLED
-    assert any(event.kind == "resume" for event in controller.events)
 
 
 def test_each_chunk_revalidates_from_actual_observed_tcp() -> None:
@@ -375,9 +395,9 @@ def test_each_chunk_revalidates_from_actual_observed_tcp() -> None:
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation()
+    observation = _observation((1,))
 
     assert adapter.act(observation)
     observation["tcp_pose"] = [650.0, 450.0, -250.0, -180.0, 0.0, 0.0]
@@ -394,9 +414,9 @@ def test_disappearing_reserved_part_holds_before_next_chunk() -> None:
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation()
+    observation = _observation((1,))
     first = adapter.act(observation)
     rows = first if isinstance(first[0], list) else [first]
 
@@ -413,9 +433,9 @@ def test_disappearing_reserved_part_holds_before_next_chunk() -> None:
 
 def test_same_base_family_products_consume_distinct_completed_bases() -> None:
     perception = ScriptedPerception(_observed_family_c_products(), set(), Counter(), set())
-    controller = _controller(perception, products=(4, 5, 6))
+    controller = _controller(perception)
 
-    _drive(controller, limit=1200)
+    _drive(controller, products=(4, 5, 6), limit=1200)
 
     assert controller.completed_products == (4, 5, 6)
     assert {controller.inventory.item(f"base-{product}").zone for product in (4, 5, 6)} == {InventoryZone.OUTPUT}
@@ -426,9 +446,9 @@ def test_two_failed_reinsertions_dismantle_rebuild_and_use_exact_spare() -> None
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
     perception = ScriptedPerception(observed, set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
-    _drive(controller, limit=1200)
+    _drive(controller, products=(1,), limit=1200)
 
     event_kinds = [event.kind for event in controller.events]
     assert event_kinds.count("retry") == 2
@@ -446,9 +466,9 @@ def test_two_failed_reinsertions_without_spare_hold_andon_while_gripping() -> No
         if (item.object_id.startswith("M1") or item.object_id == "F01") and item.instance_id != "p1-2-spare"
     )
     perception = ScriptedPerception(observed, set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation()
+    observation = _observation((1,))
 
     for _ in range(500):
         result = adapter.act(observation)

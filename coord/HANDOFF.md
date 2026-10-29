@@ -4,26 +4,29 @@ Newest first. One entry per finished task.
 
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
-- Changed: added typed inventory ownership, recipe planning from T04, PackML execution/recovery/Andon states,
-  calibrated absolute-UF0 motion compilation, per-chunk safety revalidation, two-source pre-pick/post-place gates, and
-  deterministic T27-shaped model stubs. The controller preserves installed roll/pitch, permits yaw alignment only,
-  keeps parts held until independent placement checks pass, and retains product ownership for operator reconciliation
-  after any physical grip/release/install/stage side effect.
-- Safety boundaries: every camera/model/calibration callback is normalized to a typed fail-closed error; complete scans
-  must retain every claimed instance; current-to-first-waypoint motion is interpolated within caller-supplied step
-  bounds; release opens at the verified current pose without a Cartesian correction; malformed poses, collision
-  geometry, endpoint arrays, evidence subtypes, recovery targets, and official T05 action-guard failures cannot escape
-  while PackML remains Execute. Production requires explicit full-kinematics reachability and robot-link/held-part
-  collision capabilities; TCP-sweep-only AABB checking is mock-only.
-- Run: `uv run ruff check .` (passed); `uv run pytest -q` (381 passed); `git diff --check` (clean);
-  `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean);
-  root and `robot/cell` `uv lock --check` plus `uv pip check` (compatible). Official integration:
-  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected,
-  `✓ Ready for the real robot`; opt-in `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
-  200 actions, 0 rejected, with an explicit mock-only/not-real-robot-ready verdict.
-- Next: Claude reviews the T09 PR. Do not select `t09-mock` on the cell. Real execution remains gated on reviewed
-  calibrated pose registries, full production reachability/collision providers, and T27 perception evidence. After T09
-  merges, T15/T19 and the Codex portions of T16/T20/T21 may consume its deterministic event and inventory interfaces.
+- Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor
+  accepts no fixed product tuple. Inventory comes only from the perception port. Loose/table or reserved fallen,
+  defective, look-alike, and unrequested parts now execute inspect → FoundationPose grasp → reject → independently
+  verified transfer before a verified table replacement or spare is reserved. Unknown foreign objects Hold/Andon when
+  no catalog identity and sourced grasp exist; installed/staged scan defects Hold for calibrated dismantle recovery.
+- Motion/recovery: every normal or recovery `pre_pick` happens only after the sourced straight-down inspection stop;
+  recovery no longer calls `grasp_for`. Safe-Z rise/XY/descent, nearest-equivalent W/P/R interpolation, shortest yaw,
+  configured per-step Cartesian speed checks, table-before-spare selection, operator acknowledge/rescan resume, and
+  installed/held occlusion ownership are covered. Inspection actions are authoritative: `ask_operator` Holds pre/post,
+  and physical reject actions are not inferred from raw scores.
+- Runtime boundary: `AssemblyController` requires caller-sourced `InspectionStopConfig` and `StartupHoldConfig`; the
+  latter is validated against the official action contract and prevents malformed first observations from escaping
+  `act()`. `reset()` clears prompt ownership, `requested_products` exposes the parsed tuple, and
+  `acknowledge_resume()` requires a fresh scan before leaving Held. T29 object-to-TCP offsets stay inside the pose
+  provider and are not compared incorrectly with the FoundationPose object origin.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (437 passed); `git diff --check` (clean);
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean).
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected and
+  `✓ Ready for the real robot`; adding `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
+  200 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
+- Next: Claude re-reviews PR #9. Agent 4 must supply the sourced startup hold, T28 recovery/staging targets, T29
+  FoundationPose object-to-TCP transform, and production full-IK/collision providers; do not select `t09-mock` on the
+  real cell. Agent 2's reviewed catalog/adapter commits remain a separate root integration step.
 
 ## 2026-10-27 · T05 · CODEX · adapter layer and UF0 safety guard
 

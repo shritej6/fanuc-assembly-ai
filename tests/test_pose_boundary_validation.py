@@ -69,7 +69,7 @@ def test_planner_rejects_malformed_nested_pose(kind: str) -> None:
 @pytest.mark.parametrize("kind", ["tcp", "up_face"])
 def test_motion_rejects_malformed_nested_pose(kind: str) -> None:
     current = Waypoint(200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0)
-    config = MotionConfig(10.0, 10.0, 10.0, 10.0, 20.0, 10.0, 10)
+    config = MotionConfig(10.0, 10.0, 10.0, 10.0, 20.0, 10.0, 10, -180.0, "test fixture")
 
     with pytest.raises(MotionInputError):
         compile_pick_insert(current, _broken_pose(kind), _valid_pose(), gripper_roll_deg=0.0, config=config)

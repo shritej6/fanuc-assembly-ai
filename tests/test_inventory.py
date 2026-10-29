@@ -228,6 +228,20 @@ def test_replace_rejected_reservation_with_verified_exact_spare() -> None:
     assert inventory.active_reservation.part("M4_02") == replacement
 
 
+def test_replace_rejected_part_uses_verified_table_instance_before_spare() -> None:
+    from assembly.inventory import InventoryZone, ObjectCondition
+
+    inventory = _product_four_inventory()
+    inventory.reserve_product(4)
+    inventory.add("second-table-M4_02", "M4_02", zone=InventoryZone.TABLE)
+
+    replacement = inventory.replace_with_spare("table-M4_02", condition=ObjectCondition.DEFECTIVE)
+
+    assert replacement.instance_id == "second-table-M4_02"
+    assert replacement.source_zone is InventoryZone.TABLE
+    assert inventory.item("spare-M4_02").zone is InventoryZone.SPARE
+
+
 def test_replacement_shortage_rejects_bad_part_and_can_resume_after_restock() -> None:
     from assembly.inventory import InventoryShortageError, InventoryZone, ObjectCondition
 

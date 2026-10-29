@@ -22,13 +22,14 @@ def policy_type(monkeypatch):
     return Policy
 
 
-def _observation() -> dict[str, object]:
+def _observation(products: tuple[int, ...] = (1, 3, 4)) -> dict[str, object]:
+    requested = ", ".join(str(product) for product in products)
     return {
         "t": 0.0,
         "tcp_pose": None,
         "joints": [0.0] * 7,
         "images": {},
-        "trial": {"instruction": "assemble products 1, 3, and 4"},
+        "trial": {"instruction": f"assemble products {requested}"},
     }
 
 
@@ -43,8 +44,8 @@ def _apply(observation: dict[str, object], action) -> None:
     observation["t"] = float(observation["t"]) + 1.0
 
 
-def _drive(policy, *, limit: int = 200) -> list[list[float]]:
-    observation = _observation()
+def _drive(policy, *, products: tuple[int, ...] = (1, 3, 4), limit: int = 200) -> list[list[float]]:
+    observation = _observation(products)
     bootstrap = policy.act(observation)
     actions = _rows(bootstrap)
     _apply(observation, bootstrap)
@@ -84,6 +85,17 @@ def test_t09_mock_bootstraps_executes_faults_and_archives(policy_type) -> None:
     assert policy.controller.archived_runs[-1].completed_products == (1, 3, 4)
     assert policy.controller.archived_runs[-1].finished is True
     assert policy.controller.events == ()
+
+
+def test_t09_mock_derives_non_default_layout_and_faults_from_trial_prompt(policy_type) -> None:
+    policy = policy_type("t09-mock", runtime="mock")
+
+    actions = _drive(policy, products=(2, 5, 6))
+
+    assert all(guard_tcp_action(action, dt=policy.DT) == action for action in actions)
+    assert policy.controller.completed_products == (2, 5, 6)
+    assert any(event.kind == "spare" and event.object_id == "M2_02" for event in policy.controller.events)
+    assert any(event.kind == "retry" and event.object_id == "M5_03" for event in policy.controller.events)
 
 
 def test_default_policy_remains_joint_hold_in_mock_runtime(policy_type) -> None:

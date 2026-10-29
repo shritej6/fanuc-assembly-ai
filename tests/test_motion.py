@@ -8,15 +8,20 @@ from itertools import pairwise
 
 import pytest
 
+from assembly.controller_startup import StartupHoldConfig, validated_startup_hold
 from assembly.motion import (
     AbsolutePoseUF0,
+    InspectionStopConfig,
     MotionConfig,
+    MotionConfigError,
     MotionPhase,
     OrientedPartPose,
     RestingState,
     Waypoint,
+    compile_inspection_stop,
     compile_pick_insert,
     compile_pick_to_insert,
+    compile_pick_to_reject,
     compile_reinsert,
     compile_release_retreat,
     compile_transfer_held,
@@ -49,11 +54,29 @@ def _config() -> MotionConfig:
         max_linear_step_mm=15.0,
         max_yaw_step_deg=10.0,
         max_waypoints_per_chunk=3,
+        safe_z_mm=-180.0,
+        safe_z_source="test fixture",
     )
 
 
 def _current() -> Waypoint:
     return Waypoint(200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0)
+
+
+def test_startup_hold_requires_recorded_source() -> None:
+    config = StartupHoldConfig(_current(), "")
+
+    with pytest.raises(MotionConfigError, match="recorded source"):
+        validated_startup_hold(config)
+
+
+@pytest.mark.parametrize(
+    "waypoint",
+    [replace(_current(), x=float("nan")), replace(_current(), gripper=0.5)],
+)
+def test_startup_hold_rejects_unsafe_action_values(waypoint: Waypoint) -> None:
+    with pytest.raises(MotionConfigError, match="startup hold"):
+        validated_startup_hold(StartupHoldConfig(waypoint, "test fixture"))
 
 
 def test_compile_pick_insert_emits_ordered_bounded_motion() -> None:
@@ -64,7 +87,7 @@ def test_compile_pick_insert_emits_ordered_bounded_motion() -> None:
     chunks = compile_pick_insert(_current(), grasp, target, gripper_roll_deg=0.0, config=_config())
 
     phases = list(dict.fromkeys(chunk.phase for chunk in chunks))
-    assert phases == list(MotionPhase)
+    assert phases == [phase for phase in MotionPhase if phase is not MotionPhase.INSPECT]
     assert all(1 <= len(chunk.waypoints) <= 3 for chunk in chunks)
     waypoints = [waypoint for chunk in chunks for waypoint in chunk.waypoints]
     assert math.dist(_current().xyz, waypoints[0].xyz) <= 15.0 + 1e-9
@@ -167,6 +190,100 @@ def test_yaw_alignment_starts_after_lift_and_uses_shortest_wrapped_path() -> Non
     assert set(before_carry) == {170.0}
     assert carry_yaws == [180.0, 190.0]
     assert set(after_carry) == {190.0}
+
+
+def test_approach_unwraps_equivalent_tool_angles_before_interpolation() -> None:
+    current = Waypoint(200.0, 0.0, -250.0, 180.0, 0.0, 179.0, 0.0)
+    chunks = compile_pick_insert(
+        current,
+        _pose(250.0, -100.0, -300.0, -179.0),
+        _pose(340.0, 20.0, -280.0, 179.0),
+        gripper_roll_deg=0.0,
+        config=_config(),
+    )
+
+    approach = [point for chunk in chunks if chunk.phase is MotionPhase.APPROACH for point in chunk.waypoints]
+    assert max(abs(point.w - current.w) for point in approach) == 0.0
+    assert max(abs(point.r - current.r) for point in approach) <= 2.0
+
+
+def test_inspection_stop_uses_configured_measured_viewpoint_over_coarse_xy() -> None:
+    config = InspectionStopConfig(
+        tcp_z_mm=-168.0,
+        tool_w_deg=-180.0,
+        tool_p_deg=0.0,
+        source="PR9 follow-up measured CSI wrist inspection stop",
+    )
+
+    chunks = compile_inspection_stop(_current(), (321.0, -44.0), inspection=config, motion=_config())
+
+    assert {chunk.phase for chunk in chunks} == {MotionPhase.INSPECT}
+    endpoint = chunks[-1].waypoints[-1]
+    assert endpoint == Waypoint(321.0, -44.0, -168.0, -180.0, 0.0, 0.0, 0.0)
+
+
+def test_inspection_stop_moves_xy_only_after_rising_to_configured_safe_z() -> None:
+    inspection = InspectionStopConfig(-168.0, -180.0, 0.0, "measured CSI inspection stop")
+
+    chunks = compile_inspection_stop(
+        _current(),
+        (321.0, -44.0),
+        inspection=inspection,
+        motion=_config(),
+    )
+    points = [_current(), *(point for chunk in chunks for point in chunk.waypoints)]
+    lateral = [(before, after) for before, after in pairwise(points) if before.xyz[:2] != after.xyz[:2]]
+
+    assert lateral
+    assert all(min(before.z, after.z) >= _config().safe_z_mm for before, after in lateral)
+
+
+def test_reject_transfer_picks_fallen_part_as_it_lies_then_releases_in_reject_zone() -> None:
+    fallen = replace(_pose(250.0, -100.0, -300.0, 10.0), resting_state=RestingState.FALLEN)
+    reject = _pose(550.0, -350.0, -300.0, 0.0)
+
+    chunks = compile_pick_to_reject(
+        _current(),
+        fallen,
+        reject,
+        gripper_roll_deg=0.0,
+        config=_config(),
+    )
+
+    phases = {chunk.phase for chunk in chunks}
+    assert MotionPhase.GRIP in phases
+    assert MotionPhase.RELEASE in phases
+    assert chunks[-1].waypoints[-1].gripper == 0.0
+
+
+def test_reject_transfer_rejects_safe_z_below_pick_or_drop_clearance() -> None:
+    fallen = replace(_pose(250.0, -100.0, -300.0, 10.0), resting_state=RestingState.FALLEN)
+    reject = _pose(550.0, -350.0, -300.0, 0.0)
+
+    with pytest.raises(ValueError, match="safe_z_mm"):
+        compile_pick_to_reject(
+            _current(),
+            fallen,
+            reject,
+            gripper_roll_deg=0.0,
+            config=replace(_config(), safe_z_mm=-270.0),
+        )
+
+
+def test_pick_transfer_changes_xy_only_on_or_above_configured_safe_z() -> None:
+    chunks = compile_pick_to_insert(
+        _current(),
+        _pose(250.0, -100.0, -300.0, 10.0),
+        _pose(340.0, 20.0, -280.0, 40.0),
+        gripper_roll_deg=0.0,
+        config=_config(),
+    )
+    points = [_current(), *(point for chunk in chunks for point in chunk.waypoints)]
+
+    lateral = [(before, after) for before, after in pairwise(points) if before.xyz[:2] != after.xyz[:2]]
+
+    assert lateral
+    assert all(min(before.z, after.z) >= _config().safe_z_mm for before, after in lateral)
 
 
 def test_yaw_alignment_finishes_at_lift_before_horizontal_transfer() -> None:

@@ -141,3 +141,37 @@ def test_next_step_rejects_untrusted_or_non_installed_pose() -> None:
 
     with pytest.raises(PlannerPoseError, match="calibrated"):
         RecipePlanner(load_catalog(), UntrustedPoses()).next_step(_inventory(), observed_at_s=10.0)
+
+
+def test_next_candidate_does_not_request_a_grasp_before_wrist_inspection() -> None:
+    from assembly.planner import RecipePlanner
+
+    class WristOnlyPoses(CalibratedPoses):
+        def grasp_for(self, part, *, observed_at_s: float) -> OrientedPartPose:
+            raise AssertionError("grasp requested before wrist inspection")
+
+    planner = RecipePlanner(load_catalog(), WristOnlyPoses())
+
+    candidate = planner.next_candidate(_inventory(), observed_at_s=10.0)
+    prepared = planner.finalize_candidate(candidate, _pose(230.0, -80.0, -300.0, 10.0))
+
+    assert candidate is not None
+    assert prepared.record.grasp.as_dict() == {"x": 230.0, "y": -80.0, "z": -300.0, "yaw": 10.0}
+
+
+def test_fallen_foundationpose_grasp_is_valid_only_for_move_to_reject() -> None:
+    from assembly.planner import PlannerPoseError, RecipePlanner
+
+    planner = RecipePlanner(load_catalog(), CalibratedPoses())
+    candidate = planner.next_candidate(_inventory(), observed_at_s=10.0)
+    assert candidate is not None
+    fallen = replace(_pose(230.0, -80.0, -300.0, 10.0), resting_state=RestingState.FALLEN)
+    reject = _pose(550.0, -350.0, -300.0, 0.0)
+
+    with pytest.raises(PlannerPoseError, match="installed up-face"):
+        planner.finalize_candidate(candidate, fallen)
+    prepared = planner.finalize_reject_candidate(candidate, fallen, reject)
+
+    assert prepared.record.op == "move_to_reject"
+    assert prepared.record.target.as_dict() == {"x": 550.0, "y": -350.0, "z": -300.0, "yaw": 0.0}
+    assert prepared.grasp.resting_state is RestingState.FALLEN

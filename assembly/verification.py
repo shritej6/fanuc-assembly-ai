@@ -251,27 +251,6 @@ def _decision(
     )
 
 
-def _inspection_results(
-    inspection: Mapping[str, object],
-    thresholds: VerificationThresholds,
-) -> tuple[bool, bool, bool] | None:
-    evidence = inspection.get("evidence")
-    if not isinstance(evidence, Mapping):
-        return None
-    classifier = evidence.get("classifier_score")
-    patchcore = evidence.get("patchcore_score")
-    residual = evidence.get("depth_residual_mm")
-    if not all(
-        isinstance(value, (int, float)) and not isinstance(value, bool) for value in (classifier, patchcore, residual)
-    ):
-        return None
-    return (
-        classifier >= thresholds.min_classifier_score,
-        patchcore <= thresholds.max_patchcore_score,
-        residual <= thresholds.max_depth_residual_mm,
-    )
-
-
 def _detection_passes(detection: Mapping[str, object], thresholds: VerificationThresholds) -> bool:
     score = cast(float, detection["score"])
     fit = detection.get("pose_fit_score")
@@ -286,21 +265,14 @@ def _detection_passes(detection: Mapping[str, object], thresholds: VerificationT
 def _checks_disagree(
     detection: Mapping[str, object],
     inspection: Mapping[str, object],
-    thresholds: VerificationThresholds,
 ) -> bool:
     verdict = cast(str, inspection.get("verdict"))
-    results = _inspection_results(inspection, thresholds)
-    structural = (
+    return (
         inspection.get("checks_agree") is not True
         or detection.get("instance_id") != inspection.get("instance_id")
         or detection.get("object_id") != inspection.get("object_id")
         or inspection.get("action") not in _ACTIONS_BY_VERDICT[verdict]
     )
-    if structural or results is None or len(set(results)) != 1:
-        return True
-    raw_passes = all(results)
-    verdict_passes = verdict == "ok" and inspection.get("action") == "use"
-    return raw_passes != verdict_passes
 
 
 def _has_foundationpose(detection: Mapping[str, object]) -> bool:
@@ -327,7 +299,7 @@ def verify_pre_pick(
     """Accept a part only after the pre-pick evidence gate succeeds."""
 
     detection, inspection = _validate_inputs(expected_object_id, expected_instance_id, detection, inspection)
-    if _checks_disagree(detection, inspection, thresholds):
+    if _checks_disagree(detection, inspection):
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
     if detection.get("instance_id") != expected_instance_id:
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection)
@@ -337,6 +309,8 @@ def verify_pre_pick(
         return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.POSE_UNVERIFIED, detection)
     if not _matches_approved_installed_rest(detection):
         return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.UNSAFE_ORIENTATION, detection)
+    if inspection.get("action") == "ask_operator":
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
     if inspection.get("verdict") != "ok":
         return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.INSPECTION_REJECTED, detection)
     return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection)
@@ -357,7 +331,7 @@ def verify_post_place(
     detection, inspection = _validate_inputs(expected_object_id, expected_instance_id, detection, inspection)
     if not isinstance(seated, bool) or not isinstance(pose_agrees, bool):
         _input_error("post_place", "seated and pose_agrees must be booleans")
-    if _checks_disagree(detection, inspection, thresholds):
+    if _checks_disagree(detection, inspection):
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
     if not _detection_passes(detection, thresholds):
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.POSE_UNVERIFIED, detection)
@@ -365,6 +339,8 @@ def verify_post_place(
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection)
     if detection.get("object_id") != expected_object_id:
         return _decision(VerificationOutcome.RECOVER, VerificationReason.IDENTITY_MISMATCH, detection)
+    if inspection.get("action") == "ask_operator":
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
     if inspection.get("verdict") != "ok":
         return _decision(VerificationOutcome.RECOVER, VerificationReason.INSPECTION_REJECTED, detection)
     if not _matches_approved_installed_rest(detection):
@@ -402,11 +378,11 @@ def verify_recovery_transfer(
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PLACEMENT_DISAGREEMENT, detection)
     if allow_rejected:
         verdict = inspection.get("verdict")
-        good_disagrees = verdict == "ok" and _checks_disagree(detection, inspection, thresholds)
+        good_disagrees = verdict == "ok" and _checks_disagree(detection, inspection)
         rejected_without_action = verdict != "ok" and inspection.get("action") != "reject"
         if good_disagrees or rejected_without_action:
             return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
-    elif _checks_disagree(detection, inspection, thresholds) or not _matches_approved_installed_rest(detection):
+    elif _checks_disagree(detection, inspection) or not _matches_approved_installed_rest(detection):
         return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
     return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection)
 

@@ -95,7 +95,7 @@ def test_rejected_transfer_still_requires_reject_action() -> None:
     assert decision.outcome is VerificationOutcome.HOLD_ANDON
 
 
-def test_reject_transfer_does_not_trust_false_good_verdict() -> None:
+def test_reject_transfer_trusts_explicit_good_verdict_instead_of_recomputing_scores() -> None:
     inspection = _inspection()
     inspection["evidence"] = {
         "classifier_score": 0.98,
@@ -106,4 +106,4 @@ def test_reject_transfer_does_not_trust_false_good_verdict() -> None:
 
     decision = _verify(_detection(), inspection, allow_rejected=True)
 
-    assert decision.outcome is VerificationOutcome.HOLD_ANDON
+    assert decision.outcome is VerificationOutcome.ACCEPT

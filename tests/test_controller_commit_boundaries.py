@@ -21,7 +21,7 @@ def _drive_commit(controller, perception, observation) -> None:
 
 def test_missing_part_after_release_is_not_committed_as_verified() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: controller._release_dispatched)
     _drive_commit(controller, perception, observation)
 
@@ -35,7 +35,7 @@ def test_missing_part_after_release_is_not_committed_as_verified() -> None:
 
 def test_fallen_base_after_release_holds_before_inventory_commit() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
     observation = _drive_until(controller, lambda: controller._release_dispatched)
     perception.observed = tuple(
         replace(item, condition=ObjectCondition.FALLEN) if item.instance_id == "base-1" else item
@@ -53,9 +53,9 @@ def test_fallen_base_after_release_holds_before_inventory_commit() -> None:
     assert "operator reconciliation" in controller.events[-1].detail
 
 
-def test_missing_installed_part_holds_before_product_completion() -> None:
+def test_occluded_installed_part_uses_verified_assembly_state() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
-    controller = _controller(perception, products=(1,))
+    controller = _controller(perception)
 
     def installed() -> bool:
         return any(event.kind == "installed" for event in controller.events)
@@ -65,7 +65,7 @@ def test_missing_installed_part_holds_before_product_completion() -> None:
 
     CellAdapter(controller, action_mode="tcp", dt=0.1).act(observation)
 
-    assert controller.state_machine.state is PackMLState.HELD
+    assert controller.state_machine.state is PackMLState.EXECUTE
     assert controller.inventory.active_reservation.product == 1
-    assert controller.inventory.item("p1-1").condition is ObjectCondition.NOT_OBSERVED
+    assert controller.inventory.item("p1-1").condition is ObjectCondition.VERIFIED
     assert controller.completed_products == ()

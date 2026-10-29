@@ -12,6 +12,7 @@ from assembly.motion import MotionChunk, MotionPhase, Waypoint
 from assembly.safety import (
     AABB,
     AABBCollisionChecker,
+    CartesianSpeedViolation,
     CollisionCapabilities,
     CollisionChecker,
     MotionOwner,
@@ -134,6 +135,8 @@ def _config() -> SafetyConfig:
         expected_p_deg=0.0,
         orientation_tolerance_deg=0.5,
         sweep_radius_mm=2.0,
+        max_cartesian_speed_mm_s=10000.0,
+        max_cartesian_speed_source="test fixture",
     )
 
 
@@ -156,6 +159,25 @@ def test_supervisor_accepts_guarded_reachable_clear_plan() -> None:
     supervisor = _supervisor()
 
     assert supervisor.validate(plan, start=start, fixtures=(), parts=(), owner=_owner()) == plan
+
+
+def test_supervisor_rejects_segment_above_configured_cartesian_speed() -> None:
+    plan = (MotionChunk(MotionPhase.APPROACH, (_waypoint(220.0, 0.0, -250.0),)),)
+    supervisor = SafetySupervisor(
+        config=replace(_config(), max_cartesian_speed_mm_s=100.0),
+        reachability=AlwaysReachable(),
+        collision=AABBCollisionChecker(),
+        allow_tcp_sweep_only_for_mock=True,
+    )
+
+    with pytest.raises(CartesianSpeedViolation, match="speed"):
+        supervisor.validate(
+            plan,
+            start=_waypoint(200.0, 0.0, -250.0),
+            fixtures=(),
+            parts=(),
+            owner=_owner(),
+        )
 
 
 def test_supervisor_rejects_empty_plan() -> None:

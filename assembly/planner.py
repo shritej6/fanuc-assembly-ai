@@ -40,6 +40,14 @@ class CalibratedPoseProvider(Protocol):
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose: ...
 
+    def grasp_from_foundationpose(
+        self,
+        part: InventoryItem,
+        detection: dict[str, object],
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose: ...
+
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose: ...
 
     def target_for(
@@ -100,18 +108,37 @@ class PreparedPlanStep:
     target: OrientedPartPose
 
 
+@dataclass(frozen=True, slots=True)
+class PlanCandidate:
+    """Recipe/base context safe to compute before wrist pose inspection."""
+
+    product: ProductRecipe
+    recipe_step: RecipeStep
+    base: InventoryItem
+    part: InventoryItem
+    base_pose: OrientedPartPose
+    target: OrientedPartPose
+    attempt: int
+    observed_at_s: float
+
+
 def _contract_pose(pose: OrientedPartPose) -> ContractPoseUF0:
     tcp = pose.tcp
     return ContractPoseUF0(tcp.x, tcp.y, tcp.z, tcp.r)
 
 
-def _validate_pose(label: str, pose: object) -> OrientedPartPose:
+def _validate_pose(
+    label: str,
+    pose: object,
+    *,
+    allowed_states: frozenset[RestingState] = frozenset({RestingState.INSTALLED}),
+) -> OrientedPartPose:
     if not isinstance(pose, OrientedPartPose):
         raise PlannerPoseError(f"{label} pose provider must return OrientedPartPose")
     if not isinstance(pose.tcp, AbsolutePoseUF0):
         raise PlannerPoseError(f"{label} TCP must be an AbsolutePoseUF0")
     if (
-        pose.resting_state is not RestingState.INSTALLED
+        pose.resting_state not in allowed_states
         or not isinstance(pose.up_face, str)
         or not pose.up_face.strip()
     ):
@@ -158,7 +185,7 @@ def _live_base(inventory: Inventory, reservation: ProductReservation) -> Invento
     return base
 
 
-def _prepared(
+def _candidate(
     product: ProductRecipe,
     base: InventoryItem,
     recipe_step: RecipeStep,
@@ -166,31 +193,72 @@ def _prepared(
     poses: CalibratedPoseProvider,
     attempt: int,
     observed_at_s: float,
-) -> PreparedPlanStep:
+) -> PlanCandidate:
     try:
-        grasp_result = poses.grasp_for(part, observed_at_s=observed_at_s)
         base_result = poses.base_for(base, observed_at_s=observed_at_s)
         target_result = poses.target_for(product, base, recipe_step, observed_at_s=observed_at_s)
     except PlannerError:
         raise
     except Exception as error:
         raise PlannerPoseError(f"calibrated pose snapshot is unavailable: {error}") from error
-    grasp = _validate_pose("grasp", grasp_result)
     base_pose = _validate_pose("base", base_result)
     target = _validate_pose("target", target_result)
+    return PlanCandidate(product, recipe_step, base, part, base_pose, target, attempt, observed_at_s)
+
+
+def _finalize(candidate: PlanCandidate, grasp_result: object) -> PreparedPlanStep:
+    grasp = _validate_pose("grasp", grasp_result)
+    target = candidate.target
     if grasp.up_face != target.up_face:
         raise PlannerPoseError("grasp and target installed up-face must match")
     record = PlanStepRecord(
-        step_id=f"product-{product.product}-step-{recipe_step.step:02d}-attempt-{attempt}",
-        product=product.product,
-        instance_id=part.instance_id,
-        object_id=part.object_id,
+        step_id=(
+            f"product-{candidate.product.product}-step-{candidate.recipe_step.step:02d}-attempt-{candidate.attempt}"
+        ),
+        product=candidate.product.product,
+        instance_id=candidate.part.instance_id,
+        object_id=candidate.part.object_id,
         grasp=_contract_pose(grasp),
         target=_contract_pose(target),
-        gripper_roll_deg=recipe_step.gripper_roll_deg,
-        attempt=attempt,
+        gripper_roll_deg=candidate.recipe_step.gripper_roll_deg,
+        attempt=candidate.attempt,
     )
-    return PreparedPlanStep(record, recipe_step, base, part, base_pose, grasp, target)
+    return PreparedPlanStep(
+        record,
+        candidate.recipe_step,
+        candidate.base,
+        candidate.part,
+        candidate.base_pose,
+        grasp,
+        target,
+    )
+
+
+def _finalize_reject(candidate: PlanCandidate, grasp_result: object, target_result: object) -> PreparedPlanStep:
+    grasp = _validate_pose("grasp", grasp_result, allowed_states=frozenset(RestingState))
+    target = _validate_pose("reject", target_result)
+    record = PlanStepRecord(
+        step_id=(
+            f"product-{candidate.product.product}-reject-{candidate.recipe_step.step:02d}-attempt-{candidate.attempt}"
+        ),
+        product=candidate.product.product,
+        instance_id=candidate.part.instance_id,
+        object_id=candidate.part.object_id,
+        grasp=_contract_pose(grasp),
+        target=_contract_pose(target),
+        gripper_roll_deg=candidate.recipe_step.gripper_roll_deg,
+        attempt=candidate.attempt,
+        op="move_to_reject",
+    )
+    return PreparedPlanStep(
+        record,
+        candidate.recipe_step,
+        candidate.base,
+        candidate.part,
+        candidate.base_pose,
+        grasp,
+        target,
+    )
 
 
 class RecipePlanner:
@@ -211,6 +279,22 @@ class RecipePlanner:
         observed_at_s: float,
         attempt: int = 1,
     ) -> PreparedPlanStep | None:
+        candidate = self.next_candidate(inventory, observed_at_s=observed_at_s, attempt=attempt)
+        if candidate is None:
+            return None
+        try:
+            grasp = self._poses.grasp_for(candidate.part, observed_at_s=candidate.observed_at_s)
+        except Exception as error:
+            raise PlannerPoseError(f"calibrated grasp snapshot is unavailable: {error}") from error
+        return self.finalize_candidate(candidate, grasp)
+
+    def next_candidate(
+        self,
+        inventory: Inventory,
+        *,
+        observed_at_s: float,
+        attempt: int = 1,
+    ) -> PlanCandidate | None:
         if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
             raise PlannerStateError("attempt must be a positive integer")
         if isinstance(observed_at_s, bool) or not isinstance(observed_at_s, Number) or not math.isfinite(observed_at_s):
@@ -225,4 +309,16 @@ class RecipePlanner:
         if next_item is None:
             return None
         recipe_step, part = next_item
-        return _prepared(recipe, base, recipe_step, part, self._poses, attempt, float(observed_at_s))
+        return _candidate(recipe, base, recipe_step, part, self._poses, attempt, float(observed_at_s))
+
+    @staticmethod
+    def finalize_candidate(candidate: object, grasp: object) -> PreparedPlanStep:
+        if not isinstance(candidate, PlanCandidate):
+            raise PlannerStateError("candidate must be a PlanCandidate")
+        return _finalize(candidate, grasp)
+
+    @staticmethod
+    def finalize_reject_candidate(candidate: object, grasp: object, target: object) -> PreparedPlanStep:
+        if not isinstance(candidate, PlanCandidate):
+            raise PlannerStateError("candidate must be a PlanCandidate")
+        return _finalize_reject(candidate, grasp, target)

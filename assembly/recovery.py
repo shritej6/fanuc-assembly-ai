@@ -115,6 +115,11 @@ class RecoveryCoordinator:
     def active(self) -> bool:
         return self._session is not None
 
+    @property
+    def current_stage(self) -> RecoveryStage:
+        session, _ = self._state()
+        return session.current
+
     def begin(
         self,
         inventory: Inventory,
@@ -135,6 +140,7 @@ class RecoveryCoordinator:
         current: Waypoint,
         config: MotionConfig,
         observed_at_s: float,
+        grasp: OrientedPartPose | None = None,
     ) -> RecoveryStagePlan | None:
         session, failed = self._state()
         stage = session.current
@@ -147,7 +153,9 @@ class RecoveryCoordinator:
             return None
         part = inventory.item(stage.instance_id)
         try:
-            return self._compile_stage(stage, part, failed, inventory, catalog, poses, current, config, observed_at_s)
+            return self._compile_stage(
+                stage, part, failed, inventory, catalog, poses, current, config, observed_at_s, grasp
+            )
         except RecoveryError:
             raise
         except Exception as error:
@@ -186,6 +194,7 @@ class RecoveryCoordinator:
         current: Waypoint,
         config: MotionConfig,
         observed_at_s: float,
+        grasp: OrientedPartPose | None,
     ) -> RecoveryStagePlan:
         recipe = catalog.product(failed.record.product)
         recipe_step = next(step for step in recipe.steps if step.object_id == part.object_id)
@@ -199,7 +208,9 @@ class RecoveryCoordinator:
                 config=config,
             )
             return RecoveryStagePlan(stage, part, chunks, None, target, base_pose, recipe_step.gripper_roll_deg, False)
-        grasp, target = self._stage_poses(stage, part, recipe, recipe_step, inventory, poses, observed_at_s)
+        if grasp is None:
+            raise RecoveryError("recovery re-pick requires a sourced FoundationPose grasp")
+        target = self._stage_target(stage, part, recipe, recipe_step, inventory, poses, observed_at_s)
         chunks = compile_pick_to_insert(
             current,
             grasp,
@@ -209,7 +220,7 @@ class RecoveryCoordinator:
         )
         return RecoveryStagePlan(stage, part, chunks, grasp, target, base_pose, recipe_step.gripper_roll_deg, True)
 
-    def _stage_poses(
+    def _stage_target(
         self,
         stage: RecoveryStage,
         part: InventoryItem,
@@ -218,19 +229,18 @@ class RecoveryCoordinator:
         inventory: Inventory,
         poses: CalibratedPoseProvider,
         observed_at_s: float,
-    ) -> tuple[OrientedPartPose, OrientedPartPose]:
+    ) -> OrientedPartPose:
         if stage.staging_slot is None:
             raise RecoveryError("staged recovery stage has no calibrated slot")
         staging = self._targets.staging_target_for(recipe.product, part, stage.staging_slot)
         if stage.kind is RecoveryStageKind.STAGE_INSTALLED:
-            return poses.grasp_for(part, observed_at_s=observed_at_s), staging
-        target = poses.target_for(
+            return staging
+        return poses.target_for(
             recipe,
             inventory.active_reservation.base,
             recipe_step,
             observed_at_s=observed_at_s,
         )
-        return staging, target
 
 
 def compile_retry_recovery(
