@@ -18,7 +18,8 @@ from assembly.controller_ports import (
     PerceptionPort,
     PerceptionTolerances,
 )
-from assembly.motion import MotionConfig
+from assembly.controller_startup import StartupHoldConfig
+from assembly.motion import InspectionStopConfig, MotionConfig
 from assembly.planner import CalibratedPoseProvider
 from assembly.recovery import RecoveryTargetProvider
 from assembly.safety import SafetyConfig, SafetySupervisor
@@ -33,7 +34,8 @@ class CellRuntimeInputs:
     perception: PerceptionPort
     poses: CalibratedPoseProvider
     motion_config: MotionConfig
-    inspection_stop: Any
+    inspection_stop: InspectionStopConfig
+    startup_hold: StartupHoldConfig
     safety_config: SafetyConfig
     verification_thresholds: VerificationThresholds
     execution_tolerances: ExecutionTolerances
@@ -57,6 +59,7 @@ def build_cell_controller(inputs: CellRuntimeInputs) -> AssemblyController:
         poses=inputs.poses,
         motion_config=inputs.motion_config,
         inspection_stop=inputs.inspection_stop,
+        startup_hold=inputs.startup_hold,
         safety=safety,
         verification_thresholds=inputs.verification_thresholds,
         execution_tolerances=inputs.execution_tolerances,

@@ -2,6 +2,22 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T09 cell runtime · CODEX · explicit fail-closed production composition
+
+- Changed: added an opt-in `t09-cell` composition boundary that requires injected perception, calibrated poses,
+  recovery targets, sourced motion/inspection/startup/speed configuration, full-kinematics reachability, robot-link
+  sweeps, and held-part sweeps. The default policy remains observed joint hold; mock runtime rejects `t09-cell`; and a
+  missing factory fails closed. T29 held-part STL bounds are source- and hash-validated. No product, layout, grasp,
+  reject, spare, or staging coordinates are invented by this branch.
+- Safety boundary: the branch rebases on T09 `0efd596`, forwards the required sourced startup hold, and retains the
+  current official action guard, safe-Z motion, and Cartesian speed checks. Passing these tests proves composition and
+  failure behavior only; it does not authorize cell motion.
+- Run: `uv run pytest -q` (532 passed); `uv run ruff check .` (passed); `git diff --check` and
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` (clean).
+- Blocked: there is no reviewed ER-4iA robot-link swept-geometry provider, no complete live `PerceptionPort`, and the
+  current T28 recovery layout is explicitly proposed/unmeasured. The official launcher also has no reviewed
+  zero-argument factory supplying these dependencies. Keep `t09-cell` disabled until all are provided and reviewed.
+
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
 - Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor

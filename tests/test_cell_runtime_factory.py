@@ -50,7 +50,18 @@ def test_factory_builds_controller_without_a_fixed_product_scenario(monkeypatch)
         poses=object(),
         motion_config=object(),
         inspection_stop=object(),
-        safety_config=SafetyConfig(0.1, -335.0, 1.0, -180.0, 0.0, 3.0, 1.0),
+        startup_hold=object(),
+        safety_config=SafetyConfig(
+            0.1,
+            -335.0,
+            1.0,
+            -180.0,
+            0.0,
+            3.0,
+            1.0,
+            1000.0,
+            "test fixture",
+        ),
         verification_thresholds=object(),
         execution_tolerances=object(),
         perception_tolerances=object(),
@@ -62,6 +73,7 @@ def test_factory_builds_controller_without_a_fixed_product_scenario(monkeypatch)
     assert runtime.build_cell_controller(inputs) is sentinel
     assert "products" not in captured
     assert isinstance(captured["safety"], SafetySupervisor)
+    assert captured["startup_hold"] is inputs.startup_hold
 
 
 def test_factory_rejects_unsourced_collision_geometry(monkeypatch) -> None:
@@ -82,7 +94,18 @@ def test_factory_rejects_unsourced_collision_geometry(monkeypatch) -> None:
         poses=object(),
         motion_config=object(),
         inspection_stop=object(),
-        safety_config=SafetyConfig(0.1, -335.0, 1.0, -180.0, 0.0, 3.0, 1.0),
+        startup_hold=object(),
+        safety_config=SafetyConfig(
+            0.1,
+            -335.0,
+            1.0,
+            -180.0,
+            0.0,
+            3.0,
+            1.0,
+            1000.0,
+            "test fixture",
+        ),
         verification_thresholds=object(),
         execution_tolerances=object(),
         perception_tolerances=object(),
