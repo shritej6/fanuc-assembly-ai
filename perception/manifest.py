@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from perception.image_integrity import ImageIntegrityError, image_identity
-from perception.manifest_types import ManifestConfig, ManifestSummary, split_for_scene
+from perception.manifest_annotations import annotation as _annotation
+from perception.manifest_annotations import rest_by_uid as _rest_by_uid
+from perception.manifest_types import ManifestConfig, ManifestError, ManifestSummary, split_for_scene
 from perception.provenance import current_git_commit
 from perception.records import Annotation, ImageRecord
 from perception.taxonomy import Ontology, load_ontology
@@ -19,10 +21,6 @@ from perception.taxonomy import Ontology, load_ontology
 CHUNK_PATTERN = re.compile(r"chunk_[0-9]{4}")
 FORBIDDEN_PARTS = {"rejected", "superseded", "real", "real-cell", "real_cell"}
 ALLOWED_CAMERAS = {"table", "side", "wrist"}
-
-
-class ManifestError(ValueError):
-    """Raised when mutable source data cannot be frozen safely."""
 
 
 def _validate_config(config: ManifestConfig) -> None:
@@ -146,37 +144,6 @@ def _image_identity(path: Path) -> tuple[int, int, str]:
         raise ManifestError(str(exc)) from exc
 
 
-def _bbox(raw: Any, width: int, height: int, context: str) -> tuple[int, int, int, int]:
-    if not isinstance(raw, list) or len(raw) != 4 or any(not isinstance(value, int) for value in raw):
-        raise ManifestError(f"invalid bbox in {context}: {raw!r}")
-    x0, y0, x1, y1 = raw
-    if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
-        raise ManifestError(f"out-of-bounds bbox in {context}: {raw!r} for {width}x{height}")
-    return x0, y0, x1, y1
-
-
-def _annotation(
-    raw: dict[str, Any],
-    label2id: dict[str, int],
-    width: int,
-    height: int,
-    context: str,
-) -> Annotation:
-    object_id = raw.get("object_id")
-    if object_id not in label2id:
-        raise ManifestError(f"unknown object_id {object_id!r} in {context}")
-    return Annotation(
-        uid=str(raw["uid"]),
-        object_id=object_id,
-        class_id=label2id[object_id],
-        bbox_xyxy=_bbox(raw.get("bbox_xyxy"), width, height, context),
-        kind=str(raw.get("kind", "")),
-        state=str(raw.get("state", "")),
-        variant=str(raw.get("variant", "")),
-        build_state=raw.get("build_state"),
-    )
-
-
 class _ManifestBuilder:
     def __init__(self, config: ManifestConfig, ontology: Ontology) -> None:
         self.config = config
@@ -276,8 +243,9 @@ class _ManifestBuilder:
         if not isinstance(cameras, dict) or not set(cameras) <= ALLOWED_CAMERAS:
             raise ManifestError(f"label contains invalid camera names in {label_path}")
         if task == "detector":
+            rest = _rest_by_uid(spec, f"{set_name}:{index:06d}")
             return [
-                self._detector_record(chunk, label_path, set_name, index, camera, raw)
+                self._detector_record(chunk, label_path, set_name, index, camera, raw, rest)
                 for camera, raw in sorted(cameras.items())
             ]
         record = self._classifier_record(chunk, label_path, set_name, index, label)
@@ -291,6 +259,7 @@ class _ManifestBuilder:
         index: int,
         camera: str,
         raw_objects: list[dict[str, Any]],
+        rest: dict[str, str | None],
     ) -> ImageRecord:
         image_path = _contained_path(
             chunk / "rgb" / camera / f"{index:06d}.jpg",
@@ -300,7 +269,16 @@ class _ManifestBuilder:
         width, height, image_sha256 = _image_identity(image_path)
         context = f"{set_name}:{index:06d}/{camera}"
         objects = tuple(
-            _annotation(raw, self.ontology.detector_label2id, width, height, context) for raw in raw_objects
+            _annotation(
+                raw,
+                self.ontology.detector_label2id,
+                width,
+                height,
+                context,
+                rest.get(str(raw.get("uid"))),
+                self.config.fallen_classes,
+            )
+            for raw in raw_objects
         )
         return self._record(
             "detector",
@@ -424,11 +402,9 @@ class _ManifestBuilder:
             if native_records < 1:
                 raise ManifestError(f"no eligible native records for Cosmos coverage in {set_name}")
             fraction = stats["cosmos_accepted"] / native_records
-            if not self.config.min_cosmos_fraction <= fraction <= self.config.max_cosmos_fraction:
-                raise ManifestError(
-                    f"Cosmos coverage for {set_name} is {fraction:.4f}; expected "
-                    f"{self.config.min_cosmos_fraction:.2f}-{self.config.max_cosmos_fraction:.2f}"
-                )
+            low, high = self.config.cosmos_range(set_name)
+            if not low <= fraction <= high:
+                raise ManifestError(f"Cosmos coverage for {set_name} is {fraction:.4f}; expected {low:.2f}-{high:.2f}")
 
     def _write(self) -> ManifestSummary:
         output = self.config.output_dir.resolve()
@@ -470,6 +446,9 @@ class _ManifestBuilder:
             "require_cosmos": self.config.require_cosmos,
             "include_cosmos": self.config.include_cosmos,
             "max_scenes_per_set": self.config.max_scenes_per_set,
+            "profile": self.config.profile,
+            "fallen_classes": self.config.fallen_classes,
+            "cosmos_ranges": {name: [low, high] for name, low, high in self.config.cosmos_ranges},
             "labels": {
                 "classifier": list(self.ontology.classifier_labels),
                 "detector": list(self.ontology.detector_labels),
@@ -495,5 +474,5 @@ class _ManifestBuilder:
 def build_manifests(config: ManifestConfig) -> ManifestSummary:
     """Validate approved synthetic sets and atomically freeze both T13 manifests."""
     _validate_config(config)
-    ontology = load_ontology(config.taxonomy_path)
+    ontology = load_ontology(config.taxonomy_path, config.fallen_classes)
     return _ManifestBuilder(config, ontology).build()

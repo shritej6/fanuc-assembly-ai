@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+class ManifestError(ValueError):
+    """Raised when mutable source data cannot be frozen safely."""
+
+
 @dataclass(frozen=True)
 class ManifestConfig:
     data_root: Path
@@ -20,6 +24,16 @@ class ManifestConfig:
     max_scenes_per_set: int | None = None
     min_cosmos_fraction: float = 0.10
     max_cosmos_fraction: float = 0.20
+    profile: str = "legacy"
+    fallen_classes: bool = False
+    # (set, min, max) overrides of the Cosmos range, e.g. the test-bed sets restyle one camera of half the scenes
+    cosmos_ranges: tuple[tuple[str, float, float], ...] = ()
+
+    def cosmos_range(self, set_name: str) -> tuple[float, float]:
+        for name, low, high in self.cosmos_ranges:
+            if name == set_name:
+                return low, high
+        return self.min_cosmos_fraction, self.max_cosmos_fraction
 
 
 @dataclass(frozen=True)
