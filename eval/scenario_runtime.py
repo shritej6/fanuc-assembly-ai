@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Protocol
 
-from assembly.catalog import Catalog, ProductRecipe, RecipeStep, load_catalog
+from assembly.catalog import Catalog, load_catalog
 from assembly.controller import AssemblyController
 from assembly.controller_ports import (
     CollisionScene,
@@ -19,9 +18,14 @@ from assembly.controller_ports import (
     RecoveryTransferEvidence,
 )
 from assembly.inventory import InventoryItem, InventoryZone, ObjectCondition
-from assembly.motion import AbsolutePoseUF0, OrientedPartPose, RestingState
 from assembly.state_machine import PackMLState
 from eval.scenario_data import FleetInputError, Scenario, ScenarioObject, parse_instruction_products
+from eval.scenario_pose_runtime import (
+    ScenarioPoseProvider,
+    ScenarioPoseState,
+    ScenarioRecoveryTargets,
+    observed_pose,
+)
 from eval.scenario_report import (
     FleetReport,
     ScenarioPhysicalEvent,
@@ -36,18 +40,10 @@ class ControllerFactory(Protocol):
     def __call__(self, runtime: ScenarioRuntime) -> AssemblyController: ...
 
 
-@dataclass(slots=True)
-class _PhysicalState:
-    pose_by_instance: dict[str, tuple[float, float, float, float]]
-    observed_pose_by_instance: dict[str, tuple[float, float, float, float]]
-    target_by_object: dict[str, tuple[float, float, float, float]]
-    transfer_by_key: dict[tuple[str, InventoryZone], tuple[float, float, float, float]]
-
-
 class ScriptedPerceptionPort:
     """Contract-shaped evidence generated only from the scripted camera boundary."""
 
-    def __init__(self, scenario: Scenario, state: _PhysicalState) -> None:
+    def __init__(self, scenario: Scenario, state: ScenarioPoseState) -> None:
         self._scenario = scenario
         self._state = state
         self._objects = {item.instance_id: item for item in scenario.objects}
@@ -95,9 +91,13 @@ class ScriptedPerceptionPort:
         part: InventoryItem,
         target_zone: InventoryZone,
     ) -> RecoveryTransferEvidence:
-        target = self._state.transfer_by_key[(part.instance_id, target_zone)]
-        self._state.pose_by_instance[part.instance_id] = target
-        if target_zone is InventoryZone.REJECT:
+        key = (part.instance_id, target_zone)
+        expected = self._state.transfer_by_key[key]
+        actual = self._state.transfer_result_by_key.get(key, expected)
+        self._state.pose_by_instance[part.instance_id] = actual
+        agrees = actual == expected
+        observed_zone = target_zone if agrees else InventoryZone.TABLE
+        if observed_zone is InventoryZone.REJECT:
             self.rejected_instances.add(part.instance_id)
             self.physical_events.append(
                 ScenarioPhysicalEvent(ScenarioPhysicalEventKind.REJECT_TRANSFER, part.instance_id)
@@ -107,8 +107,8 @@ class ScriptedPerceptionPort:
             self._detection(scripted),
             self._inspection(scripted),
             float(observation["t"]),
-            target_zone,
-            True,
+            observed_zone,
+            agrees,
         )
 
     def collision_scene(
@@ -117,7 +117,7 @@ class ScriptedPerceptionPort:
         moving_instance_id: str,
         base_instance_id: str,
     ) -> CollisionScene:
-        base_pose = _observed_pose(self._state, base_instance_id)
+        base_pose = observed_pose(self._state, base_instance_id)
         attached = float(observation["joints"][6]) == 1.0  # type: ignore[index]
         return CollisionScene(
             float(observation["t"]),
@@ -182,83 +182,35 @@ class ScriptedPerceptionPort:
         }
 
 
-class ScenarioPoseProvider:
-    def __init__(self, state: _PhysicalState) -> None:
-        self._state = state
-
-    def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
-        del part, observed_at_s
-        raise ControllerPortError("FoundationPose wrist evidence required for every part grasp")
-
-    def grasp_from_foundationpose(
-        self,
-        part: InventoryItem,
-        detection: dict[str, object],
-        *,
-        observed_at_s: float,
-    ) -> OrientedPartPose:
-        del observed_at_s
-        if detection.get("instance_id") != part.instance_id or detection.get("object_id") != part.object_id:
-            raise ControllerPortError("FoundationPose detection identity does not match reserved part")
-        resting_side = detection.get("resting_side")
-        if resting_side == "flipped":
-            raise ControllerPortError(f"no approved grasp for resting side of {part.instance_id!r}")
-        if resting_side not in {"upright", "side"}:
-            raise ControllerPortError("FoundationPose detection resting side is unsupported")
-        state = RestingState.FALLEN if resting_side == "side" else RestingState.INSTALLED
-        return _oriented(_detection_pose(detection), part.object_id, state)
-
-    def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
-        del observed_at_s
-        return _oriented(_observed_pose(self._state, base.instance_id), base.object_id)
-
-    def target_for(
-        self,
-        product: ProductRecipe,
-        base: InventoryItem,
-        step: RecipeStep,
-        *,
-        observed_at_s: float,
-    ) -> OrientedPartPose:
-        del product, observed_at_s
-        target = _offset_pose(_observed_pose(self._state, base.instance_id), step.insert_offset_mm)
-        self._state.target_by_object[step.object_id] = target
-        return _oriented(target, step.object_id)
-
-
-class ScenarioRecoveryTargets:
-    def __init__(self, scenario: Scenario, state: _PhysicalState) -> None:
-        self._scenario = scenario
-        self._state = state
-
-    def staging_target_for(self, product: int, part: InventoryItem, slot: int) -> OrientedPartPose:
-        del product
-        low, high = self._scenario.bounds.staging_y_mm
-        fraction = (slot % 10) / 10.0
-        pose = (self._scenario.bounds.staging_x_mm, low + (high - low) * fraction, self._scenario.bounds.part_z_mm, 0.0)
-        self._state.transfer_by_key[(part.instance_id, InventoryZone.STAGED)] = pose
-        return _oriented(pose, part.object_id)
-
-    def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
-        pose = self._scenario.bounds.reject_pose
-        self._state.transfer_by_key[(part.instance_id, InventoryZone.REJECT)] = pose
-        return _oriented(pose, part.object_id)
-
-
 class ScenarioRuntime:
     """Bind one generated scenario to perception, calibration, and recovery ports."""
 
     def __init__(self, scenario: Scenario) -> None:
         self.scenario = scenario
-        state = _PhysicalState(
+        state = ScenarioPoseState(
             {item.instance_id: item.pose for item in scenario.objects},
             {},
             {},
             {},
+            {},
         )
+        self._state = state
         self.perception = ScriptedPerceptionPort(scenario, state)
-        self.poses = ScenarioPoseProvider(state)
+        self.poses = ScenarioPoseProvider(state, scenario.bounds.tcp_local_mm)
         self.recovery_targets = ScenarioRecoveryTargets(scenario, state)
+
+    def script_transfer_observation(
+        self,
+        instance_id: str,
+        zone: InventoryZone,
+        pose: tuple[float, float, float, float],
+    ) -> None:
+        if instance_id not in self._state.pose_by_instance:
+            raise FleetInputError(f"unknown transfer instance {instance_id!r}")
+        if zone not in {InventoryZone.REJECT, InventoryZone.STAGED}:
+            raise FleetInputError("scripted transfer zone must be reject or staged")
+        values = _finite_pose(pose, "scripted transfer pose")
+        self._state.transfer_result_by_key[(instance_id, zone)] = values
 
     def observation(self, timestamp: float) -> Observation:
         home = self.scenario.bounds.home_pose
@@ -334,49 +286,15 @@ def _inspection_outcome(condition: ObjectCondition) -> tuple[str, str]:
     return "ok", "use"
 
 
-def _observed_pose(state: _PhysicalState, instance_id: str) -> tuple[float, float, float, float]:
-    try:
-        return state.observed_pose_by_instance[instance_id]
-    except KeyError as error:
-        raise ControllerPortError(f"instance {instance_id!r} was not observed by perception") from error
-
-
-def _detection_pose(detection: Mapping[str, object]) -> tuple[float, float, float, float]:
-    pose = detection.get("pose")
-    if not isinstance(pose, Mapping):
-        raise ControllerPortError("FoundationPose detection pose must be a mapping")
-    values = tuple(pose.get(field) for field in ("x", "y", "z", "yaw"))
-    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
-        raise ControllerPortError("FoundationPose detection pose must contain numeric x, y, z, and yaw")
-    numeric = tuple(float(value) for value in values)  # type: ignore[arg-type]
-    if not all(math.isfinite(value) for value in numeric):
-        raise ControllerPortError("FoundationPose detection pose must be finite")
+def _finite_pose(value: object, label: str) -> tuple[float, float, float, float]:
+    if not isinstance(value, tuple) or len(value) != 4:
+        raise FleetInputError(f"{label} must contain x, y, z, and yaw")
+    if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in value):
+        raise FleetInputError(f"{label} must contain numeric x, y, z, and yaw")
+    numeric = tuple(float(item) for item in value)
+    if not all(math.isfinite(item) for item in numeric):
+        raise FleetInputError(f"{label} must be finite")
     return numeric  # type: ignore[return-value]
-
-
-def _oriented(
-    pose: tuple[float, float, float, float],
-    object_id: str,
-    resting_state: RestingState = RestingState.INSTALLED,
-) -> OrientedPartPose:
-    x, y, z, yaw = pose
-    tcp = AbsolutePoseUF0(x, y, z, -180.0, 0.0, yaw, "UF0", "calibrated")
-    return OrientedPartPose(tcp, resting_state, f"installed:{object_id}")
-
-
-def _offset_pose(
-    base: tuple[float, float, float, float],
-    offset: tuple[float, float, float],
-) -> tuple[float, float, float, float]:
-    x, y, z, yaw = base
-    angle = math.radians(yaw)
-    dx, dy, dz = offset
-    return (
-        x + dx * math.cos(angle) - dy * math.sin(angle),
-        y + dx * math.sin(angle) + dy * math.cos(angle),
-        z + dz,
-        yaw,
-    )
 
 
 def _action_rows(action: object) -> list[list[float]]:

@@ -14,15 +14,17 @@ Newest first. One entry per finished task.
   scenario metadata is rejected. Every object, coarse XY, and pose enters through `ScriptedPerceptionPort`. Legacy
   `grasp_for` is disabled; commanded pose, resting state, and grasp availability use only the FoundationPose-shaped
   wrist detection. Action traces prove graspable fallen parts reach a verified physical reject before spare pre-pick,
-  while no-grasp fallen parts Hold.
+  while no-grasp fallen parts Hold. Caller-supplied mock TCP-local calibration now keeps motion targets distinct from
+  canonical object verification targets for grasps, installation, staging, and rejection. Reject evidence is accepted
+  only when the observed canonical pose exactly matches the registered mock target; no unmeasured tolerance is used.
 - Reporting: incomplete Held/Suspended/Aborted/Error/callback-limit runs have `escapes=null`, explicit unresolved-hazard
   counts, and `acceptance_ready=false`; they can no longer silently report zero escapes. Known escapes remain separately
   measured. EOF/diff checks and direct XY bounds/diversity regressions are included.
-- Run: `uv run pytest -q tests/test_scenario_fleet.py` (21 passed); `uv run pytest -q` (530 passed);
+- Run: `uv run pytest -q tests/test_scenario_fleet.py` (23 passed); `uv run pytest -q` (536 passed);
   `uv run ruff check .`, `git diff --check`, and the 500-line/40-line source limits passed.
-- Integration: rebased onto current T09 `0efd596`, including the guarded T04/T05 catalog and current
+- Integration: rebased onto current T09 `d1bfd9c`, including the guarded T04/T05 catalog and current
   hash-pinned T29 printed-finger grasp transforms. The two measured reports below were rerun after that rebase.
-- Measured baseline at seed 90210, 20 scenarios, on T09 `0efd596`: 60 requested, 56 completed, final yield
+- Measured baseline at seed 90210, 20 scenarios, on T09 `d1bfd9c`: 60 requested, 56 completed, final yield
   0.9333333333333333, 3,812 action rows, 4 assists, 14.0 builds/assist, 0 retries, 0 known escapes, 0 unresolved hazards;
   statuses were 16 Complete and 4 Suspended. `escapes` is null and acceptance is blocked by the four incomplete runs.
 - Measured unseen seed 24681357, 20 scenarios: 60 requested, 49 completed, final yield 0.8166666666666667, 3,351 action

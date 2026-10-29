@@ -38,6 +38,7 @@ class FleetBounds:
     y_mm: tuple[float, float]
     part_z_mm: float
     base_z_mm: float
+    tcp_local_mm: tuple[float, float, float]
     reject_pose: tuple[float, float, float, float]
     staging_x_mm: float
     staging_y_mm: tuple[float, float]
@@ -48,6 +49,7 @@ class FleetBounds:
         _validate_interval(self.y_mm, "y_mm")
         _validate_interval(self.staging_y_mm, "staging_y_mm")
         _finite_values((self.part_z_mm, self.base_z_mm, self.staging_x_mm), "fleet bounds")
+        _finite_values(self.tcp_local_mm, "tcp_local_mm", count=3)
         _finite_values(self.reject_pose, "reject_pose", count=4)
         _finite_values(self.home_pose, "home_pose", count=6)
 

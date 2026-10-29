@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import replace
 from itertools import combinations
@@ -36,6 +37,7 @@ BOUNDS = FleetBounds(
     y_mm=(-260.0, 260.0),
     part_z_mm=-300.0,
     base_z_mm=-320.0,
+    tcp_local_mm=(4.0, 0.0, 17.0),
     reject_pose=(560.0, -360.0, -300.0, 0.0),
     staging_x_mm=520.0,
     staging_y_mm=(-260.0, -120.0),
@@ -213,7 +215,10 @@ def test_foundationpose_grasp_uses_detection_pose_not_hidden_scenario_pose() -> 
 
     grasp = runtime.poses.grasp_from_foundationpose(part, detection, observed_at_s=0.0)
 
-    assert (grasp.tcp.x, grasp.tcp.y, grasp.tcp.z, grasp.tcp.r) == (444.0, -111.0, -299.0, 37.0)
+    angle = math.radians(37.0)
+    assert (grasp.tcp.x, grasp.tcp.y, grasp.tcp.z, grasp.tcp.r) == pytest.approx(
+        (444.0 + 4.0 * math.cos(angle), -111.0 + 4.0 * math.sin(angle), -282.0, 37.0)
+    )
 
     detection["resting_side"] = "side"
     fallen_grasp = runtime.poses.grasp_from_foundationpose(part, detection, observed_at_s=0.0)
@@ -222,6 +227,49 @@ def test_foundationpose_grasp_uses_detection_pose_not_hidden_scenario_pose() -> 
     detection["resting_side"] = "flipped"
     with pytest.raises(ControllerPortError, match="no approved grasp for resting side"):
         runtime.poses.grasp_from_foundationpose(part, detection, observed_at_s=0.0)
+
+
+def test_motion_tcp_and_canonical_install_verification_targets_are_distinct() -> None:
+    scenario = next(item for item in _generator(73).generate(6) if item.fault is FaultKind.CLEAN)
+    runtime = ScenarioRuntime(scenario)
+    recipe = load_catalog().product(scenario.products[0])
+    scripted_base = next(
+        item for item in scenario.objects if item.owner_product == recipe.product and item.base_type is not None
+    )
+    base = InventoryItem(
+        scripted_base.instance_id,
+        scripted_base.object_id,
+        InventoryZone.RESERVED,
+        ObjectCondition.VERIFIED,
+    )
+    runtime.perception.scan(runtime.observation(0.0))
+
+    motion = runtime.poses.target_for(recipe, base, recipe.steps[0], observed_at_s=0.0)
+    canonical = runtime.poses.verification_target_for(recipe, base, recipe.steps[0], observed_at_s=0.0)
+
+    assert (motion.tcp.x, motion.tcp.y, motion.tcp.z) != (canonical.tcp.x, canonical.tcp.y, canonical.tcp.z)
+    assert motion.tcp.z == pytest.approx(canonical.tcp.z + BOUNDS.tcp_local_mm[2])
+
+
+def test_reject_transfer_requires_exact_registered_canonical_target() -> None:
+    scenario = next(item for item in _generator(74).generate(6) if item.fault is FaultKind.DEFECT)
+    runtime = ScenarioRuntime(scenario)
+    scripted = scenario.hazardous_objects[0]
+    part = InventoryItem(scripted.instance_id, scripted.object_id, InventoryZone.RESERVED, ObjectCondition.DEFECTIVE)
+    runtime.recovery_targets.reject_target_for(part)
+    wrong = (
+        BOUNDS.reject_pose[0] - 1.0,
+        BOUNDS.reject_pose[1],
+        BOUNDS.reject_pose[2],
+        BOUNDS.reject_pose[3],
+    )
+    runtime.script_transfer_observation(part.instance_id, InventoryZone.REJECT, wrong)
+
+    evidence = runtime.perception.post_transfer(runtime.observation(0.0), part, InventoryZone.REJECT)
+
+    assert evidence.target_zone is InventoryZone.TABLE
+    assert evidence.pose_agrees is False
+    assert part.instance_id not in runtime.perception.rejected_instances
 
 
 def test_ungraspable_fallen_parts_are_represented_fail_closed() -> None:
