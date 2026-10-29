@@ -7,7 +7,7 @@ model:
   image_size: 224
 training:
   seed: 1337
-  num_train_epochs: 15
+  num_train_epochs: 30
   max_steps: -1
   max_train_samples: null
   max_eval_samples: null
