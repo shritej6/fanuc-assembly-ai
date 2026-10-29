@@ -26,7 +26,7 @@ An agent may only start a task that is READY and owned by it.
 | T19 | OPC UA PLC-style tags (`asyncua`) | CODEX | BACKLOG | feature/T19-opcua | T09 | Thu |
 | T20 | Kanban reorder cards + defect Pareto | CODEX + CLAUDE | BACKLOG | feature/T20-kanban | T09 | Thu |
 | T21 | Operator agent: plain-language command → task, live report; Cosmos Reason 2 build check endpoint | CODEX + CLAUDE | BACKLOG | feature/T21-operator | T09 | Thu |
-| T22 | `placement.yaml` (10 rollouts with planned faults) + `submission.yaml` | CLAUDE | BACKLOG | feature/T22-placement | T04 | Wed |
+| T22 | `placement.yaml` (3 rollouts x 3 products with planned faults) + `submission.yaml` | CLAUDE | IN PR (user, 2026-10-29: needed to book the CSI slot) | feature/T22-placement | T04 | Wed |
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
 | T27 | Train on the test-bed sets only: RT-DETR on N R Q with `<part>__fallen` classes, wrist classifier on O, set-P build-state classifier; 8xH100 launcher (user override: Claude edits Codex's T13 code this once, Codex reviews) | CLAUDE | IN PR (user, 2026-10-28) | feature/T27-newset-training | T13, T25 | Thu |
