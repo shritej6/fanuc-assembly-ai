@@ -11,6 +11,7 @@ DETECTOR = ROOT / "perception" / "configs" / "rtdetr_t4.yaml"
 CLASSIFIER = ROOT / "perception" / "configs" / "classifier_t4.yaml"
 H100_DETECTOR = ROOT / "perception" / "configs" / "rtdetr_h100.yaml"
 H100_CLASSIFIER = ROOT / "perception" / "configs" / "classifier_h100.yaml"
+A100_40G_DETECTOR = ROOT / "perception" / "configs" / "rtdetr_a100_40g.yaml"
 
 
 def test_ml_group_pins_security_compatible_torch_pair() -> None:
@@ -111,6 +112,22 @@ def test_h100_configs_use_bf16_without_an_fp16_scaler(
     assert config["training"]["gradient_accumulation_steps"] == 1
     assert config["training"]["per_device_train_batch_size"] == batch_size
     assert config["training"]["dataloader_num_workers"] == workers
+
+
+def test_a100_40g_detector_is_the_h100_recipe_split_by_accumulation() -> None:
+    h100 = load_training_config(H100_DETECTOR)
+    a100 = load_training_config(A100_40G_DETECTOR)
+
+    def per_step(training: dict) -> int:
+        return training["per_device_train_batch_size"] * training["gradient_accumulation_steps"]
+
+    assert a100["training"]["per_device_train_batch_size"] == 5
+    assert per_step(a100["training"]) == per_step(h100["training"]) == 20
+    split = {"per_device_train_batch_size", "gradient_accumulation_steps"}
+    assert {k: v for k, v in a100["training"].items() if k not in split} == {
+        k: v for k, v in h100["training"].items() if k not in split
+    }
+    assert {k: v for k, v in a100.items() if k != "training"} == {k: v for k, v in h100.items() if k != "training"}
 
 
 @pytest.mark.parametrize(

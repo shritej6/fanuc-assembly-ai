@@ -14,6 +14,10 @@ RUNS="${RUNS:-$HOME/fanuc-t27-runs}"
 STATUS="${STATUS:-$HOME/t27_status.txt}"
 VENV_PATH="${VENV_PATH:-$HOME/fanuc-t13-venv-secure}"
 GPUS="$(nvidia-smi -L | wc -l)"
+# 40 GB A100s cannot hold the H100 detector batch; their config keeps the same images per step via accumulation.
+GPU_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)"
+if (( GPU_MIB < 70000 )); then DEFAULT_DETECTOR=rtdetr_a100_40g.yaml; else DEFAULT_DETECTOR=rtdetr_h100.yaml; fi
+DETECTOR_CONFIG="${DETECTOR_CONFIG:-$DEFAULT_DETECTOR}"
 export REPO DATA_ROOT VENV_PATH
 export PYTHON_BIN="$VENV_PATH/bin/python"
 
@@ -62,11 +66,11 @@ train() {     # $1 launcher, $2 config, $3 artifact dir, $4 run dir
 
 cd "$REPO"
 git_commit="$(cat "$REPO/.t13-code-commit")"
-mark "begin commit=$git_commit gpus=$GPUS"
+mark "begin commit=$git_commit gpus=$GPUS gpu_mib=$GPU_MIB detector_config=$DETECTOR_CONFIG"
 stage env setup_env
 stage prepare_main prepare testbed "$ART/main"
 stage prepare_build prepare testbed_build "$ART/build"
-stage detector train detector.sbatch rtdetr_h100.yaml "$ART/main" "$RUNS/main"
+stage detector train detector.sbatch "$DETECTOR_CONFIG" "$ART/main" "$RUNS/main"
 stage classifier train classifier.sbatch classifier_h100.yaml "$ART/main" "$RUNS/main"
 stage build_classifier train classifier.sbatch classifier_build_h100.yaml "$ART/build" "$RUNS/build"
 # PatchCore + FoundationPose validation (user order steps 4-5) run here when their launcher has been delivered by now.
