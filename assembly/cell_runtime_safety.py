@@ -171,6 +171,8 @@ class CADCollisionChecker:
     ) -> str | None:
         try:
             links = self._geometry.swept_robot_links(start, end)
+            if not links:
+                raise ProductionSafetyUnavailable("robot-link CAD sweep returned no geometry")
             collision = _collision(links, obstacles, owner, "robot-link")
             if collision is not None:
                 return collision

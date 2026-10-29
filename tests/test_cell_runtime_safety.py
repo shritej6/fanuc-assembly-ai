@@ -54,7 +54,7 @@ class _Geometry:
     source: str = "CAD robot links + part STL + T29 grasp frames"
     models_robot_links: bool = True
     models_held_parts: bool = True
-    links: tuple[AABB, ...] = ()
+    links: tuple[AABB, ...] = (AABB("J1_link", (0.0, 0.0, 0.0), (10.0, 10.0, 10.0)),)
     held: AABB | None = None
 
     def swept_robot_links(self, start: Waypoint, end: Waypoint) -> tuple[AABB, ...]:
@@ -138,6 +138,16 @@ def test_collision_checker_refuses_partial_geometry_capabilities() -> None:
 
     with pytest.raises(ProductionSafetyConfigurationError, match="robot links and held parts"):
         CADCollisionChecker(_Geometry(models_held_parts=False))
+
+
+def test_collision_checker_fails_closed_when_robot_link_sweep_is_empty() -> None:
+    from assembly.cell_runtime_safety import CADCollisionChecker, ProductionSafetyUnavailable
+
+    checker = CADCollisionChecker(_Geometry(links=(), held=AABB("held", (1.0, 1.0, 1.0), (2.0, 2.0, 2.0))))
+    owner = MotionOwner("moving", "M1_01", True)
+
+    with pytest.raises(ProductionSafetyUnavailable, match="robot-link"):
+        checker.first_collision(_point(300.0, 0.0, -220.0), _point(310.0, 0.0, -220.0), (), 0.0, owner)
 
 
 def test_sourced_cad_geometry_combines_robot_and_t29_sources() -> None:
