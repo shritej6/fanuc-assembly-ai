@@ -260,3 +260,17 @@ def test_a_loose_part_without_a_rest_state_is_refused_not_trained_as_installed(t
 
     with pytest.raises(ManifestError, match="part M1_01 on_table has no rest state"):
         build_manifests(_config(tmp_path, fallen_classes=True, profile="testbed"))
+
+
+def test_foreign_objects_and_bases_need_no_rest_state() -> None:
+    """Regression: the rest-state check refused `foreign_cube_10mm on_table` and stopped T27 prepare on the box."""
+    from perception.manifest_annotations import annotation
+
+    label2id = {"foreign_cube_10mm": 0, "F01": 1, "M1_01": 2, "M1_01__fallen": 3}
+    for object_id in ("foreign_cube_10mm", "F01"):
+        raw = {"uid": "o05", "object_id": object_id, "state": "on_table", "bbox_xyxy": [1, 1, 9, 9]}
+        found = annotation(raw, label2id, 64, 48, "N:000000/side", rest=None, fallen_classes=True)
+        assert (found.label, found.rest) == (object_id, None)
+    with pytest.raises(ManifestError, match="has no rest state"):
+        annotation({"uid": "o06", "object_id": "M1_01", "state": "on_table", "bbox_xyxy": [1, 1, 9, 9]},
+                   label2id, 64, 48, "N:000000/side", rest=None, fallen_classes=True)

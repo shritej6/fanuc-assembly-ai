@@ -34,8 +34,9 @@ def annotation(
     if object_id not in label2id:
         raise ManifestError(f"unknown object_id {object_id!r} in {context}")
     label = object_id
-    # A loose or spare part must say how it lies; without `rest` it would silently train as the installed identity.
-    if fallen_classes and rest is None and not object_id.startswith("F") and raw.get("state") in LOOSE_STATES:
+    # A loose or spare product part must say how it lies; without `rest` it would silently train as the installed
+    # identity. Bases and foreign objects have no fallen class, so they carry no rest state.
+    if fallen_classes and rest is None and object_id.startswith("M") and raw.get("state") in LOOSE_STATES:
         raise ManifestError(f"part {object_id} {raw.get('state')} has no rest state in {context}")
     if fallen_classes and rest == "fallen":
         try:
