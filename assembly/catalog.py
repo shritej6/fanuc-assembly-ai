@@ -31,8 +31,6 @@ DEFAULT_CATALOG_PATH = Path(__file__).with_name("catalog.yaml")
 CONTRACTS_PATH = ROOT / "contracts"
 CATALOG_SCHEMA_PATH = CONTRACTS_PATH / "catalog.schema.json"
 TAXONOMY_PATH = CONTRACTS_PATH / "taxonomy.json"
-OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH = Path(__file__).with_name("sources") / "object_geometry.5a24e10.json"
-GRASP_SOURCE_SNAPSHOT_PATH = Path(__file__).with_name("sources") / "grasp_frames.2d7cd51.json"
 CAD_TRANSLATION_TOLERANCE_MM = 0.05
 # object_geometry.py serializes installed transforms to six decimal places.
 ROTATION_MATRIX_TOLERANCE = 1e-6
@@ -130,6 +128,22 @@ class GraspSource:
     commit_timestamp: str
     snapshot: str
     sha256: str
+
+
+TRUSTED_GEOMETRY_SOURCE = GeometrySource(
+    file="sdg/data/object_geometry.json", generator="sdg/tools/object_geometry.py",
+    commit="5a24e10d5ac7c9a6b15e9779385138678244819d", commit_timestamp="2026-10-27T22:11:27-05:00",
+    snapshot="assembly/sources/object_geometry.5a24e10.json",
+    sha256="488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325",
+)
+TRUSTED_GRASP_SOURCE = GraspSource(
+    file="cad/grasp_frames.json", generator="cad/grasp_frames.py",
+    commit="2d7cd511844a5123abf96ecd87937ea08a2a3b10", commit_timestamp="2026-10-29T14:45:34-05:00",
+    snapshot="assembly/sources/grasp_frames.2d7cd51.json",
+    sha256="d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b",
+)
+OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GEOMETRY_SOURCE.snapshot
+GRASP_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GRASP_SOURCE.snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,16 +388,28 @@ def _validate_semantics(data: dict[str, Any]) -> None:
     _validate_coverage(products, part_owners)
 
 
-def _read_pinned_source(provenance: dict[str, Any], path: Path, label: str) -> dict[str, Any]:
-    expected_snapshot = path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else None
-    if expected_snapshot is not None and provenance["snapshot"] != expected_snapshot:
-        raise CatalogResourceError(f"{label} source snapshot must be {expected_snapshot}")
+def _validate_source_provenance(data: dict[str, Any]) -> None:
+    trusted_sources = {
+        "geometry_source": TRUSTED_GEOMETRY_SOURCE,
+        "grasp_source": TRUSTED_GRASP_SOURCE,
+    }
+    for source_key, trusted in trusted_sources.items():
+        candidate = type(trusted)(**data[source_key])
+        if candidate != trusted:
+            raise CatalogSemanticError(f"{source_key} does not match trusted provenance")
+
+
+def _read_pinned_source(
+    provenance: GeometrySource | GraspSource,
+    path: Path,
+    label: str,
+) -> dict[str, Any]:
     try:
         contents = path.read_bytes()
     except OSError as error:
         raise CatalogResourceError(f"Cannot read {label} source {path}: {error}") from error
     actual_sha256 = sha256(contents).hexdigest()
-    if actual_sha256 != provenance["sha256"]:
+    if actual_sha256 != provenance.sha256:
         raise CatalogResourceError(f"{label} source sha256 does not match pinned provenance")
     try:
         parsed = json.loads(contents)
@@ -399,7 +425,7 @@ def _catalog_steps(data: dict[str, Any]) -> tuple[dict[str, Any], ...]:
 
 
 def _validate_geometry_source(data: dict[str, Any]) -> None:
-    source = _read_pinned_source(data["geometry_source"], OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH, "geometry")
+    source = _read_pinned_source(TRUSTED_GEOMETRY_SOURCE, OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH, "geometry")
     for step in _catalog_steps(data):
         object_id = step["object_id"]
         try:
@@ -419,7 +445,7 @@ def _validate_geometry_source(data: dict[str, Any]) -> None:
 
 
 def _validate_grasp_source(data: dict[str, Any]) -> None:
-    source = _read_pinned_source(data["grasp_source"], GRASP_SOURCE_SNAPSHOT_PATH, "grasp")
+    source = _read_pinned_source(TRUSTED_GRASP_SOURCE, GRASP_SOURCE_SNAPSHOT_PATH, "grasp")
     for step in _catalog_steps(data):
         object_id = step["object_id"]
         try:
@@ -467,9 +493,8 @@ def load_catalog(path: Path | str = DEFAULT_CATALOG_PATH) -> Catalog:
     data = _read_catalog_data(Path(path))
     _validate_schema(data)
     _validate_semantics(data)
+    _validate_source_provenance(data)
     _validate_geometry_source(data)
     _validate_grasp_source(data)
     products = tuple(_make_product(product) for product in data["products"])
-    geometry_source = GeometrySource(**data["geometry_source"])
-    grasp_source = GraspSource(**data["grasp_source"])
-    return Catalog(products, _base_type_pairs(), geometry_source, grasp_source)
+    return Catalog(products, _base_type_pairs(), TRUSTED_GEOMETRY_SOURCE, TRUSTED_GRASP_SOURCE)
