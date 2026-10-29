@@ -76,7 +76,7 @@ def test_next_step_is_contract_valid_and_keeps_enriched_calibrated_poses() -> No
         "object_id": "M4_01",
         "grasp": {"x": 230.0, "y": -80.0, "z": -300.0, "yaw": 10.0},
         "target": {"x": 420.0, "y": 40.0, "z": -289.0, "yaw": 90.0},
-        "gripper_roll_deg": 90.0,
+        "gripper_roll_deg": 0.0,
         "attempt": 2,
     }
     assert prepared.grasp.tcp.w == prepared.target.tcp.w == -180.0
