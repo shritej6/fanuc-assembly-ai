@@ -9,14 +9,14 @@ from eval.scenario_data import (
     ScenarioObject,
     parse_instruction_products,
 )
-from eval.scenario_runtime import (
+from eval.scenario_report import (
     FleetReport,
-    FleetRunner,
+    ScenarioPhysicalEvent,
+    ScenarioPhysicalEventKind,
     ScenarioResult,
     ScenarioRunStatus,
-    ScenarioRuntime,
-    ScriptedPerceptionPort,
 )
+from eval.scenario_runtime import FleetRunner, ScenarioRuntime, ScriptedPerceptionPort
 
 __all__ = [
     "FaultKind",
@@ -27,10 +27,11 @@ __all__ = [
     "Scenario",
     "ScenarioGenerator",
     "ScenarioObject",
+    "ScenarioPhysicalEvent",
+    "ScenarioPhysicalEventKind",
     "ScenarioResult",
     "ScenarioRunStatus",
     "ScenarioRuntime",
     "ScriptedPerceptionPort",
     "parse_instruction_products",
 ]
-

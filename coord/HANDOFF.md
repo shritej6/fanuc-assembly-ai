@@ -4,21 +4,29 @@ Newest first. One entry per finished task.
 
 ## 2026-10-29 · T17 · CODEX · seeded prompt/layout/fault scenario fleet
 
-- Changed: added `eval/scenario_data.py`, `eval/scenario_runtime.py`, and the public `eval/scenario_fleet.py` API.
+- Changed: added `eval/scenario_data.py`, `eval/scenario_runtime.py`, measured KPI types in
+  `eval/scenario_report.py`, and the public `eval/scenario_fleet.py` API.
   The fleet derives all six products and interchangeable base types from the validated catalog/taxonomy, generates
-  seeded three-product instructions and unique random layouts, and injects clean, defect, fallen, look-alike, foreign,
-  and spare-shortage cases. No `placement.yaml`, product trio, or object coordinate registry is read.
-- Runtime boundary: every part and pose reaches T09 through `ScriptedPerceptionPort`; the mock pose provider refuses
-  grasp/base poses until the current scan has observed them. Fallen cases cover approved and unavailable resting-side
-  grasps. `FleetRunner` follows the guarded TCP actions and reports only measured counts/ratios.
-- Run: `uv run pytest -q tests/test_scenario_fleet.py` (6 passed); `uv run pytest -q` (387 passed);
-  `uv run ruff check .` and `git diff --check` (passed).
-- Measured baseline at seed 90210, 20 scenarios, on T09 commit `248314a`: 60 products requested, 53 completed,
-  16 scenarios complete, 4 suspended, 1,932 action rows, 4 assists, 0 retries, and 13 escaped hazardous objects.
-  This is deliberately not an acceptance result: it reproduces PR #9's missing physical reject stage. Re-run the same
-  seed after Agent 1's T09 reject fixes; acceptance requires the measured escape count to reach zero without hardcoding.
-- Next: merge/rebase the new-files-only fleet onto the reviewed T09 fixes, run the identical seed plus additional
-  unseen seeds, and use the measured report as T23 FAT input. Never select the scripted port for `runtime="cell"`.
+  three-product instructions, all 20 unordered three-of-six combinations per 20-scenario cycle, and random XY layouts.
+  Clean, defect, fallen, look-alike, foreign, and spare-shortage faults are balanced without `placement.yaml`, a fixed
+  product trio, or an object coordinate registry.
+- Runtime boundary: requested products and KPI denominators come only from `obs["trial"]["instruction"]`; contradictory
+  scenario metadata is rejected. Every object, coarse XY, and pose enters through `ScriptedPerceptionPort`. Legacy
+  `grasp_for` is disabled; commanded pose, resting state, and grasp availability use only the FoundationPose-shaped
+  wrist detection. Action traces prove graspable fallen parts reach a verified physical reject before spare pre-pick,
+  while no-grasp fallen parts Hold.
+- Reporting: incomplete Held/Suspended/Aborted/Error/callback-limit runs have `escapes=null`, explicit unresolved-hazard
+  counts, and `acceptance_ready=false`; they can no longer silently report zero escapes. Known escapes remain separately
+  measured. EOF/diff checks and direct XY bounds/diversity regressions are included.
+- Run: `uv run pytest -q tests/test_scenario_fleet.py` (21 passed); `uv run pytest -q` (464 passed);
+  `uv run ruff check .`, `git diff --check`, and the 500-line/40-line source limits passed.
+- Measured baseline at seed 90210, 20 scenarios, on reviewed T09 `915bbd2`: 60 requested, 56 completed, final yield
+  0.9333333333333333, 3,812 action rows, 4 assists, 14.0 builds/assist, 0 retries, 0 known escapes, 0 unresolved hazards;
+  statuses were 16 Complete and 4 Suspended. `escapes` is null and acceptance is blocked by the four incomplete runs.
+- Measured unseen seed 24681357, 20 scenarios: 60 requested, 49 completed, final yield 0.8166666666666667, 3,351 action
+  rows, 5 assists, 9.8 builds/assist, 0 retries, 0 known escapes, 1 unresolved hazard; statuses were 15 Complete,
+  1 Held (no approved fallen-side grasp), and 4 Suspended. No run Aborted, errored, or hit its callback limit.
+- Next: use both measured reports as T23 FAT inputs. Never select the scripted port for `runtime="cell"`.
 
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 

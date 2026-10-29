@@ -8,6 +8,7 @@ import random
 import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from itertools import combinations
 from pathlib import Path
 
 from assembly.catalog import BaseType, Catalog
@@ -118,7 +119,8 @@ class ScenarioGenerator:
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
             raise FleetInputError("scenario count must be a positive integer")
         faults = self._fault_schedule(count)
-        return tuple(self._scenario(index, fault) for index, fault in enumerate(faults))
+        products = self._product_schedule(count, faults)
+        return tuple(self._scenario(index, fault, selected) for index, (fault, selected) in enumerate(zip(faults, products)))
 
     def _fault_schedule(self, count: int) -> tuple[FaultKind, ...]:
         faults: list[FaultKind] = []
@@ -128,20 +130,54 @@ class ScenarioGenerator:
             faults.extend(choices)
         return tuple(faults[:count])
 
-    def _scenario(self, index: int, fault: FaultKind) -> Scenario:
-        products = self._choose_products(fault)
+    def _scenario(self, index: int, fault: FaultKind, products: tuple[int, ...]) -> Scenario:
         objects = self._nominal_objects(index, products)
         objects, missing = self._inject(index, products, objects, fault)
         joined = ", ".join(str(product) for product in products[:-1])
         instruction = f"Assemble products {joined}, and {products[-1]}."
         return Scenario(f"fleet-{index:04d}", products, instruction, fault, tuple(objects), self._bounds, missing)
 
-    def _choose_products(self, fault: FaultKind) -> tuple[int, ...]:
-        for _ in range(100):
-            products = tuple(self._rng.sample(self._product_ids, 3))
-            if fault not in {FaultKind.LOOKALIKE, FaultKind.FOREIGN} or self._trap_candidates(products, fault):
-                return products
-        raise FleetInputError(f"catalog cannot produce {fault.value} for any three-product prompt")
+    def _product_schedule(self, count: int, faults: tuple[FaultKind, ...]) -> tuple[tuple[int, ...], ...]:
+        combinations_ = list(combinations(self._product_ids, 3))
+        scheduled: list[tuple[int, ...]] = []
+        while len(scheduled) < count:
+            cycle = list(combinations_)
+            self._rng.shuffle(cycle)
+            scheduled.extend(cycle)
+        scheduled = scheduled[:count]
+        self._repair_lookalike_assignments(scheduled, faults, combinations_)
+        return tuple(self._shuffled_prompt_order(products) for products in scheduled)
+
+    def _repair_lookalike_assignments(
+        self,
+        scheduled: list[tuple[int, ...]],
+        faults: tuple[FaultKind, ...],
+        combinations_: list[tuple[int, ...]],
+    ) -> None:
+        for index, (products, fault) in enumerate(zip(scheduled, faults)):
+            if fault is not FaultKind.LOOKALIKE or self._trap_candidates(products, fault):
+                continue
+            replacement = next(
+                (
+                    other
+                    for other in range(len(scheduled))
+                    if other != index
+                    and faults[other] is not FaultKind.LOOKALIKE
+                    and self._trap_candidates(scheduled[other], FaultKind.LOOKALIKE)
+                ),
+                None,
+            )
+            if replacement is None:
+                scheduled[index] = self._rng.choice(
+                    [combo for combo in combinations_ if self._trap_candidates(combo, FaultKind.LOOKALIKE)]
+                )
+            else:
+                scheduled[index], scheduled[replacement] = scheduled[replacement], scheduled[index]
+
+    def _shuffled_prompt_order(self, products: tuple[int, ...]) -> tuple[int, ...]:
+        ordered = list(products)
+        self._rng.shuffle(ordered)
+        return tuple(ordered)
 
     def _nominal_objects(self, index: int, products: tuple[int, ...]) -> list[ScenarioObject]:
         objects: list[ScenarioObject] = []
@@ -238,4 +274,3 @@ def _finite_values(value: object, field: str, *, count: int | None = None) -> tu
     if any(isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(item) for item in value):
         raise FleetInputError(f"{field} must contain finite numbers")
     return tuple(float(item) for item in value)
-

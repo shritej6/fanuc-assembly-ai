@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import math
-from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Protocol
 
 from assembly.catalog import Catalog, ProductRecipe, RecipeStep, load_catalog
 from assembly.controller import AssemblyController
 from assembly.controller_ports import (
     CollisionScene,
-    ControllerEvent,
     ControllerPortError,
     EvidencePair,
     InventorySnapshot,
@@ -23,12 +21,19 @@ from assembly.controller_ports import (
 from assembly.inventory import InventoryItem, InventoryZone, ObjectCondition
 from assembly.motion import AbsolutePoseUF0, OrientedPartPose, RestingState
 from assembly.state_machine import PackMLState
-from eval.scenario_data import FaultKind, FleetInputError, Scenario, ScenarioObject, parse_instruction_products
+from eval.scenario_data import FleetInputError, Scenario, ScenarioObject, parse_instruction_products
+from eval.scenario_report import (
+    FleetReport,
+    ScenarioPhysicalEvent,
+    ScenarioPhysicalEventKind,
+    ScenarioResult,
+    ScenarioRunStatus,
+)
 from robot.adapter import CellAdapter, Observation
 
 
 class ControllerFactory(Protocol):
-    def __call__(self, runtime: ScenarioRuntime, products: tuple[int, ...]) -> AssemblyController: ...
+    def __call__(self, runtime: ScenarioRuntime) -> AssemblyController: ...
 
 
 @dataclass(slots=True)
@@ -47,16 +52,24 @@ class ScriptedPerceptionPort:
         self._state = state
         self._objects = {item.instance_id: item for item in scenario.objects}
         self.rejected_instances: set[str] = set()
+        self.physical_events: list[ScenarioPhysicalEvent] = []
 
     def scan(self, observation: Observation) -> InventorySnapshot:
         self._state.observed_pose_by_instance = dict(self._state.pose_by_instance)
         items = tuple(
-            ObservedInventoryItem(item.instance_id, item.object_id, item.zone, item.condition)
+            ObservedInventoryItem(
+                item.instance_id,
+                item.object_id,
+                item.zone,
+                item.condition,
+                coarse_xy_mm=self._state.pose_by_instance[item.instance_id][:2],
+            )
             for item in self._scenario.objects
         )
         return InventorySnapshot(float(observation["t"]), True, items)
 
     def pre_pick(self, observation: Observation, part: InventoryItem) -> EvidencePair:
+        self.physical_events.append(ScenarioPhysicalEvent(ScenarioPhysicalEventKind.PRE_PICK, part.instance_id))
         scripted = self._scripted(part.instance_id)
         return EvidencePair(
             self._detection(scripted),
@@ -86,6 +99,9 @@ class ScriptedPerceptionPort:
         self._state.pose_by_instance[part.instance_id] = target
         if target_zone is InventoryZone.REJECT:
             self.rejected_instances.add(part.instance_id)
+            self.physical_events.append(
+                ScenarioPhysicalEvent(ScenarioPhysicalEventKind.REJECT_TRANSFER, part.instance_id)
+            )
         scripted = self._scripted(part.instance_id)
         return RecoveryTransferEvidence(
             self._detection(scripted),
@@ -125,7 +141,10 @@ class ScriptedPerceptionPort:
         condition: ObjectCondition | None = None,
     ) -> dict[str, object]:
         effective = item.condition if condition is None else condition
-        resting = "side" if effective is ObjectCondition.FALLEN else "upright"
+        if effective is ObjectCondition.FALLEN:
+            resting = "side" if item.grasp_approved else "flipped"
+        else:
+            resting = "upright"
         x, y, z, yaw = self._state.pose_by_instance[item.instance_id]
         return {
             "instance_id": item.instance_id,
@@ -164,18 +183,30 @@ class ScriptedPerceptionPort:
 
 
 class ScenarioPoseProvider:
-    def __init__(self, scenario: Scenario, state: _PhysicalState) -> None:
-        self._scenario = scenario
+    def __init__(self, state: _PhysicalState) -> None:
         self._state = state
-        self._objects = {item.instance_id: item for item in scenario.objects}
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
+        del part, observed_at_s
+        raise ControllerPortError("FoundationPose wrist evidence required for every part grasp")
+
+    def grasp_from_foundationpose(
+        self,
+        part: InventoryItem,
+        detection: dict[str, object],
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
         del observed_at_s
-        item = self._objects[part.instance_id]
-        if not item.grasp_approved:
+        if detection.get("instance_id") != part.instance_id or detection.get("object_id") != part.object_id:
+            raise ControllerPortError("FoundationPose detection identity does not match reserved part")
+        resting_side = detection.get("resting_side")
+        if resting_side == "flipped":
             raise ControllerPortError(f"no approved grasp for resting side of {part.instance_id!r}")
-        state = RestingState.FALLEN if item.condition is ObjectCondition.FALLEN else RestingState.INSTALLED
-        return _oriented(_observed_pose(self._state, part.instance_id), part.object_id, state)
+        if resting_side not in {"upright", "side"}:
+            raise ControllerPortError("FoundationPose detection resting side is unsupported")
+        state = RestingState.FALLEN if resting_side == "side" else RestingState.INSTALLED
+        return _oriented(_detection_pose(detection), part.object_id, state)
 
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
         del observed_at_s
@@ -226,7 +257,7 @@ class ScenarioRuntime:
             {},
         )
         self.perception = ScriptedPerceptionPort(scenario, state)
-        self.poses = ScenarioPoseProvider(scenario, state)
+        self.poses = ScenarioPoseProvider(state)
         self.recovery_targets = ScenarioRecoveryTargets(scenario, state)
 
     def observation(self, timestamp: float) -> Observation:
@@ -237,89 +268,6 @@ class ScenarioRuntime:
             "joints": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "images": {},
             "trial": {"instruction": self.scenario.instruction},
-        }
-
-
-class ScenarioRunStatus(StrEnum):
-    COMPLETE = "complete"
-    HELD = "held"
-    SUSPENDED = "suspended"
-    ABORTED = "aborted"
-    CALLBACK_LIMIT = "callback_limit"
-    ERROR = "error"
-
-
-@dataclass(frozen=True, slots=True)
-class ScenarioResult:
-    scenario_id: str
-    instruction: str
-    products: tuple[int, ...]
-    fault: FaultKind
-    status: ScenarioRunStatus
-    completed_products: tuple[int, ...]
-    callbacks: int
-    action_rows: int
-    assists: int
-    retries: int
-    escapes: int
-    events: tuple[ControllerEvent, ...]
-    error: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class FleetReport:
-    results: tuple[ScenarioResult, ...]
-
-    @property
-    def scenario_count(self) -> int:
-        return len(self.results)
-
-    @property
-    def requested_products(self) -> int:
-        return sum(len(result.products) for result in self.results)
-
-    @property
-    def completed_products(self) -> int:
-        return sum(len(result.completed_products) for result in self.results)
-
-    @property
-    def action_rows(self) -> int:
-        return sum(result.action_rows for result in self.results)
-
-    @property
-    def assists(self) -> int:
-        return sum(result.assists for result in self.results)
-
-    @property
-    def retries(self) -> int:
-        return sum(result.retries for result in self.results)
-
-    @property
-    def escapes(self) -> int:
-        return sum(result.escapes for result in self.results)
-
-    @property
-    def final_yield(self) -> float:
-        return self.completed_products / self.requested_products if self.requested_products else 0.0
-
-    @property
-    def builds_per_assist(self) -> float | None:
-        return None if self.assists == 0 else self.completed_products / self.assists
-
-    def as_dict(self) -> dict[str, object]:
-        """Serialize only counters and ratios measured by completed harness runs."""
-        return {
-            "scenario_count": self.scenario_count,
-            "requested_products": self.requested_products,
-            "completed_products": self.completed_products,
-            "final_yield": self.final_yield,
-            "action_rows": self.action_rows,
-            "assists": self.assists,
-            "builds_per_assist": self.builds_per_assist,
-            "retries": self.retries,
-            "escapes": self.escapes,
-            "status_counts": dict(Counter(result.status.value for result in self.results)),
-            "fault_counts": dict(Counter(result.fault.value for result in self.results)),
         }
 
 
@@ -339,23 +287,43 @@ class FleetRunner:
 
     def _run_one(self, scenario: Scenario) -> ScenarioResult:
         runtime = ScenarioRuntime(scenario)
-        products = parse_instruction_products(scenario.instruction, self._catalog)
-        controller = self._controller_factory(runtime, products)
-        adapter = CellAdapter(controller, action_mode="tcp", dt=self._dt_s)
         observation = runtime.observation(0.0)
-        action_rows = 0
-        try:
-            for callback in range(1, self._max_callbacks + 1):
-                output = adapter.act(observation)
-                rows = _action_rows(output)
-                action_rows += len(rows)
-                _advance_observation(observation, rows[-1], self._dt_s)
-                status = _terminal_status(controller)
-                if status is not None:
-                    return _result(scenario, controller, runtime, status, callback, action_rows)
-        except (ValueError, RuntimeError) as error:
-            return _result(scenario, controller, runtime, ScenarioRunStatus.ERROR, callback, action_rows, str(error))
-        return _result(scenario, controller, runtime, ScenarioRunStatus.CALLBACK_LIMIT, self._max_callbacks, action_rows)
+        instruction = _trial_instruction(observation)
+        products = parse_instruction_products(instruction, self._catalog)
+        if scenario.products != products:
+            raise FleetInputError("scenario products disagree with trial instruction")
+        controller = self._controller_factory(runtime)
+        adapter = CellAdapter(controller, action_mode="tcp", dt=self._dt_s)
+        status, callbacks, action_rows, error = _drive_callbacks(
+            adapter,
+            observation,
+            controller,
+            max_callbacks=self._max_callbacks,
+            dt_s=self._dt_s,
+        )
+        return _result(scenario, instruction, products, controller, runtime, status, callbacks, action_rows, error)
+
+
+def _drive_callbacks(
+    adapter: CellAdapter,
+    observation: Observation,
+    controller: AssemblyController,
+    *,
+    max_callbacks: int,
+    dt_s: float,
+) -> tuple[ScenarioRunStatus, int, int, str | None]:
+    action_rows = 0
+    try:
+        for callback in range(1, max_callbacks + 1):
+            rows = _action_rows(adapter.act(observation))
+            action_rows += len(rows)
+            _advance_observation(observation, rows[-1], dt_s)
+            status = _terminal_status(controller)
+            if status is not None:
+                return status, callback, action_rows, None
+    except (ValueError, RuntimeError) as error:
+        return ScenarioRunStatus.ERROR, callback, action_rows, str(error)
+    return ScenarioRunStatus.CALLBACK_LIMIT, max_callbacks, action_rows, None
 
 
 def _inspection_outcome(condition: ObjectCondition) -> tuple[str, str]:
@@ -371,6 +339,19 @@ def _observed_pose(state: _PhysicalState, instance_id: str) -> tuple[float, floa
         return state.observed_pose_by_instance[instance_id]
     except KeyError as error:
         raise ControllerPortError(f"instance {instance_id!r} was not observed by perception") from error
+
+
+def _detection_pose(detection: Mapping[str, object]) -> tuple[float, float, float, float]:
+    pose = detection.get("pose")
+    if not isinstance(pose, Mapping):
+        raise ControllerPortError("FoundationPose detection pose must be a mapping")
+    values = tuple(pose.get(field) for field in ("x", "y", "z", "yaw"))
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+        raise ControllerPortError("FoundationPose detection pose must contain numeric x, y, z, and yaw")
+    numeric = tuple(float(value) for value in values)  # type: ignore[arg-type]
+    if not all(math.isfinite(value) for value in numeric):
+        raise ControllerPortError("FoundationPose detection pose must be finite")
+    return numeric  # type: ignore[return-value]
 
 
 def _oriented(
@@ -413,6 +394,16 @@ def _advance_observation(observation: Observation, row: list[float], dt_s: float
     observation["t"] = float(observation["t"]) + dt_s
 
 
+def _trial_instruction(observation: Observation) -> str:
+    trial = observation.get("trial")
+    if not isinstance(trial, Mapping):
+        raise FleetInputError("observation trial must be a mapping")
+    instruction = trial.get("instruction")
+    if not isinstance(instruction, str):
+        raise FleetInputError("observation trial instruction must be a string")
+    return instruction
+
+
 def _terminal_status(controller: AssemblyController) -> ScenarioRunStatus | None:
     if controller.finished:
         return ScenarioRunStatus.COMPLETE
@@ -426,6 +417,8 @@ def _terminal_status(controller: AssemblyController) -> ScenarioRunStatus | None
 
 def _result(
     scenario: Scenario,
+    instruction: str,
+    products: tuple[int, ...],
     controller: AssemblyController,
     runtime: ScenarioRuntime,
     status: ScenarioRunStatus,
@@ -435,11 +428,14 @@ def _result(
 ) -> ScenarioResult:
     events = controller.events
     hazards = {item.instance_id for item in scenario.hazardous_objects}
-    escaped = hazards - runtime.perception.rejected_instances if controller.finished else set()
+    unrejected = hazards - runtime.perception.rejected_instances
+    completed = status is ScenarioRunStatus.COMPLETE
+    escapes = len(unrejected) if completed else None
+    unresolved_hazards = 0 if completed else len(unrejected)
     return ScenarioResult(
         scenario.scenario_id,
-        scenario.instruction,
-        scenario.products,
+        instruction,
+        products,
         scenario.fault,
         status,
         controller.completed_products,
@@ -447,8 +443,9 @@ def _result(
         action_rows,
         sum(event.kind == "andon" for event in events),
         sum(event.kind == "retry" for event in events),
-        len(escaped),
+        escapes,
+        unresolved_hazards,
+        tuple(runtime.perception.physical_events),
         events,
         error,
     )
-
