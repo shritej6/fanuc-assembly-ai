@@ -33,12 +33,32 @@ def test_every_pad_fits_between_the_closed_and_open_gap():
     assert pads and all(gap["closed_max"] < w < gap["open_min"] for w in pads)
 
 
+class _Grip:
+    axis, center, half_width, span, z_top, height = "X", 0.0, 3.5, (-5.0, 5.0), 10.0, 6.0
+
+
 def test_too_wide_pad_is_refused():
-    class Grip:
-        axis, center, half_width, span, z_top, height = "X", 0.0, 7.0, (-5.0, 5.0), 10.0, 6.0
+    class Wide(_Grip):
+        half_width = 8.5     # 17 mm pad: wider than the fingers' 16.5 mm open gap
 
     with pytest.raises(grasp_frames.GraspFrameError, match="does not fit"):
-        grasp_frames.grip_entry("wide", Grip, (0.0, 0.0, 0.0))
+        grasp_frames.grip_entry("wide", Wide, (0.0, 0.0, 0.0), np.array([0.0, 0.0, 8.0]))
+
+
+def test_contact_off_the_pad_is_refused():
+    with pytest.raises(grasp_frames.GraspFrameError, match="not on the CAD grip pad"):
+        grasp_frames.grip_entry("off", _Grip, (0.0, 0.0, 0.0), np.array([1.0, 0.0, 8.0]))
+
+
+def test_tcp_is_the_contact_moved_down_to_the_fingertip():
+    entry = grasp_frames.grip_entry("ok", _Grip, (0.0, 2.0, 1.0), np.array([0.0, 3.0, 8.0]))
+    assert entry["tcp_local_mm"] == pytest.approx([0.0, 1.0, 7.0 - (86.10 - 84.25)])
+
+
+def test_every_tcp_comes_from_a_team_v_finger_contact():
+    fingers = json.loads(grasp_frames.FINGERS.read_text())
+    parts = [v["name"] for k, v in COMMITTED["objects"].items() if k.startswith("M")]
+    assert len(parts) == 24 and all(name in fingers for name in parts)
 
 
 def test_rear_guard_stl_frame_is_its_installed_frame_rotated_back():

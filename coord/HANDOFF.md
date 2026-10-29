@@ -10,8 +10,11 @@ Newest first. One entry per finished task.
   - `T_local_from_stl` (identity except the rear guards' print rotation);
   - each grip pad's closing axis, width, span, contact height, the fingertip TCP point in the part's local frame;
   - `roll_offset_deg` (TCP r = measured yaw + offset, from the twin IK's jaw spread axis).
-- Measured: every product part has one 7 mm grip pad, which fits the SMC MHZL2-16D2 fingertip gap (4 +- 1 closed,
-  15 +- 2 open). Installed transforms agree with `sdg/data/object_geometry.json` (mesh registration) within 0.005 mm.
+- Fingers: the TCP of every part comes from the Team V printed fingers' validated grasp (`cad/fingers/`, copied from
+  the MHZL2_16D2_FANUC_FINAL_FINGERS project: 24/24 PASS in its CAD check, PROVISIONAL until printed and tried):
+  the contact centre moved down 1.85 mm to the fingertip. The script refuses a contact that is not on the CAD pad.
+- Measured: every product part has one 7 mm grip pad, which fits the Team V fingers' rubber gap (4.5 mm closed,
+  16.5 mm open). Installed transforms agree with `sdg/data/object_geometry.json` (mesh registration) within 0.005 mm.
 - How to run: `uv run python cad/grasp_frames.py`; `uv run pytest tests/test_grasp_frames.py` (regenerates and
   compares).
 - Next:
