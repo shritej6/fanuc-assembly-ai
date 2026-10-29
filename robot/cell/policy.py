@@ -3,32 +3,67 @@
 act(obs) returns the arm's next target, or a list of targets to play in order. When they have been played, act is
 called again with a new observation. act has no time limit: the arm holds still while it runs.
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import ClassVar, Literal
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from robot import CellAdapter, JointPositionHoldController
+from robot import CellAdapter, Controller, JointPositionHoldController
 
 
 class Policy:
-    CAMERAS = ["table", "side", "wrist"]  # the cameras you want, any subset
-    IMAGE_SIZE = (640, 360)               # (width, height) of the images you get: the whole 16:9 camera frame, resized
-                                          # (not cropped), as in the sim and the recorded datasets
-    IMAGE_FORMAT = "png"                  # or "jpeg": about 7x smaller, for a slow connection
-    ACTION = "joints"                     # what act returns: "joints" or "tcp" (see below)
-    DT = 0.1                               # seconds between absolute targets
-    PREFETCH = False                      # True: if act returns many actions at once, plan the next ones while
-                                          # these still play, so the arm does not stop between them
-    DEPTH = []                            # ["table"] and/or ["wrist"]: also those cameras' depth, in obs["depth"]
+    CAMERAS: ClassVar[list[str]] = ["table", "side", "wrist"]  # the cameras you want, any subset
+    IMAGE_SIZE = (640, 360)  # (width, height) of the images you get: the whole 16:9 camera frame, resized
+    # (not cropped), as in the sim and the recorded datasets
+    IMAGE_FORMAT = "png"  # or "jpeg": about 7x smaller, for a slow connection
+    ACTION = "joints"  # what act returns: "joints" or "tcp" (see below)
+    DT = 0.1  # seconds between absolute targets
+    PREFETCH = False  # True: if act returns many actions at once, plan the next ones while
+    # these still play, so the arm does not stop between them
+    DEPTH: ClassVar[list[str]] = []  # ["table"] and/or ["wrist"]: also those cameras' depth, in obs["depth"]
 
-    def __init__(self, checkpoint: str | None = None):
+    def __init__(
+        self,
+        checkpoint: str | None = None,
+        *,
+        controller: Controller | None = None,
+        action_mode: Literal["joints", "tcp"] | None = None,
+        runtime: Literal["mock", "cell"] = "cell",
+    ):
         self.checkpoint = checkpoint
-        self.adapter = CellAdapter(JointPositionHoldController(), action_mode=self.ACTION, dt=self.DT)
+        self.mock_only = checkpoint == "t09-mock"
+        if runtime not in ("mock", "cell"):
+            raise ValueError(f"unsupported runtime: {runtime!r}")
+        if self.mock_only:
+            controller, action_mode = self._mock_controller(runtime, controller, action_mode)
+        if controller is None and action_mode is not None:
+            raise ValueError("action_mode requires an explicitly injected controller")
+        if controller is not None and action_mode is None:
+            raise ValueError("an injected controller requires an explicit action_mode")
+        selected = controller or JointPositionHoldController()
+        self.controller = selected
+        self.ACTION = action_mode or type(self).ACTION
+        self.adapter = CellAdapter(selected, action_mode=self.ACTION, dt=self.DT)
+
+    @staticmethod
+    def _mock_controller(
+        runtime: str,
+        controller: Controller | None,
+        action_mode: str | None,
+    ) -> tuple[Controller, Literal["tcp"]]:
+        if runtime != "mock":
+            raise ValueError("the t09-mock checkpoint is forbidden outside the local mock runtime")
+        if controller is not None or action_mode is not None:
+            raise ValueError("the t09-mock checkpoint does not accept injected controller overrides")
+        from robot.cell.t09_mock_runtime import T09MockController
+
+        return T09MockController(), "tcp"
 
     def reset(self) -> None:
         """Called at the start of every rollout."""

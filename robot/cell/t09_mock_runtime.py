@@ -1,0 +1,322 @@
+"""Opt-in T09 controller fixture for the official local mock only.
+
+The perception and calibration ports in this module are deterministic contract
+fixtures. They do not read simulator ground truth and are not valid for a real
+cell, model evaluation, or physical safety decisions.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+
+from assembly.catalog import ProductRecipe, RecipeStep, load_catalog
+from assembly.controller import AssemblyController
+from assembly.controller_ports import (
+    CollisionScene,
+    ControllerEvent,
+    EvidencePair,
+    ExecutionTolerances,
+    InventorySnapshot,
+    ObservedInventoryItem,
+    PerceptionTolerances,
+    PlacementEvidence,
+    RecoveryTransferEvidence,
+)
+from assembly.inventory import InventoryItem, InventoryZone
+from assembly.motion import AbsolutePoseUF0, MotionConfig, OrientedPartPose, RestingState
+from assembly.safety import AABBCollisionChecker, ReachabilityCapabilities, SafetyConfig, SafetySupervisor
+from assembly.verification import VerificationThresholds
+from robot.adapter import TCP_LIMITS, Action, Observation
+
+PRODUCTS = (1, 3, 4)
+BOOTSTRAP_ACTION = [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
+MOCK_THRESHOLDS = VerificationThresholds(0.9, 0.8, 0.9, 0.1, 1.0)
+
+
+def _oriented(x: float, y: float, z: float, yaw: float) -> OrientedPartPose:
+    tcp = AbsolutePoseUF0(x, y, z, -180.0, 0.0, yaw, "UF0", "calibrated")
+    return OrientedPartPose(tcp, RestingState.INSTALLED, "mock-installed:+z")
+
+
+def _part_indices(object_id: str) -> tuple[int, int]:
+    product, step = (int(value) for value in object_id[1:].split("_"))
+    return product, step
+
+
+class MockCalibratedPoses:
+    """Fixed in-box poses for transport tests, never physical calibration."""
+
+    def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
+        del observed_at_s
+        product, step = _part_indices(part.object_id)
+        if part.zone is InventoryZone.INSTALLED:
+            return _oriented(360.0 + 20.0 * product, 80.0, -300.0 + step, 90.0)
+        return _oriented(210.0 + 30.0 * product, -160.0 + 35.0 * step, -300.0, step * 10.0)
+
+    def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
+        del observed_at_s
+        product = int(base.instance_id.rsplit("-", maxsplit=1)[-1])
+        return _oriented(400.0 + 20.0 * product, 80.0, -320.0, 90.0)
+
+    def target_for(
+        self,
+        product: ProductRecipe,
+        base: InventoryItem,
+        step: RecipeStep,
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        del base, observed_at_s
+        return _oriented(360.0 + 20.0 * product.product, 80.0, -300.0 + step.step, 90.0)
+
+
+class MockRecoveryTargets:
+    """Fixed recovery zones used only by the local mock fixture."""
+
+    def staging_target_for(self, product: int, part: InventoryItem, slot: int) -> OrientedPartPose:
+        del product, part
+        return _oriented(500.0, -300.0 + 35.0 * slot, -300.0, 0.0)
+
+    def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
+        del part
+        return _oriented(550.0, -350.0, -300.0, 0.0)
+
+
+class MockBoxReachability:
+    """TCP-box-only reachability fixture; it is not robot-link kinematics."""
+
+    capabilities = ReachabilityCapabilities(full_robot_kinematics=False)
+
+    def is_reachable(self, pose: tuple[float, float, float, float, float, float]) -> bool:
+        return all(lower <= value <= upper for value, (lower, upper, _) in zip(pose[:3], TCP_LIMITS[:3], strict=True))
+
+
+def _detection(instance_id: str, object_id: str, *, resting: str = "upright") -> dict[str, object]:
+    product, step = _part_indices(object_id)
+    return {
+        "instance_id": instance_id,
+        "camera": "wrist",
+        "label": object_id,
+        "object_id": object_id,
+        "score": 0.95,
+        "bbox_px": [10.0, 20.0, 60.0, 80.0],
+        "pose": {
+            "x": 210.0 + 30.0 * product,
+            "y": -160.0 + 35.0 * step,
+            "z": -300.0,
+            "yaw": step * 10.0,
+        },
+        "pose_source": "foundationpose",
+        "pose_fit_score": 0.9,
+        "resting_side": resting,
+    }
+
+
+def _inspection(instance_id: str, object_id: str) -> dict[str, object]:
+    return {
+        "instance_id": instance_id,
+        "object_id": object_id,
+        "verdict": "ok",
+        "action": "use",
+        "checks_agree": True,
+        "evidence": {
+            "classifier_score": 0.95,
+            "patchcore_score": 0.05,
+            "depth_residual_mm": 0.2,
+            "image_ref": f"mock://{instance_id}",
+        },
+    }
+
+
+def _observed_items() -> tuple[ObservedInventoryItem, ...]:
+    items: list[ObservedInventoryItem] = []
+    for product, base in ((1, "F01"), (3, "F03"), (4, "F04")):
+        items.append(ObservedInventoryItem(f"base-{product}", base))
+        items.extend(_observed_parts(product))
+    items.append(ObservedInventoryItem("p1-2-spare", "M1_02", zone=InventoryZone.SPARE))
+    items.append(ObservedInventoryItem("p4-3-spare", "M4_03", zone=InventoryZone.SPARE))
+    return tuple(items)
+
+
+def _observed_parts(product: int) -> list[ObservedInventoryItem]:
+    return [
+        ObservedInventoryItem(f"p{product}-{step}", f"M{product}_{step:02d}")
+        for step in range(1, 5)
+        if not (product == 4 and step == 3)
+    ]
+
+
+class MockPerception:
+    """Contract-valid scripted evidence; no image or ground-truth access."""
+
+    def __init__(self) -> None:
+        self.observed = _observed_items()
+        self.reset()
+
+    def reset(self) -> None:
+        self.fallen_once = {"p1-2"}
+        self.failed_insertions = Counter({"p3-3": 1})
+        self.staged_poses: dict[str, dict[str, float]] = {}
+        self.next_staging_slot = 1
+
+    def scan(self, observation: Observation) -> InventorySnapshot:
+        return InventorySnapshot(float(observation["t"]), True, self.observed)
+
+    def pre_pick(self, observation: Observation, part: InventoryItem) -> EvidencePair:
+        resting = "side" if part.instance_id in self.fallen_once else "upright"
+        self.fallen_once.discard(part.instance_id)
+        detection = _detection(part.instance_id, part.object_id, resting=resting)
+        if part.zone is InventoryZone.INSTALLED:
+            product, step = _part_indices(part.object_id)
+            detection["pose"] = {"x": 360.0 + 20.0 * product, "y": 80.0, "z": -300.0 + step, "yaw": 90.0}
+        elif part.zone is InventoryZone.STAGED:
+            detection["pose"] = self.staged_poses[part.instance_id]
+        return EvidencePair(
+            detection,
+            _inspection(part.instance_id, part.object_id),
+            float(observation["t"]),
+        )
+
+    def post_place(self, observation: Observation, part: InventoryItem) -> PlacementEvidence:
+        remaining = self.failed_insertions[part.instance_id]
+        if remaining:
+            self.failed_insertions[part.instance_id] -= 1
+        seated = remaining == 0
+        product, step = _part_indices(part.object_id)
+        detection = _detection(part.instance_id, part.object_id)
+        detection["pose"] = {"x": 360.0 + 20.0 * product, "y": 80.0, "z": -300.0 + step, "yaw": 90.0}
+        return PlacementEvidence(
+            detection,
+            _inspection(part.instance_id, part.object_id),
+            float(observation["t"]),
+            seated=seated,
+            pose_agrees=seated,
+        )
+
+    def post_transfer(
+        self,
+        observation: Observation,
+        part: InventoryItem,
+        target_zone: InventoryZone,
+    ) -> RecoveryTransferEvidence:
+        if target_zone is InventoryZone.STAGED:
+            target_pose = {
+                "x": 500.0,
+                "y": -300.0 + 35.0 * self.next_staging_slot,
+                "z": -300.0,
+                "yaw": 0.0,
+            }
+            self.staged_poses[part.instance_id] = target_pose
+            self.next_staging_slot += 1
+        else:
+            target_pose = {"x": 550.0, "y": -350.0, "z": -300.0, "yaw": 0.0}
+        detection = _detection(part.instance_id, part.object_id)
+        detection["pose"] = target_pose
+        return RecoveryTransferEvidence(
+            detection,
+            _inspection(part.instance_id, part.object_id),
+            float(observation["t"]),
+            target_zone,
+            True,
+        )
+
+    def collision_scene(
+        self,
+        observation: Observation,
+        moving_instance_id: str,
+        base_instance_id: str,
+    ) -> CollisionScene:
+        product = int(base_instance_id.rsplit("-", maxsplit=1)[-1])
+        base_pose = (400.0 + 20.0 * product, 80.0, -320.0, 90.0)
+        attached = float(observation["joints"][6]) == 1.0
+        return CollisionScene(
+            float(observation["t"]),
+            True,
+            base_instance_id,
+            base_pose,
+            moving_instance_id,
+            attached,
+        )
+
+
+def _mock_safety() -> SafetySupervisor:
+    config = SafetyConfig(0.1, -335.0, 1.0, -180.0, 0.0, 0.5, 1.0)
+    return SafetySupervisor(
+        config=config,
+        reachability=MockBoxReachability(),
+        collision=AABBCollisionChecker(),
+        allow_tcp_sweep_only_for_mock=True,
+    )
+
+
+def _build_controller(perception: MockPerception) -> AssemblyController:
+    motion = MotionConfig(10.0, 10.0, 10.0, 10.0, 1000.0, 360.0, 100)
+    return AssemblyController(
+        catalog=load_catalog(),
+        products=PRODUCTS,
+        perception=perception,
+        poses=MockCalibratedPoses(),
+        motion_config=motion,
+        safety=_mock_safety(),
+        verification_thresholds=MOCK_THRESHOLDS,
+        execution_tolerances=ExecutionTolerances(0.0, 0.0),
+        perception_tolerances=PerceptionTolerances(0.0, 0.0),
+        recovery_targets=MockRecoveryTargets(),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MockRunRecord:
+    completed_products: tuple[int, ...]
+    events: tuple[ControllerEvent, ...]
+    finished: bool
+
+
+class T09MockController:
+    """Bootstrap and archive an AssemblyController for the local mock."""
+
+    def __init__(self) -> None:
+        self._perception = MockPerception()
+        self._controller = _build_controller(self._perception)
+        self._archived: list[MockRunRecord] = []
+
+    def reset(self) -> None:
+        if self._controller.events:
+            self._archived.append(self.current_record)
+        self._perception.reset()
+        self._controller.reset()
+
+    def act(self, observation: Observation) -> Action:
+        if observation.get("tcp_pose") is None:
+            return list(BOOTSTRAP_ACTION)
+        return self._controller.act(observation)
+
+    @property
+    def current_record(self) -> MockRunRecord:
+        return MockRunRecord(
+            self._controller.completed_products,
+            self._controller.events,
+            self._controller.finished,
+        )
+
+    @property
+    def archived_runs(self) -> tuple[MockRunRecord, ...]:
+        return tuple(self._archived)
+
+    @property
+    def run_records(self) -> tuple[MockRunRecord, ...]:
+        current = () if not self._controller.events else (self.current_record,)
+        return (*self.archived_runs, *current)
+
+    @property
+    def completed_products(self) -> tuple[int, ...]:
+        return self._controller.completed_products
+
+    @property
+    def events(self) -> tuple[ControllerEvent, ...]:
+        return self._controller.events
+
+    @property
+    def finished(self) -> bool:
+        return self._controller.finished

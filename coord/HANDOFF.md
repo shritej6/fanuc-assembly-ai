@@ -2,6 +2,29 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
+
+- Changed: added typed inventory ownership, recipe planning from T04, PackML execution/recovery/Andon states,
+  calibrated absolute-UF0 motion compilation, per-chunk safety revalidation, two-source pre-pick/post-place gates, and
+  deterministic T27-shaped model stubs. The controller preserves installed roll/pitch, permits yaw alignment only,
+  keeps parts held until independent placement checks pass, and retains product ownership for operator reconciliation
+  after any physical grip/release/install/stage side effect.
+- Safety boundaries: every camera/model/calibration callback is normalized to a typed fail-closed error; complete scans
+  must retain every claimed instance; current-to-first-waypoint motion is interpolated within caller-supplied step
+  bounds; release opens at the verified current pose without a Cartesian correction; malformed poses, collision
+  geometry, endpoint arrays, evidence subtypes, recovery targets, and official T05 action-guard failures cannot escape
+  while PackML remains Execute. Production requires explicit full-kinematics reachability and robot-link/held-part
+  collision capabilities; TCP-sweep-only AABB checking is mock-only.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (381 passed); `git diff --check` (clean);
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean);
+  root and `robot/cell` `uv lock --check` plus `uv pip check` (compatible). Official integration:
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected,
+  `✓ Ready for the real robot`; opt-in `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
+  200 actions, 0 rejected, with an explicit mock-only/not-real-robot-ready verdict.
+- Next: Claude reviews the T09 PR. Do not select `t09-mock` on the cell. Real execution remains gated on reviewed
+  calibrated pose registries, full production reachability/collision providers, and T27 perception evidence. After T09
+  merges, T15/T19 and the Codex portions of T16/T20/T21 may consume its deterministic event and inventory interfaces.
+
 ## 2026-10-27 · T05 · CODEX · adapter layer and UF0 safety guard
 
 - Changed: `robot/adapter.py`, `robot/__init__.py`, `robot/cell/policy.py`, `tests/test_robot_adapter.py`, and
