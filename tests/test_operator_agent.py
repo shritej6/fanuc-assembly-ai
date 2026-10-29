@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -205,6 +205,8 @@ def test_non_active_packml_state_never_authorizes_execution(state: PackMLState) 
 
     assert report is not None
     assert report.execution_authorized is False
+    if state is not PackMLState.COMPLETE:
+        assert report.active_fault == "operator hold"
 
 
 def test_mechanical_completion_remains_pending_until_final_check() -> None:
@@ -258,6 +260,9 @@ def test_failed_final_check_blocks_quality_release() -> None:
     assert response.report.execution_authorized is False
     assert response.final_check is not None
     assert response.final_check.outcome is BuildCheckOutcome.REBUILD
+    replayed = agent.evaluate_final_build(request)
+    assert replayed.kind is OperatorResponseKind.HELD
+    assert "fresh image evidence" in replayed.message
 
 
 def test_cosmos_unavailability_is_a_held_response_not_success() -> None:
@@ -276,16 +281,20 @@ def test_cosmos_unavailability_is_a_held_response_not_success() -> None:
     assert response.final_check.evidence_source is None
 
 
-def test_final_check_from_another_task_is_rejected_as_replay() -> None:
+@pytest.mark.parametrize(("changes", "state_timestamp"), [
+    ({"task_id": "old-task"}, TIMESTAMP), ({"observed_at": NOW - timedelta(seconds=1)}, TIMESTAMP),
+    ({"observed_at": NOW + timedelta(days=1)}, TIMESTAMP), ({}, "2026-10-29T15:00:10Z")])
+def test_final_check_replay_or_impossible_time_is_rejected(changes: dict[str, object], state_timestamp: str) -> None:
     coordinator, created = _coordinator()
     agent = _agent(coordinator)
     agent.handle("assemble product 1")
     _complete(created[0], (1,))
+    created[0].state_machine.current_record = replace(created[0].state_machine.current_record, timestamp=state_timestamp)
 
-    response = agent.evaluate_final_build(replace(_request(), task_id="old-task"))
+    response = agent.evaluate_final_build(replace(_request(), **changes))
 
     assert response.kind is OperatorResponseKind.HELD
-    assert "active task" in response.message
+    assert "active task" in response.message or "predates" in response.message
     assert response.report is None
 
 
@@ -418,7 +427,7 @@ def test_actual_t09_controller_satisfies_task_port_read_boundary() -> None:
         source=ControllerSource.MOCK,
         controller_factory=lambda products: _build_controller(MockPerception()),
         visible_products=lambda: (1, 3, 4),
-        clock=lambda: NOW,
+        clock=lambda: datetime.now(UTC),
         task_id_factory=lambda: "actual-t09",
     )
     agent = _agent(coordinator)
@@ -448,16 +457,19 @@ def test_finished_controller_must_report_all_selected_products() -> None:
     assert "every selected product" in response.message
 
 
-def test_malformed_packml_record_is_held() -> None:
+@pytest.mark.parametrize("record", [
+    StateRecord(PackMLState.EXECUTE, None, 1, "not-a-timestamp"), StateRecord(PackMLState.EXECUTE, None, None, TIMESTAMP),
+    StateRecord(PackMLState.IDLE, None, 1, TIMESTAMP), StateRecord(PackMLState.EXECUTE, None, 1, "2026-10-29T15:00:01Z")])
+def test_malformed_packml_record_is_held(record: StateRecord) -> None:
     coordinator, created = _coordinator()
     agent = _agent(coordinator)
     agent.handle("assemble product 1")
-    created[0].state_machine.current_record = StateRecord(PackMLState.EXECUTE, None, 1, "not-a-timestamp")
+    created[0].state_machine.current_record = record
 
     response = agent.handle("status")
 
     assert response.kind is OperatorResponseKind.HELD
-    assert "ISO 8601" in response.message
+    assert "T09" in response.message or "Idle" in response.message
 
 
 def test_new_task_is_allowed_only_after_quality_release_with_unique_id() -> None:

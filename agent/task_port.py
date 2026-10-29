@@ -94,17 +94,13 @@ class LiveCellReport:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "task_id": self.task_id,
-            "source": self.source.value,
+            "task_id": self.task_id, "source": self.source.value,
             "reported_at": self.reported_at,
             "packml": dict(self.packml),
-            "selected_products": list(self.selected_products),
-            "completed_products": list(self.completed_products),
+            "selected_products": list(self.selected_products), "completed_products": list(self.completed_products),
             "current_step_id": self.current_step_id,
-            "event_count": self.event_count,
-            "controller_finished": self.controller_finished,
-            "execution_authorized": self.execution_authorized,
-            "quality_release": self.quality_release.value,
+            "event_count": self.event_count, "controller_finished": self.controller_finished,
+            "execution_authorized": self.execution_authorized, "quality_release": self.quality_release.value,
             "final_checks": [_decision_dict(decision) for decision in self.final_checks],
             "active_fault": self.active_fault,
         }
@@ -143,6 +139,7 @@ class T09TaskCoordinator:
         self._lock = RLock()
         self._controller: ControllerView | None = None
         self._active_task_id: str | None = None
+        self._accepted_at: datetime | None = None
         self._selected_products: tuple[int, ...] = ()
         self._final_checks: dict[int, FinalGateDecision] = {}
         self._used_task_ids: set[str] = set()
@@ -166,9 +163,11 @@ class T09TaskCoordinator:
         except Exception as error:
             LOGGER.exception("T09 controller creation failed", extra={"products": products})
             raise OperatorTaskPortError("T09 controller creation failed; cell held") from error
-        accepted_at = _iso(_clock_value(self._clock, "task acceptance clock"))
+        accepted_at_value = _clock_value(self._clock, "task acceptance clock")
+        accepted_at = _iso(accepted_at_value)
         self._controller = controller
         self._active_task_id = task_id
+        self._accepted_at = accepted_at_value
         self._selected_products = products
         self._final_checks.clear()
         self._used_task_ids.add(task_id)
@@ -179,10 +178,13 @@ class T09TaskCoordinator:
             return self._report()
 
     def _report(self) -> LiveCellReport:
-        reported_at = _iso(_clock_value(self._clock, "report clock"))
+        report_time = _clock_value(self._clock, "report clock")
+        reported_at = _iso(report_time)
         if self._controller is None:
             return _idle_report(self._source, reported_at)
         snapshot = _read_controller(self._controller, self._selected_products)
+        if datetime.fromisoformat(snapshot.state.timestamp).astimezone(UTC) > report_time:
+            raise OperatorTaskPortError("T09 state timestamp is later than the report clock")
         release = _quality_release(snapshot, self._selected_products, self._final_checks)
         final_checks = tuple(self._final_checks[product] for product in sorted(self._final_checks))
         decision_order = tuple(self._final_checks.values())
@@ -209,17 +211,26 @@ class T09TaskCoordinator:
     def _record_final_check(self, decision: FinalGateDecision) -> LiveCellReport:
         if type(decision) is not FinalGateDecision:
             raise OperatorTaskPortError("final check must be exactly FinalGateDecision")
+        _validate_final_decision(decision)
         if decision.task_id != self._active_task_id:
             raise OperatorTaskPortError("final check does not belong to the active task")
         if self._controller is None or decision.product not in self._selected_products:
             raise OperatorTaskPortError("final check does not belong to the active task")
         snapshot = _read_controller(self._controller, self._selected_products)
+        state_at = datetime.fromisoformat(snapshot.state.timestamp).astimezone(UTC)
+        observed_at = decision.observed_at.astimezone(UTC)
+        now = _clock_value(self._clock, "final-check clock")
+        if self._accepted_at is None or observed_at < max(self._accepted_at, state_at) or observed_at > now:
+            raise OperatorTaskPortError("final check evidence predates mechanical state or is from the future")
         if decision.product not in snapshot.completed:
             raise OperatorTaskPortError("a product must be mechanically complete before its final check")
-        _validate_final_decision(decision)
         existing = self._final_checks.get(decision.product)
         if existing is not None and existing.outcome is BuildCheckOutcome.DONE:
             raise OperatorTaskPortError("a quality-released product cannot be overwritten")
+        if existing is not None and (
+            decision.request_id == existing.request_id or decision.observed_at <= existing.observed_at
+        ):
+            raise OperatorTaskPortError("a retried final check requires fresh image evidence and request ID")
         self._final_checks.pop(decision.product, None)
         self._final_checks[decision.product] = decision
         try:
@@ -309,7 +320,8 @@ def _active_fault(
     release: QualityRelease,
     decisions: tuple[FinalGateDecision, ...],
 ) -> str | None:
-    fault_states = {PackMLState.HELD, PackMLState.SUSPENDED, PackMLState.STOPPED, PackMLState.ABORTED}
+    fault_states = {PackMLState.HELD, PackMLState.SUSPENDED, PackMLState.STOPPING, PackMLState.STOPPED,
+                    PackMLState.ABORTING, PackMLState.ABORTED, PackMLState.RESETTING}
     if state.state in fault_states:
         return state.reason or f"cell is {state.state.value} without a reason"
     if release is QualityRelease.PENDING:
@@ -329,7 +341,8 @@ def _validate_final_decision(decision: FinalGateDecision) -> None:
     _product(decision.product)
     _safe_id(decision.task_id)
     _safe_id(decision.request_id)
-    if not isinstance(decision.observed_at, datetime) or decision.observed_at.tzinfo is None:
+    aware = isinstance(decision.observed_at, datetime) and decision.observed_at.tzinfo is not None
+    if not aware or decision.observed_at.utcoffset() is None:
         raise OperatorTaskPortError("final-check observation time must include a timezone")
     if not isinstance(decision.outcome, BuildCheckOutcome):
         raise OperatorTaskPortError("final-check outcome is invalid")
@@ -390,6 +403,8 @@ def _validate_state_record(state: StateRecord, selected: tuple[int, ...]) -> Non
         raise OperatorTaskPortError("T09 state must be a PackMLState")
     if state.reason is not None and not isinstance(state.reason, str):
         raise OperatorTaskPortError("T09 state reason must be a string or null")
+    if (state.state is PackMLState.IDLE) != (state.product is None):
+        raise OperatorTaskPortError("Idle must have no product and every non-Idle PackML state must own one product")
     if state.product is not None and state.product not in selected:
         raise OperatorTaskPortError("T09 state product is outside the selected task")
     try:
@@ -443,13 +458,9 @@ def _idle_report(source: ControllerSource, timestamp: str) -> LiveCellReport:
 
 def _decision_dict(decision: FinalGateDecision) -> dict[str, object]:
     return {
-        "product": decision.product,
-        "task_id": decision.task_id,
-        "request_id": decision.request_id,
-        "observed_at": _iso(decision.observed_at),
-        "outcome": decision.outcome.value,
-        "recipe_passed": decision.recipe_passed,
-        "cosmos_passed": decision.cosmos_passed,
+        "product": decision.product, "task_id": decision.task_id, "request_id": decision.request_id,
+        "observed_at": _iso(decision.observed_at), "outcome": decision.outcome.value,
+        "recipe_passed": decision.recipe_passed, "cosmos_passed": decision.cosmos_passed,
         "evidence_source": None if decision.evidence_source is None else decision.evidence_source.value,
         "model_id": decision.model_id,
         "detail": decision.detail,

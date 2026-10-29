@@ -10,10 +10,12 @@ Newest first. One entry per finished task.
   before an injected Cosmos Reason 2 (2B) port. The deterministic Cosmos stub is labelled and can never release a build.
 - Authority and safety: text cannot express waypoints, call adapters, or bypass T09. Unsupported, ambiguous, malformed,
   or unsafe commands fail closed. Mechanical completion never implies quality release; missing, stale, mismatched,
-  substituted, partial, or unavailable Cosmos evidence holds Andon. `done` requires both independent checks plus exact
-  `cosmos_reason_2` / `Cosmos-Reason2-2B` provenance. Operator-facing failures do not expose endpoint exception details.
+  substituted, partial, replayed, pre-mechanical, future, or unavailable Cosmos evidence holds Andon; retries require
+  a newer image and request ID. `done` requires both checks plus exact `cosmos_reason_2` / `Cosmos-Reason2-2B`
+  provenance. Operator failures hide endpoint details; PackML ownership/time invariants fail closed; inhibited states
+  never authorize execution and expose their reason.
 - Run: focused operator suite `uv run pytest -q tests/test_operator_commands.py tests/test_cosmos_reason.py
-  tests/test_operator_agent.py` → 78 passed; `uv run ruff check .` → passed; `uv run pytest -q` → 459 passed;
+  tests/test_operator_agent.py` → 84 passed; `uv run ruff check .` → passed; `uv run pytest -q` → 465 passed;
   root `uv lock --check` and `uv pip check` → compatible; 40-line function / 500-line file audit → clean;
   `git diff --check` and protected-file checks for `contracts/` and `robot/cell/cell_client.py` → clean. Official client:
   `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 603 actions, 0 rejected,

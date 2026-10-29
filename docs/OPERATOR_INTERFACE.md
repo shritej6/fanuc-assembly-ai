@@ -32,13 +32,18 @@ Live reports contain:
 - controller completion, final-check decisions, quality-release state, and `execution_authorized`.
 
 Each final-check decision preserves the active task ID, evidence request ID and observation time, recipe result, Cosmos
-result, exact evidence source, model ID, and explanatory detail. A decision for another task is rejected so a stub,
-replay, or unavailable endpoint cannot be mistaken for current production Cosmos evidence.
+result, exact evidence source, model ID, and explanatory detail. Evidence must be no earlier than the latest mechanical
+state and no later than the coordinator clock; a retry after rebuild/Andon requires a newer observation plus a new
+request ID. A decision for another task is rejected so a stub, replay, future, or unavailable endpoint cannot be
+mistaken for current production Cosmos evidence.
 
 The runtime must stop requesting subsequent physical actions whenever `execution_authorized` is false. T09 currently
 records mechanical completion independently; production wiring must add a pause point before automatic advancement to
 the next product. Until that reviewed hook and the real Cosmos endpoint land, this interface is mock/replay-ready but
 not a real-cell quality-release authorization.
+
+The read boundary also enforces T09's PackML ownership invariant: Idle has no product, every non-Idle state owns one
+selected product, and a controller-state timestamp cannot be later than the operator report clock.
 
 ## Final build check
 
