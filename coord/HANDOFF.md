@@ -2,6 +2,23 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T24 simulation video (assembly demo) · CLAUDE (user asked for one sim video)
+
+- `sim/demo/plan_assembly.py` (numpy, runs anywhere): from a rendered test-bed label, plans one product's assembly
+  frame by frame with the starter IK: grip each loose part by its top grip tab (thin side of the CAD cross-section
+  1-3 mm below the top, checked against the measured fingertip gaps 4 +/- 1 / 15 +/- 2 mm), lift, yaw the part over
+  the base, lower, insert straight down, release. Tool always points down (parts keep their installed orientation);
+  any frame the IK cannot reach to 1 mm with the jaws aligned, or a tab the fingers cannot hold, stops the plan.
+- `sim/demo/render_assembly.py` (Isaac Sim 6.0 container): rebuilds the scene with the SDG stage code and replays the
+  plan kinematically (no contact physics), close-up + table + wrist cameras, captioned.
+- Measured on set N chunk_0000/000003, product 1: M1_02, M1_03, M1_04 seat within 0.021 / 0.005 / 0.013 mm and
+  0.0 / 0.0 / 0.33 deg of their CAD install pose (plan geometry; a real cell adds perception and contact error).
+- Run: `PYTHONPATH=. python sim/demo/plan_assembly.py --label <labels/000003.json> --product 1 --out plan.json`, then
+  the render script under Isaac's python (fa-r4: docker as in `sdg/spark/render_chunk.sh`), then ffmpeg.
+  Video: fa-r4 `~/fanuc-assembly-data/demo/product1_assembly_sim.mp4` (32 s).
+- Not done: perception in the loop (detector + FoundationPose instead of ground truth), contact physics, the
+  re-yaw/retry loop on a failed seated check. Tests: `tests/test_plan_assembly.py`.
+
 ## 2026-10-28 23:25 · NEW-DATA-ONLY training (for CODEX) · CLAUDE · user decision, do this before the H100 run
 
 - User: train ONLY on the new test-bed sets N R O P Q (parts stand as in their product, any yaw; 0 wrong rest labels).
