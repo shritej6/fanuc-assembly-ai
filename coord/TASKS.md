@@ -10,15 +10,15 @@ An agent may only start a task that is READY and owned by it.
 | T03 | CAD risk ranking v0 (min wall, slender features, layer direction, insertion clearance) → spare/print list | CLAUDE | READY | feature/T03-cad-risk | T01 | Mon |
 | T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | REVIEW | feature/T04-catalog | T01 | Mon |
 | T05 | Adapter layer: `robot/adapter.py` (Sim / Mock / Cell), `policy.py` wiring, UF0 TCP-box guard | CODEX | REVIEW | feature/T05-adapters | T01 | Mon |
-| T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | BACKLOG | feature/T06-defect-variants | T03 | Tue |
-| T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | BACKLOG | feature/T07-usd-scene | T01 | Tue |
-| T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | BACKLOG | feature/T08-sdg-pilot | T06, T07 | Tue |
+| T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | READY (user, 2026-10-27) | feature/T06-defect-variants | T03 | Tue |
+| T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | READY (user, 2026-10-27) | feature/T07-usd-scene | T01 | Tue |
+| T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | IN PROGRESS: prep in REVIEW; pilot waits for U07 + T06/T07 | feature/T08-sdg-pilot | T06, T07 | Tue |
 | T09 | Cell controller: PackML recipe state machine, inventory, recovery/Andon, motion compiler, safety supervisor, camera-verification gates | CODEX | REVIEW | feature/T09-state-machine | T04, T05 | Tue |
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
-| T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | BACKLOG | feature/T11-cosmos | T08 | Wed |
+| T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | READY (user, 2026-10-28) | feature/T11-cosmos | T08 | Wed |
 | T12 | Isaac Lab Mimic demos for GR00T (after the scripted baseline works in sim) | CLAUDE | BACKLOG | feature/T12-mimic | T09 | Wed |
-| T13 | Detector (Faster R-CNN or RT-DETR) + wrist look-alike classifier training/eval | CODEX | BACKLOG | feature/T13-detector | T08 | Wed |
-| T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | BACKLOG | feature/T14-pose-anomaly | T07 | Wed |
+| T13 | Detector (RT-DETR) + wrist look-alike classifier training/eval | CODEX | IN PROGRESS | feature/T13-detector | T08 | Wed |
+| T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | READY (user, 2026-10-28) | feature/T14-pose-anomaly | T07 | Wed |
 | T15 | Product birth certificate (JSON) + PDF layout | CODEX + CLAUDE | BACKLOG | feature/T15-birth-cert | T09 | Wed |
 | T16 | Live OEE + Andon dashboard | CLAUDE + CODEX | BACKLOG | feature/T16-dashboard | T09 | Wed–Thu |
 | T17 | Scenario fleet (3 products × 20 layouts × injected faults) + KPIs | CODEX | BACKLOG | feature/T17-fleet | T09, T13 | Thu |
@@ -29,6 +29,8 @@ An agent may only start a task that is READY and owned by it.
 | T22 | `placement.yaml` (10 rollouts with planned faults) + `submission.yaml` | CLAUDE | BACKLOG | feature/T22-placement | T04 | Wed |
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
+| T27 | Train on the test-bed sets only: RT-DETR on N R Q with `<part>__fallen` classes, wrist classifier on O, set-P build-state classifier; 8xH100 launcher (user override: Claude edits Codex's T13 code this once, Codex reviews) | CLAUDE | IN PR (user, 2026-10-28) | feature/T27-newset-training | T13, T25 | Thu |
+| T28 | Cell perception port: table-depth localisation + cell zones, part tracking, T27 model inference, `PerceptionPort` for the T09 controller, measured thresholds, cloud-GPU runtime for the CSI slot (Sat 2026-11-01 14:00) | CLAUDE | IN PROGRESS (user, 2026-10-29) | feature/T28-cell-perception | T09, T27 | Thu–Fri |
 
 ## User-only actions (physical / accounts)
 
@@ -40,3 +42,4 @@ An agent may only start a task that is READY and owned by it.
 | U04 | Print defects + spares (after T03) | TODO |
 | U05 | Cycle tests on high-risk parts → results into `assembly/risk_table.json` | TODO |
 | U06 | Book real-cell slots on hackathon.sidclab.org (Calendar tab) | TODO |
+| U07 | Choose the Isaac container for rendering: Rosie has `isaac-sim-6.1.0.sif`, the stack says 6.0 (`docs/SDG_PLAN.md` section 8) | TODO |

@@ -4,7 +4,7 @@ __pycache__/
 .DS_Store
 .request.json
 robot/cell/.request.json
-data/
+/data/
 runs/
 *.ckpt
 *.pt
@@ -13,3 +13,5 @@ runs/
 *.onnx
 *.usd*
 !sim/assets/**/*.usda
+!sim/starter/assets/**/*.usda
+cad/defects/*.stl
