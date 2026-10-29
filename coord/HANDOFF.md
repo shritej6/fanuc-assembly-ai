@@ -17,16 +17,21 @@ Newest first. One entry per finished task.
 - Runtime boundary: `AssemblyController` requires caller-sourced `InspectionStopConfig` and `StartupHoldConfig`; the
   latter is validated against the official action contract and prevents malformed first observations from escaping
   `act()`. `reset()` clears prompt ownership, `requested_products` exposes the parsed tuple, and
-  `acknowledge_resume()` requires a fresh scan before leaving Held. T29 object-to-TCP offsets stay inside the pose
-  provider and are not compared incorrectly with the FoundationPose object origin.
-- Run: `uv run ruff check .` (passed); `uv run pytest -q` (443 passed); `git diff --check` (clean);
-  `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean).
+  `acknowledge_resume()` requires a fresh scan before leaving Held. The latest T04/T05 review fixes are integrated:
+  every emitted joint/TCP action uses the live official guard, and the catalog pins T29's Team V printed-finger
+  source at `20c6f9b` / SHA-256 `99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1`.
+- Pose conversion: the provider composes measured UF0 base pose × CAD STL installation transform × inverse T29
+  mesh-to-installed-local transform, then applies `tcp_local_mm`. FoundationPose identity/source/finite checks fail
+  closed, and fallen parts Hold when the yaw-only shared contract cannot supply a sourced full-6D grasp.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (509 passed); `git diff --check` (clean);
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` (clean). The integrated T04 catalog-schema change
+  still requires Claude's latest-head contract review on PR #5; no additional T09 contract change was made.
   `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 601 actions, 0 rejected and
   `✓ Ready for the real robot`; adding `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
-  201 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
-- Next: Claude re-reviews PR #9. Agent 4 must supply the sourced startup hold, T28 recovery/staging targets, T29
-  FoundationPose object-to-TCP transform, and production full-IK/collision providers; do not select `t09-mock` on the
-  real cell. Agent 2's reviewed catalog/adapter commits remain a separate root integration step.
+  200 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
+- Next: Claude re-reviews PR #9 at the integrated head. The cell-runtime branch must rebase here and remain disabled
+  until T28/T30 live perception, reviewed recovery targets, and a sourced ER-4iA robot-link collision provider exist;
+  do not select `t09-mock` on the real cell.
 
 ## 2026-10-29 · T05 review fixes · CODEX
 

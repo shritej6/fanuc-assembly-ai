@@ -80,7 +80,7 @@ def test_target_transforms_cad_local_offset_through_measured_base_yaw() -> None:
 
     assert target.tcp.x == pytest.approx(411.5)
     assert target.tcp.y == pytest.approx(100.0)
-    assert target.tcp.z == pytest.approx(-290.0)
+    assert target.tcp.z == pytest.approx(-290.6)
     assert target.tcp.r == pytest.approx(90.0)
     assert target.tcp.source == "calibrated"
 
@@ -95,7 +95,7 @@ def test_rear_guard_target_composes_installed_and_mesh_frame_transforms() -> Non
 
     assert target.tcp.x == pytest.approx(382.5)
     assert target.tcp.y == pytest.approx(100.0)
-    assert target.tcp.z == pytest.approx(-287.5)
+    assert target.tcp.z == pytest.approx(-288.1)
     assert target.tcp.r == pytest.approx(90.0)
 
 
@@ -113,8 +113,8 @@ def test_foundationpose_canonical_origin_is_shifted_to_t29_fingertip_tcp() -> No
     grasp = provider.grasp_from_foundationpose(part, detection, observed_at_s=10.0)
 
     assert grasp.tcp.x == pytest.approx(250.0)
-    assert grasp.tcp.y == pytest.approx(-25.75)
-    assert grasp.tcp.z == pytest.approx(-289.0)
+    assert grasp.tcp.y == pytest.approx(-25.94)
+    assert grasp.tcp.z == pytest.approx(-289.6)
     assert grasp.tcp.r == pytest.approx(90.0)
 
 
