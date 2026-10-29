@@ -1,8 +1,8 @@
 # Your submission. Run: uv run run.py --submit
 
-team: <team name>
-contact: <name, email>
-policy: <policy name>             # Give your policy a name (e.g., GraspV1)
+team: Team V
+contact: Shritej Gunda, shritejgunda@gmail.com
+policy: SelfInspectingAssemblyV1  # Give your policy a name (e.g., GraspV1)
 
 # Choose the closest model type. This does not affect scoring.
 model_type: Hybrid
@@ -14,25 +14,25 @@ model_type: Hybrid
 # Hybrid      Combines multiple approaches, or choose this if unsure
 
 # --- Task ---
-task_id: pick-cube-C              # Short task name ending with your team letter
-task: Put the cube into the yellow bin.
+task_id: assemble-3-of-6-V        # Short task name ending with your team letter
+task: Assemble 3 of 6 printed products on their bases, rejecting defective, fallen and look-alike parts.
                                   # Describe your task in one short sentence
 
 # --- Test Setup ---
 # Tell us how to prepare the workspace for each rollout.
 # Objects and layout can stay the same or change between rollouts.
 
-objects: same
+objects: different
 # same: Use the same set of objects for every rollout.
 # different: May use different objects across rollouts.
 
-layout: same
+layout: different
 # same: Place objects in the same positions for every rollout.
 # different: May change object positions across rollouts.
 
 # --- Evaluation ---
-rollouts: 10                      # Number of attempts in this test
+rollouts: 3                       # Number of attempts in this test
                                   # Each attempt is scored success or failure
 
 # --- Hardware ---
-custom_hardware: none            # Describe any hardware changes (e.g., 3D-printed fingers)
+custom_hardware: none            # Robot and gripper unchanged; the objects are our own black PLA prints

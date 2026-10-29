@@ -124,3 +124,11 @@ Newest first. One entry per finished task.
   `contracts/taxonomy.json`. All contract poses are UF0 mm/deg.
 - Next: T02 assembly sheets, T03 CAD risk ranking (CLAUDE); T04 catalog and T05 adapters are ready for Codex once the user
   marks them READY.
+
+## 2026-10-29 · T22 · CLAUDE · real-cell placement + submission
+
+- Changed: `robot/placement.py` (generator), `robot/cell/submission/placement.yaml` (generated), `robot/cell/submission/submission.yaml`, `tests/test_placement.py`.
+- Run: `uv run python -m robot.placement` (seeded: same file every time). Submit from `robot/cell`: `uv run run.py --submit`, then book a 30-minute slot in the Calendar tab of hackathon.sidclab.org with the printed request id. Keep `robot/cell/.request.json` private (gitignored).
+- Design: 3 rollouts x 3 products (PLAN 7: ~17 objects and 12 inserts per rollout do not fit 10 rollouts in 30 min). R1 products 1 2 3 clean; R2 4 5 6 (three identical type-C bases, ~1 mm look-alike locks) with a snapped M4_04 -> reject + spare; R3 1 3 5 with a look-alike trap M4_04 and a fallen M3_03 -> reject + spare. No yaw: parts stand installed at any yaw and the policy measures poses.
+- Checks: footprints from `sdg/data/object_geometry.json` with 60 / 25 / 20 mm base / base-part / part gaps inside the `cell_layout.yaml` work area; every object's straight-down grasp (z -325) and approach (z -215) pose at rolls -90/0/90/180 passes `sdg/wrist_ik.reachable`, or nothing is written.
+- Open: `cell_layout.yaml` zones are still PROPOSED; check the spare-store and work-area positions against the real table at the first slot. Objects needed are the U04 print list (spares M1_03 M2_03 M2_02 M3_03 M4_04 M6_02; snapped M4_04 defect blank).
