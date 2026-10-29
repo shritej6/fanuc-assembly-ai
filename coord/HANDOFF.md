@@ -28,6 +28,18 @@ Newest first. One entry per finished task.
   FoundationPose object-to-TCP transform, and production full-IK/collision providers; do not select `t09-mock` on the
   real cell. Agent 2's reviewed catalog/adapter commits remain a separate root integration step.
 
+## 2026-10-29 · T05 review fixes · CODEX
+
+- Added a fail-closed joint guard for the official J1-J6 limits and gripper range; TCP actions now additionally require
+  the measured fingers-down set-O envelope (`w` within 3 degrees of +/-180, `p` within 3 degrees, free bounded yaw).
+- `CellAdapter` resolves `DT` on every action call, so the guard validates the same live value the client transmits.
+  `Policy` supplies that live value without changing the default joint-hold runtime.
+- Regression coverage includes malformed, NaN/Inf, epsilon-outside and NumPy float32/float64 chunks plus end-to-end
+  policy rejection. `robot/cell/cell_client.py` remains unchanged.
+- Verified: `uv run ruff check .` clean; `uv run pytest -q` 102 passed; official `uv run run.py --mock` completed
+  3 rollouts / 600 actions / 0 rejected and printed `Ready for the real robot`.
+- Next: Claude reviews PR #4; merge this commit into T09 before enabling the explicit cell runtime.
+
 ## 2026-10-27 · T05 · CODEX · adapter layer and UF0 safety guard
 
 - Changed: `robot/adapter.py`, `robot/__init__.py`, `robot/cell/policy.py`, `tests/test_robot_adapter.py`, and
