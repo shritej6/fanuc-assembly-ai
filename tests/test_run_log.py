@@ -318,6 +318,45 @@ def test_terminal_result_rejects_nonpositive_step_attempts(tmp_path: Path) -> No
         recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("checks_agree", False),
+        ("verdict", "print_defect"),
+        ("action", "reject"),
+        ("instance_id", "wrong-instance"),
+    ],
+)
+def test_terminal_result_rejects_passing_step_with_inconsistent_inspection(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    steps = certificate["steps"]
+    assert isinstance(steps, list) and isinstance(steps[0], dict)
+    inspection = steps[0]["inspection"]
+    assert isinstance(inspection, dict)
+    inspection[field] = value
+
+    with pytest.raises(RunLogError, match="inspection evidence"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_passing_step_without_inspection_mapping(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    steps = certificate["steps"]
+    assert isinstance(steps, list) and isinstance(steps[0], dict)
+    steps[0].pop("inspection")
+
+    with pytest.raises(RunLogError, match="inspection evidence"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
 def test_terminal_result_rejects_wrong_product_lifecycle(tmp_path: Path) -> None:
     recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
     recorder.sync_packml(_complete_machine(1))

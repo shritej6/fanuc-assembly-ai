@@ -14,6 +14,7 @@ from assembly.birth_certificate import BirthCertificateError, validate_birth_cer
 from assembly.state_machine import PackMLState, PackMLStateMachine, StateRecord
 from industry.certificate_evidence import CertificateEvidenceError, validate_certificate_evidence
 from industry.events import RunEventError, validate_scope
+from industry.lifecycle import LifecycleEvidenceError, validate_terminal_lifecycle
 from industry.oee import (
     DashboardMetricError,
     EscapeEvent,
@@ -434,26 +435,10 @@ def _require_unique_terminal(existing: tuple[RunEvent, ...], event: ProductResul
 
 
 def _require_terminal_lifecycle(existing: tuple[RunEvent, ...], event: ProductResultEvent) -> None:
-    required = _terminal_states(event.result)
-    matched = any(
-        isinstance(item, PackMLEvent)
-        and item.run_id == event.run_id
-        and item.rollout == event.rollout
-        and item.product == event.product
-        and item.state in required
-        for item in existing
-    )
-    if not matched:
-        states = sorted(state.value for state in required)
-        raise RunLogError(f"terminal result lacks required PackML lifecycle state {states}")
-
-
-def _terminal_states(result: ProductResult) -> frozenset[PackMLState]:
-    if result in {ProductResult.GOOD_FIRST_PASS, ProductResult.GOOD_AFTER_REBUILD}:
-        return frozenset({PackMLState.COMPLETE})
-    if result is ProductResult.BLOCKED:
-        return frozenset({PackMLState.HELD})
-    return frozenset({PackMLState.ABORTED})
+    try:
+        validate_terminal_lifecycle(existing, event)
+    except LifecycleEvidenceError as error:
+        raise RunLogError(str(error)) from error
 
 
 def _require_event(event: object) -> None:

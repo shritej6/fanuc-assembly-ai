@@ -53,6 +53,8 @@ def _good_steps(certificate: Mapping[str, object], recipe: ProductRecipe) -> tup
         raise CertificateEvidenceError("good certificate requires four unique recipe steps")
     if any(not _passing_step(step) for step in steps):
         raise CertificateEvidenceError("good certificate requires passed seated checks and positive attempts")
+    if any(not _passing_inspection(step) for step in steps):
+        raise CertificateEvidenceError("good certificate requires matching passing inspection evidence")
     return steps
 
 
@@ -64,6 +66,18 @@ def _passing_step(step: Mapping[str, object]) -> bool:
         and attempts >= 1
         and step.get("seated_check") == "passed"
         and isinstance(step.get("spare_used"), bool)
+    )
+
+
+def _passing_inspection(step: Mapping[str, object]) -> bool:
+    inspection = step.get("inspection")
+    return (
+        isinstance(inspection, Mapping)
+        and inspection.get("instance_id") == step.get("instance_id")
+        and inspection.get("object_id") == step.get("object_id")
+        and inspection.get("checks_agree") is True
+        and inspection.get("verdict") == "ok"
+        and inspection.get("action") == "use"
     )
 
 

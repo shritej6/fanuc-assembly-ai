@@ -14,10 +14,13 @@ Newest first. One entry per finished task.
   transitions preserve controller order. Terminal identities are unique in both the writer and exported OEE boundary,
   timestamp-ordered, and require the matching PackML lifecycle. Good results require four recipe-consistent passing
   steps, a base, positive attempts, true final checks, and result-consistent recovery evidence; failed requires Aborted,
-  not merely Stopped, while blocked requires Held. Shared/exclusive locks prevent partial reads; write/fsync failures roll back and double-fsync
+  not merely Stopped, while blocked requires active Held/Andon evidence. Passed steps require matching embedded
+  inspection identity plus `checks_agree=true`, `verdict=ok`, and `action=use`. The writer and public OEE boundary share
+  the same latest-earlier lifecycle validator, so stale, later-aborted, wrong-identity, and out-of-order evidence fails.
+  Shared/exclusive locks prevent partial reads; write/fsync failures roll back and double-fsync
   failures report uncertain durability. The UI uses matching CSP hashes and safe text rendering, with no command route.
 - Base and run: stacked on T15 `5b598d7` (including accepted T09 `d1bfd9c`); `uv run pytest -q tests/test_oee.py
-  tests/test_run_log.py tests/test_dashboard.py` (66 passed); `uv run pytest -q` (613 passed); `uv run ruff check .`,
+  tests/test_run_log.py tests/test_dashboard.py` (78 passed); `uv run pytest -q` (625 passed); `uv run ruff check .`,
   `uv lock --check`, `uv pip check`, `git diff --check`, file/function gates, and unchanged-contract / unchanged-official
   client checks passed. A 24-process append stress recorded 24 unique rollouts. Browser HTTP tests ran outside the
   restricted loopback sandbox.

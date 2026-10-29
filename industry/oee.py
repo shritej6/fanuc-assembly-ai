@@ -19,6 +19,7 @@ from industry.events import (
     ProductResultEvent,
     RunEvent,
 )
+from industry.lifecycle import LifecycleEvidenceError, validate_terminal_lifecycle
 
 
 class DashboardMetricError(ValueError):
@@ -351,6 +352,12 @@ def _validated_events(events: tuple[RunEvent, ...]) -> tuple[RunEvent, ...]:
     identities = {(event.run_id, event.rollout, event.product) for event in terminals}
     if len(identities) != len(terminals):
         raise DashboardMetricError("run log contains more than one terminal result for an identity")
+    for index, event in enumerate(ordered):
+        if isinstance(event, ProductResultEvent):
+            try:
+                validate_terminal_lifecycle(ordered[:index], event)
+            except LifecycleEvidenceError as error:
+                raise DashboardMetricError(str(error)) from error
     return ordered
 
 

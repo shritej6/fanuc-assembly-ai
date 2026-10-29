@@ -44,7 +44,9 @@ must follow the matching PackML terminal state. Good outcomes require the non-nu
 passing seated checks, positive attempts, and both final checks. First-pass records cannot contain recovery evidence;
 rebuilt records must contain it. Failed records require `Aborted` (`Stopped` is not terminal failure evidence), while
 blocked records require the matching held/Andon lifecycle. The OEE API independently rejects duplicate terminal
-identities, including direct callers that bypass the JSONL writer.
+identities and requires the latest earlier matching lifecycle, including for direct callers that bypass the JSONL
+writer. A good result cannot reuse an earlier `Complete` after a later abort. Every passed step also requires embedded
+inspection identity and passing `checks_agree`, `verdict`, and `action` evidence.
 
 ```python
 from pathlib import Path
