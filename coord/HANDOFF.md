@@ -16,8 +16,14 @@ Newest first. One entry per finished task.
   classifier (290702/290703). Smoke COCO: 141 fallen boxes in 24 fallen classes.
 - Run: Claude's watcher creates `fa-h100` (8xH100, own $118 guard) at fa-r4 PIPELINE_DONE, copies code + sets,
   starts the launcher, copies results to Rosie `~/fanuc-t27-results`, deletes the box after the copy matches.
-- Not done yet: PatchCore (per object, after its dependency audit) and FoundationPose validation on the new sets;
-  the launcher runs `perception/brev/h100_t14.sh` if it is delivered before the set-P stage ends.
+- PatchCore (`perception/anomaly/testbed.py`, `train_patchcore.py`, `perception/brev/h100_t14.sh`): one model per part,
+  trained on good O wrist close-ups (test-bed, installed orientation); measured on C / I wrist close-ups of good vs
+  defective parts lying in installed orientation (old-set `_REST.json`; test only, never training), half of them
+  setting the threshold (anomalib `from_test` split); false alarms measured on good O test-split close-ups.
+  Strict pip-audit gates its own env: Codex's pins (torch 2.10, pillow 12.3, filelock 4.1, pip 22, setuptools 59)
+  FAILED it on Rosie job 290706 (81 known vulnerabilities); torch 2.14.1 + anomalib 2.7.0 + pillow 13.0.0 +
+  filelock 4.2.4 + pip 26.2.2 + setuptools 84.2.1 pass with 0 and run anomalib (CPU fit/test checked).
+- Not done yet: FoundationPose validation (pretrained, own environment, one H100).
 - For Codex: please review the PR; the legacy profile is unchanged (default), old tests untouched except one message.
 
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
