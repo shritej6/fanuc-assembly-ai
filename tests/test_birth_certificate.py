@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from pypdf import PdfReader
 
+import assembly.birth_certificate as birth_certificate_module
+import assembly.birth_certificate_artifacts as artifact_module
 from assembly.birth_certificate import (
     BirthCertificateInputError,
     BirthCertificateWriteError,
@@ -110,9 +116,21 @@ def test_writes_immutable_json_and_single_page_pdf(tmp_path: Path) -> None:
 
     artifacts = write_birth_certificate(record, output_root=tmp_path / "records")
 
-    assert artifacts.json_path == tmp_path / "records" / "run-2026-10-29" / "1.json"
+    artifact_dir = tmp_path / "records" / "run-2026-10-29" / "rollout-000003" / "product-1"
+    assert artifacts.json_path == artifact_dir / "certificate.json"
+    assert artifacts.pdf_path == artifact_dir / "certificate.pdf"
+    assert artifacts.manifest_path == artifact_dir / "manifest.json"
     assert json.loads(artifacts.json_path.read_text()) == record
     assert artifacts.pdf_path.read_bytes().startswith(b"%PDF-")
+    canonical = json.dumps(record, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
+    canonical_digest = hashlib.sha256(canonical).hexdigest()
+    manifest = json.loads(artifacts.manifest_path.read_text())
+    assert manifest["canonical_json_sha256"] == canonical_digest
+    assert manifest["pdf_sha256"] == hashlib.sha256(artifacts.pdf_path.read_bytes()).hexdigest()
+    assert birth_certificate_module.verify_birth_certificate_artifacts(artifacts) == record
+    for path in (artifacts.json_path, artifacts.pdf_path, artifacts.manifest_path):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o444
+    assert stat.S_IMODE(artifact_dir.stat().st_mode) == 0o555
     reader = PdfReader(artifacts.pdf_path)
     assert len(reader.pages) == 1
     text = reader.pages[0].extract_text()
@@ -120,9 +138,85 @@ def test_writes_immutable_json_and_single_page_pdf(tmp_path: Path) -> None:
     assert "Product 1" in text
     assert "M1_01" in text
     assert "M1_04" in text
+    assert canonical_digest in text.replace(" ", "").replace("\n", "")
     assert "Page 1 of 1" in text
     with pytest.raises(BirthCertificateWriteError, match="immutable"):
         write_birth_certificate(record, output_root=tmp_path / "records")
+
+
+def test_rollout_is_part_of_artifact_identity(tmp_path: Path) -> None:
+    first = _build_good()
+    second = dict(first, rollout=4)
+
+    first_artifacts = write_birth_certificate(first, output_root=tmp_path)
+    second_artifacts = write_birth_certificate(second, output_root=tmp_path)
+
+    assert first_artifacts.json_path != second_artifacts.json_path
+    assert "rollout-000003" in first_artifacts.json_path.parts
+    assert "rollout-000004" in second_artifacts.json_path.parts
+
+
+def test_verifier_detects_modified_json_or_pdf(tmp_path: Path) -> None:
+    artifacts = write_birth_certificate(_build_good(), output_root=tmp_path)
+    artifacts.json_path.chmod(0o644)
+    artifacts.json_path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(BirthCertificateWriteError, match="JSON digest"):
+        birth_certificate_module.verify_birth_certificate_artifacts(artifacts)
+
+    artifacts = write_birth_certificate(dict(_build_good(), rollout=4), output_root=tmp_path)
+    artifacts.pdf_path.chmod(0o644)
+    artifacts.pdf_path.write_bytes(artifacts.pdf_path.read_bytes() + b"tampered")
+
+    with pytest.raises(BirthCertificateWriteError, match="PDF digest"):
+        birth_certificate_module.verify_birth_certificate_artifacts(artifacts)
+
+
+def test_bundle_publish_leaves_no_visible_partial_artifact_on_commit_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_commit(source: Path, destination: Path) -> None:
+        del source, destination
+        raise OSError("injected directory commit failure")
+
+    monkeypatch.setattr(artifact_module.os, "rename", fail_commit)
+
+    with pytest.raises(BirthCertificateWriteError, match="publish certificate artifact bundle"):
+        write_birth_certificate(_build_good(), output_root=tmp_path)
+
+    assert not (tmp_path / "run-2026-10-29" / "rollout-000003" / "product-1").exists()
+
+
+def test_controller_import_does_not_require_pdf_dependencies() -> None:
+    code = """
+import builtins
+real_import = builtins.__import__
+def guarded_import(name, *args, **kwargs):
+    if name.startswith((\"reportlab\", \"PIL\")):
+        raise AssertionError(f\"unexpected PDF dependency import: {name}\")
+    return real_import(name, *args, **kwargs)
+builtins.__import__ = guarded_import
+import assembly.state_machine
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_validation_rejects_more_than_four_product_steps() -> None:
+    record = _build_good()
+    record["steps"] = [*record["steps"], record["steps"][0]]
+
+    with pytest.raises(BirthCertificateInputError, match="at most four"):
+        validate_birth_certificate(record)
 
 
 def test_rebuild_tracks_all_attempts_spare_and_assist_episodes() -> None:

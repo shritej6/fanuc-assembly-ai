@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
-import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -19,9 +17,14 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import UnknownDialect
 
-from assembly.birth_certificate_pdf import render_birth_certificate_pdf
+from assembly.birth_certificate_artifacts import (
+    ArtifactBundleError,
+    verify_artifact_bundle,
+    write_artifact_bundle,
+)
 from assembly.catalog import Catalog
 from assembly.controller_ports import ControllerEvent
+from assembly.metrics import count_assist_episodes
 from assembly.planner import PlanStepRecord
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +88,7 @@ class ProductOutcome:
 class CertificateArtifacts:
     json_path: Path
     pdf_path: Path
+    manifest_path: Path
 
 
 def build_birth_certificate(
@@ -117,7 +121,7 @@ def build_birth_certificate(
         "result": result.result.value,
         "steps": steps,
         "rebuilds": rebuilds,
-        "assists": _assist_count(product_events),
+        "assists": count_assist_episodes(product_events),
         "cycle_time_s": _cycle_time(result),
         "final_checks": {
             "recipe": result.recipe_check,
@@ -138,6 +142,8 @@ def validate_birth_certificate(record: Mapping[str, object]) -> dict[str, Any]:
     if errors:
         detail = "; ".join(f"{error.json_path}: {error.message}" for error in errors)
         raise BirthCertificateSchemaError(f"Birth certificate schema validation failed: {detail}")
+    if len(detached.get("steps", ())) > 4:
+        raise BirthCertificateInputError("birth certificate records at most four product steps")
     return detached
 
 
@@ -146,21 +152,32 @@ def write_birth_certificate(
     *,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
 ) -> CertificateArtifacts:
-    """Publish an immutable JSON/PDF pair below ``eval/records/<run>``."""
+    """Publish an immutable, verifiable bundle below ``eval/records/<run>``."""
     validated = validate_birth_certificate(record)
     run_id = str(validated["run_id"])
+    rollout = int(validated["rollout"])
     product = int(validated["product"])
     _validate_run_id(run_id)
-    directory = _artifact_directory(output_root, run_id)
-    json_path = directory / f"{product}.json"
-    pdf_path = directory / f"{product}.pdf"
-    json_bytes = (json.dumps(validated, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
     try:
-        pdf_bytes = render_birth_certificate_pdf(validated)
-    except Exception as error:
-        raise BirthCertificateWriteError(f"Cannot render birth certificate PDF: {error}") from error
-    _publish_pair(json_path, json_bytes, pdf_path, pdf_bytes)
-    return CertificateArtifacts(json_path, pdf_path)
+        paths = write_artifact_bundle(validated, output_root, run_id, rollout, product)
+    except ArtifactBundleError as error:
+        raise BirthCertificateWriteError(str(error)) from error
+    return CertificateArtifacts(*paths)
+
+
+def verify_birth_certificate_artifacts(artifacts: CertificateArtifacts) -> dict[str, Any]:
+    """Verify stored JSON/PDF digests and revalidate the decoded record."""
+    if not isinstance(artifacts, CertificateArtifacts):
+        raise BirthCertificateWriteError("artifacts must be CertificateArtifacts")
+    try:
+        record = verify_artifact_bundle(
+            artifacts.json_path,
+            artifacts.pdf_path,
+            artifacts.manifest_path,
+        )
+    except ArtifactBundleError as error:
+        raise BirthCertificateWriteError(str(error)) from error
+    return validate_birth_certificate(record)
 
 
 def _validate_identity(run_id: object, rollout: object, product: object, base_instance: object) -> None:
@@ -303,18 +320,6 @@ def _rebuild_count(events: Sequence[ControllerEvent]) -> int:
     return sum(event.kind == "rebuild" and event.detail == "started" for event in events)
 
 
-def _assist_count(events: Sequence[ControllerEvent]) -> int:
-    assists = 0
-    active = False
-    for event in events:
-        if event.kind == "andon" and not active:
-            assists += 1
-            active = True
-        elif event.kind in {"resume", "complete", "abort"}:
-            active = False
-    return assists
-
-
 def _validate_terminal(result, steps, rebuilds, events, base_instance) -> None:
     completed = any(event.kind == "complete" for event in events)
     aborted = any(event.kind == "abort" for event in events)
@@ -394,53 +399,3 @@ def _load_schema(path: Path):
 
 def _error_path(error) -> str:
     return error.json_path
-
-
-def _artifact_directory(output_root: Path, run_id: str) -> Path:
-    if not isinstance(output_root, Path):
-        raise BirthCertificateInputError("output_root must be a pathlib.Path")
-    directory = output_root / run_id
-    try:
-        directory.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise BirthCertificateWriteError(f"Cannot create certificate directory {directory}: {error}") from error
-    return directory
-
-
-def _publish_pair(json_path: Path, json_bytes: bytes, pdf_path: Path, pdf_bytes: bytes) -> None:
-    if json_path.exists() or pdf_path.exists():
-        raise BirthCertificateWriteError("birth certificate artifacts are immutable and already exist")
-    try:
-        json_temp = _write_temp(json_path.parent, json_bytes)
-    except OSError as error:
-        raise BirthCertificateWriteError(f"Cannot stage certificate JSON: {error}") from error
-    try:
-        pdf_temp = _write_temp(pdf_path.parent, pdf_bytes)
-    except OSError as error:
-        json_temp.unlink(missing_ok=True)
-        raise BirthCertificateWriteError(f"Cannot stage certificate artifacts: {error}") from error
-    try:
-        os.link(json_temp, json_path)
-        try:
-            os.link(pdf_temp, pdf_path)
-        except OSError:
-            json_path.unlink(missing_ok=True)
-            raise
-    except OSError as error:
-        raise BirthCertificateWriteError(f"Cannot publish certificate artifacts: {error}") from error
-    finally:
-        json_temp.unlink(missing_ok=True)
-        pdf_temp.unlink(missing_ok=True)
-
-
-def _write_temp(directory: Path, data: bytes) -> Path:
-    descriptor, name = tempfile.mkstemp(prefix=".birth-certificate-", suffix=".tmp", dir=directory)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-    except OSError:
-        Path(name).unlink(missing_ok=True)
-        raise
-    return Path(name)

@@ -20,7 +20,7 @@ _AMBER = HexColor("#B7791F")
 _RED = HexColor("#B42318")
 
 
-def render_birth_certificate_pdf(record: dict[str, object]) -> bytes:
+def render_birth_certificate_pdf(record: dict[str, object], canonical_json_sha256: str) -> bytes:
     """Render one letter-sized page from an already validated record."""
     buffer = BytesIO()
     canvas = Canvas(buffer, pagesize=letter, pageCompression=1)
@@ -32,7 +32,7 @@ def render_birth_certificate_pdf(record: dict[str, object]) -> bytes:
     _draw_metrics(canvas, record)
     _draw_steps(canvas, record)
     _draw_final_checks(canvas, record)
-    _draw_footer(canvas)
+    _draw_footer(canvas, canonical_json_sha256)
     canvas.showPage()
     canvas.save()
     return buffer.getvalue()
@@ -166,13 +166,18 @@ def _draw_check(canvas: Canvas, x: int, y: int, label: str, value: object) -> No
     canvas.drawString(x + 10, y + 10, f"{label}: {text}")
 
 
-def _draw_footer(canvas: Canvas) -> None:
+def _draw_footer(canvas: Canvas, canonical_json_sha256: str) -> None:
+    canvas.setFillColor(_MUTED)
+    canvas.setFont("Helvetica-Bold", 6)
+    canvas.drawString(42, 82, "CANONICAL JSON SHA-256")
+    canvas.setFont("Courier", 6)
+    canvas.drawString(42, 71, canonical_json_sha256)
     canvas.setStrokeColor(_PALE)
-    canvas.line(42, 67, 570, 67)
+    canvas.line(42, 62, 570, 62)
     canvas.setFillColor(_MUTED)
     canvas.setFont("Helvetica", 7)
-    canvas.drawString(42, 50, "Recorded evidence only. Missing measurements are shown as not measured.")
-    canvas.drawRightString(570, 50, "Page 1 of 1")
+    canvas.drawString(42, 45, "Recorded evidence only. Missing measurements are shown as not measured.")
+    canvas.drawRightString(570, 45, "Page 1 of 1")
 
 
 def _score_summary(evidence: object) -> str:

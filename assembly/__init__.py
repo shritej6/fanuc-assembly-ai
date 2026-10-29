@@ -12,6 +12,7 @@ from assembly.birth_certificate import (
     StepInspectionEvidence,
     build_birth_certificate,
     validate_birth_certificate,
+    verify_birth_certificate_artifacts,
     write_birth_certificate,
 )
 from assembly.catalog import (
@@ -53,5 +54,6 @@ __all__ = [
     "build_birth_certificate",
     "load_catalog",
     "validate_birth_certificate",
+    "verify_birth_certificate_artifacts",
     "write_birth_certificate",
 ]

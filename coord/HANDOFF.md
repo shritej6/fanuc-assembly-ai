@@ -7,21 +7,25 @@ Newest first. One entry per finished task.
 - Changed: added `assembly/birth_certificate.py` to assemble one contract-valid traceability record from T09
   `PlanStepRecord` / `ControllerEvent` streams, archived post-placement inspections, and an explicit measured terminal
   outcome. Added `assembly/birth_certificate_pdf.py` for a one-page ReportLab layout and exported the public API from
-  `assembly/__init__.py`. Artifacts publish to `eval/records/<run_id>/<product>.json` and `.pdf` without overwriting an
-  existing record; JSON and PDF publication is paired with rollback on a partial publish failure.
+  `assembly/__init__.py`. Each rollout/product now publishes as one atomic read-only directory under
+  `eval/records/<run_id>/rollout-<number>/product-<number>/`, containing `certificate.json`, `certificate.pdf`, and a
+  SHA-256 manifest. The manifest binds canonical JSON and exact PDF bytes; the canonical JSON digest is printed in the
+  PDF, and `verify_birth_certificate_artifacts(...)` detects either artifact changing. PDF dependencies load only when
+  an artifact is requested, so controller imports do not require ReportLab or Pillow.
 - Behavior: product/inspection identities, recipe membership, terminal events, recovery classification, two final
   checks, four passing seated checks for good products, safe run IDs, finite JSON values, paired timing measurements,
-  and an actively held terminal Andon for blocked outcomes all fail closed. Attempts, spare use, rebuilds, and
+  and an actively held terminal Andon for blocked outcomes all fail closed. Records are capped at the four-step product
+  recipe so the one-page layout cannot overlap its final checks. Attempts, spare use, rebuilds, and
   deduplicated Andon assist episodes derive from T09 evidence. Unmeasured cycle time and Cosmos checks remain `null`;
   no value is inferred. No contract file or official
   `robot/cell/cell_client.py` file changed.
 - PDF QA: rendered the generated PDF with `pdftoppm` at 144 DPI and inspected the 1224×1584 PNG. The single page had
   no clipped or overlapping text, all four step rows and evidence references were legible, status/final-check badges
-  were aligned, and the footer and page number rendered correctly.
-- Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (15 passed); `uv run --locked pytest -q`
-  (396 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
-  unchanged-contract / unchanged-official-client checks (passed). New production files are 446 and 209 lines; no
-  changed function exceeds 40 lines.
+  were aligned, and the full canonical JSON SHA-256, footer, and page number rendered correctly.
+- Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (20 passed); `uv run --locked pytest -q`
+  (401 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
+  unchanged-contract / unchanged-official-client checks (passed). Production files are 401, 151, 214, and 16 lines;
+  no changed function exceeds 40 lines. Root dependencies are bounded to `reportlab>=4.2,<6` and `pypdf>=5,<7`.
 - Next: Claude reviews the T15 PR. Runtime callers archive each final post-placement inspection as
   `StepInspectionEvidence`, call `build_birth_certificate(...)`, then publish the validated record with
   `write_birth_certificate(...)`. Training weights are not required; the same T27-shaped inspection payloads can be
