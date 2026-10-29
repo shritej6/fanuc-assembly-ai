@@ -50,6 +50,21 @@ Newest first. One entry per finished task.
 - Next: independent review, then open the T05 PR for Claude review and user merge. T09 can consume these adapters
   after T04 and T05 merge; no contract or `robot/cell/cell_client.py` changes are required.
 
+## 2026-10-29 · T04 pinned-source and rotation hardening · CODEX
+
+- Replaced the duplicated transform oracle with byte-identical, SHA-256-pinned snapshots of
+  `sdg/data/object_geometry.json` at `5a24e10` and T29 `cad/grasp_frames.json` at `2d7cd51`.
+- Sourced all 24 gripper rolls from the single T29 grasp for each part: commanded TCP r is measured part yaw plus
+  `roll_offset_deg`; X-closing grips use 90 degrees and Y-closing grips use 0 degrees. Multiple grips now fail closed.
+- Installed rotations must be finite 3x3 proper rotations: orthonormal rows and determinant +1 within `1e-6`, the
+  source generator's six-decimal serialization precision. Schema-valid but unsafe matrices fail semantic validation.
+- The catalog schema now rejects unknown top-level, product, and step keys. Source hashes and catalog/source values
+  are rechecked at load time, and source dates are explicitly labeled as Git commit timestamps.
+- Regression evidence: NaN, Inf, singular, non-orthogonal, reflection, hash mismatch, multi-grip ambiguity, roll
+  mismatch, and unknown-key cases all fail closed. `uv run ruff check .` passed; full `uv run pytest -q` passed 55 tests.
+- Integration note: T09 must use `RecipeStep.gripper_roll_deg` only as a T29 offset added to measured part yaw and
+  apply `installed_rotation_matrix` with `insert_offset_mm`; it must not preserve the superseded provisional values.
+
 ## 2026-10-29 · T04 CAD transform review fixes · CODEX
 
 - Replaced bounding-box proxy offsets with the CAD `build()` installed transforms for all 24 parts, including the

@@ -5,35 +5,17 @@
   "type": "object",
   "required": [
     "geometry_source",
+    "grasp_source",
     "products"
   ],
   "properties": {
     "geometry_source": {
-      "type": "object",
-      "description": "Immutable provenance for the CAD-derived installation transforms in this catalog.",
-      "required": [
-        "file",
-        "generator",
-        "commit",
-        "generated_at"
-      ],
-      "properties": {
-        "file": {
-          "type": "string"
-        },
-        "generator": {
-          "type": "string"
-        },
-        "commit": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
-        },
-        "generated_at": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "additionalProperties": false
+      "$ref": "#/$defs/source_provenance",
+      "description": "Immutable provenance for the CAD-derived installation transforms in this catalog."
+    },
+    "grasp_source": {
+      "$ref": "#/$defs/source_provenance",
+      "description": "Immutable provenance for the CAD-derived gripper roll offsets in this catalog."
     },
     "products": {
       "type": "array",
@@ -83,7 +65,7 @@
                   }
                 },
                 "installed_rotation_matrix": {
-                  "description": "3x3 proper rotation mapping the STL print frame into the product fixture CAD frame. Combine with insert_offset_mm, then transform through the measured fixture pose into UF0.",
+                  "description": "Finite 3x3 proper rotation mapping the STL print frame into the product fixture CAD frame. Rows must be orthonormal and determinant +1 within 1e-6, matching the six-decimal serialization of sdg/tools/object_geometry.py. Combine with insert_offset_mm, then transform through the measured fixture pose into UF0.",
                   "type": "array",
                   "minItems": 3,
                   "maxItems": 3,
@@ -97,16 +79,59 @@
                   }
                 },
                 "gripper_roll_deg": {
-                  "description": "Provisional wrist roll for grasp planning, bounded until measured grasp frames replace it.",
+                  "description": "T29 grasp-frame roll offset in degrees. The commanded TCP r is measured part yaw plus this value; closing-axis X maps to 90 and Y maps to 0.",
                   "type": "number",
                   "minimum": -180,
                   "maximum": 180
                 }
-              }
+              },
+              "additionalProperties": false
             }
           }
-        }
+        },
+        "additionalProperties": false
       }
     }
-  }
+  },
+  "$defs": {
+    "source_provenance": {
+      "type": "object",
+      "required": [
+        "file",
+        "generator",
+        "commit",
+        "commit_timestamp",
+        "snapshot",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "commit_timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "snapshot": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
 }
