@@ -270,6 +270,28 @@ def test_reject_failed_event_refines_matching_inventory_reject_without_double_co
     )
 
 
+def test_physical_reject_and_table_replacement_events_are_valid_but_non_additive() -> None:
+    inventory = Inventory(load_catalog())
+    inventory.add(
+        "rejected-instance",
+        "M2_02",
+        zone=InventoryZone.REJECT,
+        condition=ObjectCondition.DEFECTIVE,
+    )
+    events = (
+        ControllerEvent("rejected", 2, "M2_02", "rejected-instance"),
+        ControllerEvent("replacement", 2, "M2_02", "table-replacement"),
+    )
+
+    view = build_operations_view(load_catalog(), inventory, events, ())
+
+    assert view.source_event_count == 2
+    assert view.pareto.total_defects == 1
+    assert view.pareto.rows == (
+        ParetoRow("M2_02", DefectCause.INSPECTION_REJECT, 1, 1.0, 1.0),
+    )
+
+
 def test_andon_free_text_is_not_misreported_as_a_defect_cause() -> None:
     events = (ControllerEvent("andon", 1, None, "crack_at_layer_line"),)
 

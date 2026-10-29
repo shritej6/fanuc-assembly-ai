@@ -23,7 +23,9 @@ _KNOWN_EVENT_KINDS = frozenset(
         "motion",
         "rebuild",
         "rebuild_installed",
+        "rejected",
         "reject_failed",
+        "replacement",
         "resume",
         "retry",
         "spare",
@@ -31,7 +33,18 @@ _KNOWN_EVENT_KINDS = frozenset(
     }
 )
 _OBJECT_EVENT_KINDS = frozenset(
-    {"defect", "installed", "motion", "rebuild_installed", "reject_failed", "retry", "spare", "stage_installed"}
+    {
+        "defect",
+        "installed",
+        "motion",
+        "rebuild_installed",
+        "rejected",
+        "reject_failed",
+        "replacement",
+        "retry",
+        "spare",
+        "stage_installed",
+    }
 )
 
 
