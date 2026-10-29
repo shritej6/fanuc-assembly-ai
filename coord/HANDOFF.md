@@ -2,6 +2,26 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 23:25 · NEW-DATA-ONLY training (for CODEX) · CLAUDE · user decision, do this before the H100 run
+
+- User: train ONLY on the new test-bed sets N R O P Q (parts stand as in their product, any yaw; 0 wrong rest labels).
+  Old sets A-M are NOT used for training (their `_REST.json` tags stay for analysis only).
+- Data: fa-r4 `~/fanuc-assembly-data/synthetic/{N,R,O,P,Q}/chunk_NNNN/` (labels/, rgb/, rgb_cosmos/ for ~50 % of
+  scenes, depth/, seg/). Each loose object has `rest`: `installed` | `fallen`. Expected: N 40, R 20, O 48, P 24, Q 8 chunks.
+- Needed in T13/T14 code (Codex-owned; Claude does not edit it):
+  1. Detector RT-DETR on N + R + Q (table + side cameras): 30 exact part classes + foreign, plus a per-box `fallen`
+     flag (head or extra class, Codex's choice); report per look-alike group.
+  2. Wrist classifier (ResNet-18) on O (one wrist height, look-alike always beside the target): 30 exact classes.
+  3. Set-P alignment model: read `build_offset` (shift mm / yaw deg / tilt / height) from P wrist images, for the
+     seated check within `sdg/data/insertion_tolerance.json` and the yaw-and-retry insertion rule (DECISIONS).
+  4. PatchCore per object on good O close-ups (installed orientation); FoundationPose pretrained validation on N/P
+     depth + STL.
+  5. Cosmos copies are train-only and inherit their scene's split; drop the "10-20 % Cosmos" gate for the new sets
+     (they are ~50 % by user decision).
+- Order on the 8xH100 (user): RT-DETR -> classifier -> set-P -> PatchCore (after its dependency audit) ->
+  FoundationPose validation -> copy artifacts -> close. Claude starts the box when PIPELINE_DONE is written and this
+  change is pushed.
+
 ## 2026-10-28 · Old sets auto-labelled installed / fallen (for CODEX) · CLAUDE · read before T13 training
 
 - Old sets A-M have no `rest` field and 71 % of their loose parts lie in poses the real test-bed only shows as fallen
