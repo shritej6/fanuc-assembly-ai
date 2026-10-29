@@ -138,9 +138,9 @@ TRUSTED_GEOMETRY_SOURCE = GeometrySource(
 )
 TRUSTED_GRASP_SOURCE = GraspSource(
     file="cad/grasp_frames.json", generator="cad/grasp_frames.py",
-    commit="2d7cd511844a5123abf96ecd87937ea08a2a3b10", commit_timestamp="2026-10-29T14:45:34-05:00",
-    snapshot="assembly/sources/grasp_frames.2d7cd51.json",
-    sha256="d4cef83e52d7a9c183fdaf0754dd0d318fad88c1f02ebad98a83975741f5083b",
+    commit="20c6f9bab0aa44b3bae4cd915a1c957705d74da4", commit_timestamp="2026-10-29T15:34:19-05:00",
+    snapshot="assembly/sources/grasp_frames.20c6f9b.json",
+    sha256="99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1",
 )
 OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GEOMETRY_SOURCE.snapshot
 GRASP_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GRASP_SOURCE.snapshot

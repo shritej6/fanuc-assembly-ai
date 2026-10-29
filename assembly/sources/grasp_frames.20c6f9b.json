@@ -1,10 +1,10 @@
 {
- "source": "cad/products build() (printed CAD), cad/grasp_frames.py",
+ "source": "cad/products build() (printed CAD) + cad/fingers (Team V fingers), cad/grasp_frames.py",
  "units": "mm, deg",
  "tcp": "fingertip point, w, p = -180, 0; r = measured part yaw + roll_offset_deg",
  "gripper_gap_mm": {
-  "closed_max": 5.0,
-  "open_min": 13.0
+  "closed_max": 4.5,
+  "open_min": 16.5
  },
  "objects": {
   "F01": {
@@ -261,16 +261,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -25.0,
-      -17.5
-     ],
      "pad_top_z_mm": 16.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
       0.0,
-      -21.25,
-      9.0
+      -21.06,
+      8.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -314,16 +310,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 17.0,
      "contact_height_mm": 6.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -367,16 +359,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 20.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      14.5
+      13.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -420,16 +408,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -4.0,
-      4.0
-     ],
      "pad_top_z_mm": 34.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      28.5
+      27.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -473,16 +457,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -25.0,
-      -17.5
-     ],
      "pad_top_z_mm": 16.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
       0.0,
-      -21.25,
-      9.0
+      -21.06,
+      8.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -526,16 +506,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 16.0,
      "contact_height_mm": 5.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -579,16 +555,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 18.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.5
+      11.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -632,16 +604,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -4.0,
-      4.0
-     ],
      "pad_top_z_mm": 34.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      28.5
+      27.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -685,16 +653,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -25.0,
-      -17.5
-     ],
      "pad_top_z_mm": 16.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
       0.0,
-      -21.25,
-      9.0
+      -21.06,
+      8.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -738,16 +702,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 17.0,
      "contact_height_mm": 6.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -791,16 +751,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 16.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      10.5
+      9.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -844,16 +800,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -4.0,
-      4.0
-     ],
      "pad_top_z_mm": 34.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      28.5
+      27.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -897,16 +849,12 @@
     {
      "closing_axis": "Y",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      20.5,
-      28.0
-     ],
      "pad_top_z_mm": 18.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
-      24.25,
+      24.06,
       0.0,
-      11.0
+      10.4
      ],
      "roll_offset_deg": 0.0
     }
@@ -950,16 +898,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 20.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      14.5
+      13.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1003,16 +947,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      13.0,
-      23.0
-     ],
      "pad_top_z_mm": 13.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
-      18.0,
-      7.5
+      18.01,
+      6.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1056,16 +996,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 17.0,
      "contact_height_mm": 6.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -1109,16 +1045,12 @@
     {
      "closing_axis": "Y",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      20.5,
-      28.0
-     ],
      "pad_top_z_mm": 18.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
-      24.25,
+      24.06,
       0.0,
-      11.0
+      10.4
      ],
      "roll_offset_deg": 0.0
     }
@@ -1162,16 +1094,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 20.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      14.5
+      13.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1215,16 +1143,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      13.0,
-      23.0
-     ],
      "pad_top_z_mm": 13.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
-      18.0,
-      7.5
+      18.01,
+      6.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1268,16 +1192,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 17.0,
      "contact_height_mm": 6.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }
@@ -1321,16 +1241,12 @@
     {
      "closing_axis": "Y",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      20.5,
-      28.0
-     ],
      "pad_top_z_mm": 18.0,
      "contact_height_mm": 8.0,
      "tcp_local_mm": [
-      24.25,
+      24.06,
       0.0,
-      11.0
+      10.4
      ],
      "roll_offset_deg": 0.0
     }
@@ -1374,16 +1290,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 20.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
       0.0,
-      14.5
+      13.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1427,16 +1339,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      13.0,
-      23.0
-     ],
      "pad_top_z_mm": 13.0,
      "contact_height_mm": 6.5,
      "tcp_local_mm": [
       0.0,
-      18.0,
-      7.5
+      18.01,
+      6.9
      ],
      "roll_offset_deg": 90.0
     }
@@ -1480,16 +1388,12 @@
     {
      "closing_axis": "X",
      "pad_width_mm": 7.0,
-     "pad_span_mm": [
-      -5.0,
-      5.0
-     ],
      "pad_top_z_mm": 17.0,
      "contact_height_mm": 6.0,
      "tcp_local_mm": [
       0.0,
       0.0,
-      12.0
+      11.4
      ],
      "roll_offset_deg": 90.0
     }

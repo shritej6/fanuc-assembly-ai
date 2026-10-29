@@ -5,7 +5,10 @@ Newest first. One entry per finished task.
 ## 2026-10-29 · T04 pinned-source and rotation hardening · CODEX
 
 - Replaced the duplicated transform oracle with byte-identical, SHA-256-pinned snapshots of
-  `sdg/data/object_geometry.json` at `5a24e10` and T29 `cad/grasp_frames.json` at `2d7cd51`.
+  `sdg/data/object_geometry.json` at `5a24e10` and T29 `cad/grasp_frames.json` at `20c6f9b`.
+- Repinned T29 after it adopted the Team V printed fingers: the source digest is
+  `99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1`, and the snapshot records
+  the validated 4.5–16.5 mm rubber-pad gap plus the updated contact-derived TCP offsets for all 24 parts.
 - Sourced all 24 gripper rolls from the single T29 grasp for each part: commanded TCP r is measured part yaw plus
   `roll_offset_deg`; X-closing grips use 90 degrees and Y-closing grips use 0 degrees. Multiple grips now fail closed.
 - Installed rotations must be finite 3x3 proper rotations: orthonormal rows and determinant +1 within `1e-6`, the
@@ -14,8 +17,8 @@ Newest first. One entry per finished task.
   are rechecked at load time, and source dates are explicitly labeled as Git commit timestamps. All six provenance
   fields for both sources are compared with immutable trusted records; typed catalog objects return those records.
 - Regression evidence: NaN, Inf, singular, non-orthogonal, reflection, hash mismatch, zero/multi-grip ambiguity, roll
-  mismatch, all 12 source-provenance mutations, and unknown-key cases fail closed. `uv run ruff check .` passed; full
-  `uv run pytest -q` passed 68 tests.
+  mismatch, all 12 source-provenance mutations, Team V finger provenance, and unknown-key cases fail closed.
+  `uv run ruff check .` passed; full `uv run pytest -q` passed 69 tests.
 - Integration note: T09 must use `RecipeStep.gripper_roll_deg` only as a T29 offset added to measured part yaw and
   apply `installed_rotation_matrix` with `insert_offset_mm`; it must not preserve the superseded provisional values.
 
