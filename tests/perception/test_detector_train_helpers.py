@@ -13,6 +13,7 @@ from perception.detector.train import (
     _evaluate_scenarios,
     _flatten_detection_metrics,
     _gather_for_metrics,
+    _keep_metric_outputs,
     _load_converted_checkpoint,
     _RTDetrCheckpointMixin,
     _size_pair,
@@ -278,6 +279,15 @@ def test_ragged_detection_targets_use_object_gather_without_changing_logits() ->
     assert _gather_for_metrics(accelerator, targets) is targets
     assert _gather_for_metrics(accelerator, logits) is logits
     assert accelerator.object_flags == [True, False]
+
+
+def test_eval_keeps_only_the_outputs_the_metric_reads() -> None:
+    loss_dict, logits, boxes = {"loss_vfl": 0.5}, [[0.1, 0.9]], [[0.2, 0.3, 0.4, 0.5]]
+    encoder_logits, decoder_layers = [[0.0] * 2] * 33600, [[[0.0] * 256] * 300] * 6
+
+    kept = _keep_metric_outputs((loss_dict, logits, boxes, encoder_logits, decoder_layers), labels=None)
+
+    assert kept == (loss_dict, logits, boxes)       # indices 1 and 2 unchanged for _predictions_for_metrics
 
 
 def test_detector_rejects_non_finite_gradient_history() -> None:

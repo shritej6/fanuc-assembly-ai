@@ -239,6 +239,15 @@ def _gather_for_metrics(accelerator: Any, value: Any) -> Any:
     )
 
 
+def _keep_metric_outputs(outputs: tuple[Any, ...], labels: Any) -> tuple[Any, ...]:
+    """Drop RT-DETR's encoder and intermediate-layer outputs before Trainer accumulates them on the GPU.
+
+    The metric reads only indices 1 and 2 (logits, pred_boxes); the rest (per-anchor encoder logits, six decoder
+    layers) grows with the eval set and ran 8xH100 out of memory at 1280 px on 3540 validation images.
+    """
+    return outputs[:3]
+
+
 def _predictions_for_metrics(prediction_batches: Any, image_sizes: list[Any], processor: Any) -> list[Any]:
     import torch
 
@@ -415,6 +424,7 @@ def _build_trainer(
         processing_class=processor,
         data_collator=collate_fn,
         compute_metrics=metric_function(processor, id2label),
+        preprocess_logits_for_metrics=_keep_metric_outputs,
     )
 
 
