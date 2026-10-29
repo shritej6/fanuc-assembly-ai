@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from perception.cell.localize import CellZones, LocalizeError, Zone, above_table_mm, locate, table_points
+from perception.cell.localize import CellZones, LocalizeError, Zone, above_table_mm, locate, table_points, wrist_bbox
 from robot.cell.calibration import geometry
 
 CAMS = geometry.load()
@@ -90,3 +90,25 @@ def test_coarse_accuracy_over_random_parts():
         found = locate(_bbox(*part), pts, uv)
         errors.append(np.hypot(found.x_mm - part[0], found.y_mm - part[1]))
     assert np.percentile(errors, 95) < 2.5 and max(errors) < 4.0
+
+
+def test_part_under_the_wrist_at_the_inspect_stop_projects_into_the_lower_middle():
+    """Set O renders put the target low in the wrist image (e.g. y 472-618 of 720): the camera is beside the tool."""
+    from sdg.wrist_ik import _starter_robot, solve_tcp
+
+    ik, robot = _starter_robot()
+    joints = np.degrees(solve_tcp(ik, [350.0, 0.0, -168.0, -180.0, 0.0, 0.0], **robot))
+    part = np.array([[350.0 + dx, dy, z] for dx in (-10, 10) for dy in (-10, 10) for z in (-335.0, -315.0)])
+    x0, y0, x1, y1 = wrist_bbox(CAMS, part, joints)
+    w, h = CAMS["wrist"]["size"]
+    assert abs((x0 + x1) / 2 - w / 2) < w * 0.2 and h / 2 < (y0 + y1) / 2 < h
+    assert 40 < x1 - x0 < w and 40 < y1 - y0 < h
+
+
+def test_part_far_from_the_wrist_view_is_refused():
+    from sdg.wrist_ik import _starter_robot, solve_tcp
+
+    ik, robot = _starter_robot()
+    joints = np.degrees(solve_tcp(ik, [350.0, 0.0, -168.0, -180.0, 0.0, 0.0], **robot))
+    with pytest.raises(LocalizeError):
+        wrist_bbox(CAMS, np.array([[350.0, 400.0, -335.0]]), joints)

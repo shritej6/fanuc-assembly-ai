@@ -143,3 +143,29 @@ def locate(bbox_px: tuple[float, float, float, float], pts: np.ndarray, uv: np.n
         raise LocalizeError(f"{len(mm)} depth points on the part inside {bbox_px}; need {MIN_POINTS}")
     return Located(x_mm=float(np.median(mm[:, 0])), y_mm=float(np.median(mm[:, 1])),
                    top_z_mm=float(np.percentile(mm[:, 2], TOP_PERCENTILE)) + UF0_Z_MM, points=len(mm))
+
+
+def wrist_bbox(cams: dict, points_uf0_mm: np.ndarray, joints) -> tuple[float, float, float, float]:
+    """The wrist colour-image box around UF0 points (e.g. a posed part's mesh vertices) for this arm pose.
+
+    The detector never saw wrist images, so at the inspect stop the part's box comes from projecting where the part
+    is through the wrist calibration and the joints' FK; the wrist models were trained on crops of such boxes.
+    Against 60 set O renders (target mesh posed by its label, joints from the twin IK at the label's TCP) the box
+    size matched (median width and height ratio 1.00, 0.99) and the centre was off by median 11.5 px, max 25.9 px
+    (IoU median 0.665): close enough to find the part, not to crop it; refine with the wrist depth before cropping."""
+    pts = np.asarray(points_uf0_mm, float).reshape(-1, 3)
+    if not np.isfinite(pts).all() or len(pts) == 0:
+        raise LocalizeError("wrist_bbox needs finite UF0 points")
+    base = (pts - (0.0, 0.0, UF0_Z_MM)) / 1000.0
+    flange = np.linalg.inv(geometry.flange_pose(joints))
+    in_flange = base @ flange[:3, :3].T + flange[:3, 3]
+    cam_from_flange = np.linalg.inv(cams["wrist"]["T"])
+    if (in_flange @ cam_from_flange[:3, :3].T + cam_from_flange[:3, 3])[:, 2].min() <= 0:
+        raise LocalizeError("part is behind the wrist camera")
+    uv = geometry.project(cams["wrist"], in_flange)
+    w, h = cams["wrist"]["size"]
+    x0, y0 = uv.min(0)
+    x1, y1 = uv.max(0)
+    if x1 <= 0 or y1 <= 0 or x0 >= w or y0 >= h:
+        raise LocalizeError("part is outside the wrist image")
+    return (max(0.0, float(x0)), max(0.0, float(y0)), min(float(w), float(x1)), min(float(h), float(y1)))
