@@ -197,18 +197,16 @@ def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
         assert actual_roll == expected_roll
 
 
-def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path) -> None:
-    invalid = deepcopy(_catalog_data())
-    invalid["grasp_source"]["sha256"] = "0" * 64
-    path = _write_catalog(tmp_path / "bad-source-digest.yaml", invalid)
+def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "tampered-grasp-source.json"
+    path.write_bytes(GRASP_FRAMES_SOURCE_PATH.read_bytes() + b"\n")
+    monkeypatch.setattr(catalog_module, "GRASP_SOURCE_SNAPSHOT_PATH", path)
 
     with pytest.raises(CatalogResourceError, match="grasp source sha256"):
-        load_catalog(path)
+        load_catalog()
 
 
-def test_load_catalog_rejects_ambiguous_multiple_grips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_catalog_rejects_ambiguous_multiple_grips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = deepcopy(_verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256))
     source["objects"]["M1_01"]["grips"].append(deepcopy(source["objects"]["M1_01"]["grips"][0]))
     source_path = tmp_path / "ambiguous-grasp-source.json"
@@ -216,6 +214,8 @@ def test_load_catalog_rejects_ambiguous_multiple_grips(
     catalog_data = deepcopy(_catalog_data())
     catalog_data["grasp_source"]["sha256"] = source_sha256
     catalog_path = _write_catalog(tmp_path / "ambiguous-grasp-catalog.yaml", catalog_data)
+    trusted_source = catalog_module.GraspSource(**catalog_data["grasp_source"])
+    monkeypatch.setattr(catalog_module, "TRUSTED_GRASP_SOURCE", trusted_source, raising=False)
     monkeypatch.setattr(catalog_module, "GRASP_SOURCE_SNAPSHOT_PATH", source_path, raising=False)
 
     with pytest.raises(CatalogSemanticError, match="M1_01.*exactly one grip"):
