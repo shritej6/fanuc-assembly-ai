@@ -7,18 +7,21 @@ Newest first. One entry per finished task.
 - Changed: added a loopback-only `asyncua` server with stable PLC-style nodes for PackML state/timestamp, current
   product/step, active alarm, good/reject/assist counts, all T09 inventory zones, deterministic item JSON, integration
   health, and seqlock snapshot sequence. The controller-owning thread now updates an immutable, locked snapshot mailbox;
-  the async publisher never reads mutable controller state across threads. All variables remain read-only to OPC UA
-  clients. The sequence recovers correct odd/even parity after partial writes. Assist counts use the shared
+  its construction thread is recorded and cross-thread updates raise a typed error. The async publisher never reads
+  mutable controller state across threads. All variables remain read-only to OPC UA clients. The sequence recovers
+  correct odd/even parity after partial writes. Assist counts use the shared
   `assembly.metrics.count_assist_episodes` authority, collapsing repeated Andon events into episodes closed by
   resume/complete/abort.
 - Command boundary: the sole remote write path is `Commands.SubmitCommand`. It accepts only named Hold/Resume/Stop/
   Abort/Reset intents that are valid for the live PackML state, with bounded queueing, strict IDs, operator reasons,
-  replay protection, a configurable 30-second pending TTL, atomic cross-thread capacity enforcement, and revalidation
-  at consumption. Submission reports `queued`, never accepted or executed; expired IDs remain replay-protected. It
+  replay protection, a configurable 30-second pending TTL driven by an injected monotonic clock, atomic cross-thread
+  capacity enforcement, and revalidation at consumption. UTC is used only for the audit timestamp; wall-clock rollback
+  cannot extend a command lifetime. Submission reports `queued`, never accepted or executed; expired IDs remain
+  replay-protected. It
   deliberately has no TCP, joints, gripper, policy, adapter, or official-client call. Non-loopback endpoints fail
   closed until certificates, authentication, network policy, and a separate security review exist.
-- Run: `uv run pytest tests/test_metrics.py tests/test_opcua_model.py tests/test_opcua_server.py -q` (42 passed);
-  `uv run pytest -q` (423 passed in 5.03 s); `uv run ruff check .` and focused `ruff format --check` (passed);
+- Run: `uv run pytest tests/test_metrics.py tests/test_opcua_model.py tests/test_opcua_server.py -q` (48 passed);
+  `uv run pytest -q` (429 passed); `uv run ruff check .` and focused `ruff format --check` (passed);
   `uv lock --check`,
   `uv pip check`, `git diff --check`, file/function-size checks, and secret scan (passed); PyPA `pip-audit` against the
   isolated environment reported no known vulnerabilities. Official integration: `cd robot/cell && uv run --locked

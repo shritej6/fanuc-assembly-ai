@@ -16,6 +16,7 @@ from robot.opcua_model import (
     CommandStateError,
     CommandValidationError,
     ControllerSnapshotMailbox,
+    OpcUaModelError,
     SafeCommandBoundary,
     build_controller_snapshot,
 )
@@ -92,6 +93,28 @@ def test_snapshot_mailbox_changes_only_when_the_controller_owner_updates_it() ->
     assert mailbox.read().state is PackMLState.EXECUTE
     mailbox.update_from(source)
     assert mailbox.read().state is PackMLState.HELD
+
+
+def test_snapshot_mailbox_rejects_updates_from_a_non_owner_thread() -> None:
+    source = _executing_source()
+    mailbox = ControllerSnapshotMailbox.from_source(source)
+    source.state_machine.hold("camera evidence disagrees")
+    errors: list[Exception] = []
+
+    def update() -> None:
+        try:
+            mailbox.update_from(source)
+        except OpcUaModelError as error:
+            errors.append(error)
+
+    worker = Thread(target=update)
+    worker.start()
+    worker.join(timeout=2.0)
+
+    assert len(errors) == 1
+    assert isinstance(errors[0], OpcUaModelError)
+    assert "controller-owning thread" in str(errors[0])
+    assert mailbox.read().state is PackMLState.EXECUTE
 
 
 def test_snapshot_inventory_json_is_stable_and_contains_no_motion_commands() -> None:
@@ -209,21 +232,52 @@ def test_command_ids_are_replay_protected_and_queue_is_bounded() -> None:
 def test_stale_commands_expire_without_releasing_replay_protection() -> None:
     now = datetime(2026, 10, 29, 16, 0, tzinfo=UTC)
     current = [now]
+    monotonic_time = [100.0]
     boundary = SafeCommandBoundary(
         max_pending=1,
         replay_history=2,
         pending_ttl_s=5.0,
         clock=lambda: current[0],
+        monotonic_clock=lambda: monotonic_time[0],
     )
     boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
 
     current[0] = now + timedelta(seconds=6)
+    monotonic_time[0] = 106.0
 
     assert boundary.pending == ()
     assert boundary.pop(state=PackMLState.EXECUTE) is None
     boundary.submit("Stop", "cmd-2", "operator request", state=PackMLState.EXECUTE)
     with pytest.raises(CommandValidationError, match="already submitted"):
         boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+
+def test_wall_clock_rollback_does_not_extend_monotonic_command_ttl() -> None:
+    submitted_at = datetime(2026, 10, 29, 16, 0, tzinfo=UTC)
+    wall_time = [submitted_at]
+    monotonic_time = [100.0]
+    boundary = SafeCommandBoundary(
+        pending_ttl_s=5.0,
+        clock=lambda: wall_time[0],
+        monotonic_clock=lambda: monotonic_time[0],
+    )
+    command = boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+    wall_time[0] = submitted_at - timedelta(days=365)
+    monotonic_time[0] = 106.0
+
+    assert command.submitted_at == "2026-10-29T16:00:00Z"
+    assert boundary.pending == ()
+
+
+@pytest.mark.parametrize("monotonic_value", [True, float("inf"), float("nan"), "100"])
+def test_command_deadline_clock_must_return_finite_seconds(monotonic_value: object) -> None:
+    boundary = SafeCommandBoundary(monotonic_clock=lambda: monotonic_value)  # type: ignore[arg-type,return-value]
+
+    with pytest.raises(CommandValidationError, match="monotonic"):
+        boundary.submit("Hold", "cmd-1", "operator request", state=PackMLState.EXECUTE)
+
+    assert boundary.pending == ()
 
 
 @pytest.mark.parametrize("pending_ttl_s", [True, 0.0, -1.0, float("inf"), float("nan")])

@@ -9,10 +9,11 @@ import unicodedata
 from collections import Counter, OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from enum import StrEnum
 from numbers import Number
-from threading import RLock
+from threading import RLock, get_ident
+from time import monotonic
 from typing import Protocol
 
 from assembly.controller_ports import ControllerEvent
@@ -94,12 +95,15 @@ class ControllerSnapshotMailbox:
             raise OpcUaModelError("snapshot mailbox requires a ControllerSnapshot")
         self._snapshot = snapshot
         self._lock = RLock()
+        self._owner_thread_id = get_ident()
 
     @classmethod
     def from_source(cls, source: ControllerStatusSource) -> ControllerSnapshotMailbox:
         return cls(build_controller_snapshot(source))
 
     def update_from(self, source: ControllerStatusSource) -> ControllerSnapshot:
+        if get_ident() != self._owner_thread_id:
+            raise OpcUaModelError("snapshot mailbox updates require the controller-owning thread")
         snapshot = build_controller_snapshot(source)
         with self._lock:
             self._snapshot = snapshot
@@ -220,6 +224,7 @@ class SafeCommandBoundary:
         replay_history: int = 4096,
         pending_ttl_s: float = 30.0,
         clock: Callable[[], datetime] | None = None,
+        monotonic_clock: Callable[[], float] | None = None,
     ) -> None:
         valid_capacities = type(max_pending) is int and type(replay_history) is int
         if not valid_capacities or not 1 <= max_pending <= min(replay_history, 65_535):
@@ -237,8 +242,9 @@ class SafeCommandBoundary:
         self._replay_history = replay_history
         self._pending_ttl_s = float(pending_ttl_s)
         self._clock = clock or _utc_now
+        self._monotonic_clock = monotonic_clock or monotonic
         self._pending: deque[ControllerCommand] = deque()
-        self._deadlines: dict[str, datetime] = {}
+        self._deadlines: dict[str, float] = {}
         self._seen: OrderedDict[str, None] = OrderedDict()
         self._lock = RLock()
 
@@ -266,10 +272,11 @@ class SafeCommandBoundary:
             self._expire_stale()
             if len(self._pending) >= self._max_pending:
                 raise CommandQueueFullError("command queue is full")
-            now = _aware_utc(self._clock())
-            command = ControllerCommand(normalized, normalized_id, normalized_reason, _timestamp(now))
+            wall_time = _aware_utc(self._clock())
+            deadline_clock = _monotonic_seconds(self._monotonic_clock())
+            command = ControllerCommand(normalized, normalized_id, normalized_reason, _timestamp(wall_time))
             self._pending.append(command)
-            self._deadlines[normalized_id] = now + timedelta(seconds=self._pending_ttl_s)
+            self._deadlines[normalized_id] = deadline_clock + self._pending_ttl_s
             self._remember(normalized_id)
             return command
 
@@ -287,7 +294,7 @@ class SafeCommandBoundary:
     def _expire_stale(self) -> None:
         if not self._pending:
             return
-        now = _aware_utc(self._clock())
+        now = _monotonic_seconds(self._monotonic_clock())
         retained: deque[ControllerCommand] = deque()
         for command in self._pending:
             if self._deadlines[command.command_id] > now:
@@ -337,3 +344,9 @@ def _aware_utc(value: object) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise CommandValidationError("command clock must return a timezone-aware datetime")
     return value.astimezone(UTC)
+
+
+def _monotonic_seconds(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, Number) or not math.isfinite(float(value)):
+        raise CommandValidationError("command monotonic clock must return finite seconds")
+    return float(value)

@@ -12,8 +12,9 @@ integration-ready PLC/HMI boundary, not a direct Rockwell integration and not a 
 - `Commands.SubmitCommand` accepts only `Hold`, `Resume`, `Stop`, `Abort`, and `Reset`, with a unique command ID and
   operator reason. The request must be valid for the live PackML state.
 - Valid requests are reported as **queued**, never accepted or executed. They enter a bounded, replay-protected,
-  thread-safe queue and expire after the configured pending TTL (30 seconds by default). Expiry does not release the
-  command ID for replay.
+  thread-safe queue and expire after the configured pending TTL (30 seconds by default). Deadlines use a monotonic
+  clock; UTC wall time is retained only for the audit timestamp, so clock correction cannot extend a command lifetime.
+  Expiry does not release the command ID for replay.
 - This branch deliberately provides no controller consumer. A future controller-owned consumer must call `pop()`,
   revalidate the live PackML state, apply the non-motion intent, and publish its own acknowledgement. Until that
   integration exists, a queued command cannot change the controller or robot.
@@ -40,7 +41,8 @@ progress, and clients should accept a snapshot only when the same even value is 
 The synchronous controller owns all mutable T09 state. It creates and updates a
 `ControllerSnapshotMailbox` from its own thread after a controller cycle. The async OPC UA task receives only the
 mailbox and reads immutable `ControllerSnapshot` values under a lock; it never reads the live controller across
-threads. `SafeCommandBoundary` separately protects its pending queue because the OPC UA task submits while a future
+threads. The mailbox records its constructing thread and rejects `update_from()` on every other thread.
+`SafeCommandBoundary` separately protects its pending queue because the OPC UA task submits while a future
 controller-owned consumer pops.
 
 ```python
