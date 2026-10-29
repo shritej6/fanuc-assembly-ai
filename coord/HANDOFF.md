@@ -25,7 +25,8 @@ Newest first. One entry per finished task.
   no clipped or overlapping text, all four step rows and evidence references were legible, status/final-check badges
   were aligned, and the full canonical JSON SHA-256, footer, and page number rendered correctly.
 - Run: `uv run --locked pytest tests/test_birth_certificate.py -q` (34 passed); `uv run --locked pytest -q`
-  (415 passed); `uv run --locked ruff check .` (passed); `uv lock --check`, `uv pip check`, `git diff --check`, and
+  (547 passed) after rebasing onto accepted T09 `d1bfd9c`; `uv run --locked ruff check .` (passed);
+  `uv lock --check`, `uv pip check`, `git diff --check`, and
   unchanged-contract / unchanged-official-client checks (passed). Production files are 422, 151, 214, and 16 lines;
   no changed function exceeds 40 lines. Root dependencies are bounded to `reportlab>=4.2,<6` and `pypdf>=5,<7`.
 - Next: Claude reviews the T15 PR. Runtime callers archive each final post-placement inspection as
