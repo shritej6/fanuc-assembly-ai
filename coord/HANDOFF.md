@@ -7,15 +7,17 @@ Newest first. One entry per finished task.
 - Changed: added run/rollout-scoped append-only events, a locked and bounded controller log writer/recorder,
   evidence-backed OEE calculations, first/final yield, builds per assist, average cycle time, escapes, live
   PackML/Andon status, and a responsive read-only loopback dashboard. The recorder handles each actual T09 reset as a
-  new rollout history, validates terminal records through T15, records explicit evaluation escapes, and emits scoped
-  liveness heartbeats without changing state or metrics.
+  new rollout history, validates terminal records through T15 plus its semantic result meaning, records explicit
+  evaluation escapes, and emits scoped liveness heartbeats without changing state or metrics.
 - Integrity and safety: missing measurements remain unavailable rather than estimated; reporting windows are half-open;
   stale/malformed/mixed-source evidence fails red; live state continues after a reporting window closes; same-time
-  transitions preserve controller order. Terminal identities are unique, timestamp-ordered, and require the matching
-  PackML lifecycle. Shared/exclusive locks prevent partial reads; write/fsync failures roll back and double-fsync
+  transitions preserve controller order. Terminal identities are unique in both the writer and exported OEE boundary,
+  timestamp-ordered, and require the matching PackML lifecycle. Good results require four recipe-consistent passing
+  steps, a base, positive attempts, true final checks, and result-consistent recovery evidence; failed requires Aborted,
+  not merely Stopped, while blocked requires Held. Shared/exclusive locks prevent partial reads; write/fsync failures roll back and double-fsync
   failures report uncertain durability. The UI uses matching CSP hashes and safe text rendering, with no command route.
 - Base and run: stacked on T15 `5b598d7` (including accepted T09 `d1bfd9c`); `uv run pytest -q tests/test_oee.py
-  tests/test_run_log.py tests/test_dashboard.py` (58 passed); `uv run pytest -q` (605 passed); `uv run ruff check .`,
+  tests/test_run_log.py tests/test_dashboard.py` (66 passed); `uv run pytest -q` (613 passed); `uv run ruff check .`,
   `uv lock --check`, `uv pip check`, `git diff --check`, file/function gates, and unchanged-contract / unchanged-official
   client checks passed. A 24-process append stress recorded 24 unique rollouts. Browser HTTP tests ran outside the
   restricted loopback sandbox.

@@ -347,6 +347,10 @@ def _validated_events(events: tuple[RunEvent, ...]) -> tuple[RunEvent, ...]:
     ordered = tuple(sorted(events, key=lambda event: event.timestamp))
     if len({(event.timestamp, type(event).__name__, repr(event)) for event in ordered}) != len(ordered):
         raise DashboardMetricError("run log contains duplicate events")
+    terminals = [event for event in ordered if isinstance(event, ProductResultEvent)]
+    identities = {(event.run_id, event.rollout, event.product) for event in terminals}
+    if len(identities) != len(terminals):
+        raise DashboardMetricError("run log contains more than one terminal result for an identity")
     return ordered
 
 

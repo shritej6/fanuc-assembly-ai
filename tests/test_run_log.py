@@ -15,6 +15,7 @@ from industry.run_log import (
     encode_run_event,
     load_run_log,
 )
+from tests.test_birth_certificate import _build_good
 
 NOW = datetime(2026, 10, 29, 15, tzinfo=UTC)
 RUN_ID = "run-2026-10-29"
@@ -25,21 +26,12 @@ def _certificate(
     *,
     product: int = 1,
     rollout: int = ROLLOUT,
-    result: str = "good_first_pass",
     cycle_time_s: float | None = 4.0,
 ) -> dict[str, object]:
-    return {
-        "run_id": RUN_ID,
-        "rollout": rollout,
-        "product": product,
-        "base_instance": f"base-{product}",
-        "result": result,
-        "steps": [],
-        "rebuilds": 0,
-        "assists": 0,
-        "cycle_time_s": cycle_time_s,
-        "final_checks": {"recipe": result.startswith("good_"), "cosmos_reason": None},
-    }
+    certificate = _build_good(product)
+    certificate["rollout"] = rollout
+    certificate["cycle_time_s"] = cycle_time_s
+    return certificate
 
 
 def _events() -> tuple[PackMLEvent | ProductResultEvent | EscapeEvent | HeartbeatEvent, ...]:
@@ -264,6 +256,68 @@ def test_terminal_result_rejects_invalid_t15_certificate(tmp_path: Path) -> None
         recorder.record_product_result({"product": 1}, recorded_at=NOW)
 
 
+def test_terminal_result_rejects_schema_valid_good_certificate_without_steps(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    certificate["steps"] = []
+
+    with pytest.raises(RunLogError, match="four unique recipe steps"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_good_certificate_with_failed_final_check(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    certificate["final_checks"] = {"recipe": True, "cosmos_reason": False}
+
+    with pytest.raises(RunLogError, match="both final checks"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_first_pass_with_recovery_evidence(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    certificate["rebuilds"] = 1
+
+    with pytest.raises(RunLogError, match="forbids rebuild"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_negative_rebuild_count(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    certificate["rebuilds"] = -1
+
+    with pytest.raises(RunLogError, match="nonnegative rebuild count"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_rebuild_claim_without_recovery_evidence(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    certificate["result"] = "good_after_rebuild"
+
+    with pytest.raises(RunLogError, match="requires recorded recovery"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
+def test_terminal_result_rejects_nonpositive_step_attempts(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_complete_machine(1))
+    certificate = _certificate()
+    steps = certificate["steps"]
+    assert isinstance(steps, list) and isinstance(steps[0], dict)
+    steps[0]["attempts"] = 0
+
+    with pytest.raises(RunLogError, match="positive attempts"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
+
+
 def test_terminal_result_rejects_wrong_product_lifecycle(tmp_path: Path) -> None:
     recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
     recorder.sync_packml(_complete_machine(1))
@@ -277,6 +331,16 @@ def test_terminal_result_requires_packml_lifecycle(tmp_path: Path) -> None:
 
     with pytest.raises(RunLogError, match="PackML lifecycle"):
         recorder.record_product_result(_certificate(), recorded_at=NOW)
+
+
+def test_failed_terminal_rejects_stopped_without_aborted_lifecycle(tmp_path: Path) -> None:
+    recorder = ControllerRunLogRecorder(RunLogWriter(tmp_path / "run.jsonl"), EventSource.MOCK, RUN_ID, ROLLOUT)
+    recorder.sync_packml(_stopped_machine(1))
+    certificate = _certificate()
+    certificate["result"] = "failed"
+
+    with pytest.raises(RunLogError, match="Aborted"):
+        recorder.record_product_result(certificate, recorded_at=NOW.replace(second=6))
 
 
 def test_writer_rejects_out_of_order_evidence(tmp_path: Path) -> None:
@@ -331,4 +395,14 @@ def _complete_machine(product: int) -> PackMLStateMachine:
     machine.transition(PackMLState.EXECUTE)
     machine.complete()
     machine.transition(PackMLState.COMPLETE)
+    return machine
+
+
+def _stopped_machine(product: int) -> PackMLStateMachine:
+    times = iter(NOW.replace(second=second) for second in range(6))
+    machine = PackMLStateMachine(clock=lambda: next(times))
+    machine.start(product)
+    machine.transition(PackMLState.EXECUTE)
+    machine.stop("controlled stop")
+    machine.transition(PackMLState.STOPPED)
     return machine

@@ -12,6 +12,7 @@ from typing import Any
 
 from assembly.birth_certificate import BirthCertificateError, validate_birth_certificate
 from assembly.state_machine import PackMLState, PackMLStateMachine, StateRecord
+from industry.certificate_evidence import CertificateEvidenceError, validate_certificate_evidence
 from industry.events import RunEventError, validate_scope
 from industry.oee import (
     DashboardMetricError,
@@ -115,7 +116,8 @@ class ControllerRunLogRecorder:
     def record_product_result(self, record: Mapping[str, object], *, recorded_at: datetime) -> ProductResultEvent:
         try:
             certificate = validate_birth_certificate(_mapping(record, "birth certificate"))
-        except BirthCertificateError as error:
+            validate_certificate_evidence(certificate)
+        except (BirthCertificateError, CertificateEvidenceError) as error:
             raise RunLogError(f"invalid birth certificate: {error}") from error
         self._require_certificate_identity(certificate)
         event = _product_event(
@@ -451,7 +453,7 @@ def _terminal_states(result: ProductResult) -> frozenset[PackMLState]:
         return frozenset({PackMLState.COMPLETE})
     if result is ProductResult.BLOCKED:
         return frozenset({PackMLState.HELD})
-    return frozenset({PackMLState.ABORTED, PackMLState.STOPPED})
+    return frozenset({PackMLState.ABORTED})
 
 
 def _require_event(event: object) -> None:

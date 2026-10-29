@@ -36,10 +36,15 @@ dashboard never infers one from a rejected product.
 ## Record a live run
 
 `ControllerRunLogRecorder` is the producer boundary between T09 and the dashboard. It synchronizes public
-`PackMLStateMachine.history`, validates terminal records with T15's public validator, and records an explicit evaluation
-escape. The writer is local, append-only, file-locked, bounded to 16 MiB by default, source/run-pure, timestamp-ordered,
+`PackMLStateMachine.history`, validates terminal records with T15's public validator plus its semantic result rules, and
+records an explicit evaluation escape. The writer is local, append-only, file-locked, bounded to 16 MiB by default,
+source/run-pure, timestamp-ordered,
 and synced to disk before returning. A `(run_id, rollout, product)` terminal identity can be recorded only once and
-must follow the matching PackML terminal state.
+must follow the matching PackML terminal state. Good outcomes require the non-null base, four unique recipe steps,
+passing seated checks, positive attempts, and both final checks. First-pass records cannot contain recovery evidence;
+rebuilt records must contain it. Failed records require `Aborted` (`Stopped` is not terminal failure evidence), while
+blocked records require the matching held/Andon lifecycle. The OEE API independently rejects duplicate terminal
+identities, including direct callers that bypass the JSONL writer.
 
 ```python
 from pathlib import Path

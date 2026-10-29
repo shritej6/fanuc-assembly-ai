@@ -33,11 +33,12 @@ def _result(
     result: ProductResult,
     *,
     product: int = 1,
+    rollout: int = ROLLOUT,
     assists: int = 0,
     cycle_time_s: float | None = 30.0,
 ) -> ProductResultEvent:
     return ProductResultEvent(
-        _time(seconds), EventSource.MOCK, RUN_ID, ROLLOUT, product, result, assists, cycle_time_s
+        _time(seconds), EventSource.MOCK, RUN_ID, rollout, product, result, assists, cycle_time_s
     )
 
 
@@ -51,7 +52,7 @@ def test_computes_evidence_backed_oee_and_andon_snapshot() -> None:
         _result(30, ProductResult.GOOD_FIRST_PASS, assists=2, cycle_time_s=25.0),
         _state(60, PackMLState.HELD, "restock M1_03"),
         _state(80, PackMLState.EXECUTE),
-        _result(85, ProductResult.FAILED, cycle_time_s=35.0),
+        _result(85, ProductResult.FAILED, rollout=4, cycle_time_s=35.0),
         EscapeEvent(_time(90), EventSource.MOCK, RUN_ID, ROLLOUT, 1, "fault injection was not caught"),
     )
 
@@ -126,7 +127,7 @@ def test_average_cycle_time_requires_complete_measurement_coverage() -> None:
     events = (
         _state(0, PackMLState.EXECUTE),
         _result(20, ProductResult.GOOD_FIRST_PASS, cycle_time_s=10.0),
-        _result(30, ProductResult.GOOD_FIRST_PASS, cycle_time_s=None),
+        _result(30, ProductResult.GOOD_FIRST_PASS, rollout=4, cycle_time_s=None),
     )
 
     snapshot = compute_dashboard_snapshot(events, _schedule(**{"1": 10.0}), now=_time(40), stale_after_s=20)
@@ -196,6 +197,16 @@ def test_duplicate_events_are_rejected() -> None:
 
     with pytest.raises(DashboardMetricError, match="duplicate"):
         compute_dashboard_snapshot((event, event), _schedule(), now=_time(1), stale_after_s=1)
+
+
+def test_duplicate_terminal_identity_is_rejected_even_when_timestamp_changes() -> None:
+    results = (
+        _result(10, ProductResult.GOOD_FIRST_PASS),
+        _result(20, ProductResult.GOOD_AFTER_REBUILD),
+    )
+
+    with pytest.raises(DashboardMetricError, match="terminal result"):
+        compute_dashboard_snapshot(results, _schedule(), now=_time(30), stale_after_s=20)
 
 
 def test_stale_source_forces_fail_closed_red_status() -> None:
