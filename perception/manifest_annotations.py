@@ -6,7 +6,7 @@ from typing import Any
 
 from perception.manifest_types import ManifestError
 from perception.records import Annotation
-from perception.taxonomy import fallen_label
+from perception.taxonomy import BUILD_STATES, fallen_label
 
 
 def _bbox(raw: Any, width: int, height: int, context: str) -> tuple[int, int, int, int]:
@@ -59,3 +59,21 @@ def rest_by_uid(spec: dict[str, Any], context: str) -> dict[str, str | None]:
             raise ManifestError(f"unknown rest state {value!r} in {context}")
         rest[str(item.get("uid"))] = value
     return rest
+
+
+def build_state_annotation(raw: dict[str, Any], width: int, height: int, context: str) -> Annotation:
+    """Set P target: the class is how the part sits on its pegs, the object stays the exact part."""
+    state = raw.get("build_state")
+    if state not in BUILD_STATES:
+        raise ManifestError(f"unknown build_state {state!r} in {context}")
+    return Annotation(
+        uid=str(raw["uid"]),
+        object_id=str(raw.get("object_id")),
+        class_id=BUILD_STATES.index(state),
+        bbox_xyxy=_bbox(raw.get("bbox_xyxy"), width, height, context),
+        kind=str(raw.get("kind", "")),
+        state=str(raw.get("state", "")),
+        variant=str(raw.get("variant", "")),
+        build_state=state,
+        label=state,
+    )

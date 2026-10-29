@@ -116,3 +116,66 @@ def test_testbed_plan_trains_only_the_new_sets_with_fallen_classes(tmp_path: Pat
     assert len(load_ontology(taxonomy, fallen_classes=True).detector_labels) == 30 + 3 + 24
     with pytest.raises(ValueError, match="unknown profile"):
         preparation_plan(tmp_path / "d", tmp_path / "o", taxonomy, False, "old")
+
+
+def _write_build_chunk(root: Path, states: list[str]) -> None:
+    chunk = root / "synthetic" / "P" / "chunk_0000"
+    (chunk / "labels").mkdir(parents=True)
+    for index, state in enumerate(states):
+        stem = f"{index:06d}"
+        _write_image(chunk / "rgb" / "wrist" / f"{stem}.jpg")
+        box = {**_annotation("o01", "M1_01", [8, 6, 40, 30]), "state": "installed", "build_state": state}
+        spec = {"set": "P", "index": index, "objects": [{"uid": "o01", "object_id": "M1_01"}], "wrist_target_uid": "o01"}
+        (chunk / "labels" / f"{stem}.json").write_text(json.dumps({"spec": spec, "cameras": {"wrist": [box]}}))
+    (chunk / "_DONE.json").write_text(json.dumps({"scenes": len(states), "code_commit": "abc1234"}))
+    (chunk / "_QA.json").write_text(json.dumps({"ok": True, "labelled_scenes": len(states),
+                                                "expected_scenes": len(states)}))
+
+
+def test_set_p_targets_are_classified_by_build_state_and_keep_the_exact_part(tmp_path: Path) -> None:
+    from perception.classifier.dataset import CropDataset
+    from perception.crops import export_crops
+    from perception.taxonomy import BUILD_STATES
+
+    _write_build_chunk(tmp_path, ["rotated", "seated"])
+    summary = build_manifests(_config(tmp_path, detector_sets=(), classifier_sets=("P",),
+                                      classifier_target="build_state", profile="testbed_build"))
+    metadata = json.loads(summary.metadata_path.read_text())
+    assert metadata["labels"]["classifier"] == list(BUILD_STATES) and metadata["labels"]["lookalike_groups"] == []
+    target = _read_jsonl(summary.classifier_path)[0]["target"]
+    assert (target["object_id"], target["label"], target["class_id"]) == ("M1_01", "rotated", 2)
+    rows = [json.loads(line) for line in export_crops(summary.classifier_path, tmp_path / "crops").read_text().splitlines()]
+    assert {row["label"] for row in rows} == {"rotated", "seated"}
+    for split in {row["split"] for row in rows}:
+        dataset = CropDataset(tmp_path / "crops" / "crops.jsonl", split, lambda image: image, BUILD_STATES)
+        assert all(dataset[i]["labels"] == BUILD_STATES.index(dataset.rows[i]["label"]) for i in range(len(dataset)))
+
+
+def test_unknown_build_state_is_rejected(tmp_path: Path) -> None:
+    _write_build_chunk(tmp_path, ["wobbly"])
+    with pytest.raises(ManifestError, match="unknown build_state"):
+        build_manifests(_config(tmp_path, detector_sets=(), classifier_sets=("P",), classifier_target="build_state"))
+
+
+def test_build_state_plan_and_gate_cover_only_set_p(tmp_path: Path) -> None:
+    plan = preparation_plan(tmp_path / "d", tmp_path / "o", REPO / "contracts/taxonomy.json", False, "testbed_build")
+    assert (plan["detector_sets"], plan["classifier_sets"], plan["classifier_target"]) == ([], ["P"], "build_state")
+    verify_production_manifest(_metadata(tmp_path, {"P": 0.5}, profile="testbed_build",
+                                         classifier_target="build_state"))
+    with pytest.raises(RosieGateError, match="build states"):
+        verify_production_manifest(_metadata(tmp_path, {"P": 0.5}, profile="testbed_build"))
+
+
+def test_build_state_trainer_requires_six_labels_in_their_frozen_order() -> None:
+    from perception.classifier.train import ClassifierTrainingError, validate_classifier_identity
+    from perception.taxonomy import BUILD_STATES
+
+    config = {"task": "classifier", "model": {"num_labels": 6}}
+    metadata = {"classifier_target": "build_state",
+                "labels": {"classifier": list(BUILD_STATES), "lookalike_groups": []}}
+    assert validate_classifier_identity(config, metadata) == (BUILD_STATES, ())
+    with pytest.raises(ClassifierTrainingError, match="6 build-state labels"):
+        validate_classifier_identity({**config, "model": {"num_labels": 30}}, metadata)
+    shuffled = {**metadata, "labels": {"classifier": list(reversed(BUILD_STATES)), "lookalike_groups": []}}
+    with pytest.raises(ClassifierTrainingError, match="exactly"):
+        validate_classifier_identity(config, shuffled)

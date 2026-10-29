@@ -22,6 +22,7 @@ from perception.provenance import (
     read_provenance,
     write_provenance,
 )
+from perception.taxonomy import BUILD_STATES
 from perception.train_common import configure_mixed_precision, load_manifest_metadata, trainer_arguments
 from perception.training_config import apply_smoke_step_override, load_training_config
 
@@ -69,6 +70,8 @@ def validate_classifier_identity(
         groups = tuple(tuple(group) for group in metadata["labels"]["lookalike_groups"])
     except (KeyError, TypeError) as exc:
         raise ClassifierTrainingError("manifest metadata lacks classifier labels") from exc
+    if metadata.get("classifier_target", "identity") == "build_state":
+        return _validate_build_states(config, labels, groups)
     if config.get("task") != "classifier" or config.get("model", {}).get("num_labels") != 30:
         raise ClassifierTrainingError("configuration must declare 30 classifier labels")
     if len(labels) != 30 or len(set(labels)) != 30:
@@ -193,6 +196,19 @@ def _build_model(num_labels: int) -> Any:
     return ResNetClassifier()
 
 
+def _validate_build_states(
+    config: dict[str, Any],
+    labels: tuple[str, ...],
+    groups: tuple[tuple[str, ...], ...],
+) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    """Set P model: the six build states in their frozen order, no look-alike groups."""
+    if config.get("task") != "classifier" or config.get("model", {}).get("num_labels") != len(BUILD_STATES):
+        raise ClassifierTrainingError(f"configuration must declare {len(BUILD_STATES)} build-state labels")
+    if labels != BUILD_STATES or groups:
+        raise ClassifierTrainingError(f"manifest build-state labels must be exactly {BUILD_STATES}")
+    return labels, groups
+
+
 def _compute_metrics(
     labels: tuple[str, ...],
     groups: tuple[tuple[str, ...], ...],
@@ -231,7 +247,7 @@ def _check_class_support(
     """Require every frozen classifier label in every production split."""
     expected = set(labels)
     for split, dataset in zip(("train", "validation", "test"), datasets):
-        observed = {row.get("object_id") for row in dataset.rows}
+        observed = {row.get("label", row.get("object_id")) for row in dataset.rows}
         unknown = sorted(value for value in observed - expected if isinstance(value, str))
         if unknown:
             raise ClassifierTrainingError(f"{split} classifier split has unknown labels: {unknown}")

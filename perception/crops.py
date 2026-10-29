@@ -99,6 +99,7 @@ def _metadata_row(
         "crop_bbox_xyxy": list(box),
         "object_id": target["object_id"],
         "class_id": target["class_id"],
+        "label": target.get("label") or target["object_id"],
     }
 
 

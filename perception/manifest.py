@@ -12,11 +12,12 @@ from typing import Any
 
 from perception.image_integrity import ImageIntegrityError, image_identity
 from perception.manifest_annotations import annotation as _annotation
+from perception.manifest_annotations import build_state_annotation
 from perception.manifest_annotations import rest_by_uid as _rest_by_uid
 from perception.manifest_types import ManifestConfig, ManifestError, ManifestSummary, split_for_scene
 from perception.provenance import current_git_commit
 from perception.records import Annotation, ImageRecord
-from perception.taxonomy import Ontology, load_ontology
+from perception.taxonomy import BUILD_STATES, Ontology, load_ontology
 
 CHUNK_PATTERN = re.compile(r"chunk_[0-9]{4}")
 FORBIDDEN_PARTS = {"rejected", "superseded", "real", "real-cell", "real_cell"}
@@ -24,6 +25,8 @@ ALLOWED_CAMERAS = {"table", "side", "wrist"}
 
 
 def _validate_config(config: ManifestConfig) -> None:
+    if config.classifier_target not in ("identity", "build_state"):
+        raise ManifestError(f"unknown classifier_target {config.classifier_target!r}")
     if config.require_cosmos and not config.include_cosmos:
         raise ManifestError("a Cosmos-required manifest must include Cosmos records")
     limit = config.max_scenes_per_set
@@ -313,13 +316,11 @@ class _ManifestBuilder:
         if target_raw is None:
             self.skipped[set_name] = self.skipped.get(set_name, 0) + 1
             return None
-        target = _annotation(
-            target_raw,
-            self.ontology.classifier_label2id,
-            width,
-            height,
-            f"{set_name}:{index:06d}/{camera}",
-        )
+        context = f"{set_name}:{index:06d}/{camera}"
+        if self.config.classifier_target == "build_state":
+            target = build_state_annotation(target_raw, width, height, context)
+        else:
+            target = _annotation(target_raw, self.ontology.classifier_label2id, width, height, context)
         return self._record(
             "classifier",
             set_name,
@@ -433,6 +434,7 @@ class _ManifestBuilder:
         detector_hash: str,
         classifier_hash: str,
     ) -> dict[str, Any]:
+        build = self.config.classifier_target == "build_state"
         stats = {
             name: {**values, "code_commits": sorted(values["code_commits"])}
             for name, values in sorted(self.stats.items())
@@ -449,10 +451,11 @@ class _ManifestBuilder:
             "profile": self.config.profile,
             "fallen_classes": self.config.fallen_classes,
             "cosmos_ranges": {name: [low, high] for name, low, high in self.config.cosmos_ranges},
+            "classifier_target": self.config.classifier_target,
             "labels": {
-                "classifier": list(self.ontology.classifier_labels),
+                "classifier": list(BUILD_STATES if build else self.ontology.classifier_labels),
                 "detector": list(self.ontology.detector_labels),
-                "lookalike_groups": [list(group) for group in self.ontology.lookalike_groups],
+                "lookalike_groups": [] if build else [list(group) for group in self.ontology.lookalike_groups],
             },
             "sets": stats,
             "skipped_classifier_targets": dict(sorted(self.skipped.items())),

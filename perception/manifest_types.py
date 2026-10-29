@@ -25,6 +25,7 @@ class ManifestConfig:
     min_cosmos_fraction: float = 0.10
     max_cosmos_fraction: float = 0.20
     profile: str = "legacy"
+    classifier_target: str = "identity"   # or "build_state" (set P: how the placed part sits on its pegs)
     fallen_classes: bool = False
     # (set, min, max) overrides of the Cosmos range, e.g. the test-bed sets restyle one camera of half the scenes
     cosmos_ranges: tuple[tuple[str, float, float], ...] = ()

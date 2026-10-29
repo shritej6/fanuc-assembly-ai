@@ -12,6 +12,7 @@ MIN_COSMOS_FRACTION = 0.10
 MAX_COSMOS_FRACTION = 0.20
 # Kept independent of prepare.py so a wrongly prepared manifest cannot loosen its own gate.
 TESTBED_RANGES = {"N": (0.20, 0.30), "R": (0.20, 0.30), "Q": (0.20, 0.30), "O": (0.45, 0.55)}
+TESTBED_BUILD_RANGES = {"P": (0.45, 0.55)}
 
 
 class RosieGateError(ValueError):
@@ -62,6 +63,10 @@ def _expected_ranges(metadata: dict[str, Any]) -> dict[str, tuple[float, float]]
         if metadata.get("fallen_classes") is not True:
             raise RosieGateError("test-bed production manifest must carry the fallen classes")
         return TESTBED_RANGES
+    if profile == "testbed_build":
+        if metadata.get("classifier_target") != "build_state":
+            raise RosieGateError("set-P production manifest must train the build states")
+        return TESTBED_BUILD_RANGES
     if profile != "legacy":
         raise RosieGateError(f"unknown manifest profile {profile!r}")
     return {name: (MIN_COSMOS_FRACTION, MAX_COSMOS_FRACTION) for name in EXPECTED_SETS}

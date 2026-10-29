@@ -58,8 +58,8 @@ class CropDataset:
         except ImageIntegrityError as exc:
             raise DatasetError(str(exc)) from exc
         class_id = row.get("class_id")
-        object_id = row.get("object_id")
+        label = row.get("label", row.get("object_id"))
         valid_id = type(class_id) is int and 0 <= class_id < len(self.labels)
-        if not valid_id or self.labels[class_id] != object_id:
-            raise DatasetError(f"class mapping mismatch for {path}: {class_id!r}/{object_id!r}")
+        if not valid_id or self.labels[class_id] != label:
+            raise DatasetError(f"class mapping mismatch for {path}: {class_id!r}/{label!r}")
         return {"pixel_values": self.transform(image), "labels": class_id}

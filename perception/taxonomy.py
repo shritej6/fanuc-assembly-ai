@@ -12,6 +12,8 @@ FOREIGN_LABELS = (
     "foreign_cube_10mm",
 )
 FALLEN_SUFFIX = "__fallen"
+# Set P wrist targets, in label order: how a placed part sits on its pegs (drives re-yaw / re-seat / remove).
+BUILD_STATES = ("seated", "shifted", "rotated", "tilted", "high", "wrong_part")
 
 
 def fallen_label(object_id: str) -> str:

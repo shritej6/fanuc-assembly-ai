@@ -20,7 +20,13 @@ TESTBED = {
     "classifier_sets": ("O",),
     "cosmos_ranges": (("N", 0.20, 0.30), ("R", 0.20, 0.30), ("Q", 0.20, 0.30), ("O", 0.45, 0.55)),
 }
-PROFILES = ("legacy", "testbed")
+# Set P (insertion alignment from the wrist): its own manifest, the wrist classifier learns the six build states.
+TESTBED_BUILD = {
+    "detector_sets": (),
+    "classifier_sets": ("P",),
+    "cosmos_ranges": (("P", 0.45, 0.55),),
+}
+PROFILES = ("legacy", "testbed", "testbed_build")
 
 
 def preparation_plan(
@@ -34,13 +40,14 @@ def preparation_plan(
     if profile not in PROFILES:
         raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILES}")
     root = output_root.resolve()
-    testbed = profile == "testbed"
-    detector_sets = TESTBED["detector_sets"] if testbed else DETECTOR_SETS
-    classifier_sets = TESTBED["classifier_sets"] if testbed else CLASSIFIER_SETS
+    sets = {"testbed": TESTBED, "testbed_build": TESTBED_BUILD}.get(profile)
+    detector_sets = sets["detector_sets"] if sets else DETECTOR_SETS
+    classifier_sets = sets["classifier_sets"] if sets else CLASSIFIER_SETS
     return {
         "profile": profile,
-        "fallen_classes": testbed,
-        "cosmos_ranges": [list(item) for item in TESTBED["cosmos_ranges"]] if testbed else [],
+        "fallen_classes": profile == "testbed",
+        "classifier_target": "build_state" if profile == "testbed_build" else "identity",
+        "cosmos_ranges": [list(item) for item in sets["cosmos_ranges"]] if sets else [],
         "mode": "smoke" if smoke else "full",
         "data_root": str(data_root.resolve()),
         "output_root": str(root),
@@ -67,6 +74,7 @@ def _manifest_config(plan: dict[str, Any]) -> ManifestConfig:
         include_cosmos=plan["include_cosmos"],
         max_scenes_per_set=plan["max_scenes_per_set"],
         profile=plan.get("profile", "legacy"),
+        classifier_target=plan.get("classifier_target", "identity"),
         fallen_classes=plan.get("fallen_classes", False),
         cosmos_ranges=tuple((name, low, high) for name, low, high in plan.get("cosmos_ranges", [])),
     )
