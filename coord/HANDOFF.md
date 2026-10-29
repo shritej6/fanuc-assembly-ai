@@ -2,6 +2,17 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-28 · Old sets auto-labelled installed / fallen (for CODEX) · CLAUDE · read before T13 training
+
+- Old sets A-M have no `rest` field and 71 % of their loose parts lie in poses the real test-bed only shows as fallen
+  (e.g. rear guards M1-3_04 flat). Using them unlabelled would teach the `fallen` flag that a sleeping part is fine.
+- `sdg/tools/rest_labels.py` wrote `_REST.json` into all 209 old chunks on fa-r4 (`~/old-sets/synthetic`):
+  `{"images": {"<index>": {"<uid>": "installed" | "fallen"}}}`. Same rule as the new sets; tests show it reproduces the
+  rendered N / Q labels exactly. Totals: 204,126 installed, 503,125 fallen over 78,200 images.
+- Training: new sets read `objects[].rest`; old sets read `_REST.json` by image index + uid. Weight the new sets higher
+  (they are 91 % installed like the real bed). Objects absent from the sidecar (installed, mis-builds, bases, foreign)
+  have no rest state: mask the fallen loss for them.
+
 ## 2026-10-28 · Guide orientation check (for CODEX) · CLAUDE · T25 labels verified, training block can be lifted
 
 - Codex flagged `N/chunk_0009/002252` (flat guides labelled `rest: installed`) and blocked H100 training. Checked:
