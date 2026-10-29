@@ -23,6 +23,7 @@ from assembly.catalog import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
+CAD_TRANSFORMS_PATH = ROOT / "assembly" / "cad_installation_transforms.json"
 CONTRACTS = ROOT / "contracts"
 
 EXPECTED_PRODUCTS = [
@@ -60,34 +61,6 @@ EXPECTED_PART_OWNERS = {
     "M6_03": 6,
     "M6_04": 6,
 }
-
-EXPECTED_INSTALLATION = {
-    "M1_01": ([0, 0, 0], 0),
-    "M1_02": ([0, 0, 7], 0),
-    "M1_03": ([0, 0, 18], 0),
-    "M1_04": ([0, 17.5, 4], 0),
-    "M2_01": ([0, 0, 0], 0),
-    "M2_02": ([0, 0, 7], 0),
-    "M2_03": ([0, 0, 18], 0),
-    "M2_04": ([0, 17.5, 4], 0),
-    "M3_01": ([0, 0, 0], 0),
-    "M3_02": ([0, 0, 7], 0),
-    "M3_03": ([0, 0, 18], 0),
-    "M3_04": ([0, 17.5, 4], 0),
-    "M4_01": ([0, 0, 0], 90),
-    "M4_02": ([0, 0, 5], 0),
-    "M4_03": ([0, 0, 18], 0),
-    "M4_04": ([0, -11.5, 18], 0),
-    "M5_01": ([0, 0, 0], 90),
-    "M5_02": ([0, 0, 5], 0),
-    "M5_03": ([0, 0, 18], 0),
-    "M5_04": ([0, -11.5, 18], 0),
-    "M6_01": ([0, 0, 0], 90),
-    "M6_02": ([0, 0, 5], 0),
-    "M6_03": ([0, 0, 18], 0),
-    "M6_04": ([0, -11.5, 18], 0),
-}
-
 
 def _catalog_data() -> dict:
     assert CATALOG_PATH.exists(), "assembly/catalog.yaml has not been created"
@@ -143,14 +116,38 @@ def test_catalog_covers_each_taxonomy_part_under_its_owner_once() -> None:
     assert dict(actual_pairs) == EXPECTED_PART_OWNERS
 
 
-def test_catalog_uses_exact_cad_local_offsets_and_gripper_rolls() -> None:
-    products = _catalog_data()["products"]
+def test_catalog_records_immutable_cad_geometry_provenance() -> None:
+    source = _catalog_data()["geometry_source"]
+
+    assert source == {
+        "file": "sdg/data/object_geometry.json",
+        "generator": "sdg/tools/object_geometry.py",
+        "commit": "5a24e10d5ac7c9a6b15e9779385138678244819d",
+        "generated_at": "2026-10-27T22:11:27-05:00",
+    }
+
+
+def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> None:
+    reference = json.loads(CAD_TRANSFORMS_PATH.read_text())
     actual = {
-        step["object_id"]: (step["insert_offset_mm"], step["gripper_roll_deg"])
-        for product in products
+        step["object_id"]: step
+        for product in _catalog_data()["products"]
         for step in product["steps"]
     }
-    assert actual == EXPECTED_INSTALLATION
+
+    assert set(actual) == set(reference["objects"])
+    for object_id, expected in reference["objects"].items():
+        offset_error = max(abs(a - b) for a, b in zip(actual[object_id]["insert_offset_mm"], expected["translation_mm"]))
+        assert offset_error <= 0.05, object_id
+        assert actual[object_id]["installed_rotation_matrix"] == expected["rotation_matrix"]
+
+
+def test_guard_installation_uses_cad_part_origin_and_rotation() -> None:
+    step = _catalog_data()["products"][0]["steps"][3]
+
+    assert step["object_id"] == "M1_04"
+    assert step["insert_offset_mm"] == [0.0, 21.5, 21.0]
+    assert step["installed_rotation_matrix"] == [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
 
 
 def test_load_catalog_returns_typed_products_and_steps() -> None:
@@ -159,6 +156,11 @@ def test_load_catalog_returns_typed_products_and_steps() -> None:
     actual = [(product.product, product.name, product.base_type) for product in catalog.products]
     assert actual == EXPECTED_PRODUCTS
     assert catalog.product(4).steps[0].insert_offset_mm == (0.0, 0.0, 0.0)
+    assert catalog.product(1).steps[3].installed_rotation_matrix == (
+        (1.0, 0.0, 0.0),
+        (0.0, 0.0, -1.0),
+        (0.0, 1.0, 0.0),
+    )
     assert catalog.product(4).steps[0].gripper_roll_deg == 90.0
 
 
@@ -193,6 +195,24 @@ def test_load_catalog_rejects_semantic_errors(
     path = _write_catalog(tmp_path / "semantic-error.yaml", invalid)
 
     with pytest.raises(CatalogSemanticError, match=message):
+        load_catalog(path)
+
+
+def test_load_catalog_rejects_unknown_step_keys(tmp_path: Path) -> None:
+    invalid = deepcopy(_catalog_data())
+    invalid["products"][0]["steps"][0]["unreviewed_pose"] = [1, 2, 3]
+    path = _write_catalog(tmp_path / "unknown-step-key.yaml", invalid)
+
+    with pytest.raises(CatalogSemanticError, match="unknown keys.*unreviewed_pose"):
+        load_catalog(path)
+
+
+def test_load_catalog_rejects_gripper_roll_outside_contract(tmp_path: Path) -> None:
+    invalid = deepcopy(_catalog_data())
+    invalid["products"][0]["steps"][0]["gripper_roll_deg"] = 180.0001
+    path = _write_catalog(tmp_path / "unsafe-gripper-roll.yaml", invalid)
+
+    with pytest.raises(CatalogSchemaError, match="gripper_roll_deg"):
         load_catalog(path)
 
 

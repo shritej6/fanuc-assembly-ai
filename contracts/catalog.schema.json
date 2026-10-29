@@ -4,9 +4,37 @@
   "title": "Product catalog and recipe (filled by T04 from the CAD)",
   "type": "object",
   "required": [
+    "geometry_source",
     "products"
   ],
   "properties": {
+    "geometry_source": {
+      "type": "object",
+      "description": "Immutable provenance for the CAD-derived installation transforms in this catalog.",
+      "required": [
+        "file",
+        "generator",
+        "commit",
+        "generated_at"
+      ],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
     "products": {
       "type": "array",
       "items": {
@@ -35,7 +63,10 @@
               "type": "object",
               "required": [
                 "step",
-                "object_id"
+                "object_id",
+                "insert_offset_mm",
+                "installed_rotation_matrix",
+                "gripper_roll_deg"
               ],
               "properties": {
                 "step": {
@@ -45,13 +76,31 @@
                   "$ref": "common.schema.json#/$defs/part_id"
                 },
                 "insert_offset_mm": {
+                  "description": "Translation of the STL part origin in the product fixture CAD frame, in millimetres. Transform through the measured fixture pose before expressing it in UF0.",
                   "type": "array",
                   "items": {
                     "type": "number"
                   }
                 },
+                "installed_rotation_matrix": {
+                  "description": "3x3 proper rotation mapping the STL print frame into the product fixture CAD frame. Combine with insert_offset_mm, then transform through the measured fixture pose into UF0.",
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
                 "gripper_roll_deg": {
-                  "type": "number"
+                  "description": "Provisional wrist roll for grasp planning, bounded until measured grasp frames replace it.",
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
                 }
               }
             }

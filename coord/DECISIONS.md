@@ -10,3 +10,4 @@ here with a date and who made them (the user decides; agents propose).
 | 2026-10-27 | Industry layer: PackML, birth certificate, two independent checks, OEE/Andon, OPC UA, Kanban + Pareto, FAT report | user |
 | 2026-10-27 | All poses in contracts use the controller frame UF0 in mm/deg (same as `obs["tcp_pose"]` and `"tcp"` actions) | Claude (proposal, part of T01) |
 | 2026-10-27 | Synthetic data root: `/data/ai_club/Innovation_lab_team_v` on Rosie (pending group write access); interim `~/fanuc-assembly-data` | user |
+| 2026-10-29 | Catalog installation translations and rotations are CAD fixture-frame transforms of each STL part origin from `sdg/data/object_geometry.json` at commit `5a24e10`; motion planning transforms them through the measured fixture pose into UF0. Provisional gripper rolls are separate grasp metadata. | Claude review of T04, implemented by Codex |

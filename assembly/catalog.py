@@ -102,7 +102,16 @@ class RecipeStep:
     step: int
     object_id: str
     insert_offset_mm: tuple[float, float, float]
+    installed_rotation_matrix: tuple[tuple[float, float, float], ...]
     gripper_roll_deg: float
+
+
+@dataclass(frozen=True, slots=True)
+class GeometrySource:
+    file: str
+    generator: str
+    commit: str
+    generated_at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +140,7 @@ class RecipeGraph:
 class Catalog:
     products: tuple[ProductRecipe, ...]
     _base_types_by_object: tuple[tuple[str, BaseType], ...]
+    geometry_source: GeometrySource
 
     def product(self, product_id: int) -> ProductRecipe:
         for product in self.products:
@@ -262,6 +272,16 @@ def _valid_offset(offset: Any) -> bool:
 
 
 def _validate_step(product_id: int, step: dict[str, Any], part_owners: dict[str, int]) -> None:
+    expected_keys = {
+        "step",
+        "object_id",
+        "insert_offset_mm",
+        "installed_rotation_matrix",
+        "gripper_roll_deg",
+    }
+    unknown_keys = sorted(set(step) - expected_keys)
+    if unknown_keys:
+        raise CatalogSemanticError(f"Catalog step has unknown keys: {', '.join(unknown_keys)}")
     expected_id = f"M{product_id}_{step['step']:02d}"
     object_id = step["object_id"]
     if object_id != expected_id:
@@ -271,8 +291,8 @@ def _validate_step(product_id: int, step: dict[str, Any], part_owners: dict[str,
     if not _valid_offset(step.get("insert_offset_mm")):
         raise CatalogSemanticError(f"{object_id} insert_offset_mm must contain three finite numbers")
     roll = step.get("gripper_roll_deg")
-    if not isinstance(roll, (int, float)) or not isfinite(roll):
-        raise CatalogSemanticError(f"{object_id} gripper_roll_deg must be finite")
+    if not isinstance(roll, (int, float)) or not isfinite(roll) or not -180 <= roll <= 180:
+        raise CatalogSemanticError(f"{object_id} gripper_roll_deg must be finite and within [-180, 180]")
 
 
 def _validate_product(
@@ -309,10 +329,12 @@ def _validate_semantics(data: dict[str, Any]) -> None:
 
 def _make_step(data: dict[str, Any]) -> RecipeStep:
     offset = tuple(float(value) for value in data["insert_offset_mm"])
+    rotation = tuple(tuple(float(value) for value in row) for row in data["installed_rotation_matrix"])
     return RecipeStep(
         step=int(data["step"]),
         object_id=str(data["object_id"]),
         insert_offset_mm=offset,
+        installed_rotation_matrix=rotation,
         gripper_roll_deg=float(data["gripper_roll_deg"]),
     )
 
@@ -333,4 +355,5 @@ def load_catalog(path: Path | str = DEFAULT_CATALOG_PATH) -> Catalog:
     _validate_schema(data)
     _validate_semantics(data)
     products = tuple(_make_product(product) for product in data["products"])
-    return Catalog(products, _base_type_pairs())
+    source = GeometrySource(**data["geometry_source"])
+    return Catalog(products, _base_type_pairs(), source)
