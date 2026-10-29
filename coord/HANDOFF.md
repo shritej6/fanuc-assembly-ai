@@ -2,6 +2,24 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T17 · CODEX · seeded prompt/layout/fault scenario fleet
+
+- Changed: added `eval/scenario_data.py`, `eval/scenario_runtime.py`, and the public `eval/scenario_fleet.py` API.
+  The fleet derives all six products and interchangeable base types from the validated catalog/taxonomy, generates
+  seeded three-product instructions and unique random layouts, and injects clean, defect, fallen, look-alike, foreign,
+  and spare-shortage cases. No `placement.yaml`, product trio, or object coordinate registry is read.
+- Runtime boundary: every part and pose reaches T09 through `ScriptedPerceptionPort`; the mock pose provider refuses
+  grasp/base poses until the current scan has observed them. Fallen cases cover approved and unavailable resting-side
+  grasps. `FleetRunner` follows the guarded TCP actions and reports only measured counts/ratios.
+- Run: `uv run pytest -q tests/test_scenario_fleet.py` (6 passed); `uv run pytest -q` (387 passed);
+  `uv run ruff check .` and `git diff --check` (passed).
+- Measured baseline at seed 90210, 20 scenarios, on T09 commit `248314a`: 60 products requested, 53 completed,
+  16 scenarios complete, 4 suspended, 1,932 action rows, 4 assists, 0 retries, and 13 escaped hazardous objects.
+  This is deliberately not an acceptance result: it reproduces PR #9's missing physical reject stage. Re-run the same
+  seed after Agent 1's T09 reject fixes; acceptance requires the measured escape count to reach zero without hardcoding.
+- Next: merge/rebase the new-files-only fleet onto the reviewed T09 fixes, run the identical seed plus additional
+  unseen seeds, and use the measured report as T23 FAT input. Never select the scripted port for `runtime="cell"`.
+
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
 - Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor
