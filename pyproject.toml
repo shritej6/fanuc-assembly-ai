@@ -7,6 +7,11 @@ dependencies = ["jsonschema>=4.18", "pyyaml>=6"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
+# CAD measurement (cad/risk_ranking.py); versions of the workspace that produced the committed ranking
+cad = ["numpy>=1.26", "trimesh>=4.0", "scipy>=1.11", "shapely>=2.0", "rtree>=1.2", "networkx>=3.0"]
+
+[tool.uv]
+default-groups = ["dev", "cad"]
 
 [tool.ruff]
 line-length = 120
@@ -14,3 +19,4 @@ extend-exclude = ["robot/cell"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
