@@ -18,6 +18,9 @@ from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import UnknownDialect
 
 from assembly.birth_certificate_artifacts import (
+    JSON_NAME,
+    MANIFEST_NAME,
+    PDF_NAME,
     ArtifactBundleError,
     verify_artifact_bundle,
     write_artifact_bundle,
@@ -134,6 +137,12 @@ def build_birth_certificate(
 def validate_birth_certificate(record: Mapping[str, object]) -> dict[str, Any]:
     """Return a detached JSON-safe record after shared-contract validation."""
     detached = _json_copy(record, "birth certificate")
+    _validate_identity(
+        detached.get("run_id"),
+        detached.get("rollout"),
+        detached.get("product"),
+        detached.get("base_instance"),
+    )
     schema, validator_type = _load_schema(SCHEMA_PATH)
     try:
         errors = sorted(validator_type(schema, registry=_schema_registry()).iter_errors(detached), key=_error_path)
@@ -169,6 +178,7 @@ def verify_birth_certificate_artifacts(artifacts: CertificateArtifacts) -> dict[
     """Verify stored JSON/PDF digests and revalidate the decoded record."""
     if not isinstance(artifacts, CertificateArtifacts):
         raise BirthCertificateWriteError("artifacts must be CertificateArtifacts")
+    _validate_artifact_paths(artifacts)
     try:
         record = verify_artifact_bundle(
             artifacts.json_path,
@@ -178,6 +188,17 @@ def verify_birth_certificate_artifacts(artifacts: CertificateArtifacts) -> dict[
     except ArtifactBundleError as error:
         raise BirthCertificateWriteError(str(error)) from error
     return validate_birth_certificate(record)
+
+
+def _validate_artifact_paths(artifacts: CertificateArtifacts) -> None:
+    paths = (artifacts.json_path, artifacts.pdf_path, artifacts.manifest_path)
+    if not all(isinstance(path, Path) for path in paths):
+        raise BirthCertificateWriteError("artifact paths must all be pathlib.Path values")
+    expected = (JSON_NAME, PDF_NAME, MANIFEST_NAME)
+    if tuple(path.name for path in paths) != expected:
+        raise BirthCertificateWriteError("artifact paths must use the fixed certificate filenames")
+    if len({path.parent for path in paths}) != 1:
+        raise BirthCertificateWriteError("artifact paths must share one certificate directory")
 
 
 def _validate_identity(run_id: object, rollout: object, product: object, base_instance: object) -> None:

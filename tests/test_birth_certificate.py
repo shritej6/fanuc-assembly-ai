@@ -18,6 +18,7 @@ import assembly.birth_certificate_artifacts as artifact_module
 from assembly.birth_certificate import (
     BirthCertificateInputError,
     BirthCertificateWriteError,
+    CertificateArtifacts,
     ProductOutcome,
     ProductResult,
     StepInspectionEvidence,
@@ -217,6 +218,64 @@ def test_validation_rejects_more_than_four_product_steps() -> None:
 
     with pytest.raises(BirthCertificateInputError, match="at most four"):
         validate_birth_certificate(record)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rollout", -1, "rollout"),
+        ("rollout", True, "rollout"),
+        ("rollout", 1.5, "rollout"),
+        ("product", 0, "product"),
+        ("product", 7, "product"),
+        ("product", True, "product"),
+        ("product", 1.5, "product"),
+        ("base_instance", "", "base_instance"),
+        ("base_instance", 42, "base_instance"),
+    ],
+)
+def test_public_validation_enforces_domain_identity(field: str, value: object, message: str) -> None:
+    record = dict(_build_good(), **{field: value})
+
+    with pytest.raises(BirthCertificateInputError, match=message):
+        validate_birth_certificate(record)
+
+
+def test_writer_enforces_domain_identity_before_creating_directories(tmp_path: Path) -> None:
+    record = dict(_build_good(), rollout=-1)
+
+    with pytest.raises(BirthCertificateInputError, match="rollout"):
+        write_birth_certificate(record, output_root=tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_verifier_revalidates_identity_after_digest_checks(tmp_path: Path) -> None:
+    artifacts = write_birth_certificate(_build_good(), output_root=tmp_path)
+    invalid = dict(_build_good(), product=7)
+    canonical = json.dumps(invalid, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
+    artifacts.json_path.chmod(0o644)
+    artifacts.manifest_path.chmod(0o644)
+    artifacts.json_path.write_text(json.dumps(invalid, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest = json.loads(artifacts.manifest_path.read_text())
+    manifest["canonical_json_sha256"] = hashlib.sha256(canonical).hexdigest()
+    artifacts.manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(BirthCertificateInputError, match="product"):
+        birth_certificate_module.verify_birth_certificate_artifacts(artifacts)
+
+
+@pytest.mark.parametrize(
+    "artifacts",
+    [
+        CertificateArtifacts("certificate.json", Path("certificate.pdf"), Path("manifest.json")),  # type: ignore[arg-type]
+        CertificateArtifacts(Path("wrong.json"), Path("certificate.pdf"), Path("manifest.json")),
+        CertificateArtifacts(Path("a/certificate.json"), Path("b/certificate.pdf"), Path("a/manifest.json")),
+    ],
+)
+def test_verifier_rejects_malformed_artifact_paths(artifacts: CertificateArtifacts) -> None:
+    with pytest.raises(BirthCertificateWriteError, match="artifact paths"):
+        birth_certificate_module.verify_birth_certificate_artifacts(artifacts)
 
 
 def test_rebuild_tracks_all_attempts_spare_and_assist_episodes() -> None:
