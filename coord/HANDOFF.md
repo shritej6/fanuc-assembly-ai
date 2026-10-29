@@ -11,12 +11,13 @@ Newest first. One entry per finished task.
 - Measurement boundaries: every card carries serialized failure/opportunity counts, source, computed rate, and the
   `PRELIMINARY` classification. Replayed events never decrement inventory or inflate order quantity. Pareto rows count
   only registered explicit defect causes plus bounded T09 retry/reject-failed occurrences; free-form Andon text is not
-  parsed as factory data. Malformed events, unknown causes, unbounded retry shapes, duplicate/unknown policies, and a
-  consumed spare without a policy fail closed.
-- Run: `UV_CACHE_DIR=/private/tmp/fanuc-uv-cache uv run pytest -q` (427 passed);
+  parsed as factory data. Malformed events, cross-product part ownership, unknown causes, unbounded retry shapes,
+  duplicate/unknown policies, and a consumed spare without a policy fail closed.
+- Run: `UV_CACHE_DIR=/private/tmp/fanuc-uv-cache uv run pytest -q` (428 passed);
   `UV_CACHE_DIR=/private/tmp/fanuc-uv-cache uv run ruff check .` (passed); `uv lock --check` and `uv pip check`
   (compatible); `git diff --check` (clean); AST gate found 324-line implementation / 315-line test files and no
-  function over 40 lines. `contracts/` and `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
+  function over 40 lines. The reviewed implementation is 326 lines; `contracts/` and
+  `robot/cell/cell_client.py` are unchanged from T09 commit `248314a`.
 - Next: Claude reviews the T20 PR and can render `OperationsView.cards` and `OperationsView.pareto` without duplicating
   domain logic. Production callers must supply reviewed stock thresholds and measured preliminary-rate evidence; this
   branch remains stacked on the open T09 controller PR.

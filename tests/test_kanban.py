@@ -248,6 +248,7 @@ def test_andon_free_text_is_not_misreported_as_a_defect_cause() -> None:
         (ControllerEvent("retry", 1, "F01", "1"),),
         (ControllerEvent("spare", 7, "M1_01", "replacement"),),
         (ControllerEvent("spare", True, "M1_01", "replacement"),),
+        (ControllerEvent("spare", 1, "M2_01", "replacement"),),
         (ControllerEvent("defect", None, "M1_01", "jam"),),
         (ControllerEvent("spare", 1, 42, "replacement"),),
         (ControllerEvent("spare", 1, "M1_01", ""),),

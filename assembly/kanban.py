@@ -188,14 +188,14 @@ def _validate_policies(catalog: Catalog, policies: tuple[StockPolicy, ...]) -> t
 def _validate_events(catalog: Catalog, events: object) -> tuple[ControllerEvent, ...]:
     if not isinstance(events, tuple):
         raise KanbanInputError("events must be an immutable tuple")
-    part_ids = {step.object_id for product in catalog.products for step in product.steps}
+    owners = {step.object_id: product.product for product in catalog.products for step in product.steps}
     product_ids = {product.product for product in catalog.products}
     for event in events:
-        _validate_event(event, part_ids, product_ids)
+        _validate_event(event, owners, product_ids)
     return events
 
 
-def _validate_event(event: object, part_ids: set[str], product_ids: set[int]) -> None:
+def _validate_event(event: object, owners: dict[str, int], product_ids: set[int]) -> None:
     if type(event) is not ControllerEvent:
         raise KanbanInputError("events must contain only ControllerEvent values")
     kind = _nonempty(event.kind, "event.kind")
@@ -204,7 +204,7 @@ def _validate_event(event: object, part_ids: set[str], product_ids: set[int]) ->
     _validate_event_product(event.product, product_ids)
     if kind in _OBJECT_EVENT_KINDS and event.product is None:
         raise KanbanInputError(f"event kind {kind!r} requires a catalog product")
-    _validate_event_object(kind, event.object_id, part_ids)
+    _validate_event_object(kind, event.object_id, event.product, owners)
     detail = _nonempty(event.detail, "event.detail")
     if kind == "defect":
         try:
@@ -222,13 +222,15 @@ def _validate_event_product(product: object, product_ids: set[int]) -> None:
         raise KanbanInputError(f"event product {product!r} is not in the catalog")
 
 
-def _validate_event_object(kind: str, object_id: object, part_ids: set[str]) -> None:
+def _validate_event_object(kind: str, object_id: object, product: int | None, owners: dict[str, int]) -> None:
     if object_id is None:
         if kind in _OBJECT_EVENT_KINDS:
             raise KanbanInputError(f"event kind {kind!r} requires a catalog part")
         return
-    if not isinstance(object_id, str) or object_id not in part_ids:
+    if not isinstance(object_id, str) or object_id not in owners:
         raise KanbanInputError(f"event object {object_id!r} is not a catalog part")
+    if kind in _OBJECT_EVENT_KINDS and owners[object_id] != product:
+        raise KanbanInputError(f"event object {object_id!r} does not belong to product {product!r}")
 
 
 def _require_spare_policies(
