@@ -145,6 +145,25 @@ def locate(bbox_px: tuple[float, float, float, float], pts: np.ndarray, uv: np.n
                    top_z_mm=float(np.percentile(mm[:, 2], TOP_PERCENTILE)) + UF0_Z_MM, points=len(mm))
 
 
+def part_mask(cams: dict, depth_mm: np.ndarray, bbox_px: tuple[float, float, float, float],
+              above_mm: float) -> np.ndarray:
+    """The table depth image's pixels on the part inside a table colour box: the same points `locate` uses."""
+    pts, pix = geometry.depth_to_base(cams["table_depth"], depth_mm, with_pixels=True)
+    above = pts[:, 2] * 1000.0 > geometry.SURFACE_Z * 1000.0 + above_mm
+    pts, pix = pts[above], pix[above].astype(np.int64)
+    uv = geometry.project(cams["table"], pts)
+    x0, y0, x1, y1 = bbox_px
+    inside = (uv[:, 0] >= x0) & (uv[:, 0] <= x1) & (uv[:, 1] >= y0) & (uv[:, 1] <= y1)
+    pts, pix = pts[inside], pix[inside]
+    mask = np.zeros(np.asarray(depth_mm).shape, bool)
+    if len(pts):
+        keep = _largest_group(pts[:, :2] * 1000.0)
+        mask[pix[keep, 1], pix[keep, 0]] = True
+    if mask.sum() < MIN_POINTS:
+        raise LocalizeError(f"{int(mask.sum())} depth pixels on the part inside {bbox_px}; need {MIN_POINTS}")
+    return mask
+
+
 def wrist_bbox(cams: dict, points_uf0_mm: np.ndarray, joints) -> tuple[float, float, float, float]:
     """The wrist colour-image box around UF0 points (e.g. a posed part's mesh vertices) for this arm pose.
 
@@ -152,7 +171,8 @@ def wrist_bbox(cams: dict, points_uf0_mm: np.ndarray, joints) -> tuple[float, fl
     is through the wrist calibration and the joints' FK; the wrist models were trained on crops of such boxes.
     Against 60 set O renders (target mesh posed by its label, joints from the twin IK at the label's TCP) the box
     size matched (median width and height ratio 1.00, 0.99) and the centre was off by median 11.5 px, max 25.9 px
-    (IoU median 0.665): close enough to find the part, not to crop it; refine with the wrist depth before cropping."""
+    (IoU median 0.665). The renders' joints come from the twin IK, not measured joints, and their wrist depth does not
+    reproject onto the table with the real calibration, so the real-cell error is measured on the first real images."""
     pts = np.asarray(points_uf0_mm, float).reshape(-1, 3)
     if not np.isfinite(pts).all() or len(pts) == 0:
         raise LocalizeError("wrist_bbox needs finite UF0 points")
