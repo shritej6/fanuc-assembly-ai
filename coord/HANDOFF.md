@@ -2,6 +2,29 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T35 Cosmos Reason 2 8B endpoint · CLAUDE · client, bring-up and health check; live test BLOCKED
+
+- Mismatch: the user moved the build check to Cosmos Reason 2 **8B** on 2026-10-28, but T21 (branched before that)
+  accepts only `model_id == "Cosmos-Reason2-2B"` as production evidence (`agent/cosmos_reason.py:241`,
+  `agent/task_validation.py:162`), and no real endpoint/client existed. Any real 8B pass would be held (verified:
+  the gate returns `hold_andon`). Those are Codex files: the exact change is in `coord/CODEX_BRIEF.md` (T35); a
+  strict `xfail` test turns red once it lands. `docs/PLAN.md` and `cosmos-engineer.md` now say 8B on this line too.
+  `policy_learn/groot/pins.env` `Cosmos-Reason2-2B` is GR00T's backbone, not the build check: unchanged.
+- Added: `agent/cosmos_reason2_endpoint.py` (production `CosmosReasonPort`: official `nvidia/Cosmos-Reason2-8B` at
+  revision `a9fae2cf…`, vLLM OpenAI API, NVIDIA's `<think>` reasoning prompt, JSON-schema answer
+  `{"verdict": pass|fail, "reason"}`; SHA-256 re-check of the capture, 3 tries with backoff on transport errors;
+  wrong model, truncated, unparseable or extra-field answers → `CosmosReasonUnavailable` → Hold/Andon).
+  `serving/cosmos_reason2/serve.sh` (pinned `vllm/vllm-openai:v0.11.2@sha256:2c908d5a…`, `--reasoning-parser qwen3`,
+  `--max-model-len 16384`, bf16, 127.0.0.1 only), `up.sh` (laptop one-command: Brev create → READY → token
+  file-to-file → serve → ssh tunnel → health; `up.sh down` deletes the box), `health.py` (right model + weights, two
+  rendered set D crops must parse), `eval/cosmos_reason2_bench.py` (set D crops → p50/p95, parse rate, confusion).
+- Run: `uv run pytest -q` → 656 passed, 1 xfailed; `uvx ruff check .` clean. Saturday:
+  `bash serving/cosmos_reason2/up.sh`, then `uv run python -m serving.cosmos_reason2.health`.
+- BLOCKED (not measured, no numbers claimed): every `brev create` (L40S, A100 80 GB, H100; 6 types) returns
+  "Bad Request" for the org on 2026-10-30 ~13:20 CT, and the Hugging Face account's token gets 403 on
+  `nvidia/Cosmos-Reason2-8B` (2B works): the 8B licence has not been accepted on huggingface.co. Next: user accepts
+  the licence and fixes Brev provisioning; then run `up.sh`, the bench, record p50/p95 + GPU memory here, `up.sh down`.
+
 ## 2026-10-29 · T21 latest-head correction · CODEX · trusted prompt and build evidence
 
 - Base: rebased cleanly onto accepted T09 `d1bfd9c` (T21 depends directly on T09, not T15). Product authority now

@@ -106,7 +106,7 @@ I compared every STL pair by surface distance:
 | Damaged parts | anomalib (PatchCore) |
 | Missing layers | Table and wrist depth |
 | Decisions | Recipe state machine + live inventory |
-| Build check | Recipe check, then Cosmos Reason 2 (2B) |
+| Build check | Recipe check, then Cosmos Reason 2 (8B, user 2026-10-28; was 2B) |
 | Motion | Detected pose + CAD heights (scripted baseline) |
 | Learned picking | GR00T N1.7 via LeRobot (main), SmolVLA (backup), ACT (baseline); trained on sim demos multiplied by Isaac Lab Mimic; used only if it beats the script |
 | Deployment | Official client `policy.py` |
@@ -126,7 +126,7 @@ Operator: "assemble everything on the table"   (or obs["trial"]["instruction"])
 6 ASSEMBLE  01→04: scripted motion from detected pose + CAD heights (GR00T N1.7 picking only if it beats the script)
             → VERIFY (depth height + wrist check)
 7 RECOVER   not seated → pull out and reinsert ×2 → still bad: disassemble 04→01, re-inspect, swap, rebuild
-8 FINAL QC  recipe check, then Cosmos Reason 2 second opinion → DONE / REBUILD
+8 FINAL QC  recipe check, then Cosmos Reason 2 (8B) second opinion → DONE / REBUILD
 9 LEARN     log defects, jams, slips and retries per part → risk table → stocking advice
 ```
 

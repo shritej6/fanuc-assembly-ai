@@ -1,0 +1,18 @@
+[
+  {
+    "capture_id": "D-chunk_0000-000001-side",
+    "product": 1,
+    "step": 4,
+    "state": "seated",
+    "top_object": "M1_04",
+    "source": "rendered set D chunk_0000 (Isaac Sim, sim only)"
+  },
+  {
+    "capture_id": "D-chunk_0000-000004-side",
+    "product": 5,
+    "step": 1,
+    "state": "high",
+    "top_object": "M5_01",
+    "source": "rendered set D chunk_0000 (Isaac Sim, sim only)"
+  }
+]
