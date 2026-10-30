@@ -95,6 +95,11 @@ class HoldActionCfg(ActionTermCfg):
     asset_name: str = "robot"
 
 
+@configclass
+class NoEventsCfg:
+    """No reset event: the cells keep the spawn layout (the timing does not depend on where parts sit)."""
+
+
 def _episode_steps(env) -> torch.Tensor:
     return env.episode_length_buf.float().unsqueeze(-1)
 
@@ -127,7 +132,7 @@ def build_cfg():
     if not args.cameras:
         obs.policy.time = ObservationTermCfg(func=_episode_steps)
     cfg.actions, cfg.observations = ActionsCfg(), obs
-    cfg.events = None
+    cfg.events = NoEventsCfg()
     cfg.terminations.success = None
     cfg.episode_length_s = 1.0e4
     return cfg
