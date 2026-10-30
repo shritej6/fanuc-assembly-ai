@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from assembly.catalog import Catalog
+from assembly.controller_completion import CompletionControllerMixin, validate_final_product_verifier
 from assembly.controller_execution import ExecutionControllerMixin
 from assembly.controller_inspection import InspectionControllerMixin, PendingReject
 from assembly.controller_placement import PlacementControllerMixin
@@ -12,6 +13,7 @@ from assembly.controller_ports import (
     ControllerEvent,
     ControllerPortError,
     ExecutionTolerances,
+    FinalProductVerifier,
     PerceptionPort,
     PerceptionTolerances,
     call_port,
@@ -19,7 +21,7 @@ from assembly.controller_ports import (
     observation_time,
     reconcile_inventory,
 )
-from assembly.controller_recovery import RecoveryControllerMixin
+from assembly.controller_recovery import PendingInsertionLift, RecoveryControllerMixin
 from assembly.controller_startup import StartupHoldConfig, validated_startup_hold
 from assembly.execution import ExecutionError, GuardedMotionQueue
 from assembly.instruction import InstructionError, parse_requested_products
@@ -44,7 +46,7 @@ from assembly.planner import (
     PreparedPlanStep,
     RecipePlanner,
 )
-from assembly.recovery import RecoveryCoordinator, RecoveryStage, RecoveryStagePlan, RecoveryTargetProvider
+from assembly.recovery import RecoveryTargetProvider
 from assembly.safety import SafetySupervisor
 from assembly.state_machine import PackMLState, PackMLStateMachine, ReservationReleaseError, StateMachineError
 from assembly.verification import (
@@ -59,6 +61,7 @@ class ControllerInputError(ValueError):
 
 
 class AssemblyController(
+    CompletionControllerMixin,
     ExecutionControllerMixin,
     InspectionControllerMixin,
     PlacementControllerMixin,
@@ -80,6 +83,8 @@ class AssemblyController(
         execution_tolerances: ExecutionTolerances,
         perception_tolerances: PerceptionTolerances,
         recovery_targets: RecoveryTargetProvider,
+        final_verifier: FinalProductVerifier,
+        allow_mock_final_verification: bool = False,
     ) -> None:
         self._catalog = catalog
         self._perception = perception
@@ -92,10 +97,19 @@ class AssemblyController(
         self._execution_tolerances = execution_tolerances
         self._perception_tolerances = perception_tolerances
         self._recovery_targets = recovery_targets
+        self._final_verifier = final_verifier
+        if type(allow_mock_final_verification) is not bool:
+            raise ControllerInputError("allow_mock_final_verification must be a boolean")
+        self._final_motion_source = validate_final_product_verifier(
+            final_verifier,
+            allow_mock=allow_mock_final_verification,
+        )
         self.reset()
 
     def reset(self) -> None:
         self._products: tuple[int, ...] = ()
+        self._schedule: tuple[int, ...] = ()
+        self._deferred_missing: set[int] = set()
         self._instruction: str | None = None
         self.inventory = Inventory(self._catalog)
         self.state_machine = PackMLStateMachine(reservation_releaser=self.inventory)
@@ -110,17 +124,19 @@ class AssemblyController(
             tolerances=self._execution_tolerances,
             perception_tolerances=self._perception_tolerances,
         )
+        self._reset_pending_state()
+
+    def _reset_pending_state(self) -> None:
         self._prepared: PreparedPlanStep | None = None
         self._pending_pre_pick = None
         self._forced_reject_condition = None
         self._pending_reject: PendingReject | None = None
         self._pending_install = None
-        self._recovery = RecoveryCoordinator(self._recovery_targets)
-        self._pending_recovery_inspection: RecoveryStage | None = None
-        self._pending_recovery_stage: RecoveryStagePlan | None = None
-        self._pending_recovery_release: RecoveryStagePlan | None = None
+        self._pending_insertion_lift: PendingInsertionLift | None = None
+        self._insertion_retries_by_instance: dict[str, int] = {}
+        self._pending_drop_release: str | None = None
+        self._drop_attempts_by_instance: dict[str, int] = {}
         self._awaiting_post = False
-        self._failed_attempts = 0
         self._pending_spare_instance: str | None = None
         self._announced_spares: set[str] = set()
         self._finished = False
@@ -130,6 +146,9 @@ class AssemblyController(
         self._held_instance_id: str | None = None
         self._resume_acknowledged = False
         self._coarse_xy_by_instance: dict[str, tuple[float, float]] = {}
+        self._intrusion_attempts = 0
+        self._intrusion_waiting_for_rescan = False
+        self._pending_intrusion_replan = False
 
     @property
     def completed_products(self) -> tuple[int, ...]:
@@ -197,6 +216,7 @@ class AssemblyController(
             products = parse_requested_products(instruction, self._catalog)
             self._instruction = instruction
             self._products = products
+            self._schedule = products
             return
         if instruction != self._instruction:
             raise InstructionError("trial.instruction changed before controller reset")
@@ -207,13 +227,15 @@ class AssemblyController(
             self.inventory,
             snapshot,
             observed_at,
-            held_instance_id=self._held_instance_id,
+            held_instance_id=self._held_instance_id or self._pending_drop_release,
         )
         self._coarse_xy_by_instance = {
             item.instance_id: item.coarse_xy_mm
             for item in snapshot.items
             if item.coarse_xy_mm is not None
         }
+        if self._intrusion_waiting_for_rescan:
+            self._intrusion_waiting_for_rescan = False
         if not self._surface_claimed_conditions():
             return current.as_action()
         self._resume_after_scan()
@@ -226,6 +248,14 @@ class AssemblyController(
 
     def _resume_after_scan(self) -> None:
         if self.state_machine.state is not PackMLState.HELD or not self._resume_acknowledged:
+            return
+        blocker = self._resume_physical_blocker()
+        if blocker is not None:
+            self._resume_acknowledged = False
+            reason = f"operator resume blocked: unresolved {blocker} requires physical reconciliation"
+            self._events.append(
+                ControllerEvent("andon", self.state_machine.current_product, None, reason)
+            )
             return
         if self.state_machine.current_product is None:
             self.state_machine.reset("operator corrected trial instruction")
@@ -255,6 +285,8 @@ class AssemblyController(
         terminal = {PackMLState.HELD, PackMLState.ABORTED}
         if self._finished or self.state_machine.state in terminal:
             return True, current.as_action()
+        if self._intrusion_waiting_for_rescan:
+            return True, current.as_action()
         if not self._ensure_product_started():
             return True, current.as_action()
         if self._motion_queue.active:
@@ -270,8 +302,15 @@ class AssemblyController(
         current: Waypoint,
         observed_at: float,
     ) -> tuple[bool, Action | None]:
+        if self._pending_intrusion_replan:
+            queued = self._replan_after_intrusion(observation, current, observed_at)
+            action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
+            return True, action
         if self._pending_reject is not None:
             self._verify_reject_transfer(observation, current, observed_at)
+            return True, None
+        if self._pending_drop_release is not None:
+            self._commit_drop_release()
             return True, None
         if self._pending_pre_pick is not None:
             queued = self._prepare_after_inspection(observation, current, observed_at)
@@ -280,16 +319,6 @@ class AssemblyController(
         if self._pending_install is not None:
             self._commit_install()
             return True, None
-        if self._pending_recovery_release is not None:
-            self._commit_recovery_release()
-            return True, None
-        if self._pending_recovery_inspection is not None:
-            queued = self._prepare_recovery_after_inspection(observation, current, observed_at)
-            action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
-            return True, action
-        if self._pending_recovery_stage is not None:
-            verified = self._verify_recovery_stage(observation, current, observed_at)
-            return True, None if verified else current.as_action()
         return False, None
 
     def _progress_ready(
@@ -304,8 +333,8 @@ class AssemblyController(
                 return True, action
             if not self._ensure_reservation():
                 return True, current.as_action()
-        if self._recovery.active:
-            queued = self._prepare_recovery_stage(observation, current, observed_at)
+        if self._pending_insertion_lift is not None:
+            queued = self._prepare_after_insertion_lift(observation, current, observed_at)
             action = self._emit_motion_chunk(observation, current, observed_at) if queued else None
             return True, action
         if self._awaiting_post:
@@ -334,6 +363,7 @@ class AssemblyController(
         hold = self._motion_queue.pending_endpoint or self._last_safe_waypoint or self._startup_hold
         self._hold(reason)
         return hold.as_action()
+
     def _ensure_product_started(self) -> bool:
         state = self.state_machine.state
         if state is PackMLState.COMPLETE:
@@ -341,7 +371,7 @@ class AssemblyController(
                 return False
             state = self.state_machine.state
         if state is PackMLState.IDLE:
-            product = self._products[self._product_index]
+            product = self._schedule[self._product_index]
             self.state_machine.start(product)
             self.state_machine.transition(PackMLState.EXECUTE)
         if self.state_machine.state is PackMLState.SUSPENDED:
@@ -352,9 +382,17 @@ class AssemblyController(
         if self.inventory.active_product is not None:
             return True
         try:
-            reservation = self._planner.reserve_product(self.inventory, self._products[self._product_index])
+            reservation = self._planner.reserve_product(self.inventory, self._schedule[self._product_index])
         except InventoryShortageError as error:
+            if self._defer_missing_product(error):
+                return False
             self._suspend(str(error))
+            return False
+        spare = next((part for part in reservation.parts if part.source_zone is InventoryZone.SPARE), None)
+        if spare is not None and self._defer_current_product(
+            spare.object_id,
+            f"table part {spare.object_id} missing; defer before using spare {spare.instance_id}",
+        ):
             return False
         self._record_spare_sources(reservation)
         return True
@@ -362,7 +400,7 @@ class AssemblyController(
     def _retry_reservation(self) -> bool:
         try:
             if self._pending_spare_instance is None:
-                reservation = self._planner.reserve_product(self.inventory, self._products[self._product_index])
+                reservation = self._planner.reserve_product(self.inventory, self._schedule[self._product_index])
                 self._record_spare_sources(reservation)
             else:
                 spare = self.inventory.replace_with_spare(self._pending_spare_instance)
@@ -384,7 +422,7 @@ class AssemblyController(
             self._events.append(ControllerEvent("spare", reservation.product, part.object_id, part.instance_id))
 
     def _advance_product(self) -> bool:
-        if self._product_index + 1 >= len(self._products):
+        if self._product_index + 1 >= len(self._schedule):
             self._finished = True
             return False
         self.state_machine.reset("next product")
@@ -392,16 +430,23 @@ class AssemblyController(
         self._product_index += 1
         return True
 
+    def _defer_missing_product(self, error: InventoryShortageError) -> bool:
+        return self._defer_current_product(error.required_object_id, str(error))
 
-    def _finish_product(self) -> None:
-        product = self.state_machine.current_product
-        if product is None:
-            raise RuntimeError("completed PackML cycle has no product owner")
-        self.inventory.complete_product(product)
-        self.state_machine.complete()
-        self.state_machine.transition(PackMLState.COMPLETE)
-        self._completed.append(product)
-        self._events.append(ControllerEvent("complete", product, None, "four verified steps"))
+    def _defer_current_product(self, object_id: str | None, detail: str) -> bool:
+        product = self._schedule[self._product_index]
+        has_other_work = self._product_index + 1 < len(self._schedule)
+        if product in self._deferred_missing or not has_other_work:
+            return False
+        remaining = self._schedule[self._product_index + 1 :]
+        self._schedule = (*self._schedule[: self._product_index], *remaining, product)
+        self._deferred_missing.add(product)
+        self.state_machine.stop("defer missing product while other requested products remain")
+        self.state_machine.transition(PackMLState.STOPPED)
+        self.state_machine.reset("deferred product")
+        self.state_machine.transition(PackMLState.IDLE)
+        self._events.append(ControllerEvent("deferred", product, object_id, detail))
+        return True
 
     def _suspend(self, reason: str) -> None:
         if self.state_machine.state is PackMLState.EXECUTE:

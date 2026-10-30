@@ -218,7 +218,7 @@ def test_safe_z_inspection_route_avoids_obstacle_on_old_diagonal_path() -> None:
     assert controller.state_machine.state is PackMLState.EXECUTE
 
 
-def test_collision_on_safe_z_rise_aborts_before_waypoint_is_returned() -> None:
+def test_crowded_collision_holds_without_guessing_blocker_or_staging_target() -> None:
     observed = tuple(
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
@@ -228,8 +228,10 @@ def test_collision_on_safe_z_rise_aborts_before_waypoint_is_returned() -> None:
     output = CellAdapter(controller, action_mode="tcp", dt=0.1).act(_observation((1,)))
 
     assert output == [200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0]
-    assert controller.state_machine.state is PackMLState.ABORTED
-    assert controller.events[-1].kind == "abort"
+    assert controller.state_machine.state is PackMLState.HELD
+    assert controller.events[-1].kind == "andon"
+    assert "typed blocker identity" in controller.events[-1].detail
+    assert "calibrated empty staging target" in controller.events[-1].detail
 
 
 def test_andon_restock_replaces_pending_rejected_instance_and_resumes() -> None:
@@ -286,22 +288,6 @@ class OffsetTcpPoses(CalibratedScenarioPoses):
         return replace(grasp, tcp=replace(grasp.tcp, x=grasp.tcp.x + 5.0))
 
 
-class RecoveryAuditPerception(ScriptedPerception):
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        self.recovery_pre_pick_poses: list[tuple[float, ...]] = []
-
-    def pre_pick(self, observation, part):
-        if part.zone in {InventoryZone.INSTALLED, InventoryZone.STAGED}:
-            self.recovery_pre_pick_poses.append(tuple(observation["tcp_pose"]))
-        return super().pre_pick(observation, part)
-
-
-class FoundationPoseOnlyRecoveryPoses(CalibratedScenarioPoses):
-    def grasp_for(self, part, *, observed_at_s: float):
-        raise AssertionError(f"legacy grasp_for called for {part.instance_id} at {observed_at_s}")
-
-
 def test_missing_approved_grasp_holds_andon_without_commanding_pick() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
     controller = _controller(perception)
@@ -330,22 +316,6 @@ def test_foundationpose_object_to_tcp_offset_is_not_compared_to_object_origin() 
     assert controller.state_machine.state is PackMLState.EXECUTE
     assert controller.plan_records[0].grasp.x == 245.0
     assert output != observation["tcp_pose"] + [0.0]
-
-
-def test_recovery_repicks_only_after_inspection_stop_with_foundationpose_grasp() -> None:
-    observed = tuple(
-        item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
-    )
-    perception = RecoveryAuditPerception(observed, set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-    poses = FoundationPoseOnlyRecoveryPoses()
-    controller._poses = poses
-    controller._planner = RecipePlanner(load_catalog(), poses)
-
-    _drive(controller, products=(1,), limit=1200)
-
-    assert perception.recovery_pre_pick_poses
-    assert all(pose[2:5] == (-168.0, -180.0, 0.0) for pose in perception.recovery_pre_pick_poses)
 
 
 def test_runtime_failure_while_suspended_preserves_hold_request() -> None:

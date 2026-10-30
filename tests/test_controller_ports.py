@@ -102,6 +102,16 @@ def test_current_waypoint_accepts_official_client_array_shape() -> None:
     assert waypoint.gripper == 0.0
 
 
+def test_current_waypoint_rejects_nonbinary_official_gripper_state() -> None:
+    observation = {
+        "tcp_pose": [200.0, 0.0, -250.0, -180.0, 0.0, 0.0],
+        "joints": [0.0] * 6 + [0.5],
+    }
+
+    with pytest.raises(ControllerPortError, match="gripper must be exactly 0 or 1"):
+        current_waypoint(observation)
+
+
 def test_pose_agreement_uses_measured_distance_and_wrapped_yaw() -> None:
     actual = {"x": 100.2, "y": 50.0, "z": -300.0, "yaw": -179.9}
     expected = (100.0, 50.0, -300.0, 180.0)

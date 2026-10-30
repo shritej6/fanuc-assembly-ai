@@ -71,6 +71,23 @@ class RecoveryTransferEvidence(EvidencePair):
 
 
 @dataclass(frozen=True, slots=True)
+class FinalProductEvidence:
+    """Result from two endpoint-verified, safety-approved physical views."""
+
+    observed_at_s: float
+    complete: bool
+    product: int
+    base_instance_id: str
+    installed_instance_ids: tuple[str, ...]
+    view_ids: tuple[str, str]
+    view_instance_ids: tuple[tuple[str, ...], tuple[str, ...]]
+    view_passes: tuple[bool, bool]
+    checks_agree: bool
+    motion_source: str
+    failed_instance_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CollisionScene:
     observed_at_s: float
     complete: bool
@@ -78,6 +95,7 @@ class CollisionScene:
     base_pose: tuple[float, float, float, float]
     moving_instance_id: str
     moving_attached: bool
+    intrusion_detected: bool
     fixtures: tuple[AABB, ...] = ()
     parts: tuple[AABB, ...] = ()
 
@@ -136,6 +154,21 @@ class PerceptionPort(Protocol):
         moving_instance_id: str,
         base_instance_id: str,
     ) -> CollisionScene: ...
+
+
+class FinalProductVerifier(Protocol):
+    """Own physical view motion, endpoint verification, and paired evidence."""
+
+    reviewed_motion_source: str
+    mock_only: bool
+
+    def verify(
+        self,
+        observation: Observation,
+        product: int,
+        base_instance_id: str,
+        installed_instance_ids: tuple[str, ...],
+    ) -> FinalProductEvidence: ...
 
 
 def _finite(value: object, field: str) -> float:
@@ -299,6 +332,8 @@ def current_waypoint(observation: Observation) -> Waypoint:
         "observation.joints",
     )
     gripper = _finite(joints[6], "observation.joints.gripper")
+    if gripper not in (0.0, 1.0):
+        raise ControllerPortError("observation.joints.gripper must be exactly 0 or 1")
     return Waypoint(*values, gripper)
 
 

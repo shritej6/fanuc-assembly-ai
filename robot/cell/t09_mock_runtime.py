@@ -17,6 +17,7 @@ from assembly.controller_ports import (
     ControllerEvent,
     EvidencePair,
     ExecutionTolerances,
+    FinalProductEvidence,
     InventorySnapshot,
     ObservedInventoryItem,
     PerceptionTolerances,
@@ -121,6 +122,33 @@ class MockRecoveryTargets:
     def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
         del part
         return _oriented(550.0, -350.0, -300.0, 0.0)
+
+
+class MockFinalProductVerifier:
+    """Deterministic two-view workflow available only to the local mock."""
+
+    reviewed_motion_source = "mock-only endpoint-verified final views"
+    mock_only = True
+
+    def verify(
+        self,
+        observation: Observation,
+        product: int,
+        base_instance_id: str,
+        installed_instance_ids: tuple[str, ...],
+    ) -> FinalProductEvidence:
+        return FinalProductEvidence(
+            observed_at_s=float(observation["t"]),
+            complete=True,
+            product=product,
+            base_instance_id=base_instance_id,
+            installed_instance_ids=installed_instance_ids,
+            view_ids=(f"mock://product-{product}/left", f"mock://product-{product}/right"),
+            view_instance_ids=(installed_instance_ids, installed_instance_ids),
+            view_passes=(True, True),
+            checks_agree=True,
+            motion_source=self.reviewed_motion_source,
+        )
 
 
 class MockBoxReachability:
@@ -307,6 +335,7 @@ class MockPerception:
             base_pose,
             moving_instance_id,
             attached,
+            False,
         )
 
 
@@ -362,6 +391,8 @@ def _build_controller(perception: MockPerception) -> AssemblyController:
         execution_tolerances=ExecutionTolerances(0.0, 0.0),
         perception_tolerances=PerceptionTolerances(0.0, 0.0),
         recovery_targets=MockRecoveryTargets(),
+        final_verifier=MockFinalProductVerifier(),
+        allow_mock_final_verification=True,
     )
 
 

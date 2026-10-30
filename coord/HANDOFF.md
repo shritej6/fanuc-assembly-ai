@@ -2,6 +2,48 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T09 robot-brain case-rule hardening · CODEX
+
+- Implemented bounded case handling from `docs/ROBOT_BRAIN.md` section 3 without adding unsourced motion targets:
+  missing products are deferred while another requested product can run; a spare is not consumed before that work;
+  Dropped parts use a fresh post-drop scan: upright re-plans, fallen/defective rejects then uses a spare, and unobserved
+  Holds. Work-area intrusion clears the stale queue, requires a fresh scan, performs only a safe state-specific
+  replan, and Holds during pending install or staged recovery states.
+- Added a separate typed `FinalProductVerifier` trust boundary. Product completion requires fresh, complete evidence
+  bound to the exact product, base, and four installed instance IDs; two distinct view IDs; the same exact four
+  identities in both views; two Boolean results; identity agreement; and reviewed physical-motion provenance. The
+  deterministic mock implementation is explicitly `mock_only` and requires an opt-in flag, so it restores three-product
+  mock completion without authorizing cell motion. Construction rejects every callback-only production verifier before
+  the first action: T30 must first supply controller-owned, safety-approved physical view motions with independently
+  verified endpoints; synchronous camera calls and self-reported capture metadata are not proof. Verified final failure
+  also Holds until a reviewed installed-part
+  grasp/staging sequence supports reverse removal. Unsure pre-pick remains blocked on calibrated alternate-view motion.
+  Crowded relocation remains blocked on typed blocker identity plus a calibrated remembered empty staging target.
+- Won't-seat recovery now executes the
+  user-approved 3.0 mm lift from `docs/ROBOT_BRAIN.md@2a751da` section 3, then carries the still-held part through the
+  configured safe transit to the measured set-O inspection stop at UF0 z -168 mm before re-running `pre_pick` plus
+  FoundationPose. It recomputes the candidate/base/target and performs one guarded reinsert. A second failure lifts and
+  re-inspects the held part: a typed defect goes physically to REJECT before spare lookup/Andon; a good part Holds until
+  T30 publishes a typed calibrated hole-clearance verdict. No generic safe-Z lift or cached target substitutes for the
+  measured retry. Operator acknowledge/resume now also refuses every unresolved physical pending state, including a
+  release or +3 mm recovery lift interrupted by intrusion; a fresh scan cannot silently commit or reinsert it.
+- Observed gripper state is now accepted only when it is exactly the official-client value 0 or 1. Fractional or
+  out-of-range feedback fails closed before perception, planning, or motion instead of being interpreted as detached.
+- Removed the now-unreachable staged-rebuild hooks from `AssemblyController` instead of retaining dead production
+  branches. The independently tested recovery planner/library remains intact; wiring reverse removal back into the
+  controller still requires the typed offending-instance, hole verdict, installed grasp, and staging dependencies
+  listed above.
+- T12 contact-force dependency remains open: the real arm has no force sensor, so real-cell insertion is blocked until
+  T12 supplies reviewed, measured per-part limits and the production seated-height/final-approach guards. Preliminary
+  physics values are not promoted to controller limits. No contract or `robot/cell/cell_client.py` file changed, and
+  no real-cell command was issued.
+- Run: focused completion/controller/brain-rule/runtime/T29 suite `130 passed`; full `uv run pytest -q` `620 passed`; full
+  Ruff and `git diff --check` passed; contracts and `robot/cell/cell_client.py` are unchanged from the task base. The
+  official default mock passed 3 rollouts / 602 actions / 0 rejected and printed `Ready for the real robot`; the opt-in
+  T09 mock passed 1 rollout / 200 actions / 0 rejected and completed all three requested products while explicitly
+  reporting mock-only orchestration, not real-robot readiness. Next: Claude reviews this branch head;
+  T28/T30/T12 publish the typed motion/perception/force dependencies above before the final gate can be enabled.
+
 ## 2026-10-29 · T09 critical fingertip-release follow-up · CODEX
 
 - Recovered Claude's deleted `pr9_grasp.md` review from its session log and verified it against the pinned T29

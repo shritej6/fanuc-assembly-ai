@@ -54,7 +54,7 @@ class PlacementControllerMixin:
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
             self._hold(f"post-place checks disagree for {prepared.record.object_id}")
             return True
-        return self._recover(prepared, observation, current, observed_at)
+        return self._recover(prepared, decision, observation, current, observed_at)
 
     def _queue_verified_release(
         self,
@@ -99,7 +99,6 @@ class PlacementControllerMixin:
             return
         self._events.append(ControllerEvent("spare", prepared.record.product, spare.object_id, spare.instance_id))
         self._prepared = None
-        self._failed_attempts = 0
 
     def _commit_install(self) -> None:
         prepared = self._pending_install
@@ -113,6 +112,7 @@ class PlacementControllerMixin:
             self._hold(f"placed instance {prepared.part.instance_id!r} is no longer verified")
             return
         self.inventory.install(prepared.part.instance_id)
+        self._insertion_retries_by_instance.pop(prepared.part.instance_id, None)
         self._events.append(
             ControllerEvent("installed", prepared.record.product, prepared.record.object_id, "verified")
         )
@@ -120,4 +120,3 @@ class PlacementControllerMixin:
         self._motion_queue.finish()
         self._release_dispatched = False
         self._part_held = False
-        self._failed_attempts = 0
