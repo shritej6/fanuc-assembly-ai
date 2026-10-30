@@ -98,11 +98,13 @@ export_run() {
   for h in $HOSTS; do
     for s in $SKILLS; do
       local name="${run}_${s}_${h}"
-      "${SSH[@]}" "$h" "set -e; d=~/t12_data/a7/gen/$run/$s; ls \$d/p*/*.hdf5 >/dev/null 2>&1 || exit 0; \
-        cd ~/t12_data/repo_a7; mkdir -p ~/t12_data/a7/bin; \
+      # only closed chunks: the newest chunk of a running worker is still being written
+      "${SSH[@]}" "$h" "set -e; cd ~/t12_data/repo_a7; \
+        files=\$(python3 -m sim.assembly_lab.mimic.run_generation --closed ~/t12_data/a7/gen/$run | grep /$s/ || true); \
+        [ -n \"\$files\" ] || exit 0; mkdir -p ~/t12_data/a7/bin; \
         ln -sf \$($TOOLS python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())') ~/t12_data/a7/bin/ffmpeg; \
         rm -rf ~/t12_data/lerobot/$name; PATH=~/t12_data/a7/bin:\$PATH $TOOLS python -m sim.assembly_lab.mimic.export_lerobot \
-          --inputs \$d/p*/*.hdf5 --out ~/t12_data/lerobot/$name --workers 8" || echo "[export] $h $s failed"
+          --inputs \$files --out ~/t12_data/lerobot/$name --workers 8" || echo "[export] $h $s failed"
       if [[ "$h" != "$GATHER" ]]; then
         mkdir -p "$SCR/lerobot"
         "${RSYNC[@]}" "${h}:t12_data/lerobot/$name" "$SCR/lerobot/" 2>/dev/null || continue

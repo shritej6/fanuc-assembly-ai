@@ -48,6 +48,26 @@ def rollup(root: Path) -> dict:
     return per
 
 
+def running_args() -> str:
+    """Command lines of the running isaaclab containers (to tell a chunk still being written from a closed one)."""
+    names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True,
+                           check=True).stdout.split()
+    return "\n".join(subprocess.run(["docker", "inspect", "--format", "{{.Args}}", n], capture_output=True, text=True,
+                                    check=False).stdout for n in names if n.startswith("isaaclab-"))
+
+
+def closed_chunks(root: Path, args: str) -> list[str]:
+    """Recorder chunks safe to read: all but the newest chunk of each worker whose container still runs."""
+    out = []
+    for stats in sorted(root.glob("*/p*/*.hdf5.stats.json")):
+        worker = Path(str(stats)[: -len(".stats.json")])
+        chunks = sorted(worker.parent.glob(f"{worker.stem}_c[0-9][0-9][0-9].hdf5"))
+        if chunks and str(worker) in args:
+            chunks = chunks[:-1]
+        out += [str(c) for c in chunks if Path(f"{c}.meta.jsonl").exists()]
+    return out
+
+
 def seed_files(seeds: Path, skill: str, product: str) -> list[str]:
     files = sorted(str(p) for p in (seeds / skill).glob(f"product_{product}_*.hdf5")
                    if Path(f"{p}.meta.jsonl").exists())
@@ -111,6 +131,7 @@ def launch(a) -> list[subprocess.Popen]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rollup", type=Path, default=None, help="only print the roll-up of a run directory")
+    ap.add_argument("--closed", type=Path, default=None, help="only list the closed recorder chunks of a run directory")
     ap.add_argument("--run", default="r1", help="run name (output sub-directory)")
     ap.add_argument("--repo", type=Path, default=DATA / "repo_a7", help="repo copy mounted into the containers")
     ap.add_argument("--seeds", type=Path, default=DATA / "a7" / "seeds")
@@ -126,6 +147,9 @@ def main() -> None:
     ap.add_argument("--allow-shared", action="store_true", help="start even if a foreign container uses a GPU")
     ap.add_argument("--allow-touch-proxy", action="store_true", help="forwarded to generate.py (stamped per demo)")
     a = ap.parse_args()
+    if a.closed:
+        print("\n".join(closed_chunks(a.closed.expanduser(), running_args())))
+        return
     if a.rollup:
         print(json.dumps(rollup(a.rollup.expanduser()), indent=2))
         return

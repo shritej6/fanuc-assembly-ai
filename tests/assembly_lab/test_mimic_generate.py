@@ -239,3 +239,19 @@ def test_pull_drift_is_the_worst_slide_in_the_fingers():
 
     before = obs(100, 50)
     assert pull_drift_mm(before, [obs(110, 60), obs(120, 68), obs(130, 80)], "M1_01") == 2.0
+
+
+def test_closed_chunks_skip_the_one_a_running_worker_writes(tmp_path):
+    from sim.assembly_lab.mimic.run_generation import closed_chunks
+
+    d = tmp_path / "pick_insert" / "p4"
+    d.mkdir(parents=True)
+    for w in ("h_g0_w0", "h_g1_w0"):
+        (d / f"{w}.hdf5.stats.json").write_text("{}")
+        for k in range(3):
+            (d / f"{w}_c{k:03d}.hdf5").write_bytes(b"")
+            (d / f"{w}_c{k:03d}.hdf5.meta.jsonl").write_text("")
+    running = f"[--out {d / 'h_g0_w0.hdf5'} --target 5]"
+    got = [p.split("/")[-1] for p in closed_chunks(tmp_path, running)]
+    assert got == ["h_g0_w0_c000.hdf5", "h_g0_w0_c001.hdf5",
+                   "h_g1_w0_c000.hdf5", "h_g1_w0_c001.hdf5", "h_g1_w0_c002.hdf5"]
