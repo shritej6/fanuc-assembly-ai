@@ -36,8 +36,9 @@ FIRST_SEAT_N = 0.5  # a seat-phase normal above this on a target is first contac
 FINE_PRESS_MM = 0.02  # after first seat contact, press in steps this small: ~260 N/mm overshoots ~5 N per row,
 #                       not the 6-11.6 N run10 measured with 0.05 mm rows (the 2 N stop still ends the press)
 CONTACT_PHASES = ("touch", "level", "twist", "slide", "push", "touch_down")
-# the grasp too: run10 M2_01 20.7 N / M1_02 22.3 N tripped on the first lift row after the close (close itself 3-7 N)
-SUBSTEP_PHASES = (*CONTACT_PHASES, "close", "lift_check", "lift")
+# every phase: rows are kept only above SUBSTEP_LOG_MIN_N, so free-space rows cost nothing, and run10 trips came on
+# untraced rows (first lift row after the close: 20-22 N; carry/set-down after a pull-out of a second-layer part)
+SUBSTEP_PHASES = None
 # rows where the held part is in the bore or seated, so the fingers may move on it by design (not slip)
 CONSTRAINED_PHASES = (*CONTACT_PHASES, "relieve", "retry_lift", "wiggle_out")
 MAX_LEVEL_CORRECTION_DEG = MAX_TOOL_TILT_DEG - INSERT_TILT_DEG  # leaves room for the 3 deg entry lean
@@ -153,7 +154,7 @@ class EpisodeRecorder:
         """T12_SUBSTEP_LOG=1: keep the per-substep contact of contact-phase rows loaded above SUBSTEP_LOG_MIN_N
         (logged before the guard check, so the row that trips the guard is in the trace too)."""
         sub_all = self.obs["sim"].get("substep_contact") or {}
-        if seg.phase not in SUBSTEP_PHASES or not sub_all:
+        if not sub_all or (SUBSTEP_PHASES is not None and seg.phase not in SUBSTEP_PHASES):
             return
         for oid, sub in sub_all.items():
             if max(abs(s[0]) for s in sub) > SUBSTEP_LOG_MIN_N:
