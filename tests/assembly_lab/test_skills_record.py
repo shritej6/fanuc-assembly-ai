@@ -353,6 +353,41 @@ def test_in_hand_drift_measures_a_part_slipping_in_the_fingers(limits):
     assert rec.in_hand_drift_mm["carry"] == pytest.approx(0.5, abs=1e-3)
 
 
+def test_others_trace_logs_a_non_target_part_dragged_off_its_pose(limits):
+    """main: a pulled second-layer part may drag the part below up with it; every such row must show in the meta."""
+    env, (pick, ins, *_) = _world()
+    real_observe, state = env.observe, {"rec": None}
+    first = env.reset()
+    other = next(oid for oid in first["sim"]["object_poses"] if oid != pick.object_id)
+
+    def dragging():
+        obs = real_observe()
+        rec = state["rec"]
+        if rec is not None and rec.holding == pick.object_id:
+            poses = dict(obs["sim"]["object_poses"])
+            poses[other] = list(np.asarray(poses[other], dtype=float) + [0, 0, 0.4, 0, 0, 0])
+            obs["sim"] = {**obs["sim"], "object_poses": poses}
+        return obs
+
+    env.observe = dragging
+    rec = EpisodeRecorder(env, ForceGuard(limits), first)
+    state["rec"] = rec
+    try:
+        episodes.pick_insert(rec, pick, ins)
+    except (EpisodeFailed, GateFailed):
+        pass
+    hits = [e for e in rec.others_trace if e["object"] == other]
+    assert hits and hits[0]["d_mm"] == [0.0, 0.0, 0.4]
+    assert all(e["object"] != pick.object_id for e in rec.others_trace)
+
+
+def test_others_trace_is_empty_when_nothing_else_moves(limits):
+    env, (pick, ins, *_) = _world()
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    assert rec.others_trace == []
+
+
 def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
     """run10: build p1 and wont_seat p1 started in the same second and both opened one HDF5 (h5py lock error)."""
     a = record.isaac_out_path(tmp_path, "build", 1, 7)

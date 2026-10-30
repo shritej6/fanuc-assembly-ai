@@ -27,6 +27,8 @@ from .pull_out import pull_out
 SOFT_STOP_FRAC = 0.6  # stop pressing at 60 % of a force limit; the guard discards anything over 100 %
 TRACKING_MM = 0.1  # a kept demo needs the arm on its held commands (run9 <= 0.05 mm; 53b80ea drooped ~1 mm)
 MAX_JOINT_STEP_DEG = 20.0  # obs joints (deg) per 0.1 s row; check10 measured a 352 deg J6 spin over 4 rows
+OTHERS_TRACE_MM = 0.1  # log rows where a non-target object is this far from its start pose (dragged stack, nudges)
+OTHERS_TRACE_MAX = 300  # entries per episode
 SUBSTEP_LOG_MIN_N = 1.0  # keep the per-substep contact of insert rows loaded above this (T12_SUBSTEP_LOG=1)
 SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: aligned parts seat at ~0.5 N (agent 2)
 SEAT_PHASES = ("slide", "push", "touch_down")  # straight down onto the seat / table
@@ -94,6 +96,7 @@ class EpisodeRecorder:
     seat_contacts: list[dict | None] = field(default_factory=list)  # per insert try: offset at first base contact
     tracking_mm: float = 0.0  # worst |obs - commanded TCP| on rows whose command has held still for 3 rows
     substep_trace: list[dict] = field(default_factory=list)  # insert rows with > SUBSTEP_LOG_MIN_N in any substep
+    others_trace: list[dict] = field(default_factory=list)  # rows where a non-target object had moved (see _track_others)
     holding: str | None = None  # the part whose post-grasp in-hand pose is the drift reference
     in_hand_drift_mm: dict[str, float] = field(default_factory=lambda: {"carry": 0.0, "contact": 0.0})
 
@@ -136,6 +139,7 @@ class EpisodeRecorder:
             self.tracking_mm = max(self.tracking_mm, err)
         self._log_substeps(row, seg)
         self._track_drift(row, seg)
+        self._track_others(seg)
         jump = np.abs(np.asarray(self.obs["joints"][:6], dtype=float) - before)
         if jump.max() > MAX_JOINT_STEP_DEG:  # an IK branch / wrist flip: never let it into a demo
             j = int(jump.argmax())
@@ -171,6 +175,19 @@ class EpisodeRecorder:
         rel = checks.in_hand(self.obs, self.holding)[:3, 3] - self.in_hand[self.holding][:3, 3]
         key = "contact" if seg.phase in CONSTRAINED_PHASES else "carry"
         self.in_hand_drift_mm[key] = max(self.in_hand_drift_mm[key], round(float(np.linalg.norm(rel)), 4))
+
+    def _track_others(self, seg: Segment) -> None:
+        """Rows where an object the episode must not move is off its start pose by > OTHERS_TRACE_MM (main: does a
+        pulled second-layer part drag the part below it up with it?). The others_moved gate still decides at the end."""
+        if len(self.others_trace) >= OTHERS_TRACE_MAX:
+            return
+        for oid, pose in self.obs["sim"]["object_poses"].items():
+            if oid in self.targets or oid not in self.start_poses:
+                continue
+            d = np.asarray(pose[:3], dtype=float) - np.asarray(self.start_poses[oid][:3], dtype=float)
+            if np.linalg.norm(d) > OTHERS_TRACE_MM:
+                self.others_trace.append({"step": len(self.frames) - 1, "phase": seg.phase, "object": oid,
+                                          "d_mm": [round(float(v), 3) for v in d]})
 
     def _too_hard(self, phase: str = "") -> bool:
         """Contact building up during an insert (part on the rim, not in the hole): stop pressing and re-check."""

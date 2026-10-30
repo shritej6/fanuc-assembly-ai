@@ -187,7 +187,7 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
             runs.append({"ok": False, "status": "robot_failed", "reason": str(e), "steps": len(rec.frames),
                          "gates": rec.gate_log.values, "peaks": rec.guard.episode_peaks(),
                          "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events,
-                         "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
+                         "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
                          "s": round(time.time() - t0, 1)})
             _finish(backend, run, rec, False, scenario, str(e))
             continue
@@ -197,7 +197,7 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
         runs.append({"ok": True, "status": "kept" if not run.measure_only else "would_keep", "demo": key,
                      "steps": len(rec.frames), "peaks": rec.guard.episode_peaks(), "gates": rec.gate_log.values,
                      "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events, "settled": rec.settled,
-                     "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections,
+                     "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections,
                      "s": round(time.time() - t0, 1)})
     return {"attempts": attempts, "kept_or_would_keep": saved, "robot_failed": attempts - saved,
             "reset_invalid": invalid, "planner_skipped": skipped,
@@ -253,7 +253,7 @@ def _finish(backend, run: Run, rec: EpisodeRecorder, ok: bool, scenario: str, re
         "steps": len(rec.frames), "instruction": rec.instructions[0] if rec.instructions else "",
         "marks": rec.marks, "events": rec.events, "peaks": rec.guard.episode_peaks(),
         "train_mask": [bool(f.seg.learn) for f in rec.frames], "would_keep": bool(ok),
-        "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections}
+        "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections}
     run.metas.append(meta)
     with open(str(run.path) + ".meta.jsonl", "a") as f:
         f.write(json.dumps(meta, default=_jsonable) + "\n")
