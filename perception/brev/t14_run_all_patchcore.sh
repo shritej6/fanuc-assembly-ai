@@ -7,8 +7,9 @@ export PYTHONDONTWRITEBYTECODE=1
 : "${BENCHMARK_GATE:?set BENCHMARK_GATE to the approved matching benchmark gate}"
 : "${CODE_ROOT:?set CODE_ROOT to the exact clean T14 Git snapshot}"
 : "${RUN_ROOT:?set RUN_ROOT to the isolated T14 Brev runtime directory}"
+: "${ENV_DIR:?set ENV_DIR to the approved Brev environment}"
 : "${T14_GUARDED_ORCHESTRATION:?invoke through t14_guarded_production.py}"
-DEADLINE_EPOCH=$(python3 - "$BENCHMARK_GATE" <<'PY'
+DEADLINE_EPOCH=$("$ENV_DIR/bin/python" - "$BENCHMARK_GATE" <<'PY'
 import json
 import sys
 from datetime import UTC, datetime
@@ -32,7 +33,8 @@ for PART_INDEX in $(seq 0 23); do
     run_with_budget "$CODE_ROOT/perception/brev/t14_run_patchcore.sh"
 done
 SUMMARY="$RUN_ROOT/summaries/patchcore-brev-${ATTEMPT_ID}.json"
-run_with_budget env PYTHONPATH="$CODE_ROOT" python3 "$CODE_ROOT/perception/rosie/t14_finalize_patchcore.py" \
+run_with_budget env PYTHONPATH="$CODE_ROOT" "$ENV_DIR/bin/python" \
+    "$CODE_ROOT/perception/rosie/t14_finalize_patchcore.py" \
     --approved-dir "$RUN_ROOT/runs/approved/${ATTEMPT_ID}" \
     --output "$SUMMARY"
 echo "T14 measured Brev PatchCore generation: $SUMMARY"

@@ -40,7 +40,7 @@ test "$(sha256sum "$PLATFORM_IDENTITY" | awk '{print $1}')" = "$RUNTIME_SHA256"
 LIVE_HOSTNAME=$(hostname)
 LIVE_GPU_ROW=$(nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader,nounits)
 test "$(printf '%s\n' "$LIVE_GPU_ROW" | wc -l | tr -d ' ')" = 1
-python3 - "$PLATFORM_IDENTITY" "$BREV_INSTANCE_ID" "$LIVE_HOSTNAME" "$LIVE_GPU_ROW" <<'PY'
+"$ENV_DIR/bin/python" - "$PLATFORM_IDENTITY" "$BREV_INSTANCE_ID" "$LIVE_HOSTNAME" "$LIVE_GPU_ROW" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -74,7 +74,7 @@ else
     : "${BENCHMARK_GATE_SHA256:?set the recorded benchmark gate SHA-256}"
     [[ "$BENCHMARK_GATE_SHA256" =~ ^[0-9a-f]{64}$ ]]
     test "$(sha256sum "$BENCHMARK_GATE" | awk '{print $1}')" = "$BENCHMARK_GATE_SHA256"
-    PYTHONPATH="$CODE_ROOT" python3 "$CODE_ROOT/perception/brev/t14_benchmark_gate.py" verify \
+    PYTHONPATH="$CODE_ROOT" "$ENV_DIR/bin/python" "$CODE_ROOT/perception/brev/t14_benchmark_gate.py" verify \
         --gate "$BENCHMARK_GATE" --dataset-artifact "$DATASET_ARTIFACT" \
         --env-artifact "$ENV_ARTIFACT" --source-commit "$SOURCE_COMMIT" \
         --runtime-sha256 "$RUNTIME_SHA256"
@@ -104,7 +104,7 @@ PYTHONPATH="$CODE_ROOT" "$ENV_DIR/bin/python" "$CODE_ROOT/perception/rosie/t14_e
 
 test -s "$ARTIFACT"
 if [ "$RUN_MODE" = benchmark ]; then
-    PYTHONPATH="$CODE_ROOT" python3 "$CODE_ROOT/perception/brev/t14_benchmark_gate.py" create \
+    PYTHONPATH="$CODE_ROOT" "$ENV_DIR/bin/python" "$CODE_ROOT/perception/brev/t14_benchmark_gate.py" create \
         --benchmark-artifact "$ARTIFACT" --dataset-artifact "$DATASET_ARTIFACT" \
         --env-artifact "$ENV_ARTIFACT" --source-commit "$SOURCE_COMMIT" \
         --runtime-sha256 "$RUNTIME_SHA256" --hourly-rate-usd "$HOURLY_RATE_USD" \

@@ -152,6 +152,11 @@ def test_brev_bootstrap_is_minimal_and_audited_by_the_final_environment() -> Non
 def test_brev_runner_is_sequential_benchmark_first_and_runtime_neutral() -> None:
     script, all_script = RUN.read_text(), RUN_ALL.read_text()
 
+    assert "python3" not in script
+    assert "python3" not in all_script
+    assert script.count('"$ENV_DIR/bin/python"') == 4
+    assert all_script.count('"$ENV_DIR/bin/python"') == 2
+    assert ': "${ENV_DIR:?set ENV_DIR to the approved Brev environment}"' in all_script
     assert "flock -n 9" in script
     assert 'test "$PART_INDEX" = 0' in script
     assert 't14_benchmark_gate.py" verify' in script
