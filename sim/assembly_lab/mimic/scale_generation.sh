@@ -22,6 +22,7 @@ SRC_REPO_HOST=${SRC_REPO_HOST:-fa-sim}
 SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skills + gates the seeds came from
 ENV_REPO=${ENV_REPO:-t12_data/repo_sync2}  # the current env (real gripper mass); overlaid on SRC_REPO
 ENV_MD5=${ENV_MD5:-dbcfe5fd48d73cde763ffdc4316291a5}  # md5 of ${ENV_REPO}.md5, the manifest of its files
+REPO_NAME=${REPO_NAME:-repo_a7}  # the built copy: ~/t12_data/$REPO_NAME on every host (a new env gets a new name)
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SSH=(ssh -o ControlPath=none -o ConnectTimeout=15 -n)
 RSYNC=(rsync -a -e "ssh -o ControlPath=none -o ConnectTimeout=15")
@@ -43,11 +44,11 @@ seeds() {
 repo() {
   # repo_a7 = agent 3's run10 copy (skills, robot/, policy_learn) + the current env (ENV_REPO, verified against its md5
   # manifest, whose own md5 must be ENV_MD5) + this checkout's mimic/. ENV_MANIFEST_MD5 is stamped into every demo.
-  mkdir -p "$SCR/repo_a7"
-  "${RSYNC[@]}" --delete --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${SRC_REPO}/" "$SCR/repo_a7/"
-  "${RSYNC[@]}" --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${ENV_REPO}/" "$SCR/repo_a7/"
+  mkdir -p "$SCR/$REPO_NAME"
+  "${RSYNC[@]}" --delete --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${SRC_REPO}/" "$SCR/$REPO_NAME/"
+  "${RSYNC[@]}" --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${ENV_REPO}/" "$SCR/$REPO_NAME/"
   "${RSYNC[@]}" "${SRC_REPO_HOST}:${ENV_REPO}.md5" "$SCR/env_manifest.md5"
-  python3 - "$SCR/env_manifest.md5" "$SCR/repo_a7" "$ENV_MD5" <<'PY'
+  python3 - "$SCR/env_manifest.md5" "$SCR/$REPO_NAME" "$ENV_MD5" <<'PY'
 import hashlib, sys
 from pathlib import Path
 manifest, root, want = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
@@ -62,9 +63,9 @@ if bad:
 (root / "ENV_MANIFEST_MD5").write_text(want + "\n")
 print(f"[repo] env verified against manifest {want}")
 PY
-  rm -rf "$SCR/repo_a7/sim/assembly_lab/mimic"
-  mkdir -p "$SCR/repo_a7/sim/assembly_lab/mimic"
-  COPYFILE_DISABLE=1 tar -C "$HERE/sim/assembly_lab/mimic" --exclude __pycache__ -cf - . | tar -C "$SCR/repo_a7/sim/assembly_lab/mimic" -xf -
+  rm -rf "$SCR/$REPO_NAME/sim/assembly_lab/mimic"
+  mkdir -p "$SCR/$REPO_NAME/sim/assembly_lab/mimic"
+  COPYFILE_DISABLE=1 tar -C "$HERE/sim/assembly_lab/mimic" --exclude __pycache__ -cf - . | tar -C "$SCR/$REPO_NAME/sim/assembly_lab/mimic" -xf -
   for h in $HOSTS; do push_repo "$h"; done
 }
 
@@ -72,12 +73,12 @@ push_repo() {
   # tar over ssh, then md5-check every file on the host: macOS openrsync was seen to skip changed files silently.
   # Files are overwritten in place (running workers keep the directory they mounted).
   local h=$1
-  (cd "$SCR/repo_a7" && find . -type f ! -path '*/__pycache__/*' -print0 | xargs -0 md5 -r) > "$SCR/repo_a7.$h.md5"
-  COPYFILE_DISABLE=1 tar -C "$SCR/repo_a7" --exclude __pycache__ -cf - . | \
-    ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'mkdir -p ~/t12_data/repo_a7 && tar -C ~/t12_data/repo_a7 -xf -'
+  (cd "$SCR/$REPO_NAME" && find . -type f ! -path '*/__pycache__/*' -print0 | xargs -0 md5 -r) > "$SCR/$REPO_NAME.$h.md5"
+  COPYFILE_DISABLE=1 tar -C "$SCR/$REPO_NAME" --exclude __pycache__ -cf - . | \
+    ssh -o ControlPath=none -o ConnectTimeout=15 "$h" "mkdir -p ~/t12_data/$REPO_NAME && tar -C ~/t12_data/$REPO_NAME -xf -"
   local bad
-  bad=$(ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'cd ~/t12_data/repo_a7 && md5sum -c - 2>/dev/null | grep -vc ": OK$"' \
-    < "$SCR/repo_a7.$h.md5" || true)
+  bad=$(ssh -o ControlPath=none -o ConnectTimeout=15 "$h" "cd ~/t12_data/$REPO_NAME && md5sum -c - 2>/dev/null | grep -vc ': OK$'" \
+    < "$SCR/$REPO_NAME.$h.md5" || true)
   [[ "$bad" == "0" ]] || { echo "[repo] $h: $bad files differ after the copy" >&2; return 1; }
   echo "[repo] $h ok (all files md5-verified)"
 }
@@ -89,9 +90,9 @@ launch() {
     IFS=: read -r h gpus wpg <<< "$spec"
     # only the redirected launcher goes to the background, so the ssh session closes at once
     # CACHE_TAG: our own Kit/shader cache dirs, apart from other agents' caches on shared hosts
-    local cmd="cd ~/${REPO_DIR:-t12_data/repo_a7} && mkdir -p ~/t12_data/a7/gen/$run && { CACHE_TAG=${CACHE_TAG:-_a7} nohup python3 -m sim.assembly_lab.mimic.run_generation \
+    local cmd="cd ~/${REPO_DIR:-t12_data/$REPO_NAME} && mkdir -p ~/t12_data/a7/gen/$run && { CACHE_TAG=${CACHE_TAG:-_a7} nohup python3 -m sim.assembly_lab.mimic.run_generation \
       --run $run --gpus ${gpus//,/ } --workers-per-gpu $wpg --groups $MIMIC_GROUPS --target ${TARGET:-50} \
-      --max-attempts ${MAXATT:-400} --seed $RANDOM --stagger-s ${STAGGER:-30} --num-envs ${NUM_ENVS:-1} --repo ~/${REPO_DIR:-t12_data/repo_a7} \
+      --max-attempts ${MAXATT:-400} --seed $RANDOM --stagger-s ${STAGGER:-30} --num-envs ${NUM_ENVS:-1} --repo ~/${REPO_DIR:-t12_data/$REPO_NAME} \
       > ~/t12_data/a7/gen/$run/launcher_\$(hostname)_${gpus//,/}.log 2>&1 < /dev/null & }"
     "${SSH[@]}" "$h" "$cmd"
     echo "[launch] $h gpus $gpus x $wpg workers: $MIMIC_GROUPS"
@@ -150,7 +151,7 @@ for f in glob.glob(f'{sys.argv[1]}_*/meta/t12_episodes.jsonl'):
         per[f\"{e['skill']}:{e['product']}\"] += 1
         env[e.get('env_manifest_md5', 'unknown')] += 1
         eps += 1
-repo = os.path.expanduser('~/t12_data/repo_a7')
+repo = os.path.expanduser('~/t12_data/${REPO_NAME}')
 runner = hashlib.md5(open(f'{repo}/sim/assembly_lab/skills/runner.py', 'rb').read()).hexdigest()
 print(json.dumps({'episodes': eps, 'per_skill_product': dict(sorted(per.items())), 'env_manifest_md5': dict(env),
                   'generator_repo': {'skills/runner.py_md5': runner}}, indent=1))
