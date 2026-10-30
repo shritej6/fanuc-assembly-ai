@@ -32,6 +32,7 @@ ap.add_argument("--tol", type=float, default=0.05)
 ap.add_argument("--seated_down", type=float, default=1.0, help="N pressing the seated parts (low, so the twist "
                 "beats face friction and the peg walls carry it)")
 ap.add_argument("--seated_twists", type=lambda s: [float(x) for x in s.split(",")], default=[0.02, 0.05, 0.08])
+ap.add_argument("--drop_mm", type=float, default=4.0, help="offset-insert start height above the seat")
 ap.add_argument("--twist", type=float, default=0.02, help="N m about z; above mu N r_eff the part spins (not static)")
 args = ap.parse_args()
 
@@ -185,7 +186,7 @@ def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[d
     e = env.env
     seats = {part: e.solver.seat_tf_for(part, base, e.object_poses_mm()) for base, part in pairs}
     names = [e.names[e.pool.index(part)] for _, part in pairs]
-    e._write_poses(names, [L.translation(offset_mm, 0.0, 4.0) @ seats[part] for _, part in pairs])
+    e._write_poses(names, [L.translation(offset_mm, 0.0, args.drop_mm) @ seats[part] for _, part in pairs])
     e.scene.write_data_to_sim()
     for _, part in pairs:
         wrench(env, part, True, side=False, down=3.0, twist=0.0)
@@ -196,7 +197,9 @@ def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[d
     for base, part in pairs:
         seat = e.solver.seat_tf_for(part, base, poses)
         d = np.linalg.inv(seat) @ poses[part]
-        r = {"object": part, "on": base, "offset_mm": offset_mm, "height_above_seat_mm": round(float(d[2, 3]), 3),
+        r = {"object": part, "on": base, "offset_mm": offset_mm, "drop_mm": args.drop_mm,
+             "height_above_seat_mm": round(float(d[2, 3]), 3),
+             "tilt_deg": round(float(np.degrees(np.arccos(np.clip(d[2, 2], -1.0, 1.0)))), 3),
              "xy_from_seat_mm": [round(float(d[0, 3]), 3), round(float(d[1, 3]), 3)]}
         r["ok"] = d[2, 3] < 0.3 if offset_mm <= 1.5 else d[2, 3] >= 2.0
         rows.append(r)

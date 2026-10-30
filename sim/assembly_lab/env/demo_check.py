@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -91,9 +92,17 @@ def main() -> None:
     obs = run(env, plan, part)
     # the synchronised jaws centre the part on the first close; a second close on the now-centred part must not move it
     before = np.array(obs["sim"]["object_poses"][part][:3])
+    tf0 = env.env.object_poses_mm()[part]
     obs = run(env, [("reopen", f["grasp_frame"], 0, 0.5), ("reclose", f["grasp_frame"], 1, 0.5)], part)
-    shift = float(np.linalg.norm(np.array(obs["sim"]["object_poses"][part][:3]) - before))
-    print(f"[demo] re-close on the centred part moved it {shift:.3f} mm (synchronised jaws: <= 0.02 mm)", flush=True)
+    after = np.array(obs["sim"]["object_poses"][part])
+    pad = np.array([*yaml.safe_load(L.OBJECTS_YAML.read_text())["objects"][L.type_id(part)]["grips"][0]
+                    ["pad_point_local_mm"], 1.0])
+    pad_shift = float(np.linalg.norm((env.env.object_poses_mm()[part] @ pad - tf0 @ pad)[:3]))
+    print(f"[demo] re-close moved the part's grip point (CAD pad point) {pad_shift:.3f} mm", flush=True)
+    shift = float(np.linalg.norm(after[:3] - before))
+    print(f"[demo] re-close on the centred part moved it {shift:.3f} mm (synchronised jaws: <= 0.02 mm); "
+          f"dxyz {np.round(after[:3] - before, 4).tolist()} mm, wpr now {after[3:].tolist()}; "
+          f"jaws {link_contacts(env)['jaw_q_mm']}", flush=True)
     obs = run(env, [("lift", up(f["grasp_frame"], 60), 1, 1.0)], part)
     # carry the part's MEASURED in-hand pose to the base's current CAD seat (the grasp shifts the part sub-mm and
     # the free base may have moved), as a vision-corrected skill would

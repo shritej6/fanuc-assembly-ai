@@ -13,6 +13,7 @@ force on every object); cameras `table`, `side`, `wrist`.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import MISSING
 from pathlib import Path
@@ -101,7 +102,8 @@ def make_scene_cfg(pool: list[str], contact: dict, jaw_force_n: float, home_rad:
                                        effort_limit_sim=ARM_EFFORT),
             # jaw_r follows jaw_l through a mimic joint (assets.set_jaw_force): one drive, 2 x the per-finger force
             "jaws": ImplicitActuatorCfg(joint_names_expr=["jaw_l"], stiffness=2.0 * C.JAW_DRIVE_STIFF,
-                                        damping=2.0 * C.JAW_DRIVE_DAMP, effort_limit_sim=2.0 * jaw_force_n),
+                                        damping=float(os.environ.get("T12_JAW_DAMP_X", "2.0")) * C.JAW_DRIVE_DAMP,
+                                        effort_limit_sim=2.0 * jaw_force_n),
             "jaw_follower": ImplicitActuatorCfg(joint_names_expr=["jaw_r"], stiffness=0.0, damping=0.0,
                                                 effort_limit_sim=2.0 * jaw_force_n)})
     names = [prim_name(u) for u in pool]
