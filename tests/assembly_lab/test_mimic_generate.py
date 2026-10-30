@@ -277,3 +277,16 @@ def test_rank_sources_tries_every_source_once():
             for i in range(5)]
     order = [s.demo for s in M.rank_sources(segs, eye, "M4_01", 3, np.random.default_rng(1))]
     assert sorted(order[:3]) == ["d0", "d1", "d2"] and sorted(order[3:]) == ["d3", "d4"]
+
+
+def test_stop_files_end_a_worker_between_attempts(tmp_path):
+    from sim.assembly_lab.mimic.generate import stop_requested
+
+    out = tmp_path / "g1" / "pick_insert" / "p4" / "h_g0_w0.hdf5"
+    out.parent.mkdir(parents=True)
+    assert not stop_requested(out)
+    out.with_name(out.name + ".stop").write_text("")
+    assert stop_requested(out)
+    out.with_name(out.name + ".stop").unlink()
+    (tmp_path / "g1" / "STOP").write_text("")
+    assert stop_requested(out)

@@ -442,6 +442,11 @@ def env_manifest_md5(repo: Path = REPO_ROOT) -> str:
     return f.read_text().strip() if f.exists() else "unverified"
 
 
+def stop_requested(out: Path) -> bool:
+    """<out>.stop or <run dir>/STOP: end the worker cleanly between attempts (to roll out new code or re-balance)."""
+    return Path(f"{out}.stop").exists() or (out.parents[2] / "STOP").exists()
+
+
 def chunk_path(out: Path, k: int) -> Path:
     """Recorder file k of a worker: <stem>_c<k>.hdf5 next to <out> (stats and rejects stay at <out>)."""
     return out.with_name(f"{out.stem}_c{k:03d}{out.suffix}")
@@ -465,6 +470,9 @@ def run(a) -> dict:
     try:
         with open(f"{a.out}.rejects.jsonl", "a") as rej:
             while stats["accepted"] < a.target and stats["attempts"] < a.max_attempts:
+                if stop_requested(a.out):
+                    stats["stopped"] = "STOP file: ended between attempts"
+                    break
                 part = parts[k % len(parts)]
                 k += 1
                 t1 = time.time()
