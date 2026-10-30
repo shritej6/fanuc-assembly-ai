@@ -47,6 +47,7 @@ class SourceSegment:
     rows: np.ndarray          # (n, 7) act_tcp rows, mm / deg / gripper
     frame_pose: np.ndarray    # (4, 4) mm: the subtask's reference frame at the segment start (see demo_segments)
     in_hand: np.ndarray | None = None  # (4, 4) mm: held part in the TCP frame after the grasp (CAD local frame)
+    force_ratio: float = 0.0  # worst contact peak over the segment as a fraction of the force limit (1.0 = at it)
 
 
 def _boundaries(signals: list[np.ndarray], n: int) -> list[tuple[int, int]]:
@@ -100,6 +101,7 @@ class RecordedDemo:
     line: int = 0             # 0-based line of this episode in <file>.meta.jsonl (agent 3's drop tags use it)
     carry_drift_mm: float = 0.0  # agent 3's in_hand_drift_mm["carry"]: worst slip of the held part in free carry
     pull_drift_mm: float = 0.0   # in_hand_drift_mm["pull"] (pull_out, newer metas): slip in the fingers during the pull
+    peaks: np.ndarray | None = None  # (T, 4) obs/sim_contact_peak: normal N, lateral N, torque Nm, robot touch N
 
 
 def _part_local_mm(d, oid: str, z_off_m: float, to_local) -> np.ndarray:
@@ -152,7 +154,8 @@ def read_recorded(path: str, to_local=None, kept_only: bool = True) -> list[Reco
                                     len(json.loads(tries)) if isinstance(tries, str) else 0,
                                     d["actions"][()].astype(np.float64), o["tcp_pose"][()].astype(np.float64)[:, :6],
                                     frames, _part_local_mm(d, oid, z_off, to_local), n,
-                                    float(drift.get("carry", 0.0)), float(drift.get("pull", 0.0))))
+                                    float(drift.get("carry", 0.0)), float(drift.get("pull", 0.0)),
+                                    o["sim_contact_peak"][()].astype(np.float64) if "sim_contact_peak" in o else None))
     return out
 
 
@@ -197,8 +200,18 @@ def demo_segments(demo: RecordedDemo, signals: list[str], refs: list[str], held_
         else:
             frame = demo.frames[ref][a]
         out.append(SourceSegment(demo.key, demo.object_id, demo.product, i, demo.actions[a:b], frame,
-                                 hand if i > 0 else None))
+                                 hand if i > 0 else None, force_ratio(demo.peaks, a, b)))
     return out
+
+
+FORCE_LIMITS = np.array([15.0, 4.5, 0.1])  # physics/limits.yaml axial N, lateral N, torque Nm (PRELIMINARY)
+
+
+def force_ratio(peaks: np.ndarray | None, a: int, b: int) -> float:
+    """Worst of normal / lateral / torque peak over steps [a, b) as a fraction of its limit (0 without peaks)."""
+    if peaks is None or b <= a:
+        return 0.0
+    return float((peaks[a:b, :3].max(axis=0) / FORCE_LIMITS).max())
 
 
 MAX_CARRY_DRIFT_MM = 0.5  # agent 3 / main 2026-10-30: a source whose part slipped more in the fingers is not used
@@ -265,12 +278,14 @@ def _frame_distance(a: np.ndarray, b: np.ndarray, mm_per_rad: float = 50.0) -> f
 
 def select_source(cands: list[SourceSegment], new_frame: np.ndarray, object_id: str, k: int,
                   rng: np.random.Generator) -> SourceSegment:
-    """nearest_neighbor_object among the same part's segments (else any), random among the k nearest."""
+    """nearest_neighbor_object among the same part's segments (else any); among the k nearest, a source is drawn
+    with weight = its margin to the force limits (1 - force_ratio, floor 0.05), so low-force seeds are preferred."""
     same = [c for c in cands if c.object_id == object_id] or cands
     if not same:
         raise ValueError("no source segment for this subtask")
-    order = sorted(same, key=lambda c: _frame_distance(c.frame_pose, new_frame))
-    return order[int(rng.integers(0, min(k, len(order))))]
+    near = sorted(same, key=lambda c: _frame_distance(c.frame_pose, new_frame))[:k]
+    w = np.array([max(1.0 - c.force_ratio, 0.05) for c in near])
+    return near[int(rng.choice(len(near), p=w / w.sum()))]
 
 
 def transform_rows(rows: np.ndarray, src_frame: np.ndarray, new_frame: np.ndarray) -> np.ndarray:

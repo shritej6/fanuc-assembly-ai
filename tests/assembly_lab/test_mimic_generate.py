@@ -255,3 +255,14 @@ def test_closed_chunks_skip_the_one_a_running_worker_writes(tmp_path):
     got = [p.split("/")[-1] for p in closed_chunks(tmp_path, running)]
     assert got == ["h_g0_w0_c000.hdf5", "h_g0_w0_c001.hdf5",
                    "h_g1_w0_c000.hdf5", "h_g1_w0_c001.hdf5", "h_g1_w0_c002.hdf5"]
+
+
+def test_low_force_sources_are_preferred():
+    eye = np.eye(4)
+    low = M.SourceSegment("low", "M4_01", 4, 1, np.zeros((2, 7)), eye, None, 0.2)
+    high = M.SourceSegment("high", "M4_01", 4, 1, np.zeros((2, 7)), eye, None, 0.99)
+    rng = np.random.default_rng(0)
+    picks = [M.select_source([low, high], eye, "M4_01", 2, rng).demo for _ in range(400)]
+    assert 0.9 < picks.count("low") / 400 < 0.97          # weights 0.8 vs 0.05
+    peaks = np.array([[3.0, 1.0, 0.01, 0], [12.0, 2.25, 0.02, 0], [1.0, 4.5, 0.0, 0]])
+    assert M.force_ratio(peaks, 0, 2) == 0.8 and M.force_ratio(peaks, 0, 3) == 1.0 and M.force_ratio(None, 0, 3) == 0.0
