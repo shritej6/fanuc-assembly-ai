@@ -1,0 +1,106 @@
+# Contact force limits for every insert / pull-out / grip (T12, agent 2). Units: N, N·m, mm, MPa.
+# The sim force guard throws away any demo whose contact exceeds these; the real arm has no force sensor.
+#
+# STATUS: PRELIMINARY = calculated from the printed CAD and literature, NOT measured. It becomes SIM_MEASURED only
+# per value that was measured in Isaac Lab (physics/measure_seating.py); until then nothing here is a measurement.
+#
+# Rule (user, 2026-10-29): every limit is >= 2x below the calculated failure load AND >= the measured seating force.
+axial_N: 15.0          # straight down along the insert axis (user's calculated start, kept; see axial note below)
+lateral_N: 4.5         # sideways, at the part, any direction in the horizontal plane
+torque_Nm: 0.10        # about the vertical (insert) axis, e.g. the +-2 deg twist
+status: PRELIMINARY    # the three global limits are calculated; per_part_axial_N and sim_seating below are SIM_MEASURED
+source: >-
+  Hand calculation, sim/assembly_lab/physics/limits.yaml (this file), from cad/products/parameters.py and the model
+  files; FDM PLA interlayer strength from literature (below). Seating forces measured in Isaac Sim 6.0 PhysX:
+  physics/seating_results.yaml (summarize_seating.py over physics/raw/*.jsonl, 514 runs).
+
+per_part_axial_N:   # overrides axial_N for these moving parts (the skill and the sim force guard must use these)
+  M5_04:
+    axial_N: 2.5
+    status: SIM_MEASURED
+    basis: >-
+      Seats at every cap 0.5-7 N aligned and 0.5-2 N at 0.5 mm offset; pushed 0.5 mm PAST the seat at 9 N aligned and
+      at 5 N with 0.5 mm offset (press-induced sink). 5.0 N / 2.0 = 2.5 N, and 2.5 >= the measured 0.5 N seating cap.
+    cause: >-
+      CAD: in products 5/6 the larger cavity (27 x 21) and 22 mm front opening leave only about 3 mm2 of each
+      chamfered lock leg resting on the housing top ledge, and the lock bridge sits over the guide's lock holes, so
+      nothing else carries the press. Whether real PLA crushes there or this is an SDF contact artifact is NOT known;
+      the limit treats it as real.
+  M6_04:
+    axial_N: 2.5
+    status: SIM_MEASURED
+    basis: >-
+      Seats 0.5-7 N aligned and 0.5-5 N at 0.5 mm offset; sinks 0.5 mm past the seat at 9 N aligned, 7 N at 0.5 mm.
+      Same 2.5 N as M5_04 (same lock geometry; 7.0 / 2.0 = 3.5 rounded down to the M5_04 value).
+    cause: same as M5_04
+
+method:
+  failure_mode: >-
+    FDM PLA fails first between layers. Every small peg and leg is printed upright (fixtures, housings and locks have
+    no print_rotation in cad/products), so a sideways push bends the peg about its root, which is an interlayer plane.
+  interlayer_tensile_strength_MPa: 15.0     # design value, low end of the literature range
+  interlayer_strength_literature: >-
+    Upright (Z-built) PLA tensile specimens are the weakest build orientation, with strengths reported from roughly
+    10 MPa to above 35 MPa depending on layer height, nozzle temperature and speed. 15 MPa is a deliberately low
+    design value. Sources: Chacon J.M. et al., "Additive manufacturing of PLA structures using fused deposition
+    modelling: Effect of process parameters on mechanical properties and their optimal selection", Materials &
+    Design 124 (2017) 143-157; Song Y. et al., "Measurements of the mechanical response of unidirectional 3D-printed
+    PLA", Materials & Design 123 (2017) 154-164; Gordelier T.J. et al., "Optimising the FDM additive manufacturing
+    process to achieve maximum tensile strength: a state-of-the-art review", Rapid Prototyping Journal 25 (2019).
+    Ranges are from memory of these papers and must be treated as indicative, not quoted values.
+  stress_concentration_Kt: 1.5   # peg and leg roots are sharp (union with EPS overlap, no root fillet)
+  safety_factor_min: 2.0
+  bending: "sigma = F * L / Z; round Z = pi d^3 / 32, square Z = b^3 / 6; force at the tip of the engaged length"
+
+features:   # every slender feature that a sideways or twisting push can break
+  - feature: fixture peg B (on every base F01-F06)
+    geometry: "round d 3.0, height 2.5, 0.5 top chamfer, root on the 8 mm plate"
+    stress_per_N_MPa: 0.943          # 2.5 / (pi 3^3 / 32)
+    lateral_failure_N: 10.6          # 15 / (0.943 * 1.5); 15.9 N without Kt (the ROBOT_BRAIN 'about 16 N')
+  - feature: fixture peg A
+    geometry: "round d 4.0, height 2.5"
+    stress_per_N_MPa: 0.398
+    lateral_failure_N: 25.1
+  - feature: lock leg (M4_04, M5_04, M6_04; two legs at x +-11.5)
+    geometry: "square 3 x 3, 5 engaged in the guide's 4 x 4 hole, 0.5 lead-in"
+    stress_per_N_MPa: 1.111          # 5 / (3^3 / 6), conservative: ignores the inner print gusset
+    lateral_failure_N: 9.0           # 15 / (1.111 * 1.5)  <- weakest feature, sets lateral_N
+    torque_failure_Nm: 0.207         # 2 legs * 9.0 N * 0.0115 m  <- sets torque_Nm
+  - feature: housing guide peg (M4_01, M5_01, M6_01; two at x +-13, y 12)
+    geometry: "square 3 x 3, height 2, 0.5 lead-in"
+    stress_per_N_MPa: 0.444
+    lateral_failure_N: 22.5
+  - feature: housing on the base pegs, twist
+    geometry: "pegs A and B 29.8 mm apart"
+    torque_failure_Nm: 0.316         # peg B 10.6 N * 0.0298 m (all torque reacted by peg B)
+
+derived:
+  lateral_N: "min lateral failure 9.0 N (lock leg) / 2.0 = 4.5 N"
+  torque_Nm: "min torque failure 0.207 N·m (lock legs) / 2.0 = 0.10 N·m"
+  axial_N: >-
+    No printed feature is near failure at 15 N straight down (smallest bearing area: lock leg 9 mm2 -> 1.7 MPa;
+    smallest bending span: lock bridge 6 x 4 over 23 mm -> 0.36 MPa/N, in-layer). 15 N is kept as the user's limit
+    because the real risk is pushing a crooked part or the free-standing base, not breaking it. Must stay >= the
+    sim-measured seating force (clearance fits: expected near gravity only, NOT yet measured).
+  free_standing_base_warning: >-
+    Bases are not taped (PLAN section 2) and weigh 29.5 g (0.29 N). Any sideways push larger than
+    mu_table * (axial push + 0.29 N) slides the base; mu_table is unknown (table surface not measured). Keep lateral
+    contact near zero; the 4.5 N limit is a breakage limit, not a 'base stays put' limit.
+
+sim_seating:   # SIM_MEASURED, model-specific; full per-pair table in physics/seating_results.yaml
+  status: SIM_MEASURED
+  model_assumptions: "rubber-pad lateral compliance 2 N/mm (assumed), rigid tilt, fixed receivers, PLA mu 0.35 (est.)"
+  max_seating_force_allowed_conditions_N: 0.5   # every pair seats at the 0.5 N cap aligned and at 0.5 mm offset
+  axial_N_covers_seating: true
+  findings:
+    - "Aligned parts drop in with zero pre-seat contact force."
+    - "Housings M1-M6_01 at 1.0 mm offset jam on the unchamfered 3 mm stops even at 15 N (xy capture is only 0.5 mm)."
+    - "M4_04 at 1.0 mm offset needs 13.1 N axial with 5.2 N lateral, above lateral_N 4.5: 1 mm is outside the envelope."
+    - "Rigidly held 1-3 deg tilt does not level out; tilt rows are a worst case, the skill must level before contact."
+    - "M5_04 / M6_04 sink 0.5 mm past the seat under 5-9 N presses: see per_part_axial_N."
+  untested: >-
+    Pairs that seated at 15 N were not pressed harder, so a press-sink above 15 N (vs 2 x 15 = 30 N) is not ruled out
+    by sim; the axial_N basis for them stays the hand calculation above.
+
+# Per mating pair: filled from cad/products (clearance, chamfers) now; seating forces only after the sim study.
+mates_source: see sim/assembly_lab/objects/objects.yaml (mates_with, pegs, holes) and physics/seating_results.yaml (sim)

@@ -1,0 +1,49 @@
+# PhysX material and contact settings for the 30 PLA parts and the Team V rubber fingertips (T12, agent 2).
+# SI units here (PhysX/Isaac Lab): m, s, kg. Read by sim/assembly_lab/env (agent 1).
+# Status per value: SOURCE = taken from a cited source, ESTIMATE = engineering estimate to validate in sim / on the
+# cell. No value here was measured on the real parts.
+
+materials:
+  pla_printed:                      # black PLA, FDM, 0.2 mm layers
+    density_kg_m3: 1240             # SOURCE: cad/products/parameters.py PLA_DENSITY_G_PER_CM3 (mass from CAD volume)
+    static_friction: 0.35           # ESTIMATE: self-mated FDM PLA is reported roughly 0.2-0.5 depending on layer
+    dynamic_friction: 0.30          #   direction and load; middle value. Tune if parts stick/slide unrealistically.
+    restitution: 0.05               # ESTIMATE: small rigid polymer parts, near-plastic impacts
+    friction_combine_mode: average
+    restitution_combine_mode: min
+  nbr_fingertip:                    # NBR 60 Shore A pad, 6.8 x 3.7 x 1.5 mm (cad/fingers/README.md)
+    static_friction: 1.0            # ESTIMATE: rubber on smooth polymer typically 0.8-1.2. The starter used 1.5 / 1.3
+    dynamic_friction: 0.9           #   for its soft tips (sim/starter/scene_config.py SOFT_TIP_*, "initial estimate").
+    restitution: 0.0
+    friction_combine_mode: max      # pad-on-PLA pair uses the rubber value
+    restitution_combine_mode: min
+  table:                            # cell table surface: friction NOT measured (decides whether a pushed base slides)
+    static_friction: 0.4            # ESTIMATE
+    dynamic_friction: 0.35
+    restitution: 0.0
+
+pairs:   # effective values after the combine modes above
+  pla_pla: {static: 0.35, dynamic: 0.30, restitution: 0.05}
+  rubber_pla: {static: 1.0, dynamic: 0.9, restitution: 0.0}
+  pla_table: {static: 0.375, dynamic: 0.325, restitution: 0.0}
+
+collision:
+  # Every peg/hole fit has 0.5 mm clearance per side and 0.5-1.5 mm chamfers (cad/products/parameters.py). A convex
+  # hull or convex decomposition fills the holes and pockets and makes insertion meaningless, so mating parts need
+  # SDF mesh collision (PhysX signed-distance-field colliders, supported for dynamic rigid bodies in Isaac Sim 4+/
+  # Isaac Lab via sim_utils.SDFMeshPropertiesCfg). Fingers can stay convex.
+  part_collider: sdf
+  sdf_resolution: 256               # ESTIMATE: ~0.25 mm cells over a 60 mm base; check the 0.5 mm gaps stay open
+  sdf_margin_m: 0.0002
+  contact_offset_m: 0.0002          # must be well below the 0.5 mm clearance, or the gap is 'touching' before contact
+  rest_offset_m: 0.0
+  finger_collider: convex_hull
+
+solver:   # small (1-30 g), tight-fit parts: stiff, many iterations, small step
+  physics_dt_s: 0.002               # 500 Hz
+  position_iterations: 32
+  velocity_iterations: 4
+  enable_ccd: false                 # parts move slowly (<= 50 mm/s near contact); CCD off avoids SDF+CCD cost
+  max_depenetration_velocity_m_s: 0.05
+  bounce_threshold_velocity_m_s: 0.2
+  gravity_m_s2: -9.81

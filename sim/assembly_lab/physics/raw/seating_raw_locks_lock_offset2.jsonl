@@ -1,0 +1,1 @@
+{"pair": "M5_04_onto_M5_03", "condition": "offset_x_0.5", "cap_N": 2.0, "seated": true, "final_dz_mm": 0.0002, "final_xy_err_mm": [0.4999, -0.0013], "peak_axial_N": 2.0177, "peak_lateral_N": 0.189, "peak_torque_Nm": 0.000126, "pre_seat_peak_axial_N": 0.0001, "pre_seat_peak_lateral_N": 0.002, "pre_seat_peak_torque_Nm": 2e-06, "steps": 550, "wall_s": 8.15}
