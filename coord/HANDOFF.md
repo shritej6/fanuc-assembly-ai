@@ -2,6 +2,35 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 15:10 · T12 num_envs > 1: N cloned cells per Isaac process (agent 9) · CLAUDE · feature/T12-num-envs
+
+- Changed: `sim/assembly_lab/env/`. The per-env scene template (`scene.py`, cells under `/World/envs/env_k/Cell`,
+  single-body filtered contact sensors). Batched `actions.py`, `contact_metrics.py`, `mimic_env.py`, `extras.py`,
+  `mdp.py`, `cell_env.py`. New `settle.py` (lockstep settle + in-step `SettleTracker`), `batch_rate.py` (GPU probe),
+  `batch_check.py` (per-env gates) and `BATCH_API.md` (the generator contract). With N = 1, `reset()` / `step_tcp()`
+  work as before.
+- Snapshot: `fa-sim:~/t12_data/repo_ne1` (+ `.md5`), ENV_MD5 `7b33d4680c8e1af6a9f9eabaa47373ec`, tree of 088be9d =
+  23ffe58 + batching, git `skills/runner.py` (a05bffc).
+- Run: `GPU=0 CACHE_TAG=_ne REPO=~/t12_data/repo_ne1 sim/assembly_lab/env/isaaclab_run.sh
+  sim/assembly_lab/env/batch_check.py --num_envs 32 --cameras table side wrist --out <json>`.
+- Measured (fa-g6 L40):
+  - N = 1 identity vs 23ffe58: tcp_track_check output identical, settle_rate JSON identical.
+  - Full stack, 3 cameras:
+    - N = 16: 5.69 env-steps/s, 16/16 gates, per-env-reset rerun 8/8.
+    - N = 32: 9.45 env-steps/s, 32/32 gates, rerun 16/16, 11.0 GB.
+    - N = 64: 64/64 gates, rerun 31/32 (one final_xy 0.333 mm after release in the plain scripted insert); its rate
+      overlapped other runs and is not quoted.
+  - Probe, 3 cameras: N = 64 runs 41.9 env-steps/s at 15.6 GB.
+  - Env 0 at N = 16 vs N = 1: TCP within 0.003 mm, part within 0.11 mm, signals equal; not bit-identical (contact
+    noise from world position).
+- Next:
+  - The full stack is Python-bound (about 60 ms per env per step). Try 2 processes of N = 32 per 48 GB GPU, then
+    vectorise IK and metrics.
+  - Re-check N = 64 per-env reset.
+  - If agent 8's constant-force jaw (feature/T12-grip-constforce) returns, a batched port of it exists (agent 9
+    scratchpad `merge_ref/`).
+  - pytest: only `test_objects` fails, as it does at 23ffe58 (fixed on T12-mimic).
+
 ## 2026-10-30 01:30 · T18 evaluator + real-arm guard (agent 6, in progress) · CLAUDE · not yet committed
 
 - Changed (untracked on `feature/T12-mimic`): `policy_learn/deploy/` (`guards.py`, `groot_policy.py` `GrootPolicy`,
