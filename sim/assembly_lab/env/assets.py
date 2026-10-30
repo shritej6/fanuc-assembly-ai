@@ -132,13 +132,16 @@ def contact_offsets(prim, contact: dict) -> None:
 
 
 def mesh_prim(stage, path: str, tris_mm: np.ndarray, xform_mm: np.ndarray | None = None) -> UsdGeom.Mesh:
+    """Welded triangle mesh (shared vertices). The STL is a triangle soup; written unwelded, every triangle was its
+    own island, which the SDF cooker cannot sign reliably (inside vs outside of small features such as pegs)."""
     verts = tris_mm.reshape(-1, 3)
     if xform_mm is not None:
         verts = verts @ xform_mm[:3, :3].T + xform_mm[:3, 3]
+    uniq, index = np.unique(np.round(verts, 5), axis=0, return_inverse=True)
     mesh = UsdGeom.Mesh.Define(stage, path)
-    mesh.CreatePointsAttr(Vt.Vec3fArray.FromNumpy((verts / 1000.0).astype(np.float32)))
+    mesh.CreatePointsAttr(Vt.Vec3fArray.FromNumpy((uniq / 1000.0).astype(np.float32)))
     mesh.CreateFaceVertexCountsAttr(Vt.IntArray([3] * len(tris_mm)))
-    mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(list(range(len(verts)))))
+    mesh.CreateFaceVertexIndicesAttr(Vt.IntArray([int(i) for i in index.reshape(-1)]))
     mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
     return mesh
 
@@ -270,7 +273,7 @@ def add_object(stage, prim_path: str, usd: Path, pose_world_m: np.ndarray) -> No
     UsdShade.MaterialBindingAPI.Apply(mesh).Bind(UsdShade.Material(stage.GetPrimAtPath(LOOK_BLACK_PLA)))
 
 
-OBJECT_USD_VERSION = 3      # bump when write_object_usd changes (v2: SDF margin floor; v3: sleep thresholds)
+OBJECT_USD_VERSION = 4      # bump when write_object_usd changes (v2: SDF margin floor; v3: sleep thresholds; v4: welded)
 
 
 def object_cache_dir(contact: dict) -> Path:

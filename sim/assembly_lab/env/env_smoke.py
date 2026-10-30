@@ -189,11 +189,13 @@ def main() -> None:
     (args.out / "report.json").write_text(json.dumps(report, indent=1, default=float))
     print(f"[smoke] {step_hz:.2f} env steps/s with 3 cameras (x{step_hz * 0.1:.3f} real time); part lifted "
           f"{lifted:.1f} mm; wrist cam {cam_checks['04_lift']}; report {args.out / 'report.json'}", flush=True)
-    env.close()
-    if held_torque != 0.0:
-        raise SystemExit(f"FAIL: a part held in the air reports torque_Nm {held_torque} (must be 0.0)")
-    if rest["guard_max_Nm"] > 0.005:
-        raise SystemExit(f"FAIL: an untouched resting part reports torque_Nm {rest['guard_max_Nm']} (must be <= 0.005)")
+    fails = ([f"a part held in the air reports torque_Nm {held_torque} (must be 0.0)"] if held_torque != 0.0 else []) + \
+        ([f"an untouched resting part reports torque_Nm {rest['guard_max_Nm']} (must be <= 0.005)"]
+         if rest["guard_max_Nm"] > 0.005 else [])
+    print(f"[smoke] {'FAIL: ' + '; '.join(fails) if fails else 'PASS'}", flush=True)
+    env.close()            # closing the app ends the process, so the verdict is printed first
+    if fails:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

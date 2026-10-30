@@ -7,8 +7,11 @@
 Per object:
 - robot_touch_N: the largest force any single robot link puts on it (the "touched only the target" gate).
 - jaw_n: (JawL, JawR) force magnitudes (grasp signal).
-- contact: the force from everything except the robot (net minus all robot-link forces): normal_N = |vertical|
-  (insertion is vertical), lateral_N = horizontal magnitude, torque_Nm = |torque of the robot-link forces about the
+- contact: the force from everything except the robot: normal_N = |vertical| (insertion is vertical), lateral_N =
+  horizontal magnitude, of (net NORMAL force (object_contact.net_forces_w, which PhysX/Isaac Lab report without
+  friction) minus the robot links' normal forces) + the friction forces from every non-robot shape
+  (object_env_contact.friction_forces_w, summed over filters). Without the friction term a 1 N sideways push held by
+  table friction read lateral_N 0.0 (measured, force_validate.py); torque_Nm = |torque of the robot-link forces about the
   object's centre of mass| (quasi-static: it balances what the base and table put on the part).
   torque_Nm: torque from the NON-robot contacts only (other objects, table, mat, floor; every contact point and
   friction anchor, contact_torque.py) about the object's insert axis (body +Z), the axis physics/limits.yaml caps;
@@ -48,6 +51,7 @@ class ContactMetrics:
         self._chunk_peak = torch.zeros((n, k), device=env.device)
         self._now = torch.zeros((n, k), device=env.device)
         self.env_force = torch.zeros((n, 3), device=env.device)
+        self.env_net = torch.zeros((n, 3), device=env.device)
         self._jaw = torch.zeros((n, 2), device=env.device)
 
     def _compute(self) -> None:
@@ -58,7 +62,9 @@ class ContactMetrics:
         quat = torch.stack([self.env.scene[n].data.root_link_quat_w.torch[0] for n in self.env.names])  # (N, 4) xyzw
         axis = M.matrix_from_quat(quat)[:, :, 2]                                                        # body +Z
         on_obj = -f                                                 # robot-link forces on the objects
-        env_f = net - on_obj.sum(dim=0)
+        fric = self.envc.data.friction_forces_w.torch[0][self.env_index].sum(dim=1)                    # (N, 3)
+        env_f = net - on_obj.sum(dim=0) + contact_torque.NORMAL_SIGN * fric
+        self.env_net = env_f
         arm = p - com.unsqueeze(0)
         ok = torch.isfinite(arm).all(dim=-1) & (arm.norm(dim=-1) < MAX_ARM_M) & (f.norm(dim=-1) > 0)
         tau = torch.where(ok.unsqueeze(-1), torch.cross(torch.nan_to_num(arm), on_obj, dim=-1), 0.0).sum(dim=0)
