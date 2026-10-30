@@ -4,6 +4,7 @@ Newest first. One entry per finished task.
 
 ## 2026-10-29 · T14 PatchCore recovery · CODEX · REVIEW, installed-pose rear-guard evaluation data blocked
 
+- Code commit `3c395c3`, PR #18: https://github.com/shritej6/fanuc-assembly-ai/pull/18
 - Measured failure on Rosie: M1_04 / M2_04 / M3_04 had 629 / 643 / 630 good O training crops and 102 / 85 / 87
   held-out good O crops, but each had 0 matching-pose C/I `test_good` and 0 `test_bad`. The other 21 parts had at
   least 34 good and 23 bad evaluation crops. T27 therefore remained `PARTIAL_DONE missing: t14`.
