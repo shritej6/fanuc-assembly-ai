@@ -316,3 +316,14 @@ def test_loop_counts_attempts_and_rotates(tmp_path):
     stats = loop(gen, a, tmp_path / "w_e00.hdf5", rotate_every=1)
     assert (stats["attempts"], stats["accepted"], stats["no_case"], gen.rotations) == (3, 2, 1, 3)
     assert json.loads((tmp_path / "w_e00.hdf5.stats.json").read_text())["accepted"] == 2
+
+
+def test_seat_rows_get_the_runner_seat_phase():
+    from sim.assembly_lab.mimic.generate import split_seat_rows
+
+    z = np.array([60.0, 40.0, 20.0, 10.6, 10.2, 11.5, 10.05, 9.95])  # seated TCP z = 10; one bounce back up
+    rows = np.zeros((len(z), 7))
+    rows[:, 2] = z
+    head, tail = split_seat_rows(rows, 10.0)
+    assert list(head[:, 2]) == [60.0, 40.0, 20.0, 10.6, 10.2, 11.5] and list(tail[:, 2]) == [10.05, 9.95]
+    assert len(split_seat_rows(rows[:3], 10.0)[1]) == 0

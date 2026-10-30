@@ -123,6 +123,18 @@ def pull_drift_mm(before: dict, during: list[dict], oid: str) -> float:
     return round(max(float(np.linalg.norm(checks.in_hand(o, oid)[:3, 3] - h0)) for o in during), 4)
 
 
+SEAT_PHASE = "slide"  # one of the runner's SEAT_PHASES: fine pressing after seat contact and the 2 N seat stop
+SEAT_ZONE_MM = 1.0  # insert.SEAT_APPROACH_MM: the scripted insert goes slow from this far above the seated height
+
+
+def split_seat_rows(rows: np.ndarray, seated_z: float) -> tuple[np.ndarray, np.ndarray]:
+    """Split the held-insert rows where they enter the seat zone for good (every later row within SEAT_ZONE_MM of
+    the seated TCP height): the tail gets the scripted insert's seat-phase handling in agent 3's runner."""
+    above = np.flatnonzero(rows[:, 2] > seated_z + SEAT_ZONE_MM)
+    k = int(above[-1]) + 1 if above.size else 0
+    return rows[:k], rows[k:]
+
+
 def free_space_starts(subtasks) -> list[bool]:
     """Subtasks that start in free space (the first, or one on a new reference frame): trimmed to their corridor and
     reached through a rise-cross-descend connector. The others continue in contact from where the last one ended."""
@@ -250,7 +262,11 @@ class Generator:
         rec.in_hand[oid] = checks.in_hand(rec.obs, oid)
         rows = self._rows(rec, i, sub, plans, src, self._new_frame(rec, i, sub, plans))
         lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=True)
-        rec.run([*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], soft_stop=True)
+        head, tail = split_seat_rows(rows, plans[1].seated_tcp[2])
+        segs = [Segment(self.skill, sub.name, sub.name, sub.object_ref, head)] if len(head) else []
+        if len(tail):  # agent 3's seat phase: 0.02 mm presses after first seat contact, stop at 2 N, then the check
+            segs.append(Segment(self.skill, SEAT_PHASE, sub.name, sub.object_ref, tail))
+        rec.run([*lead, *segs], soft_stop=True)
         ok, err = rec._seated(plans[1])
         if not ok:
             raise EpisodeFailed(f"not seated: { {k: round(float(v), 3) for k, v in err.items()} }")
