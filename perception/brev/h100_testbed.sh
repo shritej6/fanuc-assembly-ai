@@ -123,7 +123,7 @@ cd "$REPO"
 git_commit="$(cat "$REPO/.t13-code-commit")"
 mark "begin commit=$git_commit gpus=$GPUS gpu_mib=$GPU_MIB detector_config=$DETECTOR_CONFIG"
 stage env setup_env
-stage prepare_main prepare testbed "$ART/main"
+stage prepare_main prepare "${MAIN_PROFILE:-testbed}" "$ART/main"   # MAIN_PROFILE=testbed_weak adds S and T
 stage prepare_build prepare testbed_build "$ART/build"
 stage detector train detector.sbatch "$DETECTOR_CONFIG" "$ART/main" "$RUNS/main"
 stage classifier train classifier.sbatch classifier_h100.yaml "$ART/main" "$RUNS/main"

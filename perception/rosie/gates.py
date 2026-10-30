@@ -17,6 +17,9 @@ TESTBED_BUILD_RANGES = {"P": (0.45, 0.55)}
 # Cosmos host) must not train. Chunk IDs run from chunk_0000 without gaps.
 TESTBED_CHUNKS = {"N": 40, "R": 20, "Q": 8, "O": 48}
 TESTBED_BUILD_CHUNKS = {"P": 24}
+# T31 weak-spot sets: rendered without Cosmos by the user's fast-retrain order, so any Cosmos image there is an error.
+TESTBED_WEAK_RANGES = {**TESTBED_RANGES, "S": (0.0, 0.0), "T": (0.0, 0.0)}
+TESTBED_WEAK_CHUNKS = {**TESTBED_CHUNKS, "S": 6, "T": 3}
 
 
 class RosieGateError(ValueError):
@@ -50,14 +53,15 @@ def verify_production_manifest(path: Path) -> dict[str, Any]:
 
 
 # Which approved profile each production trainer may read (T27: only the test-bed sets train).
-TRAINING_PROFILES = {"detector": "testbed", "identity": "testbed", "build_state": "testbed_build"}
+TRAINING_PROFILES = {"detector": ("testbed", "testbed_weak"), "identity": ("testbed", "testbed_weak"),
+                     "build_state": ("testbed_build",)}
 
 
 def verify_training_metadata(metadata: dict[str, Any], target: str) -> dict[str, Any]:
     """Gate a production trainer: its own profile, then every production check of that profile."""
     expected, profile = TRAINING_PROFILES[target], metadata.get("profile", "legacy")
-    if profile != expected:
-        raise RosieGateError(f"{target} training requires a {expected!r} manifest, got profile {profile!r}")
+    if profile not in expected:
+        raise RosieGateError(f"{target} training requires a {' or '.join(expected)!r} manifest, got profile {profile!r}")
     return verify_production_metadata(metadata)
 
 
@@ -79,7 +83,8 @@ def verify_production_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def _verify_complete_chunks(profile: str, sets: dict[str, Any]) -> None:
-    expected = {"testbed": TESTBED_CHUNKS, "testbed_build": TESTBED_BUILD_CHUNKS}.get(profile)
+    expected = {"testbed": TESTBED_CHUNKS, "testbed_build": TESTBED_BUILD_CHUNKS,
+                "testbed_weak": TESTBED_WEAK_CHUNKS}.get(profile)
     if expected is None:
         return
     if set(sets) != set(expected):
@@ -95,10 +100,10 @@ def _verify_complete_chunks(profile: str, sets: dict[str, Any]) -> None:
 
 def _expected_ranges(metadata: dict[str, Any]) -> dict[str, tuple[float, float]]:
     profile = metadata.get("profile", "legacy")
-    if profile == "testbed":
+    if profile in ("testbed", "testbed_weak"):
         if metadata.get("fallen_classes") is not True:
             raise RosieGateError("test-bed production manifest must carry the fallen classes")
-        return TESTBED_RANGES
+        return TESTBED_RANGES if profile == "testbed" else TESTBED_WEAK_RANGES
     if profile == "testbed_build":
         if metadata.get("classifier_target") != "build_state":
             raise RosieGateError("set-P production manifest must train the build states")

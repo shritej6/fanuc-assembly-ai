@@ -244,7 +244,7 @@ def test_production_trainers_read_only_their_approved_complete_profile() -> None
     detector_gate(main, smoke=False)
     classifier_gate(main, smoke=False)
     classifier_gate(build, smoke=False)
-    with pytest.raises(DetectorTrainError, match="requires a 'testbed' manifest, got profile 'legacy'"):
+    with pytest.raises(DetectorTrainError, match="requires a 'testbed or testbed_weak' manifest, got profile 'legacy'"):
         detector_gate(_training_metadata("legacy"), smoke=False)
     with pytest.raises(DetectorTrainError, match="set O is incomplete"):
         detector_gate(_training_metadata("testbed", {"O": 47}, fallen_classes=True), smoke=False)
@@ -274,3 +274,38 @@ def test_foreign_objects_and_bases_need_no_rest_state() -> None:
     with pytest.raises(ManifestError, match="has no rest state"):
         annotation({"uid": "o06", "object_id": "M1_01", "state": "on_table", "bbox_xyxy": [1, 1, 9, 9]},
                    label2id, 64, 48, "N:000000/side", rest=None, fallen_classes=True)
+
+
+def test_weak_profile_adds_s_and_t_without_cosmos():
+    from perception.rosie.gates import TESTBED_WEAK_CHUNKS, TESTBED_WEAK_RANGES
+    from perception.rosie.prepare import preparation_plan
+
+    plan = preparation_plan(Path("data"), Path("out"), Path("contracts/taxonomy.json"), smoke=False,
+                            profile="testbed_weak")
+    assert plan["detector_sets"] == ["N", "R", "Q", "S"] and plan["classifier_sets"] == ["O", "T"]
+    assert plan["fallen_classes"] is True
+    assert TESTBED_WEAK_RANGES["S"] == TESTBED_WEAK_RANGES["T"] == (0.0, 0.0)
+    assert TESTBED_WEAK_CHUNKS == {"N": 40, "R": 20, "Q": 8, "O": 48, "S": 6, "T": 3}
+
+
+def test_build_state_training_still_refuses_the_weak_profile():
+    import pytest
+
+    from perception.rosie.gates import RosieGateError, verify_training_metadata
+
+    with pytest.raises(RosieGateError, match="testbed_build"):
+        verify_training_metadata({"profile": "testbed_weak"}, "build_state")
+
+
+def test_finetune_config_pins_its_init_weights():
+    import pytest
+
+    from perception.training_config import ConfigError, load_training_config
+
+    config = load_training_config(Path("perception/configs/rtdetr_a100_finetune.yaml"))
+    assert config["model"]["init_from"] == "runs/detector_init" and len(config["model"]["init_sha256"]) == 64
+    unpinned = Path("perception/configs/rtdetr_a100_finetune.yaml").read_text().replace("  init_sha256:", "  x_sha256:")
+    tmp = Path(pytest.importorskip("tempfile").mkdtemp()) / "c.yaml"
+    tmp.write_text(unpinned)
+    with pytest.raises(ConfigError, match="init_sha256"):
+        load_training_config(tmp)

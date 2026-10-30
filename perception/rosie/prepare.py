@@ -26,7 +26,14 @@ TESTBED_BUILD = {
     "classifier_sets": ("P",),
     "cosmos_ranges": (("P", 0.45, 0.55),),
 }
-PROFILES = ("legacy", "testbed", "testbed_build")
+# Test-bed sets plus the weak-spot sets S (detector) and T (wrist look-alikes) from T31 (user 2026-10-29: render the
+# cases the T27 models miss and retrain fast; S and T skip Cosmos by that order, so their range is exactly zero).
+TESTBED_WEAK = {
+    "detector_sets": ("N", "R", "Q", "S"),
+    "classifier_sets": ("O", "T"),
+    "cosmos_ranges": TESTBED["cosmos_ranges"] + (("S", 0.0, 0.0), ("T", 0.0, 0.0)),
+}
+PROFILES = ("legacy", "testbed", "testbed_build", "testbed_weak")
 
 
 def preparation_plan(
@@ -40,12 +47,12 @@ def preparation_plan(
     if profile not in PROFILES:
         raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILES}")
     root = output_root.resolve()
-    sets = {"testbed": TESTBED, "testbed_build": TESTBED_BUILD}.get(profile)
+    sets = {"testbed": TESTBED, "testbed_build": TESTBED_BUILD, "testbed_weak": TESTBED_WEAK}.get(profile)
     detector_sets = sets["detector_sets"] if sets else DETECTOR_SETS
     classifier_sets = sets["classifier_sets"] if sets else CLASSIFIER_SETS
     return {
         "profile": profile,
-        "fallen_classes": profile == "testbed",
+        "fallen_classes": profile in ("testbed", "testbed_weak"),
         "classifier_target": "build_state" if profile == "testbed_build" else "identity",
         "cosmos_ranges": [list(item) for item in sets["cosmos_ranges"]] if sets else [],
         "mode": "smoke" if smoke else "full",

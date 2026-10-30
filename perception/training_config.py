@@ -12,6 +12,7 @@ import yaml
 from perception.taxonomy import BUILD_STATES
 
 REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
 class ConfigError(ValueError):
@@ -48,6 +49,9 @@ def _validate_detector(
         raise ConfigError("detector model must be PekingU/rtdetr_r50vd")
     if not REVISION_PATTERN.fullmatch(str(model.get("revision", ""))):
         raise ConfigError("detector model revision must be a 40-character commit")
+    init = model.get("init_from")
+    if init is not None and not (isinstance(init, str) and SHA256_PATTERN.fullmatch(str(model.get("init_sha256", "")))):
+        raise ConfigError("detector init_from needs the sha256 of its model.safetensors in init_sha256")
     expected_size = 1280 if hardware_profile == "h100" else 640
     if model.get("image_size") != expected_size:
         raise ConfigError(f"{hardware_profile.upper()} RT-DETR image size must be {expected_size}")
