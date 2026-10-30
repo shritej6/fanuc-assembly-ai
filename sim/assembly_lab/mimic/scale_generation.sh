@@ -22,7 +22,7 @@ SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skill
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SSH=(ssh -o ControlPath=none -o ConnectTimeout=15 -n)
 RSYNC=(rsync -a -e "ssh -o ControlPath=none -o ConnectTimeout=15")
-TOOLS='uv run -q --no-project --with h5py --with numpy --with pandas --with pyarrow --with pillow --with pyyaml --with imageio-ffmpeg'
+TOOLS='~/.local/bin/uv run -q --no-project --with h5py --with numpy --with pandas --with pyarrow --with pillow --with pyyaml --with imageio-ffmpeg'
 
 seeds() {
   # agent 3 gathers its closed per-part files on $GATHER and lists them in run10_closed.txt; stage_seeds.py copies

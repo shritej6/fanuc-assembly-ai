@@ -409,7 +409,7 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=200)
     ap.add_argument("--max-attempts", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--rotate-every", type=int, default=4, help="close the recorder file every N attempts (0: never)")
+    ap.add_argument("--rotate-every", type=int, default=1, help="close the recorder file every N attempts (0: never)")
     ap.add_argument("--cameras", nargs="*", default=["table", "side", "wrist"], choices=("table", "side", "wrist"))
     ap.add_argument("--device", default="cuda:0", help="physics device: cuda:0, or cpu (one env: often faster)")
     ap.add_argument("--limits", type=Path, default=None, help="override physics/limits.yaml")
