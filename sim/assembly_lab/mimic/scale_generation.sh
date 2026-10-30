@@ -9,6 +9,7 @@
 #     $M launch r1 fa-sim:1,2,3:2 fa-mimic:0,1,2,3:2 fa-gen1:0,1,2,3:2 fa-a6k-1:0,1:2 fa-l40s-1:0:2
 #   $M status r1                      # per-host roll-up of the workers' measured stats
 #   $M export r1                      # per host: LeRobot v2.1 export of its kept demos -> fa-mimic; validate + prepare
+#   $M drain r1 fa-g2 fa-g13          # before deleting a box: finish attempts, export + archive raw on fa-mimic
 #
 # host spec = <ssh alias>:<comma-separated GPUs>:<workers per GPU>. launch refuses a GPU that runs a container that is
 # not ours (run_generation.py checks it on the host). Nothing here stops or touches other agents' containers.
@@ -31,7 +32,7 @@ seeds() {
   # only those, with a .drop.json per file from run10_drop_tags.jsonl (run `repo` first: it needs repo_a7 there)
   "${SSH[@]}" "$GATHER" "cd ~/t12_data/repo_a7 && python3 -m sim.assembly_lab.mimic.stage_seeds"
   mkdir -p "$SCR/seeds_all"
-  "${RSYNC[@]}" "${GATHER}:t12_data/a7/seed_stage/" "$SCR/seeds_all/"
+  ssh -o ControlPath=none -o ConnectTimeout=15 -n "$GATHER" 'tar -C ~/t12_data/a7/seed_stage -cf - .' | tar -C "$SCR/seeds_all" -xf -
   for h in $HOSTS; do
     [[ "$h" == "$GATHER" ]] && { "${SSH[@]}" "$h" 'mkdir -p ~/t12_data/a7 && rsync -a ~/t12_data/a7/seed_stage/ ~/t12_data/a7/seeds/'; continue; }
     COPYFILE_DISABLE=1 tar -C "$SCR/seeds_all" -cf - . | \
@@ -71,12 +72,12 @@ push_repo() {
   # tar over ssh, then md5-check every file on the host: macOS openrsync was seen to skip changed files silently.
   # Files are overwritten in place (running workers keep the directory they mounted).
   local h=$1
-  (cd "$SCR/repo_a7" && find . -type f ! -path '*/__pycache__/*' -print0 | xargs -0 md5 -r) > "$SCR/repo_a7.md5"
+  (cd "$SCR/repo_a7" && find . -type f ! -path '*/__pycache__/*' -print0 | xargs -0 md5 -r) > "$SCR/repo_a7.$h.md5"
   COPYFILE_DISABLE=1 tar -C "$SCR/repo_a7" --exclude __pycache__ -cf - . | \
     ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'mkdir -p ~/t12_data/repo_a7 && tar -C ~/t12_data/repo_a7 -xf -'
   local bad
   bad=$(ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'cd ~/t12_data/repo_a7 && md5sum -c - 2>/dev/null | grep -vc ": OK$"' \
-    < "$SCR/repo_a7.md5" || true)
+    < "$SCR/repo_a7.$h.md5" || true)
   [[ "$bad" == "0" ]] || { echo "[repo] $h: $bad files differ after the copy" >&2; return 1; }
   echo "[repo] $h ok (all files md5-verified)"
 }
@@ -136,6 +137,61 @@ export_run() {
       echo READY: ~/t12_data/lerobot/${run}_*"
 }
 
+upload() {
+  # freeze: count the validated exports of RUN on $GATHER and upload them to a private HF dataset repo, one folder per
+  # LeRobot dataset under LABEL/ (brev_groot.sh: SRC_ROOT=<download>/LABEL). The token stays in the HF cache file.
+  local run=$1 label=$2 repo=$3
+  "${SSH[@]}" "$GATHER" "set -e; cd ~/t12_data/lerobot; python3 - $run > ~/t12_data/lerobot/${label}_counts.json <<'PY'
+import collections, glob, json, sys
+per, eps = collections.Counter(), 0
+for f in glob.glob(f'{sys.argv[1]}_*/meta/t12_episodes.jsonl'):
+    for line in open(f):
+        e = json.loads(line)
+        per[f\"{e['skill']}:{e['product']}\"] += 1
+        eps += 1
+print(json.dumps({'episodes': eps, 'per_skill_product': dict(sorted(per.items()))}, indent=1))
+PY
+      cat ~/t12_data/lerobot/${label}_counts.json; cd ~/t12_data/repo_a7; \
+      ~/.local/bin/uv run -q --no-project --with huggingface_hub python - $run $label $repo <<'PY'
+import glob, os, sys
+from huggingface_hub import HfApi
+run, label, repo = sys.argv[1:4]
+api = HfApi()
+api.create_repo(repo, repo_type='dataset', private=True, exist_ok=True)
+home = os.path.expanduser('~/t12_data/lerobot')
+for d in sorted(glob.glob(f'{home}/{run}_*/meta/info.json')):
+    name = d.split('/')[-3]
+    api.upload_folder(repo_id=repo, repo_type='dataset', folder_path=f'{home}/{name}', path_in_repo=f'{label}/{name}')
+    print('uploaded', f'{label}/{name}', flush=True)
+api.upload_file(path_or_fileobj=f'{home}/{label}_counts.json', path_in_repo=f'{label}/counts.json', repo_id=repo,
+                repo_type='dataset')
+print(f'READY hf:{repo} {label}/ -> huggingface-cli download {repo} --repo-type dataset --include \"{label}/*\"')
+PY"
+}
+
+drain() {
+  # retire hosts before their box is deleted: STOP lets every worker finish its attempt (no kept demo is lost), then the
+  # last export of the host is relayed to $GATHER (later exports keep it once the host is gone) and the raw files are
+  # archived there. Prints SAFE TO DELETE per host only when all three steps succeeded.
+  local run=$1; shift
+  for h in "$@"; do
+    "${SSH[@]}" "$h" "touch ~/t12_data/a7/gen/$run/STOP"
+    until [ "$("${SSH[@]}" "$h" "for n in \$(docker ps --format '{{.Names}}' | grep isaaclab); do \
+        docker inspect --format '{{.Args}}' \$n; done | grep -c 'a7/gen/$run/' || true")" = 0 ]; do sleep 30; done
+    HOSTS=$h export_run "$run"
+    ssh -o ControlPath=none -o ConnectTimeout=15 -n "$h" "tar -C ~/t12_data/a7/gen -cf - $run" | \
+      ssh -o ControlPath=none -o ConnectTimeout=15 "$GATHER" "mkdir -p ~/t12_data/a7/raw/$h && tar -C ~/t12_data/a7/raw/$h -xf -"
+    local n_src n_dst
+    n_src=$("${SSH[@]}" "$h" "find ~/t12_data/a7/gen/$run -name '*.hdf5' | wc -l")
+    n_dst=$("${SSH[@]}" "$GATHER" "find ~/t12_data/a7/raw/$h/$run -name '*.hdf5' | wc -l")
+    if [[ "$n_src" == "$n_dst" ]] && "${SSH[@]}" "$GATHER" "ls -d ~/t12_data/lerobot/${run}_*_$h" > /dev/null 2>&1; then
+      echo "SAFE TO DELETE: $h ($n_dst raw files archived on $GATHER)"
+    else
+      echo "[drain] $h NOT safe: raw $n_src vs $n_dst, or no export on $GATHER"
+    fi
+  done
+}
+
 case "${1:-}" in
   seeds) seeds ;;
   repo) repo ;;
@@ -143,5 +199,7 @@ case "${1:-}" in
   launch) shift; launch "$@" ;;
   status) status "$2" ;;
   export) export_run "$2" ;;
+  upload) upload "$2" "$3" "$4" ;;
+  drain) shift; drain "$@" ;;
   *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

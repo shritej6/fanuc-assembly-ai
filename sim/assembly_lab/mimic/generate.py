@@ -557,6 +557,7 @@ def run_batched(a) -> dict:
         gens.append(gen)
         threads.append(threading.Thread(target=_lane, args=(gen, ak, lane_out(a.out, k), out, k), daemon=True))
     hub.on_reset_all = lambda: _rotate_shared(owner, gens[0].run_cfg, a.out)
+    hub.maybe_rotate = lambda: _rotate_shared(owner, gens[0].run_cfg, a.out, min_metas=a.num_envs)
     for th in threads:
         th.start()
     try:
@@ -564,7 +565,7 @@ def run_batched(a) -> dict:
     finally:
         for th in threads:
             th.join(timeout=60)
-        owner.close(gens[0].run_cfg.path)
+        _close_shared(owner, gens[0].run_cfg.path)
     return {"lanes": out}
 
 
@@ -580,14 +581,33 @@ def lane_out(out: Path, k: int) -> Path:
     return out.with_name(f"{out.stem}_e{k:02d}{out.suffix}")
 
 
-def _rotate_shared(owner, run_cfg, out: Path) -> None:
-    """At a lockstep reset (no cell mid-episode): close + annotate the shared recorder file, record on in the next."""
-    if not run_cfg.metas:
+def _rotate_shared(owner, run_cfg, out: Path, min_metas: int = 1) -> None:
+    """Close + annotate the shared recorder file once it holds min_metas demos, record on in the next. The batched
+    env's own rotate keeps in-progress episodes in memory (IsaacBackend.rotate would export them half done); without
+    it this only runs at a lockstep reset, when no cell is mid-episode."""
+    if len(run_cfg.metas) < max(1, min_metas):
         return
     k = int(run_cfg.path.stem.rsplit("_c", 1)[1]) + 1
     nxt = chunk_path(out, k)
-    owner.rotate(str(nxt))
+    if hasattr(owner.raw, "rotate"):
+        owner._annotate(owner.raw.rotate(str(nxt)))
+        owner.record_path = str(nxt)
+    else:
+        owner.rotate(str(nxt))
     run_cfg.path, run_cfg.metas = nxt, []
+
+
+def _close_shared(owner, path: Path) -> None:
+    """End of a batched worker: close + annotate the last file without exporting episodes still in memory (retired
+    cells hold after their last end_episode; IsaacBackend.close would export those holds as demos)."""
+    if not hasattr(owner.raw, "begin_reset"):
+        owner.close(path)
+        return
+    rm = owner.raw.env.recorder_manager
+    if rm is not None:
+        rm._dataset_file_handler.close()
+        owner._annotate(path)
+    owner.env.close()
 
 
 def _batched_env(a):

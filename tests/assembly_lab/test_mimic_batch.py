@@ -39,15 +39,37 @@ class FakeEnv:
 
 
 class PerEnvResetFake(FakeEnv):
-    def reset_envs(self, reqs):
-        for k in reqs:
-            assert not self.in_episode[k]
-            self.in_episode[k] = True
-        return {k: {"env": k, "layout": lay, "t": 0} for k, (lay, _) in reqs.items()}
+    """begin_reset / ready_resets: a cell settles for `settle` step_tcp_many calls, then its episode starts. Records
+    every hold step given to a recording cell that did not ask for it (it would land in that cell's demo)."""
+
+    def __init__(self, n, settle=2, **kw):
+        super().__init__(n, **kw)
+        self.settle, self.settling, self.ready, self.unasked = settle, {}, {}, []
+
+    def begin_reset(self, reqs):
+        for k, (lay, _) in reqs.items():
+            assert not self.in_episode[k] and k not in self.settling
+            self.settling[k] = [self.settle, lay]
+
+    def ready_resets(self):
+        out, self.ready = self.ready, {}
+        return out
+
+    def step_tcp_many(self, reqs):
+        assert not set(reqs) & set(self.settling), "stepped a settling cell"
+        self.unasked += [k for k in range(self.n) if self.in_episode[k] and k not in reqs]
+        out = super().step_tcp_many(reqs)
+        for k, s in list(self.settling.items()):
+            s[0] -= 1
+            if s[0] <= 0:
+                del self.settling[k]
+                self.in_episode[k], self.t[k] = True, 0
+                self.ready[k] = {"env": k, "layout": s[1], "t": 0}
+        return out
 
 
-def _run(env, n, lengths, episodes=2, on_reset_all=None):
-    hub = Hub(env, n, on_reset_all=on_reset_all)
+def _run(env, n, lengths, episodes=2, on_reset_all=None, maybe_rotate=None):
+    hub = Hub(env, n, on_reset_all=on_reset_all, maybe_rotate=maybe_rotate)
     metas, errors = [], []
 
     def lane(k):
@@ -92,7 +114,39 @@ def test_per_env_reset_does_not_wait_for_the_slowest_lane():
     _, metas, errors = _run(env, 2, [1, 6], episodes=3)
     assert not errors and env.resets == 0
     assert metas.count(0) == 3 and metas.index(0) < metas.index(1)  # lane 0 cycled on while lane 1 still ran
-    assert env.calls[:3] == [[0, 1]] * 3  # lane 0's three 1-step episodes ran in the first 3 calls (lockstep: 0, 6, 12)
+    assert env.unasked == []  # no recording cell was ever held without asking
+    assert env.calls[:2] == [[], []]  # both cells settle first: two hold steps, nothing recorded
+    assert sum(len(c) for c in env.calls) == 3 * (1 + 6)
+
+
+def test_per_env_rotation_only_while_no_end_is_in_flight():
+    env = PerEnvResetFake(3, settle=1)
+    hub_ref, seen = [], []
+
+    def rotate():
+        seen.append(hub_ref[0].lock.locked())
+
+    hub = Hub(env, 3, maybe_rotate=rotate)
+    hub_ref.append(hub)
+    lanes = []
+    for k in range(3):
+        def lane(k=k):
+            e = LaneEnv(hub, k)
+            for ep in range(2):
+                e.reset({"lane": k, "ep": ep})
+                for _ in range(k + 1):
+                    e.step_tcp([[0] * 7], 0.1)
+                with hub.lock:
+                    e.end_episode(True)
+            hub.retire(k)
+        lanes.append(threading.Thread(target=lane))
+    for th in lanes:
+        th.start()
+    hub.serve()
+    for th in lanes:
+        th.join(timeout=10)
+    assert seen and all(seen)  # the hub held the lane lock for every rotation: no lane between meta and end
+    assert env.unasked == [] and len(env.ends) == 6
 
 
 def test_ik_error_raises_in_that_lane_only():
@@ -138,3 +192,23 @@ def test_batched_cells_share_the_worker_chunks(tmp_path):
     assert lane_out(out, 3).name == "h_g0_w0_e03.hdf5"
     assert [p.split("/")[-1] for p in closed_chunks(tmp_path, "")] == ["h_g0_w0_c000.hdf5", "h_g0_w0_c001.hdf5"]
     assert [p.split("/")[-1] for p in closed_chunks(tmp_path, f"--out {out}")] == ["h_g0_w0_c000.hdf5"]
+
+
+def test_rotate_shared_uses_the_batched_env_rotate_and_waits_for_enough_demos(tmp_path):
+    from types import SimpleNamespace
+
+    from sim.assembly_lab.mimic.generate import _rotate_shared
+
+    out = tmp_path / "h_g0_w0.hdf5"
+    calls = []
+    raw = SimpleNamespace(rotate=lambda nxt: calls.append(("rotate", nxt)) or "closed.hdf5")
+    owner = SimpleNamespace(raw=raw, _annotate=lambda p: calls.append(("annotate", p)), record_path=None,
+                            rotate=lambda nxt: calls.append(("backend_rotate", nxt)))
+    run_cfg = SimpleNamespace(path=tmp_path / "h_g0_w0_c000.hdf5", metas=[{}, {}])
+    _rotate_shared(owner, run_cfg, out, min_metas=3)
+    assert calls == [] and len(run_cfg.metas) == 2  # fewer demos than lanes: keep recording into this file
+    run_cfg.metas.append({})
+    _rotate_shared(owner, run_cfg, out, min_metas=3)
+    nxt = str(tmp_path / "h_g0_w0_c001.hdf5")
+    assert calls == [("rotate", nxt), ("annotate", "closed.hdf5")]  # never IsaacBackend.rotate (exports all)
+    assert run_cfg.path.name == "h_g0_w0_c001.hdf5" and run_cfg.metas == [] and owner.record_path == nxt
