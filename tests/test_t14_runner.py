@@ -26,6 +26,7 @@ ENV_VERSIONS = {
     "torchvision": "0.29.1+cu126",
 }
 FAKE_PYTHON = f"""#!/bin/sh
+if [ "$1" = "--version" ]; then printf 'Python %s\n' "${{FAKE_T14_PYTHON_VERSION:-3.11.18}}"; exit 0; fi
 if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "check" ]; then exit 0; fi
 if [ "$1" = "-c" ]; then
   if [ "${{FAKE_T14_BAD_VERSION:-0}}" = "1" ]; then echo '{{"anomalib":"wrong"}}';
@@ -106,15 +107,48 @@ def _dataset_inputs(root: Path, source: str, runtime_hash: str) -> tuple[Path, P
     return dataset, artifact
 
 
+def _runtime_provenance(root: Path, env_dir: Path) -> dict[str, str]:
+    python_install = root / "managed-python/cpython-3.11.18/bin"
+    python_install.mkdir(parents=True)
+    fake_python = python_install / "python3.11"
+    fake_python.write_text(FAKE_PYTHON)
+    fake_python.chmod(0o755)
+    (env_dir / "bin/python").symlink_to(fake_python)
+    bootstrap = root / "bootstrap"
+    bootstrap.mkdir()
+    uv = bootstrap / "uv"
+    uv.write_text("#!/bin/sh\necho 'uv 0.13.6'\n")
+    uv.chmod(0o755)
+    bootstrap_freeze = bootstrap / "requirements.freeze.txt"
+    bootstrap_requirements = bootstrap / "requirements.audit.txt"
+    bootstrap_audit = bootstrap / "pip-audit.json"
+    bootstrap_freeze.write_text("uv==0.13.6\n")
+    bootstrap_requirements.write_text("uv==0.13.6\n")
+    bootstrap_audit.write_text("{}\n")
+    return {
+        "python": "3.11.18",
+        "python_install_dir": str(python_install.parent.resolve()),
+        "python_executable": str(fake_python.resolve()),
+        "python_executable_sha256": _sha(fake_python),
+        "uv": "0.13.6",
+        "uv_executable": str(uv.resolve()),
+        "uv_executable_sha256": _sha(uv),
+        "bootstrap_freeze": str(bootstrap_freeze.resolve()),
+        "bootstrap_freeze_sha256": _sha(bootstrap_freeze),
+        "bootstrap_audit_requirements": str(bootstrap_requirements.resolve()),
+        "bootstrap_audit_requirements_sha256": _sha(bootstrap_requirements),
+        "bootstrap_pip_audit": str(bootstrap_audit.resolve()),
+        "bootstrap_pip_audit_sha256": _sha(bootstrap_audit),
+    }
+
+
 def _environment_inputs(root: Path, source: str, runtime_hash: str) -> tuple[Path, Path, Path]:
     env_dir = root / "env"
     (env_dir / "bin").mkdir(parents=True)
     (env_dir / ".complete").write_text("")
     freeze = env_dir / "requirements.freeze.txt"
     freeze.write_text("anomalib==2.7.0\n")
-    fake_python = env_dir / "bin/python"
-    fake_python.write_text(FAKE_PYTHON)
-    fake_python.chmod(0o755)
+    runtime = _runtime_provenance(root, env_dir)
     audit = root / "audit.json"
     audit.write_text("{}")
     platform = root / "platform.json"
@@ -125,11 +159,13 @@ def _environment_inputs(root: Path, source: str, runtime_hash: str) -> tuple[Pat
             {
                 "source_commit": source,
                 "runtime_sha256": runtime_hash,
+                "runtime_kind": "brev-vm",
                 "env_dir": str(env_dir.resolve()),
                 "freeze_sha256": _sha(freeze),
                 "pip_audit_sha256": _sha(audit),
                 "platform_identity": str(platform.resolve()),
                 "platform_identity_sha256": _sha(platform),
+                **runtime,
                 **ENV_VERSIONS,
             }
         )

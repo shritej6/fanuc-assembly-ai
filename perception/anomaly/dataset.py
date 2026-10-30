@@ -16,6 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from perception.anomaly.rest_provenance import REVIEWED_MAX_TILT_DEG, REVIEWED_RULE
 from perception.anomaly.source_contract import (
     DatasetBoundaryError,
+    exclude_o_base_target,
     validate_variant,
 )
 from perception.anomaly.source_contract import reviewed_variants as load_reviewed_variants
@@ -206,7 +207,7 @@ def _metadata(target: Mapping[str, Any], box: Mapping[str, Any], label_path: Pat
     if (
         not valid_target
         or not isinstance(object_id, str)
-        or not object_id.startswith("M")
+        or re.fullmatch(r"M[1-6]_0[1-4]", object_id) is None
         or target.get("kind") != "part"
     ):
         raise DatasetBoundaryError(f"invalid anomaly target identity: {label_path}")
@@ -240,13 +241,14 @@ def _sample(
     set_name: SetName,
     rest_evidence: tuple[Mapping[str, Any], Path | None, str | None],
     reviewed_variants: frozenset[str],
-) -> PatchCoreSample:
+) -> PatchCoreSample | None:
     payload, label_sha256 = _read_hashed_json(label_path)
     spec, target, box = _target(payload, label_path)
     index = _label_index(spec, set_name, label_path)
+    if exclude_o_base_target(set_name, target, box, label_path):
+        return None
     uid, object_id, variant, stable_pose = _metadata(target, box, label_path)
     validate_variant(object_id, variant, reviewed_variants, label_path)
-    bbox = _bbox(box.get("bbox_xyxy"), label_path)
     rests, rest_path, rest_sha256 = rest_evidence
     rest = _rest_state(target, set_name, label_path, rests)
     (rgb, depth, segmentation), hashes = _artifacts(chunk, index)
@@ -258,7 +260,7 @@ def _sample(
         variant=variant,
         stable_pose=stable_pose,
         eligibility=eligibility,
-        bbox_xyxy=bbox,
+        bbox_xyxy=_bbox(box.get("bbox_xyxy"), label_path),
         segmentation_value=int(uid[1:]) + 1,
         rgb_path=rgb,
         depth_path=depth,
@@ -315,7 +317,7 @@ def discover_patchcore_samples(
                 if label_path.is_symlink():
                     raise DatasetBoundaryError(f"label path must not be a symlink: {label_path}")
                 sample = _sample(label_path, chunk, set_name, rest_evidence, reviewed_variants)
-                if sample.assigned_split is not None:
+                if sample is not None and sample.assigned_split is not None:
                     samples.append(sample)
     if not samples:
         raise DatasetBoundaryError("no approved O/C/I/T anomaly labels found")

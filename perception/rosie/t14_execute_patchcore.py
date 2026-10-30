@@ -30,6 +30,20 @@ ENV_PACKAGES = {
     "setuptools": "setuptools",
     "pip_audit": "pip-audit",
 }
+ENV_VERSIONS = {
+    "anomalib": "2.7.0",
+    "torch": "2.14.1+cu126",
+    "torchvision": "0.29.1+cu126",
+    "pillow": "13.0.0",
+    "filelock": "4.2.4",
+    "pip": "26.2.2",
+    "setuptools": "84.2.1",
+    "pip_audit": "2.10.1",
+}
+ENV_PYTHON_VERSION = "3.11.18"
+ENV_UV_VERSION = "0.13.6"
+ROSIE_SINGULARITY_IMAGE = "/data/containers/msoe-pytorch-23.05-py3.sif"
+BREV_PROVENANCE_PREFIXES = ("python", "uv", "bootstrap_", "platform_identity")
 
 
 class RunBoundaryError(ValueError):
@@ -178,6 +192,69 @@ def _runtime_versions(env_dir: Path) -> dict[str, str]:
     return versions
 
 
+def _python_identity(env_dir: Path) -> dict[str, str]:
+    executable = env_dir / "bin/python"
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise RunBoundaryError("environment Python is missing or not executable")
+    try:
+        reported = subprocess.check_output([str(executable), "--version"], stderr=subprocess.STDOUT, text=True).strip()
+        resolved = executable.resolve(strict=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RunBoundaryError("environment Python identity probe failed") from exc
+    if reported != f"Python {ENV_PYTHON_VERSION}":
+        raise RunBoundaryError(f"environment requires exact Python {ENV_PYTHON_VERSION}")
+    return {
+        "python": ENV_PYTHON_VERSION,
+        "python_executable": str(resolved),
+        "python_executable_sha256": _sha256(resolved),
+    }
+
+
+def _bootstrap_provenance(artifact: dict[str, Any]) -> None:
+    if artifact.get("uv") != ENV_UV_VERSION:
+        raise RunBoundaryError(f"environment requires exact uv {ENV_UV_VERSION}")
+    uv = _real_file(Path(str(artifact.get("uv_executable", ""))), "bootstrap uv executable")
+    if _sha256(uv) != artifact.get("uv_executable_sha256"):
+        raise RunBoundaryError("bootstrap uv executable hash disagrees with its artifact")
+    try:
+        reported = subprocess.check_output([str(uv), "--version"], text=True).strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RunBoundaryError("bootstrap uv identity probe failed") from exc
+    if re.fullmatch(rf"uv {re.escape(ENV_UV_VERSION)}(?:\s.*)?", reported) is None:
+        raise RunBoundaryError("bootstrap uv runtime version disagrees with its artifact")
+    evidence = (
+        ("bootstrap_freeze", "bootstrap_freeze_sha256"),
+        ("bootstrap_audit_requirements", "bootstrap_audit_requirements_sha256"),
+        ("bootstrap_pip_audit", "bootstrap_pip_audit_sha256"),
+    )
+    for path_field, hash_field in evidence:
+        path = _real_file(Path(str(artifact.get(path_field, ""))), path_field)
+        if _sha256(path) != artifact.get(hash_field):
+            raise RunBoundaryError(f"{path_field} hash disagrees with its artifact")
+
+
+def _brev_runtime(env_dir: Path, artifact: dict[str, Any]) -> None:
+    identity = _python_identity(env_dir)
+    if any(artifact.get(field) != value for field, value in identity.items()):
+        raise RunBoundaryError("environment Python identity disagrees with its artifact")
+    install_dir = Path(str(artifact.get("python_install_dir", ""))).resolve()
+    if install_dir not in Path(identity["python_executable"]).parents:
+        raise RunBoundaryError("environment Python escaped its managed install directory")
+    _bootstrap_provenance(artifact)
+
+
+def _runtime_contract(env_dir: Path, artifact: dict[str, Any]) -> None:
+    runtime_kind = artifact.get("runtime_kind")
+    if runtime_kind == "brev-vm":
+        _brev_runtime(env_dir, artifact)
+    elif "runtime_kind" in artifact:
+        raise RunBoundaryError("environment runtime kind is unsupported")
+    elif artifact.get("singularity_image") != ROSIE_SINGULARITY_IMAGE:
+        raise RunBoundaryError("legacy Rosie environment has an invalid Singularity identity")
+    elif any(field.startswith(BREV_PROVENANCE_PREFIXES) for field in artifact):
+        raise RunBoundaryError("Brev environment cannot be downgraded to legacy Rosie")
+
+
 def _environment(
     env_dir: Path, artifact_path: Path, audit_path: Path, source_commit: str, runtime_hash: str
 ) -> dict[str, str]:
@@ -203,8 +280,9 @@ def _environment(
     if hashes["env_audit_sha256"] != artifact.get("pip_audit_sha256"):
         raise RunBoundaryError("environment audit hash disagrees with its artifact")
     expected_versions = {field: artifact.get(field) for field in ENV_PACKAGES}
-    if _runtime_versions(env_dir) != expected_versions:
+    if expected_versions != ENV_VERSIONS or _runtime_versions(env_dir) != ENV_VERSIONS:
         raise RunBoundaryError("environment runtime versions disagree with its artifact")
+    _runtime_contract(env_dir, artifact)
     return {
         **hashes,
         "env_artifact_path": str(artifact_path.resolve()),

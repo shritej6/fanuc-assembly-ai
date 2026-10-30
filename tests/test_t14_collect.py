@@ -33,6 +33,17 @@ def _environment_evidence(remote: dict[str, bytes]) -> tuple[bytes, bytes]:
         "platform_identity": "/remote/platform.json",
         "platform_identity_sha256": _sha(platform),
     }
+    bootstrap = {
+        "uv_executable": ("/remote/bootstrap/uv", b"uv-binary"),
+        "bootstrap_freeze": ("/remote/bootstrap/requirements.freeze.txt", b"uv==0.13.6\n"),
+        "bootstrap_audit_requirements": ("/remote/bootstrap/requirements.audit.txt", b"uv==0.13.6\n"),
+        "bootstrap_pip_audit": ("/remote/bootstrap/pip_audit.json", b"{}\n"),
+        "python_executable": ("/remote/python/python3.11", b"python-binary"),
+    }
+    for field, (path, content) in bootstrap.items():
+        remote[path] = content
+        env[field] = path
+        env[f"{field}_sha256"] = _sha(content)
     freeze, audit_requirements, audit = b"frozen\n", b"audit requirements\n", b"{}"
     env.update(
         freeze_sha256=_sha(freeze),
@@ -172,8 +183,8 @@ def test_collection_verifies_all_evidence_before_deleting(tmp_path: Path) -> Non
     verified = json.loads((result / "OFFHOST_VERIFIED.json").read_text())
     manifest = json.loads((result / "OFFHOST_MANIFEST.json").read_text())
     assert verified["status"] == "verified"
-    assert verified["file_count"] == 87
-    assert len(manifest["files"]) == 87
+    assert verified["file_count"] == 92
+    assert len(manifest["files"]) == 92
     assert len(list(result.glob("runs/*/model.ckpt"))) == 24
 
 
@@ -193,6 +204,33 @@ def test_hash_failure_preserves_partial_evidence_and_stops_instance(tmp_path: Pa
     assert actions == [("stop", INSTANCE_ID)]
     partial = args.destination.with_name("offhost.partial")
     assert (partial / "COLLECTION_FAILED.json").is_file()
+    assert not args.destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "malformed"),
+    [("dataset_dir", []), ("env_dir", {}), ("part", [])],
+)
+def test_malformed_approved_summary_stops_exact_instance(
+    tmp_path: Path,
+    field: str,
+    malformed: object,
+) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    summary = json.loads(remote["/remote/summary.json"])
+    summary["runs"][0][field] = malformed
+    remote["/remote/summary.json"] = json.dumps(summary).encode()
+    actions = []
+
+    with pytest.raises(CollectionError):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
     assert not args.destination.exists()
 
 

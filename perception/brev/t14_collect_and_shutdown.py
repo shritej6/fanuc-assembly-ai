@@ -156,17 +156,17 @@ def _runs(summary: dict[str, Any]) -> list[dict[str, Any]]:
     if summary.get("status") != "approved" or not isinstance(runs, list) or len(runs) != 24:
         raise CollectionError("final summary is not an approved 24-part generation")
     parts = [run.get("part") for run in runs if isinstance(run, dict)]
-    if len(parts) != 24 or set(parts) != set(PARTS) or len(set(parts)) != 24:
+    invalid_parts = len(parts) != 24 or any(not isinstance(part, str) for part in parts)
+    if invalid_parts or set(parts) != set(PARTS) or len(set(parts)) != 24:
         raise CollectionError("final summary does not cover the exact 24 parts")
     return sorted(runs, key=lambda run: PARTS.index(run["part"]))
 
 
 def _one_value(records: Iterable[dict[str, Any]], key: str) -> str:
-    values = {record.get(key) for record in records}
-    if len(values) != 1:
+    values = [_remote(record.get(key), key) for record in records]
+    if not values or any(value != values[0] for value in values[1:]):
         raise CollectionError(f"run records disagree on {key}")
-    value = next(iter(values))
-    return _remote(value, key)
+    return values[0]
 
 
 def _run_specs(runs: list[dict[str, Any]]) -> list[CopySpec]:
@@ -215,7 +215,7 @@ def _environment_specs(
     environment: dict[str, Any],
     summary: dict[str, Any],
 ) -> list[CopySpec]:
-    return [
+    specs = [
         CopySpec(
             f"{env_dir}/.complete",
             "environment/.complete",
@@ -236,6 +236,25 @@ def _environment_specs(
             "environment/platform.json",
             _digest(environment.get("platform_identity_sha256"), "platform identity"),
         ),
+    ]
+    return specs + _bootstrap_specs(environment)
+
+
+def _bootstrap_specs(environment: dict[str, Any]) -> list[CopySpec]:
+    fields = (
+        ("uv_executable", "uv_executable_sha256", "environment/bootstrap/uv"),
+        ("bootstrap_freeze", "bootstrap_freeze_sha256", "environment/bootstrap/requirements.freeze.txt"),
+        (
+            "bootstrap_audit_requirements",
+            "bootstrap_audit_requirements_sha256",
+            "environment/bootstrap/requirements.audit.txt",
+        ),
+        ("bootstrap_pip_audit", "bootstrap_pip_audit_sha256", "environment/bootstrap/pip_audit.json"),
+        ("python_executable", "python_executable_sha256", "environment/python/python3.11"),
+    )
+    return [
+        CopySpec(_remote(environment.get(path), path), relative, _digest(environment.get(digest), digest))
+        for path, digest, relative in fields
     ]
 
 

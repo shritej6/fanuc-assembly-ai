@@ -10,6 +10,13 @@ import pytest
 
 from perception.brev.t14_benchmark_gate import BenchmarkGateError, create_gate, verify_gate
 from perception.brev.t14_guarded_production import RuntimeGuardError, _run_remote, run_guarded
+from perception.rosie.t14_execute_patchcore import (
+    ENV_VERSIONS,
+    RunBoundaryError,
+    _bootstrap_provenance,
+    _environment,
+    _python_identity,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "perception/brev/t14_setup_patchcore.sh"
@@ -19,6 +26,23 @@ RUN_ALL = ROOT / "perception/brev/t14_run_all_patchcore.sh"
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _bootstrap_artifact(root: Path) -> dict[str, str]:
+    uv = root / "uv"
+    uv.write_text("#!/bin/sh\necho 'uv 0.13.6'\n")
+    uv.chmod(0o755)
+    artifact = {"uv": "0.13.6", "uv_executable": str(uv), "uv_executable_sha256": _sha(uv)}
+    for field, content in (
+        ("bootstrap_freeze", "uv==0.13.6\n"),
+        ("bootstrap_audit_requirements", "uv==0.13.6\n"),
+        ("bootstrap_pip_audit", "{}\n"),
+    ):
+        path = root / field
+        path.write_text(content)
+        artifact[field] = str(path)
+        artifact[f"{field}_sha256"] = _sha(path)
+    return artifact
 
 
 def _evidence(root: Path) -> tuple[Path, Path, Path, Path]:
@@ -64,7 +88,6 @@ def _evidence(root: Path) -> tuple[Path, Path, Path, Path]:
 
 def test_brev_environment_is_secure_pinned_and_l4_gated() -> None:
     script = SETUP.read_text()
-
     for requirement in (
         "torch==2.14.1",
         "torchvision==0.29.1",
@@ -74,16 +97,31 @@ def test_brev_environment_is_secure_pinned_and_l4_gated() -> None:
         "pip==26.2.2",
         "setuptools==84.2.1",
         "pip-audit==2.10.1",
+        "uv==0.13.6",
     ):
         assert requirement in script
-    assert "pip check" in script and "pip freeze --all" in script
-    assert "--strict --no-deps --disable-pip" in script
+    assert "UV_VERSION=0.13.6" in script and "PYTHON_VERSION=3.11.18" in script
+    assert 'UV_PYTHON_INSTALL_DIR="$PYTHON_INSTALL_DIR"' in script
+    assert "python install --managed-python --no-bin --no-config" in script
+    assert "venv --managed-python --no-python-downloads --no-config --seed" in script
+    assert "PIP_*|UV_*) unset" in script
+    assert script.count("-m pip check") == 2 and script.count("pip freeze --all") == 2
+    assert script.count("--strict --no-deps --disable-pip") == 2
+    assert script.index('"$BOOTSTRAP_DIR/bin/pip-audit"') < script.index('"$BOOTSTRAP_DIR/bin/uv" python install')
     assert "get_device_capability() != (8, 9)" in script
     assert '"sm_89" not in torch.cuda.get_arch_list()' in script
     assert 'torch.cuda.get_device_name().strip() != "NVIDIA L4"' in script
     assert '"runtime_kind": "brev-vm"' in script
     assert '"runtime_sha256": sys.argv[7]' in script
     assert '"torch": version("torch")' in script
+    for field in (
+        "python_executable_sha256",
+        "uv_executable_sha256",
+        "bootstrap_freeze_sha256",
+        "bootstrap_audit_requirements_sha256",
+        "bootstrap_pip_audit_sha256",
+    ):
+        assert f'"{field}"' in script
     assert "unset PYTHONPATH PYTHONHOME VIRTUAL_ENV" in script
     assert 'git -C "$CODE_ROOT" clean -ndx' in script
     assert "printf '%s\\n' \"$ARTIFACT\"" in script
@@ -118,6 +156,91 @@ def test_brev_runner_is_sequential_benchmark_first_and_runtime_neutral() -> None
     assert "T14_GUARDED_ORCHESTRATION" in all_script
     assert "timeout --foreground --kill-after=30s" in all_script
     assert "budget_deadline_utc" in all_script
+
+
+def test_runtime_rejects_changed_bootstrap_evidence(tmp_path: Path) -> None:
+    artifact = _bootstrap_artifact(tmp_path)
+    _bootstrap_provenance(artifact)
+    Path(artifact["bootstrap_freeze"]).write_text("tampered\n")
+
+    with pytest.raises(RunBoundaryError, match="bootstrap_freeze hash"):
+        _bootstrap_provenance(artifact)
+
+
+def test_runtime_requires_exact_managed_python(tmp_path: Path) -> None:
+    executable = tmp_path / "bin/python"
+    executable.parent.mkdir()
+    executable.write_text("#!/bin/sh\necho 'Python 3.10.12'\n")
+    executable.chmod(0o755)
+
+    with pytest.raises(RunBoundaryError, match="exact Python 3.11.18"):
+        _python_identity(tmp_path)
+
+
+def _rosie_environment(root: Path) -> tuple[Path, Path, Path, dict[str, object]]:
+    env = root / "env"
+    (env / "bin").mkdir(parents=True)
+    python = env / "bin/python"
+    python.write_text(
+        f'#!/bin/sh\nif [ "$1" = "-m" ]; then exit 0; fi\necho \'{json.dumps(ENV_VERSIONS, sort_keys=True)}\'\n'
+    )
+    python.chmod(0o755)
+    freeze, audit = env / "requirements.freeze.txt", root / "audit.json"
+    freeze.write_text("anomalib==2.7.0\n")
+    audit.write_text("{}\n")
+    artifact = root / "environment.json"
+    payload: dict[str, object] = {
+        "source_commit": "a" * 40,
+        "runtime_sha256": "b" * 64,
+        "env_dir": str(env.resolve()),
+        "freeze_sha256": _sha(freeze),
+        "pip_audit_sha256": _sha(audit),
+        "singularity_image": "/data/containers/msoe-pytorch-23.05-py3.sif",
+        **ENV_VERSIONS,
+    }
+    artifact.write_text(json.dumps(payload))
+    (env / ".complete").write_text(f"{_sha(artifact)}\n")
+    return env, artifact, audit, payload
+
+
+def _rewrite_environment(env: Path, artifact: Path, payload: dict[str, object]) -> None:
+    artifact.write_text(json.dumps(payload))
+    (env / ".complete").write_text(f"{_sha(artifact)}\n")
+
+
+def test_runner_preserves_existing_rosie_environment_support(tmp_path: Path) -> None:
+    env, artifact, audit, _ = _rosie_environment(tmp_path)
+
+    assert _environment(env, artifact, audit, "a" * 40, "b" * 64)["env_artifact_sha256"] == _sha(artifact)
+
+
+@pytest.mark.parametrize("runtime_kind", ("brev_vm", "rosie", "", None))
+def test_runner_rejects_runtime_kind_typo_bypass(tmp_path: Path, runtime_kind: object) -> None:
+    env, artifact, audit, payload = _rosie_environment(tmp_path)
+    payload["runtime_kind"] = runtime_kind
+    _rewrite_environment(env, artifact, payload)
+
+    with pytest.raises(RunBoundaryError, match="runtime kind is unsupported"):
+        _environment(env, artifact, audit, "a" * 40, "b" * 64)
+
+
+@pytest.mark.parametrize("singularity_image", ("", "/tmp/not-the-approved-image.sif"))
+def test_runner_rejects_unapproved_legacy_rosie_image(tmp_path: Path, singularity_image: str) -> None:
+    env, artifact, audit, payload = _rosie_environment(tmp_path)
+    payload["singularity_image"] = singularity_image
+    _rewrite_environment(env, artifact, payload)
+
+    with pytest.raises(RunBoundaryError, match="invalid Singularity identity"):
+        _environment(env, artifact, audit, "a" * 40, "b" * 64)
+
+
+def test_runner_rejects_brev_runtime_kind_downgrade(tmp_path: Path) -> None:
+    env, artifact, audit, payload = _rosie_environment(tmp_path)
+    payload["uv"] = "0.13.6"
+    _rewrite_environment(env, artifact, payload)
+
+    with pytest.raises(RunBoundaryError, match="cannot be downgraded"):
+        _environment(env, artifact, audit, "a" * 40, "b" * 64)
 
 
 def test_benchmark_gate_measures_projection_and_revalidates_artifacts(tmp_path: Path) -> None:

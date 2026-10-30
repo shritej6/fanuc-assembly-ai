@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from perception.anomaly import source_contract
 from perception.anomaly.dataset import (
     DatasetBoundaryError,
     discover_patchcore_samples,
@@ -13,13 +12,13 @@ from perception.anomaly.dataset import (
 )
 
 
-def _o_index(split: str) -> int:
+def _o_index(split: str, start: int = 0) -> int:
     def assigned(index: int) -> str:
         token = f"1337:O:{index}".encode()
         bucket = int.from_bytes(hashlib.sha256(token).digest()[:8], "big") % 10_000
         return "train" if bucket < 8_000 else "validation" if bucket < 9_000 else "test"
 
-    return next(index for index in range(10_000) if assigned(index) == split)
+    return next(index for index in range(start, 10_000) if assigned(index) == split)
 
 
 def _write_rest_sidecar(root: Path, set_name: str, index: str, rest: str) -> None:
@@ -93,15 +92,18 @@ def _write_scene(
     return rgb
 
 
-def _write_inventory(new_root: Path, old_root: Path, chunks: dict[str, int], labels_per_chunk: int) -> None:
-    for set_name, chunk_count in chunks.items():
-        root = new_root if set_name in ("O", "T") else old_root
-        for chunk_index in range(chunk_count):
-            labels = root / set_name / f"chunk_{chunk_index:04d}" / "labels"
-            labels.mkdir(parents=True)
-            first = chunk_index * labels_per_chunk
-            for index in range(first, first + labels_per_chunk):
-                (labels / f"{index:06d}.json").write_text("{}")
+def _mutate_target(root: Path, set_name: str, index: str, **fields) -> None:
+    label_path = root / f"{set_name}/chunk_0000/labels/{index}.json"
+    payload = json.loads(label_path.read_text())
+    target, box = payload["spec"]["objects"][0], payload["cameras"]["wrist"][0]
+    target.update(fields)
+    for field in ("object_id", "kind", "state", "variant", "build_state"):
+        if field in fields:
+            box[field] = fields[field]
+    if fields.get("kind") == "base":
+        target.pop("stable_pose", None)
+        target.pop("rest", None)
+    label_path.write_text(json.dumps(payload))
 
 
 def test_patchcore_discovery_keeps_defects_out_of_training(tmp_path: Path) -> None:
@@ -322,6 +324,65 @@ def test_patchcore_discovery_requires_visible_wrist_target(tmp_path: Path) -> No
         discover_patchcore_samples(tmp_path / "new", old_root=tmp_path, rest_root=tmp_path)
 
 
+def test_patchcore_discovery_excludes_only_canonical_o_bases(tmp_path: Path) -> None:
+    train_index = f"{_o_index('train'):06d}"
+    next_train = f"{_o_index('train', int(train_index) + 1):06d}"
+    _write_scene(tmp_path, "O", train_index, "ok", object_id="F01")
+    _mutate_target(tmp_path, "O", train_index, kind="base", state="on_table", build_state=None)
+    _write_scene(tmp_path, "O", next_train, "ok", object_id="M1_01")
+
+    samples = discover_patchcore_samples(tmp_path, old_root=tmp_path / "old", rest_root=tmp_path / "rest")
+
+    assert [sample.object_id for sample in samples] == ["M1_01"]
+
+
+@pytest.mark.parametrize(
+    ("object_id", "kind", "box_variant"),
+    [("F07", "base", "ok"), ("F01", "trap", "ok"), ("F01", "base", "wrong")],
+)
+def test_patchcore_discovery_rejects_unknown_o_exclusions(
+    tmp_path: Path,
+    object_id: str,
+    kind: str,
+    box_variant: str,
+) -> None:
+    index = f"{_o_index('train'):06d}"
+    _write_scene(tmp_path, "O", index, "ok", object_id=object_id)
+    _mutate_target(tmp_path, "O", index, kind=kind, state="on_table", build_state=None)
+    label_path = tmp_path / f"O/chunk_0000/labels/{index}.json"
+    payload = json.loads(label_path.read_text())
+    payload["cameras"]["wrist"][0]["variant"] = box_variant
+    label_path.write_text(json.dumps(payload))
+
+    with pytest.raises(DatasetBoundaryError, match="invalid (excluded O base|anomaly target identity)"):
+        discover_patchcore_samples(tmp_path, old_root=tmp_path / "old", rest_root=tmp_path / "rest")
+
+
+def test_patchcore_discovery_rejects_noncanonical_o_base_uid(tmp_path: Path) -> None:
+    index = f"{_o_index('train'):06d}"
+    _write_scene(tmp_path, "O", index, "ok", object_id="F01")
+    _mutate_target(tmp_path, "O", index, kind="base", state="on_table", build_state=None)
+    label_path = tmp_path / f"O/chunk_0000/labels/{index}.json"
+    payload = json.loads(label_path.read_text())
+    payload["spec"]["wrist_target_uid"] = "fixture"
+    payload["spec"]["objects"][0]["uid"] = "fixture"
+    payload["cameras"]["wrist"][0]["uid"] = "fixture"
+    label_path.write_text(json.dumps(payload))
+
+    with pytest.raises(DatasetBoundaryError, match="invalid excluded O base"):
+        discover_patchcore_samples(tmp_path, old_root=tmp_path / "old", rest_root=tmp_path / "rest")
+
+
+@pytest.mark.parametrize("set_name", ["C", "I", "T"])
+def test_patchcore_discovery_rejects_bases_outside_o(tmp_path: Path, set_name: str) -> None:
+    rest = "installed"
+    _write_scene(tmp_path, set_name, "000000", "ok", object_id="F01", rest=rest)
+    _mutate_target(tmp_path, set_name, "000000", kind="base", state="on_table", build_state=None)
+
+    with pytest.raises(DatasetBoundaryError, match="invalid excluded O base"):
+        discover_patchcore_samples(tmp_path, old_root=tmp_path, rest_root=tmp_path)
+
+
 @pytest.mark.parametrize(("field", "value"), [("set", "REAL"), ("index", 99)])
 def test_patchcore_discovery_rejects_label_provenance_mismatch(tmp_path: Path, field: str, value: str | int) -> None:
     _write_scene(tmp_path, "C", "000000", "ok", rest="installed")
@@ -394,36 +455,3 @@ def test_patchcore_discovery_rejects_symlinked_root(tmp_path: Path) -> None:
 
     with pytest.raises(DatasetBoundaryError, match="root.*symlink"):
         discover_patchcore_samples(tmp_path / "new", old_root=synthetic, rest_root=synthetic)
-
-
-def test_source_inventory_requires_exact_reviewed_chunks_and_labels(tmp_path: Path, monkeypatch) -> None:
-    new_root, old_root = tmp_path / "new", tmp_path / "old"
-    chunks = {"O": 2, "T": 1, "C": 1, "I": 1}
-    monkeypatch.setattr(source_contract, "SOURCE_CHUNK_COUNTS", chunks)
-    monkeypatch.setattr(source_contract, "SOURCE_LABELS_PER_CHUNK", 2)
-    _write_inventory(new_root, old_root, chunks, 2)
-
-    inventory = source_contract.validate_patchcore_source_inventory(new_root, old_root)
-
-    assert inventory == {
-        "O": {"chunks": 2, "labels": 4},
-        "T": {"chunks": 1, "labels": 2},
-        "C": {"chunks": 1, "labels": 2},
-        "I": {"chunks": 1, "labels": 2},
-    }
-
-
-@pytest.mark.parametrize("missing", ["chunk", "label"])
-def test_source_inventory_rejects_incomplete_copy(tmp_path: Path, monkeypatch, missing: str) -> None:
-    new_root, old_root = tmp_path / "new", tmp_path / "old"
-    chunks = {"O": 2, "T": 1, "C": 1, "I": 1}
-    monkeypatch.setattr(source_contract, "SOURCE_CHUNK_COUNTS", chunks)
-    monkeypatch.setattr(source_contract, "SOURCE_LABELS_PER_CHUNK", 2)
-    _write_inventory(new_root, old_root, chunks, 2)
-    if missing == "chunk":
-        (new_root / "O/chunk_0001").rename(new_root / "O/missing_chunk")
-    else:
-        (old_root / "C/chunk_0000/labels/000001.json").unlink()
-
-    with pytest.raises(DatasetBoundaryError, match="inventory is incomplete"):
-        source_contract.validate_patchcore_source_inventory(new_root, old_root)

@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "perception/rosie/t14_patchcore_env_smoke.sbatch"
+BREV_SCRIPT = ROOT / "perception/brev/t14_setup_patchcore.sh"
 
 SECURE_PINS = (
     "torch==2.14.1",
@@ -16,12 +17,24 @@ SECURE_PINS = (
 
 
 def test_patchcore_environment_uses_the_measured_secure_dependency_set() -> None:
-    script = SCRIPT.read_text()
+    for path in (SCRIPT, BREV_SCRIPT):
+        script = path.read_text()
+        for requirement in SECURE_PINS:
+            assert requirement in script
+        assert "torch==2.10.0" not in script
+        assert "torchvision==0.25.0" not in script
 
-    for requirement in SECURE_PINS:
-        assert requirement in script
-    assert "torch==2.10.0" not in script
-    assert "torchvision==0.25.0" not in script
+
+def test_brev_environment_audits_its_exact_managed_python_bootstrap() -> None:
+    script = BREV_SCRIPT.read_text()
+
+    assert "uv==0.13.6" in script and "PYTHON_VERSION=3.11.18" in script
+    assert script.count("--strict --no-deps --disable-pip") == 2
+    assert '"python": platform.python_version()' in script
+    assert '"uv": sys.argv[13]' in script
+    for evidence in ("bootstrap_freeze", "bootstrap_audit_requirements", "bootstrap_pip_audit"):
+        assert f'"{evidence}"' in script
+        assert f'"{evidence}_sha256"' in script
 
 
 def test_patchcore_environment_approves_only_after_audit_and_v100_smoke() -> None:
