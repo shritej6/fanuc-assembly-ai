@@ -16,13 +16,13 @@ An agent may only start a task that is READY and owned by it.
 | T09 | Cell controller: PackML recipe state machine, inventory, recovery/Andon, motion compiler, safety supervisor, camera-verification gates | CODEX | REVIEW | feature/T09-state-machine | T04, T05 | Tue |
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
 | T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | READY (user, 2026-10-28) | feature/T11-cosmos | T08 | Wed |
-| T12 | Isaac Lab Mimic demos for GR00T (after the scripted baseline works in sim) | CLAUDE | BACKLOG | feature/T12-mimic | T09 | Wed |
+| T12 | Isaac Lab Mimic demos for GR00T: sim cell with the Team V fingers, object knowledge + grasp planner, contact physics/force limits, scripted sim-only skills, Mimic, eval (`docs/ROBOT_BRAIN.md`) | CLAUDE | IN PROGRESS (READY by user 2026-10-29) | feature/T12-mimic | T09 | Wed |
 | T13 | Detector (RT-DETR) + wrist look-alike classifier training/eval | CODEX | IN PROGRESS | feature/T13-detector | T08 | Wed |
 | T14 | FoundationPose setup (STL + depth) + anomalib PatchCore + depth missing-layer check | CODEX | READY (user, 2026-10-28) | feature/T14-pose-anomaly | T07 | Wed |
 | T15 | Product birth certificate (JSON) + PDF layout | CODEX + CLAUDE | BACKLOG | feature/T15-birth-cert | T09 | Wed |
 | T16 | Live OEE + Andon dashboard | CLAUDE + CODEX | BACKLOG | feature/T16-dashboard | T09 | Wed–Thu |
 | T17 | Scenario fleet (3 products × 20 layouts × injected faults) + KPIs | CODEX | BACKLOG | feature/T17-fleet | T09, T13 | Thu |
-| T18 | GR00T N1.7 / SmolVLA / ACT fine-tune vs the scripted baseline | CODEX | BACKLOG | feature/T18-policy-learn | T12 | Thu |
+| T18 | GR00T N1.7 fine-tune on the T12 demos (GR00T only on the real arm, no scripted fallback) | CLAUDE (moved from CODEX by user 2026-10-29; Codex reviews) | BACKLOG | feature/T18-policy-learn | T12 | Thu |
 | T19 | OPC UA PLC-style tags (`asyncua`) | CODEX | BACKLOG | feature/T19-opcua | T09 | Thu |
 | T20 | Kanban reorder cards + defect Pareto | CODEX + CLAUDE | BACKLOG | feature/T20-kanban | T09 | Thu |
 | T21 | Operator agent: plain-language command → task, live report; Cosmos Reason 2 build check endpoint | CODEX + CLAUDE | BACKLOG | feature/T21-operator | T09 | Thu |
@@ -34,6 +34,7 @@ An agent may only start a task that is READY and owned by it.
 | T29 | Grasp + insert frames for all 30 objects from the printed CAD (grip pads, TCP point, roll offset, STL->installed frame), checked against the real gripper gap | CLAUDE | REVIEW | feature/T29-grasp-frames | T02 | Thu |
 | T27 | Train on the test-bed sets only: RT-DETR on N R Q with `<part>__fallen` classes, wrist classifier on O, set-P build-state classifier; 8xH100 launcher (user override: Claude edits Codex's T13 code this once, Codex reviews) | CLAUDE | REVIEW | feature/T27-newset-training | T13, T25 | Thu |
 | T28 | Cell perception port: table-depth localisation + cell zones, part tracking, T27 model inference, `PerceptionPort` for the T09 controller, measured thresholds, cloud-GPU runtime for the CSI slot (Sat 2026-11-01 14:00) | CLAUDE | REVIEW | feature/T28-cell-perception | T09, T27 | Thu–Fri |
+| T25 | Test-bed data: parts in installed orientation (arm cannot reorient), any yaw, fallen -> reject; ~70k images (test-bed, fixed-height identity close-ups, insertion alignment, reject/spare) + Cosmos | CLAUDE | IN PROGRESS (READY by user 2026-10-28) | feature/T25-testbed-sets | T08, T11 | Wed–Thu |
 
 ## User-only actions (physical / accounts)
 

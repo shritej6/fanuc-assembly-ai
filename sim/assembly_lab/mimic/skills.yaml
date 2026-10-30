@@ -1,0 +1,96 @@
+# Isaac Lab Mimic plan for the T12 assembly cell (agent 4). Read by mimic/spec.py; validated by
+# tests/assembly_lab/test_mimic_spec.py. Units: mm / deg here; spec.py converts to the sim's m / rad.
+#
+# Object-centric frames. Every Mimic `object_ref` is a planner TCP frame, not a raw part origin, so one segment
+# transfers between parts with different grip pads (docs/ROBOT_BRAIN.md section 1.3, skills/plan.py):
+#   grasp_frame  planner grasp TCP on the target part   (PickPlan.grasp_tcp / PullOutPlan.grasp_tcp)
+#   seat_frame   planner seated TCP on the target base  (InsertPlan.seated_tcp)
+#   spot_frame   planner set-down TCP                    (FreePlacePlan.spot_tcp: remembered test-bed spot or defect area)
+# The env publishes each frame every step as policy observations `<frame>_pos` (m, UF0) and `<frame>_quat` (wxyz).
+
+version: 1
+eef_name: er4ia            # single end effector: the ER-4iA with the Team V fingers (TCP = UTOOL1 fingertip)
+
+# Action noise is a 1-sigma position noise in mm added to every generated target, plus a rotation noise of
+# rot_deg_per_mm x that (Mimic passes one scalar per waypoint). Insertion has only 0.5 mm clearance per side
+# (cad/products/parameters.py), so the contact subtasks stay far below it; free-space motion gets more so GR00T sees
+# recoveries from small offsets.
+rot_deg_per_mm: 1.0
+# release_retreat: no noise. The fingers open around a seated or set-down part and rise straight up; measured on the
+# first generated run, free noise on those rows dragged a seated part 1.14 mm sideways.
+noise_profiles:
+  free:    {pos_mm: 1.0}
+  contact: {pos_mm: 0.15}
+  none:    {pos_mm: 0.0}
+
+skills:
+  pick_insert:
+    seed_dir: pick_insert             # ~/t12_data/demos/<seed_dir>/*.hdf5 (agent 3)
+    description: pick the planned part on its CAD grip pad, carry, insert human style on the planned base, release
+    subtasks:
+      - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped, term_offset: [5, 10],  noise: free,    interp_steps: 8}
+      - {name: carry_insert,    object_ref: seat_frame,  term_signal: seated,  term_offset: [0, 0],   noise: contact, interp_steps: 10}
+      - {name: release_retreat, object_ref: seat_frame,  term_signal: null,    term_offset: [0, 0],   noise: none,    interp_steps: 3}
+  pull_out:
+    seed_dir: pull_out
+    description: grip an installed part, pull straight up with a 1 deg wiggle, set it down on a remembered test-bed spot
+    subtasks:
+      - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped,  term_offset: [5, 10], noise: free,    interp_steps: 8}
+      - {name: pull_free,       object_ref: grasp_frame, term_signal: pulled,   term_offset: [0, 0],  noise: contact, interp_steps: 2}
+      - {name: carry_set_down,  object_ref: spot_frame,  term_signal: placed,   term_offset: [0, 0],  noise: free,    interp_steps: 10}
+      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,     term_offset: [0, 0],  noise: none,    interp_steps: 3}
+  place_free:
+    seed_dir: place_free
+    description: move a blocking or not-yet-needed part to a remembered empty test-bed spot (set down, never dropped)
+    subtasks:
+      - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped, term_offset: [5, 10], noise: free, interp_steps: 8}
+      - {name: carry_set_down,  object_ref: spot_frame,  term_signal: placed,  term_offset: [0, 0],  noise: free, interp_steps: 10}
+      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,    term_offset: [0, 0],  noise: none, interp_steps: 3}
+  defect_drop:
+    seed_dir: defect_drop
+    description: pick a damaged, fallen-reject or foreign part and drop it in the defect area
+    subtasks:
+      - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped, term_offset: [5, 10], noise: free, interp_steps: 8}
+      - {name: carry_drop,      object_ref: spot_frame,  term_signal: dropped, term_offset: [0, 0],  noise: free, interp_steps: 10}
+      - {name: retreat,         object_ref: spot_frame,  term_signal: null,    term_offset: [0, 0],  noise: free, interp_steps: 3}
+
+selection:
+  strategy: nearest_neighbor_object   # closest source frame pose (Isaac Lab: higher success than random with object_ref)
+  nn_k: 3
+
+# Seeds: agent 3's ~/t12_data/demos/<seed_dir>/product_<n>.hdf5 (one file per skill and product, ~10 demos each).
+# Sources are chosen per subtask from the same part's demos first (mimicgen.select_source).
+
+# Scene variation per generated episode. Layout (part / base xy, yaw, neighbours) is sampled by agent 3's
+# skills/backends.sample_layout on every reset, inside these bounds; light / camera jitter needs agent 1's env to
+# expose it (not available yet: generated demos use the calibrated camera poses unchanged).
+variation:
+  part_xy: work_area                  # sdg/configs/cell_layout.yaml work_area, inside reach_radius_min..max
+  part_yaw_deg: [-180.0, 180.0]       # installed orientation only; the planner picks r inside J6 (ROBOT_BRAIN 1.3)
+  base_xy: work_area
+  base_yaw_deg: [-180.0, 180.0]
+  base_gap_mm: 25.0                   # cell_layout.yaml clearance.base_gap_mm
+  neighbours: [0, 4]                  # clutter parts around the target, resampled until planner.blockers() is empty
+  neighbour_min_gap_mm: 0.0           # parts may touch; finger clearance is the planner's check, not a gap
+  light_intensity_scale: [0.8, 1.2]
+  light_color_temp_k: [4500, 6500]
+  camera_pos_jitter_mm: 3.0
+  camera_rot_jitter_deg: 0.3
+
+# Every accepted demo must pass the task success term AND the force guard over its whole length.
+force_guard:
+  limits_file: sim/assembly_lab/physics/limits.yaml   # agent 2: {axial_N, lateral_N, torque_Nm, status, source}
+  contact_obs: sim_contact_peak                       # policy obs (N, 3): [normal_N, lateral_N, torque_Nm] max this step
+
+# Policy observations the Mimic env reads (all in the recorded `obs` group of the HDF5).
+obs_keys:
+  eef_pos: eef_pos                    # (3,) m, UF0, TCP = UTOOL1 fingertip
+  eef_quat: eef_quat                  # (4,) wxyz, UF0
+  arm_joints: arm_joint_pos           # (6,) rad, J1..J6
+  gripper: gripper_state              # (1,) 0 open .. 1 closed
+  plan_ids: plan_ids                  # (5,) [skill, object, base, grip, case] indices into mimic/catalog.py tables
+  plan_target: plan_target            # (7,) [part x, y (mm), yaw (deg), roll r (deg), base x, y (mm), yaw (deg)]
+  images:
+    table: table_cam
+    side: side_cam
+    wrist: wrist_cam

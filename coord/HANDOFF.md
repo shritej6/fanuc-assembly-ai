@@ -174,6 +174,130 @@ Newest first. One entry per finished task.
   Results + freeze: Rosie `~/fanuc-t27-results/foundationpose`. Image fixes: pip pybind11 2.13 (Ubuntu's 2.9
   segfaults on NumPy 2), warp-lang 1.9.1 (1.10+ needs a CUDA 13 driver), libusb for open3d, usd-core 26.8.
 - For Codex: please review the PR; the legacy profile is unchanged (default), old tests untouched except one message.
+## 2026-10-30 16:55 · T12 Mimic generation + LeRobot export (agent 7, running) · CLAUDE · on `feature/T12-mimic`
+
+- Changed: `sim/assembly_lab/mimic/` (`mimicgen.py` reads agent 3's recorder files, `generate.py` pick_insert +
+  pull_out with agent 3's gates, `run_generation.py` per-host workers, `scale_generation.sh` controller,
+  `stage_seeds.py` closed seeds + drop tags, `export_lerobot.py` / `validate_lerobot.py`), tests in
+  `tests/assembly_lab/test_mimic_*.py`.
+- Run (Mac controller): `M=sim/assembly_lab/mimic/scale_generation.sh; HOSTS="..." $M repo; $M seeds;
+  MIMIC_GROUPS="pick_insert:5 pick_insert:6" TARGET=300 MAXATT=600 $M launch g1 fa-g21:0,1:1; $M status g1;
+  SKILLS="pick_insert pull_out" $M export g1`.
+- Gates: generated demos pass the same gates as agent 3's sources, plus carry drift and pull drift <= 0.5 mm. Seeds
+  are only closed files (run10_closed.txt), minus drop tags. Every demo carries `env_manifest_md5` (repo_sync2:
+  dbcfe5fd48d73cde763ffdc4316291a5).
+- Measured (1 env per GPU, 3 cameras): pull_out p4 4/4 kept, 563 s per attempt; pick_insert p4 2/3 kept on the
+  current code. Cameras off: 1.49 vs 1.87 s/step, so rendering is about 20 % of the step.
+- Not training data: runs t*, r0, r1, p1 and tnc (the old env, or tests).
+- Next: more GPUs as each gets GEN_READY, incremental export and prepare_dataset at 150 / 300 accepted, num_envs > 1.
+
+## 2026-10-30 01:30 · T18 evaluator + real-arm guard (agent 6, in progress) · CLAUDE · not yet committed
+
+- Changed (untracked on `feature/T12-mimic`): `policy_learn/deploy/` (`guards.py`, `groot_policy.py` `GrootPolicy`,
+  `mock_check.py`, `WIRING.md` for Codex T05), `sim/assembly_lab/eval/` (22 scenarios / 110 unseen layouts, seeds from
+  910000; oracle director; KPIs on the INTERFACES precision gates; `run_remote.sh`), tests in `tests/policy_learn/` and
+  `tests/assembly_lab/test_eval_*.py` (69 pass, 1 skipped).
+- Run: `cd robot/cell && GROOT_POLICY=stub uv run python ../../policy_learn/deploy/mock_check.py` (measured: "✓ Ready for
+  the real robot", 601 actions, 0 rejected). Sim: `SKIP_READY=1 IMAGE=isaac-lab-base:3.0.0b2p1-sim6.0.0
+  sim/assembly_lab/eval/run_remote.sh scripted_v1 scripted` on fa-mimic GPU 3.
+- Guard speeds (150 mm/s free, 10 mm/s in the last 5 mm) are PRELIMINARY choices, not measured.
+- No sim KPI numbers yet. fa-mimic disk was full; containerd/docker moved to `/ephemeral` (bind mounts in fstab).
+- Open: env lacks `robot_touch`, `inject_foreign`, `block_holes`, `force_release`, `inject_intruder` (those scenarios
+  are skipped, never counted as passes); planner vs env origin differs 4 mm for M1/M2/M3_04; `*_04` tilt gate mixes
+  in yaw; `robot/cell` lacks pyzmq/msgpack (T05 adds, or `uv run --with`).
+
+## 2026-10-28 23:25 · NEW-DATA-ONLY training (for CODEX) · CLAUDE · user decision, do this before the H100 run
+
+- User: train ONLY on the new test-bed sets N R O P Q (parts stand as in their product, any yaw; 0 wrong rest labels).
+  Old sets A-M are NOT used for training (their `_REST.json` tags stay for analysis only).
+- Data: fa-r4 `~/fanuc-assembly-data/synthetic/{N,R,O,P,Q}/chunk_NNNN/` (labels/, rgb/, rgb_cosmos/ for ~50 % of
+  scenes, depth/, seg/). Each loose object has `rest`: `installed` | `fallen`. Expected: N 40, R 20, O 48, P 24, Q 8 chunks.
+- Needed in T13/T14 code (Codex-owned; Claude does not edit it):
+  1. Detector RT-DETR on N + R + Q (table + side cameras): 30 exact part classes + foreign, plus a per-box `fallen`
+     flag (head or extra class, Codex's choice); report per look-alike group.
+  2. Wrist classifier (ResNet-18) on O (one wrist height, look-alike always beside the target): 30 exact classes.
+  3. Set-P alignment model: read `build_offset` (shift mm / yaw deg / tilt / height) from P wrist images, for the
+     seated check within `sdg/data/insertion_tolerance.json` and the yaw-and-retry insertion rule (DECISIONS).
+  4. PatchCore per object on good O close-ups (installed orientation); FoundationPose pretrained validation on N/P
+     depth + STL.
+  5. Cosmos copies are train-only and inherit their scene's split; drop the "10-20 % Cosmos" gate for the new sets
+     (they are ~50 % by user decision).
+- Order on the 8xH100 (user): RT-DETR -> classifier -> set-P -> PatchCore (after its dependency audit) ->
+  FoundationPose validation -> copy artifacts -> close. Claude starts the box when PIPELINE_DONE is written and this
+  change is pushed.
+
+## 2026-10-28 · Old sets auto-labelled installed / fallen (for CODEX) · CLAUDE · read before T13 training
+
+- Old sets A-M have no `rest` field and 71 % of their loose parts lie in poses the real test-bed only shows as fallen
+  (e.g. rear guards M1-3_04 flat). Using them unlabelled would teach the `fallen` flag that a sleeping part is fine.
+- `sdg/tools/rest_labels.py` wrote `_REST.json` into all 209 old chunks on fa-r4 (`~/old-sets/synthetic`):
+  `{"images": {"<index>": {"<uid>": "installed" | "fallen"}}}`. Same rule as the new sets; tests show it reproduces the
+  rendered N / Q labels exactly. Totals: 204,126 installed, 503,125 fallen over 78,200 images.
+- Training: new sets read `objects[].rest`; old sets read `_REST.json` by image index + uid. Weight the new sets higher
+  (they are 91 % installed like the real bed). Objects absent from the sidecar (installed, mis-builds, bases, foreign)
+  have no rest state: mask the fallen loss for them.
+
+## 2026-10-28 · Guide orientation check (for CODEX) · CLAUDE · T25 labels verified, training block can be lifted
+
+- Codex flagged `N/chunk_0009/002252` (flat guides labelled `rest: installed`) and blocked H100 training. Checked:
+  the guides M4/M5/M6_03 are 5 mm U frames that sit FLAT on the housing (CAD `connector_family.py` stack: frame z 18-23,
+  back block up, lock legs through it). The user compared our assembled render with the printed parts: correct.
+- Measured over every rendered N/R/O/P/Q label on fa-r4 (19,000 images): 167,571 loose parts labelled `installed` all
+  have the product's up axis (< 2 deg), 16,420 labelled `fallen` all differ; 0 wrong labels. Fallen share N 7.2 %,
+  R 6.9 %, O 9.9 %, P 3.0 %, Q 31.8 % (as configured).
+- New test `test_installed_rest_has_the_same_up_face_as_the_part_inside_its_product` ties the bed pose to the product
+  pose for all 24 parts (shown to fail when M4_03 is stood on its edge).
+- Next: lift the training block; no re-render, no `pick_ready_pose`. If a real part ever differs from CAD, fix the CAD
+  and this test, then re-render only that product.
+
+## 2026-10-28 · Model behaviour decided (for CODEX) · CLAUDE · read before T13 / T14 / T18 training
+
+The user answered the model questions before training (all rows dated 2026-10-28 in `coord/DECISIONS.md`):
+- Detector: exact part of 30 + location + `fallen` flag; look-alikes need the wrist classifier to agree before a pick.
+- Unsure look-alike after a second wrist view → spare (LOOKALIKE_UNRESOLVED). PatchCore flag → reject + spare.
+- Identity re-checked after placing (a wrong housing seats fully in F03); seated = within `insertion_tolerance.json`.
+- Accuracy first. H100 order: RT-DETR → wrist classifier → set-P model → PatchCore (per object, parallel) →
+  FoundationPose validation (pretrained) → copy artifacts, close the box. PatchCore's dependency audit must pass first.
+- Data: new sets N R O P Q render on Brev `fa-r4` (+ GB10) with Cosmos for 50 % of scenes (`rgb_cosmos/`, `_COSMOS.json`);
+  per-chunk QA in `watchdog/status.json` there. Weight the new installed-orientation sets up. Ready ~01:40 CT Oct 29.
+- Spares: any of the 24 parts, never a base (`spares_any_part` in sets N-Q). Set Q re-rendered with it; the old Q is
+  in `superseded/Q_oldspares/` on fa-r4: do not train on it. 40 earlier N / R / P chunks keep the six-part spare list.
+
+## 2026-10-28 · T25 test-bed data (in progress) · CLAUDE (for CODEX) · parts stand as installed, any yaw
+
+- Rule from the user: the arm only picks/places straight down and cannot turn a part over, so every loose part and
+  spare stands in its installed orientation at any yaw. A part that has fallen over must go to the reject zone and be
+  replaced from the spare store (no "flip -> rework"). Planner work for you: reject on `rest == "fallen"`-like evidence.
+- Old sets A-M drew random drop poses: only 14-27 % of loose parts were in installed orientation and M1/M2/M3_04
+  (standing on an 8 mm edge) never were. Keep A-M in training (they teach fallen parts) but weight the new sets up.
+- New sets (sdg/configs/sets.yaml, rendering next): N 20k + R 10k (detector, table+side, installed, 10 % fallen),
+  O 24k (wrist identity close-ups at ONE height, 147-153 mm above the part's top face, so mm-per-pixel is fixed and
+  1-1.5 mm look-alike size gaps stay visible: the planner should take identity close-ups at 150 mm above the part top),
+  P 12k (wrist insertion alignment: top part on/over its pegs with labelled `build_offset` shift/yaw/tilt/height),
+  Q 4k (50 % fallen + spare store).
+- New label fields: loose work-area parts and spares carry `rest`: `installed` | `fallen`. `stable_pose` stays an int:
+  the matching drop pose, or -1 when the installed orientation is not a drop pose (M1/M2/M3_04 standing).
+- `sdg/data/insertion_tolerance.json` (from CAD): per part the yaws it fits at (11 one way only, 11 every 180 deg,
+  2 any), yaw tolerance (keyed parts +-1.4-2.4 deg, caps 6.8) and sideways tolerance (0.38-0.50 mm). Use it to yaw-align
+  before the straight-down insert and to size the small search when a part does not seat.
+
+## 2026-10-28 · T11 Cosmos Transfer · CLAUDE (for CODEX) · 10 % of A, F, G, B, H, K restyled tonight
+
+- Do not wait for Cosmos: smoke-test and benchmark on the renders now. The production prepare gate (10-20 % accepted
+  Cosmos images in A, F, G, B, H, K) passes only after the import below.
+- What lands: 10 % of every scene in A, F, G (table + side, ~1,600 images) and B, H, K (wrist, 3,840 images) at
+  `<chunk>/rgb_cosmos/<cam>/<idx>.jpg`, same size and same labels as `<chunk>/rgb/<cam>/<idx>.jpg`. Per-image results
+  in `<chunk>/_COSMOS.json`: `accepted` (false = not written), `edge_fscore`, `worst_object_fscore`, and
+  `cosmos_objects` / `rendered_objects` (how many parts kept the Cosmos look).
+- How they are made: Cosmos Transfer 2.5 (edge very_low + vis 0.5) restyles the frame. A part keeps its Cosmos pixels
+  only if its own edge F-score is >= 0.85 and its mean colour is within 35 grey levels of the relit render; every
+  other part is pasted back from the render, relit and feathered (`sdg/cosmos/composite.py`), so labels stay exact.
+  Calibration (60 images, 1,285 parts): 73.9 % of parts keep the Cosmos look. Image gate: whole-image edge F-score of
+  the Cosmos frame >= 0.85 (calibration min 0.872, median 0.948).
+- Where: A, F, G 720 images on GB10 (`spark:~/fanuc-assembly-data/cosmos/prodAFG`); the other 5,093 on two RunPod
+  A100 pods (`fa-cosmos-1/2`, shards built on Rosie in `~/fanuc-assembly-data/cosmos/shards`). Import on Rosie:
+  `python3 -m sdg.cosmos.restyle import <bundle> --min-fscore 0.85`.
+- C, I, D, J, L, M (PatchCore / build-check) are not restyled.
 
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 

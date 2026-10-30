@@ -28,6 +28,9 @@ REPO = Path(__file__).resolve().parents[1]
 SPEC_VERSION = 1
 MAX_TRIES = 400
 FOREIGN_RADIUS_MM = {"screw_m3": 9.0, "tape_roll": 26.0, "cube_10mm": 8.0}
+# Cell objects the detector must learn are NOT parts (real CSI photos 2026-10-29: the printed marker cards and the
+# silver wrist-camera housing were boxed as bases). Footprint radius, size (x, y, z mm). They carry no class label.
+DISTRACTORS = {"marker_card": (50.0, (80.0, 60.0, 0.3)), "camera_box": (40.0, (64.0, 52.0, 38.0))}
 TCP_BOX = {"x": (150.0, 650.0), "y": (-450.0, 450.0), "z": (-334.0, 300.0)}
 REST_MARGIN_MM = 0.05   # a mis-built part rests this far above the contact found by sdg/tools/build_clearance.py
 MAX_REST_LIFT_MM = 15.0   # higher than this the part would be balanced on a point: such a yaw is not used
@@ -80,6 +83,7 @@ class SceneBuilder:
         self.rng = random.Random(self.seed)
         self.table_z = inputs.layout["table_z"]
         self.objects: list[dict] = []
+        self.distractors: list[dict] = []
         self._occupied: list[tuple[np.ndarray, float, str]] = []
 
     # ------------------------------------------------------------------ top level
@@ -94,6 +98,8 @@ class SceneBuilder:
         self._add_trap(products)
         self._add_rejects()
         self._add_foreign()
+        self._add_extra_parts()
+        self._add_distractors()
         target = self._resolve_target(target_id)
         self._apply_defects(target)
         if "build_states" in self.cfg:
@@ -113,6 +119,8 @@ class SceneBuilder:
         }
         if target is not None:
             spec["wrist_target_uid"] = target["uid"]
+        if self.distractors:
+            spec["distractors"] = self.distractors
         return spec
 
     # ------------------------------------------------------------------ products and parts
@@ -124,13 +132,21 @@ class SceneBuilder:
         if plan == "parts":
             parts = sorted(k for k in self.inp.geometry if k.startswith("M"))
             return parts[self.index % len(parts)]
+        if isinstance(plan, list):   # an explicit list (e.g. the look-alikes) cycled in order
+            return plan[self.index % len(plan)]
         return None
 
     def _choose_products(self, target_id: str | None) -> list[int]:
         n = self.sc["products"]
         forced = [self.inp.taxonomy[target_id]["product"]] if target_id else []
         rest = [p for p in range(1, 7) if p not in forced]
-        return sorted(forced + self.rng.sample(rest, n - len(forced)))
+        if "product_weights" not in self.sc:
+            return sorted(forced + self.rng.sample(rest, n - len(forced)))
+        chosen = list(forced)   # weighted draw without replacement (e.g. favour the weak connector products 4-6)
+        while len(chosen) < n:
+            pool = [p for p in rest if p not in chosen]
+            chosen.append(self.rng.choices(pool, weights=[self.sc["product_weights"][p - 1] for p in pool])[0])
+        return sorted(chosen)
 
     def _choose_step(self, product: int, target_id: str | None) -> int:
         step = self.rng.choices(range(5), weights=self.sc["assembly_step_weights"])[0]
@@ -158,17 +174,34 @@ class SceneBuilder:
     def _add_loose(self, kind: str, object_id: str, product: int | None = None, zone: str = "work_area",
                    required: bool = True) -> dict | None:
         geo = self.inp.geometry[object_id]
-        poses = geo["stable_poses"]
-        # `uniform` shows rare resting poses (on a side, upside down) as often as the likely ones.
-        weights = None if self.sc.get("pose_sampling") == "uniform" else [p["probability"] for p in poses]
-        k = self.rng.choices(range(len(poses)), weights=weights)[0]
-        local = np.array(poses[k]["transform"])
+        if self.sc.get("pose_sampling") == "installed" and zone == "work_area":
+            pose, k, rest = self._test_bed_pose(geo)
+        else:
+            poses = geo["stable_poses"]
+            # `uniform` shows rare resting poses (on a side, upside down) as often as the likely ones.
+            weights = None if self.sc.get("pose_sampling") == "uniform" else [p["probability"] for p in poses]
+            k = self.rng.choices(range(len(poses)), weights=weights)[0]
+            pose, rest = poses[k], None
         cluster = self._cluster_centre() if zone == "work_area" else None
-        tf = self._place(local, poses[k], self.inp.layout[zone], "part", cluster, required)
+        tf = self._place(np.array(pose["transform"]), pose, self.inp.layout[zone], "part", cluster, required)
         if tf is None:
             return None
         state = "in_reject" if zone == "reject_zone" else "on_table"
-        return self._add(kind, object_id, tf, state=state, product=product, stable_pose=k)
+        extra = {"rest": rest} if rest else {}
+        return self._add(kind, object_id, tf, state=state, product=product, stable_pose=k, **extra)
+
+    def _test_bed_pose(self, geo: dict) -> tuple[dict, int, str]:
+        """Test-bed placement: the arm cannot turn a part over, so parts stand as installed (yaw comes from _place).
+        A `fallen_prob` share lies in another resting pose instead; the planner must reject those and use a spare.
+        stable_pose is the matching drop pose, or -1 when the installed orientation is not one (an edge stand)."""
+        installed = geo["installed_rest"]
+        up = np.array(installed["transform"])[2, :3]
+        same = [np.allclose(np.array(p["transform"])[2, :3], up, atol=1e-2) for p in geo["stable_poses"]]
+        fallen = [k for k, s in enumerate(same) if not s]
+        if fallen and self.rng.random() < self.sc.get("fallen_prob", 0.0):
+            k = self.rng.choices(fallen, weights=[geo["stable_poses"][i]["probability"] for i in fallen])[0]
+            return geo["stable_poses"][k], k, "fallen"
+        return installed, (same.index(True) if True in same else -1), "installed"
 
     def _add_trap(self, products: list[int]) -> None:
         """A look-alike of a present part, from a product that is not on the table."""
@@ -184,12 +217,37 @@ class SceneBuilder:
     def _add_spares(self) -> None:
         slots = self.inp.layout["spare_store"]["slots"]
         n = self.rng.randint(*self.sc["spares_in_store"])
-        for slot, part_id in zip(self.rng.sample(slots, n), self.rng.sample(self.defaults["spares"], n)):
-            pose = self.inp.geometry[part_id]["stable_poses"][0]
-            at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
+        test_bed = self.sc.get("pose_sampling") == "installed"   # spares are picked straight down too
+        if self.sc.get("spares_any_part"):
+            placed = self._any_part_spares(self.rng.sample(slots, n))
+        else:   # older sets: the high-risk list (all small parts), unchanged so their specs stay reproducible
+            placed = [(slot, part_id, None) for slot, part_id in
+                      zip(self.rng.sample(slots, n), self.rng.sample(self.defaults["spares"], n))]
+        for slot, part_id, at in placed:
+            geo = self.inp.geometry[part_id]
+            pose = geo["installed_rest"] if test_bed else geo["stable_poses"][0]
+            if at is None:
+                at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
             self._occupied.append((*self._world_footprint(at, pose), "part"))
+            extra = {"rest": "installed"} if test_bed else {}
             self._add("spare", part_id, at @ np.array(pose["transform"]), state="in_store", slot=slot["id"],
-                      stable_pose=0)
+                      stable_pose=0, **extra)
+
+    def _any_part_spares(self, slots: list[dict]) -> list[tuple[dict, str, np.ndarray]]:
+        """The real spare area holds a few spares of any part type, never a base (user 2026-10-28). Slots are 50 mm
+        apart and the housings are ~49 mm wide, so each slot takes a random part that clears the spares already laid."""
+        pool = sorted(k for k in self.inp.geometry if k.startswith("M"))
+        laid: list[tuple[dict, str, np.ndarray]] = []
+        circles: list[tuple[np.ndarray, float]] = []
+        for slot in slots:
+            at = translation(slot["x"], slot["y"], self.table_z) @ rot_z(self.rng.uniform(-10, 10))
+            for part_id in self.rng.sample(pool, len(pool)):
+                c, r = self._world_footprint(at, self.inp.geometry[part_id]["installed_rest"])
+                if part_id not in {p for _, p, _ in laid} and all(np.linalg.norm(c - c2) >= r + r2 for c2, r2 in circles):
+                    laid.append((slot, part_id, at))
+                    circles.append((c, r))
+                    break
+        return laid
 
     def _add_rejects(self) -> None:
         parts = sorted(k for k in self.inp.geometry if k.startswith("M"))
@@ -199,11 +257,32 @@ class SceneBuilder:
                 return
 
     def _add_foreign(self) -> None:
+        kinds, weights = self.defaults["foreign_objects"], self.sc.get("foreign_weights")
         for _ in range(self.rng.randint(*self.sc["foreign_objects"])):
-            kind = self.rng.choice(self.defaults["foreign_objects"])
+            kind = self.rng.choices(kinds, weights=weights)[0] if weights else self.rng.choice(kinds)
             fp = {"footprint_xy": [0.0, 0.0], "footprint_r": FOREIGN_RADIUS_MM[kind]}
             tf = self._place(np.eye(4), fp, self.inp.layout["work_area"], "part", self._cluster_centre())
             self._add("foreign", None, tf, state="on_table", foreign_type=kind)
+
+    def _add_extra_parts(self) -> None:
+        """Extra loose copies of the parts the detector finds least often (`extra_parts.pool`); optional."""
+        extra = self.sc.get("extra_parts")
+        if not extra:
+            return
+        for _ in range(self.rng.randint(*extra["count"])):
+            part_id = self.rng.choice(extra["pool"])
+            self._add_loose("part", part_id, product=self.inp.taxonomy[part_id]["product"], required=False)
+
+    def _add_distractors(self) -> None:
+        """Unlabelled cell objects on the table (DISTRACTORS); kept out of `objects` so no label can name them."""
+        for kind, count in sorted(self.sc.get("distractors", {}).items()):
+            radius, size = DISTRACTORS[kind]
+            for _ in range(self.rng.randint(*count)):
+                fp = {"footprint_xy": [0.0, 0.0], "footprint_r": radius}
+                tf = self._place(np.eye(4), fp, self.inp.layout["work_area"], "part", required=False)
+                if tf is not None:
+                    self.distractors.append({"kind": kind, "size_mm": list(size),
+                                             "transform_uf0": np.round(tf, 6).tolist()})
 
     # ------------------------------------------------------------------ targets, defects, build states
     def _resolve_target(self, target_id: str | None) -> dict | None:

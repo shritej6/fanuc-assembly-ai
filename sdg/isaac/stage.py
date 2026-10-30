@@ -96,8 +96,28 @@ class SceneStage:
             label = obj["object_id"] or f"foreign_{obj['foreign_type']}"
             _add_class_label(xf.GetPrim(), label)
             paths[str(xf.GetPath())] = obj["uid"]
+        for i, d in enumerate(spec.get("distractors", [])):
+            self._distractor(f"{SCENE_ROOT}/distractor_{i:02d}", d)   # no class label and not in `paths`
         self._apply_look(spec)
         return paths
+
+    def _distractor(self, path: str, d: dict) -> None:
+        """A CSI marker card (white card, black square with a white notch) or a silver camera housing."""
+        xf = UsdGeom.Xform.Define(self.stage, path)
+        xf.AddTransformOp().Set(uf0_to_world(np.array(d["transform_uf0"]), self.table_top_z))
+        sx, sy, sz = (v / 1000.0 for v in d["size_mm"])
+        parts = [("body", (sx, sy, sz), (0.0, 0.0, sz / 2),
+                  (0.92, 0.92, 0.9) if d["kind"] == "marker_card" else (0.62, 0.63, 0.66))]
+        if d["kind"] == "marker_card":
+            parts += [("square", (0.042, 0.042, 0.0002), (-0.012, 0.0, sz + 0.0001), (0.03, 0.03, 0.03)),
+                      ("notch", (0.012, 0.012, 0.0002), (-0.012, 0.006, sz + 0.0002), (0.92, 0.92, 0.9)),
+                      ("logo", (0.014, 0.03, 0.0002), (0.026, 0.0, sz + 0.0001), (0.9, 0.55, 0.15))]
+        for name, (bx, by, bz), (tx, ty, tz), colour in parts:
+            cube = UsdGeom.Cube.Define(self.stage, f"{path}/{name}")
+            cube.CreateSizeAttr(1.0)
+            cube.AddTranslateOp().Set(Gf.Vec3d(tx, ty, tz))
+            cube.AddScaleOp().Set(Gf.Vec3f(bx, by, bz))
+            cube.CreateDisplayColorAttr([Gf.Vec3f(*colour)])
 
     def _foreign(self, path: Sdf.Path, kind: str) -> None:
         if kind == "cube_10mm":

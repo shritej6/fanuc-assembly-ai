@@ -31,7 +31,7 @@ def _placement(inp, obj) -> tuple[np.ndarray, dict]:
     geo = inp.geometry[obj["object_id"]]
     if obj["kind"] == "base":
         return tf @ np.linalg.inv(translation(0, 0, -geo["bounds_mm"][0][2])), geo["upright"]
-    pose = geo["stable_poses"][obj["stable_pose"]]
+    pose = geo["installed_rest"] if obj.get("rest") == "installed" else geo["stable_poses"][obj["stable_pose"]]
     return tf @ np.linalg.inv(np.array(pose["transform"])), pose
 
 
@@ -143,7 +143,7 @@ def test_cad_geometry_is_registered_and_pose_probabilities_are_normalised(inp):
         assert sum(p["probability"] for p in geo["stable_poses"]) == pytest.approx(1.0, abs=1e-3)
 
 
-@pytest.mark.parametrize("set_name", ["A", "B", "C", "D"])
+@pytest.mark.parametrize("set_name", ["A", "B", "C", "D", "N", "R", "O", "P", "Q"])
 def test_chunks_cover_every_scene_once_and_match_the_image_budget(inp, set_name):
     cfg = inp.sets["sets"][set_name]
     indices = [i for c in range(n_chunks(inp, set_name)) for i in chunk_range(inp, set_name, c)]
@@ -252,3 +252,100 @@ def test_misassembly_set_labels_every_shift_and_turn_with_its_measured_rest_heig
             assert yaw["deviation_mm"] >= inp.clearance["yaw_visible_mm"]   # a turn you can actually see
             assert off["high_mm"] == pytest.approx(yaw["lift_mm"] + 0.05 * (yaw["lift_mm"] > 0), abs=1e-3)
     assert set(seen) == {"seated", "shifted", "rotated", "tilted", "high", "wrong_part"}
+
+
+# ---------------------------------------------------------------- test-bed sets (T25)
+TEST_BED = "NROPQ"
+
+
+@pytest.fixture(scope="module")
+def bed(inp) -> dict[str, list[dict]]:
+    return {s: [sample_scene(inp, s, i) for i in range(80)] for s in TEST_BED}
+
+
+def _work_area_loose(spec):
+    return [o for o in spec["objects"] if o["state"] == "on_table" and o["kind"] in ("part", "trap")]
+
+
+def test_every_loose_test_bed_part_is_labelled_installed_or_fallen(bed):
+    for spec in (s for v in bed.values() for s in v):
+        assert all(o["rest"] in ("installed", "fallen") for o in _work_area_loose(spec))
+
+
+def test_installed_parts_stand_exactly_as_in_their_product_at_any_yaw_on_the_table(bed, inp):
+    """The arm cannot turn a part over: up in the part frame must be the installed up; only yaw and xy are free."""
+    table_z, yaws = inp.layout["table_z"], []
+    for spec in (s for v in bed.values() for s in v):
+        for o in (o for o in _work_area_loose(spec) + [o for o in spec["objects"] if o["state"] == "in_store"]
+                  if o.get("rest") == "installed"):
+            geo = inp.geometry[o["object_id"]]
+            tf = np.array(o["transform_uf0"])
+            np.testing.assert_allclose(tf[2, :3], np.array(geo["installed_rest"]["transform"])[2, :3], atol=1e-3)
+            at, _ = _placement(inp, o)
+            assert at[2, 3] == pytest.approx(table_z, abs=1e-2)
+            yaws.append(math.degrees(math.atan2(at[1, 0], at[0, 0])))
+    sectors = collections.Counter(int((y + 180) // 30) % 12 for y in yaws)
+    assert len(sectors) == 12 and min(sectors.values()) > len(yaws) / 24   # every 30 degree sector, none starved
+
+
+def test_installed_rest_has_the_same_up_face_as_the_part_inside_its_product(inp):
+    """The bed pose must be the product pose: a guide that lies flat in the product lies flat on the bed."""
+    parts = [p for p, g in inp.geometry.items() if "installed_rest" in g and not p.startswith("F")]
+    assert len(parts) == 24
+    for p in parts:
+        product_up = np.array(inp.geometry[p]["installed_in_base_frame"])[2, :3]
+        bed_up = np.array(inp.geometry[p]["installed_rest"]["transform"])[2, :3]
+        np.testing.assert_allclose(bed_up, product_up, atol=1e-3, err_msg=p)
+
+
+def test_fallen_parts_lie_in_a_different_resting_pose_at_the_configured_share(bed, inp):
+    for set_name in ("N", "Q"):
+        loose = [o for s in bed[set_name] for o in _work_area_loose(s)]
+        fallen = [o for o in loose if o["rest"] == "fallen"]
+        expected = inp.sets["sets"][set_name]["scene"]["fallen_prob"]
+        assert abs(len(fallen) / len(loose) - expected) < 0.06, set_name
+        for o in fallen:
+            installed_up = np.array(inp.geometry[o["object_id"]]["installed_rest"]["transform"])[2, :3]
+            assert not np.allclose(np.array(o["transform_uf0"])[2, :3], installed_up, atol=1e-2)
+
+
+def test_edge_standing_plates_appear_standing_although_no_drop_pose_matches(bed):
+    plates = [o for s in bed["N"] for o in _work_area_loose(s)
+              if o["object_id"] in ("M1_04", "M2_04", "M3_04") and o["rest"] == "installed"]
+    assert plates and all(o["stable_pose"] == -1 for o in plates)
+
+
+def test_test_bed_objects_do_not_overlap_and_spares_stand_ready_to_pick(bed, inp):
+    for spec in bed["N"] + bed["Q"]:
+        flat = [o for o in spec["objects"] if o["state"] != "installed"]
+        circles = [_circle(inp, o) for o in flat]
+        for i, (ci, ri) in enumerate(circles):
+            for cj, rj in circles[i + 1:]:
+                assert np.linalg.norm(ci - cj) >= ri + rj - 1e-6
+        assert all(o["rest"] == "installed" for o in spec["objects"] if o["state"] == "in_store")
+
+
+def test_identity_close_ups_keep_one_wrist_height_so_pixel_size_stays_fixed(bed, inp):
+    from sdg.transforms import world_aabb
+
+    lo, hi = inp.sets["sets"]["O"]["wrist"]["standoff_mm"]
+    assert hi - lo <= 6.0
+    targets = set()
+    for spec in bed["O"]:
+        target = next(o for o in spec["objects"] if o["uid"] == spec["wrist_target_uid"])
+        top = world_aabb(np.array(target["transform_uf0"]), inp.geometry[target["object_id"]]["bounds_mm"])[1, 2]
+        assert lo - 1e-3 <= spec["arm"]["tcp_uf0"][2] - top <= hi + 1e-3   # camera height above the part's top face
+        targets.add(target["object_id"])
+    assert len(targets) == 30
+
+
+def test_old_sets_never_carry_the_test_bed_label(scenes):
+    assert not any("rest" in o for v in scenes.values() for s in v for o in s["objects"])
+
+
+def test_test_bed_spares_can_be_any_part_but_never_a_base(bed, scenes, inp):
+    spares = {o["object_id"] for s in bed["N"] + bed["Q"] for o in s["objects"] if o["kind"] == "spare"}
+    assert spares and not any(p.startswith("F") for p in spares)
+    assert {p[:2] for p in spares} == {f"M{i}" for i in range(1, 7)}       # every product, not a fixed short list
+    old = {o["object_id"] for s in scenes["A"] for o in s["objects"] if o["kind"] == "spare"}
+    assert old <= set(inp.sets["defaults"]["spares"])                       # older sets reproduce unchanged

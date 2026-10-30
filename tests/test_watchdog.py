@@ -98,3 +98,15 @@ def test_one_stalled_render_is_killed_while_the_parallel_ones_keep_going(root, m
     assert killed == ["c1"]
     assert (stalled / "_FAILED.txt").exists() and not (busy / "_FAILED.txt").exists()
     assert events == ["HANG D/chunk_0003: killed its render, will retry"]
+
+
+def test_brev_host_only_checks_and_never_retries_or_schedules(root, monkeypatch):
+    chunk = _chunk(root, scenes=3, expected=3)
+    (chunk / "_FAILED.txt").write_text("render failed")
+    touched = []
+    for name in ("rosie_retry", "spark_schedule", "spark_hang_check", "spark_rendering"):
+        monkeypatch.setattr(watchdog, name, lambda *a, n=name, **k: touched.append(n))
+    watchdog.one_pass("brev", [])
+    assert touched == []
+    assert json.loads((chunk / "_QA.json").read_text())["ok"]
+    assert (chunk / "_FAILED.txt").exists()            # left for render_queue.sh, which retries on its own

@@ -9,7 +9,7 @@ Rockwell Automation + NVIDIA Physical AI Hackathon, Fall 2026, Challenge 3, on t
 
 ## 1. The idea
 
-The parts for 3 of the 6 products lie on the table at random positions. All parts are black PLA. Some are damaged, flipped or from the wrong product. The cell:
+The parts for 3 of the 6 products stand on the table at random positions and yaw, each in the orientation it has in its product: the arm only picks and places straight down and cannot turn a part over (user, 2026-10-28). All parts are black PLA. Some are damaged, fallen over or from the wrong product. The cell:
 - finds every part and base,
 - groups them into products,
 - inspects each part,
@@ -34,7 +34,7 @@ The aim is all 3 products finished with far fewer human touches, plus a per-part
 | Zones | Work area, optional spare store, reject zone (tray or camera-defined area) |
 | Order | One product at a time |
 | Spares | High-risk parts only |
-| Defects | Broken or missing feature; flipped; print defect; wrong or foreign part |
+| Defects | Broken or missing feature; fallen over (arm cannot right it: reject, use a spare); print defect; wrong or foreign part |
 | Failure probabilities | Engineering ranking, then cycle tests, then real run counts; labelled PRELIMINARY. Never derived from synthetic data. |
 | Operator | Plain-language command plus a live report |
 | Non-slip base pads | Optional |
@@ -110,7 +110,7 @@ I compared every STL pair by surface distance:
 | Motion | Detected pose + CAD heights (scripted baseline) |
 | Learned picking | GR00T N1.7 via LeRobot (main), SmolVLA (backup), ACT (baseline); trained on sim demos multiplied by Isaac Lab Mimic; used only if it beats the script |
 | Deployment | Official client `policy.py` |
-| Compute | GR00T training and Cosmos on Rosie's H100 (`dgxh100` partition) first, Brev only when the H100 queue cannot start in time; everything else on Rosie's T4 or a laptop |
+| Compute | RunPod (user 2026-10-28, $100 cap): H100 SXM for the detector, A100 SXM for the classifier, PatchCore and Cosmos; GB10 for Cosmos too; Rosie's H100 when the queue starts it; GR00T on an H100/H200 later |
 | Left out | ROS 2, MoveIt, Jetson, Isaac OS, Gemini Robotics, Cosmos 3 Nano/Super, π0.5 |
 
 ## 5. System pipeline
@@ -121,9 +121,10 @@ Operator: "assemble everything on the table"   (or obs["trial"]["instruction"])
 2 IDENTIFY  wrist close-up classifier → exact part ID for the look-alikes
 3 GROUP     part ID → product; base type → assign a free base of the right type
             per product: base + 01..04 present? Draw a boundary around each group in the report
-4 INSPECT   anomalib PatchCore (damage) + table/wrist depth (missing layers): OK | flipped → rework | defect/foreign → reject
+4 INSPECT   anomalib PatchCore (damage) + table/wrist depth (missing layers): OK | fallen over / defect / foreign → reject
 5 REPLAN    bad or missing part → spare from the store; if none, Andon call (pause, tell operator, resume)
-6 ASSEMBLE  01→04: scripted motion from detected pose + CAD heights (GR00T N1.7 picking only if it beats the script)
+6 ASSEMBLE  01→04: scripted motion from detected pose + CAD heights; yaw each part so its underside holes meet the
+            pegs (sdg/data/insertion_tolerance.json: keyed parts ±1.4–2.4°, ±0.5 mm) (GR00T N1.7 only if it beats the script)
             → VERIFY (depth height + wrist check)
 7 RECOVER   not seated → pull out and reinsert ×2 → still bad: disassemble 04→01, re-inspect, swap, rebuild
 8 FINAL QC  recipe check, then Cosmos Reason 2 (8B) second opinion → DONE / REBUILD
@@ -150,7 +151,8 @@ The state machine and all perception code run **identically** against Isaac Sim,
 
 - Any 3 of 6 products; all 20 combinations equally often.
 - Bases of the right type, at random position and yaw.
-- Parts upright, flipped or on their side, touching and clustered.
+- Parts standing as installed at any yaw (sets N R O P Q); a share fallen over (reject); touching and clustered.
+  Sets A–M drew random drop poses and still teach what a fallen part looks like.
 - Partly assembled products (steps 0–4).
 - 0–2 defects per scene, from **CAD defect variants**:
   - snapped tab, missing pin or lock,

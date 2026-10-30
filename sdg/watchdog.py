@@ -2,6 +2,7 @@
 
     python -m sdg.watchdog --host spark --plan C:0-15 D:0-11 A:0-31 --loop 600
     python -m sdg.watchdog --host rosie --loop 600
+    python -m sdg.watchdog --host brev --loop 600      # QA + status only: sdg/brev/render_queue.sh retries itself
 
 Each pass appends one status line to $DATA_ROOT/watchdog/log.txt and rewrites watchdog/status.json.
 Per finished chunk: `_QA.json` (random 40 scenes checked + scene count) and watchdog/sheets/<set>_<chunk>.png.
@@ -187,7 +188,7 @@ def one_pass(host: str, plan: list[tuple[str, int]]) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--host", required=True, choices=["rosie", "spark"])
+    ap.add_argument("--host", required=True, choices=["rosie", "spark", "brev"])
     ap.add_argument("--plan", nargs="*", default=[], help="spark: SET:first-last in render order")
     ap.add_argument("--loop", type=int, default=0, help="seconds between passes (0 = one pass)")
     args = ap.parse_args()
