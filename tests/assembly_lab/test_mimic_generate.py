@@ -290,3 +290,29 @@ def test_stop_files_end_a_worker_between_attempts(tmp_path):
     out.with_name(out.name + ".stop").unlink()
     (tmp_path / "g1" / "STOP").write_text("")
     assert stop_requested(out)
+
+
+def test_loop_counts_attempts_and_rotates(tmp_path):
+    from sim.assembly_lab.mimic.generate import loop
+
+    outcomes = iter([{"status": "no_case", "reason": "x"}, {"status": "kept", "reason": "ok"},
+                     {"status": "failed", "reason": "GateFailed: precision gate: seat_xy_mm=1.2"},
+                     {"status": "kept", "reason": "ok"}])
+
+    class FakeGen:
+        source_counts, rotations = {}, 0
+
+        def parts(self):
+            return ["M4_01"]
+
+        def attempt(self, part):
+            return next(outcomes)
+
+        def rotate(self):
+            self.rotations += 1
+
+    a = SimpleNamespace(skill="pick_insert", product=4, target=2, max_attempts=10, out=tmp_path / "g1/x/p4/w.hdf5")
+    gen = FakeGen()
+    stats = loop(gen, a, tmp_path / "w_e00.hdf5", rotate_every=1)
+    assert (stats["attempts"], stats["accepted"], stats["no_case"], gen.rotations) == (3, 2, 1, 3)
+    assert json.loads((tmp_path / "w_e00.hdf5.stats.json").read_text())["accepted"] == 2
