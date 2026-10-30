@@ -1,8 +1,11 @@
-"""Per-object contact numbers from two Isaac Lab contact sensors, accumulated every physics step on the sim device.
+"""Per-object contact numbers from Isaac Lab contact sensors, accumulated every physics step on the sim device.
 
-- robot_contact: every robot link (arm links, gripper body, both finger bodies) against every pool object
-  (force matrix + mean contact point per link-object pair).
+- robot_contact_<link>: each robot link (arm links, gripper body, both finger bodies) against every pool object
+  (force matrix + mean contact point per link-object pair), read together as `self.robot` (SensorGroup).
 - object_contact: net contact force on every object.
+- object_env_contact_<name>: each object against every non-robot collider (per contact point, friction).
+PhysX pairs a filter with one sensor body per env, so every filtered sensor is one body; SensorGroup concatenates them
+along the body axis.
 
 Per object:
 - robot_touch_N: the largest force any single robot link puts on it (the "touched only the target" gate).
@@ -38,21 +41,48 @@ import torch
 MAX_ARM_M = 0.1      # a contact point farther than this from the object COM is a sensor artefact (no contact)
 
 
+class _Field:
+    def __init__(self, t: torch.Tensor):
+        self.torch = t
+
+
+class _GroupData:
+    def __init__(self, sensors: list):
+        self._sensors = sensors
+
+    def __getattr__(self, name: str) -> _Field:
+        return _Field(torch.cat([getattr(s.data, name).torch for s in self._sensors], dim=1))
+
+
+class SensorGroup:
+    """Single-body contact sensors read as one multi-body sensor: data.<field>.torch is (E, B, ...) in body order."""
+
+    def __init__(self, sensors: list, body_names: list[str]):
+        self.sensors, self.body_names = sensors, list(body_names)
+
+    @property
+    def data(self) -> _GroupData:
+        return _GroupData(self.sensors)
+
+
 class ContactMetrics:
     def __init__(self, env):
+        from scene import ROBOT_LINKS
+
         self.env = env
-        self.robot = env.scene["robot_contact"]
+        bodies = set(env.scene["robot"].body_names)
+        if bodies != set(ROBOT_LINKS):
+            raise RuntimeError(f"robot bodies {sorted(bodies)} != scene.ROBOT_LINKS {sorted(ROBOT_LINKS)}: every robot "
+                               "link needs its robot_contact sensor (the robot-touch gate)")
+        self.robot = SensorGroup([env.scene[f"robot_contact_{k}"] for k in ROBOT_LINKS], ROBOT_LINKS)
         self.obj = env.scene["object_contact"]
         names = env.names
-        links = list(self.robot.body_names)
-        self.jaw_rows = [links.index("JawL"), links.index("JawR")]
+        self.jaw_rows = [ROBOT_LINKS.index("JawL"), ROBOT_LINKS.index("JawR")]
         order = list(self.obj.body_names)
         self.net_index = torch.tensor([order.index(n) for n in names], device=env.device)
         n, e = len(names), env.num_envs
-        self.envc = env.scene["object_env_contact"]
-        env_order = list(self.envc.body_names)
-        self.env_index = torch.tensor([env_order.index(n) for n in names], device=env.device)
-        self.n_sensor = len(env_order)                    # sensor bodies per env (the contact view is env-major)
+        self.env_sensors = [env.scene[f"object_env_contact_{m}"] for m in names]
+        self.envc = SensorGroup(self.env_sensors, names)
         k = 8      # normal, lateral, torque_z (gated), touch, torque3d (gated), robot pinch est, coverage, raw torque_z
         self._step_peak = torch.zeros((e, n, k), device=env.device)
         self._chunk_peak = torch.zeros((e, n, k), device=env.device)
@@ -71,7 +101,7 @@ class ContactMetrics:
         quat = torch.stack([self.env.scene[n].data.root_link_quat_w.torch for n in self.env.names], dim=1)  # xyzw
         axis = M.matrix_from_quat(quat)[..., :, 2]                                                          # body +Z
         on_obj = -f                                                 # robot-link forces on the objects
-        fric = self.envc.data.friction_forces_w.torch[:, self.env_index].sum(dim=2)                        # (E, N, 3)
+        fric = self.envc.data.friction_forces_w.torch.sum(dim=2)                                            # (E, N, 3)
         env_f = net - on_obj.sum(dim=1) + contact_torque.NORMAL_SIGN * fric
         self.env_net = env_f
         arm = p - com.unsqueeze(1)
@@ -79,7 +109,7 @@ class ContactMetrics:
         tau = torch.where(ok.unsqueeze(-1), torch.cross(torch.nan_to_num(arm), on_obj, dim=-1), 0.0).sum(dim=1)
         touch = f.norm(dim=-1).max(dim=1).values                    # (E, N)
         raw_z, tau3, self.env_force = self._env_torque(com, axis)
-        pair = self.envc.data.force_matrix_w.torch[:, self.env_index][:, :, : len(self.env.names)].norm(dim=-1)
+        pair = self.envc.data.force_matrix_w.torch[:, :, : len(self.env.names)].norm(dim=-1)
         loaded = contact_torque.robot_loaded(touch, pair)
         tau_z = contact_torque.guard_torque(raw_z, loaded)
         tau3 = tau3 * loaded.unsqueeze(-1)
@@ -95,26 +125,26 @@ class ContactMetrics:
         """Torque on every object from its non-robot contacts, (E, N) / (E, N, 3) in self.env.names order."""
         import warp as wp
 
-        view, dt = self.envc.contact_view, self.env.physics_dt
-        fn, pts, nrm, _, cnt, start = view.get_contact_data(dt=dt)
-        fr, fpts, fcnt, fstart = view.get_friction_data(dt=dt)
+        dt = self.env.physics_dt
         t = lambda a, d=3: wp.to_torch(a).reshape(-1, d) if d else wp.to_torch(a).to(torch.int64)
-        e, order = com.shape[0], self.env_index
-        flat = lambda v: torch.empty((e, self.n_sensor, 3), device=v.device).index_copy_(1, order, v).reshape(-1, 3)
-        tz, tau, force = contact_torque.env_torque(
-            t(fn, 1), t(pts), t(nrm), t(cnt, 0), t(start, 0), t(fr), t(fpts), t(fcnt, 0), t(fstart, 0),
-            flat(com), flat(axis), max_arm=MAX_ARM_M)
-        per_env = lambda v: v.reshape(e, self.n_sensor, *v.shape[1:])[:, order]
-        return per_env(tz), per_env(tau), per_env(force)
+        tz, tau, force = [], [], []
+        for k, sensor in enumerate(self.env_sensors):                # one body per env: buffer rows are envs
+            fn, pts, nrm, _, cnt, start = sensor.contact_view.get_contact_data(dt=dt)
+            fr, fpts, fcnt, fstart = sensor.contact_view.get_friction_data(dt=dt)
+            out = contact_torque.env_torque(t(fn, 1), t(pts), t(nrm), t(cnt, 0), t(start, 0), t(fr), t(fpts),
+                                            t(fcnt, 0), t(fstart, 0), com[:, k], axis[:, k], max_arm=MAX_ARM_M)
+            for acc, v in zip((tz, tau, force), out):
+                acc.append(v)
+        return torch.stack(tz, dim=1), torch.stack(tau, dim=1), torch.stack(force, dim=1)
 
     def raw_env_contacts(self, name: str, env_id: int = 0) -> dict:
         """Every non-robot contact point and friction anchor on object `name` of env `env_id` now (diagnostics)."""
         import warp as wp
 
-        view, dt = self.envc.contact_view, self.env.physics_dt
+        view, dt = self.env_sensors[self.env.names.index(name)].contact_view, self.env.physics_dt
         fn, pts, nrm, sep, cnt, start = view.get_contact_data(dt=dt)
         fr, _fpts, fcnt, fstart = view.get_friction_data(dt=dt)
-        i = env_id * self.n_sensor + list(self.envc.body_names).index(name)
+        i = env_id
         c, s0 = wp.to_torch(cnt).to(torch.int64)[i], wp.to_torch(start).to(torch.int64)[i]
         fc, fs0 = wp.to_torch(fcnt).to(torch.int64)[i], wp.to_torch(fstart).to(torch.int64)[i]
         T = lambda a, d: wp.to_torch(a).reshape(-1, d)

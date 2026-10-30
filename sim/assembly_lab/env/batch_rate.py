@@ -80,13 +80,18 @@ class HoldAction(ActionTerm):
         robot = self._asset
         robot.set_joint_position_target_index(target=robot.data.default_joint_pos.torch.clone(), full_data=True)
         s = self._env.scene
-        rc, oc, ec = s["robot_contact"].data, s["object_contact"].data, s["object_env_contact"].data
-        acc = rc.force_matrix_w.torch.sum() + rc.contact_pos_w.torch.nan_to_num().sum() + oc.net_forces_w.torch.sum()
-        acc = acc + ec.friction_forces_w.torch.sum() + ec.force_matrix_w.torch.sum()
-        view = s["object_env_contact"].contact_view
-        fn, *_ = view.get_contact_data(dt=self._env.physics_dt)
-        fr, *_ = view.get_friction_data(dt=self._env.physics_dt)
-        self.sink = self.sink + acc + wp.to_torch(fn).sum() + wp.to_torch(fr).sum()
+        acc = s["object_contact"].data.net_forces_w.torch.sum()
+        for key in s.sensors:
+            if key.startswith("robot_contact_"):
+                rc = s[key].data
+                acc = acc + rc.force_matrix_w.torch.sum() + rc.contact_pos_w.torch.nan_to_num().sum()
+            elif key.startswith("object_env_contact_"):
+                ec = s[key].data
+                acc = acc + ec.friction_forces_w.torch.sum() + ec.force_matrix_w.torch.sum()
+                fn, *_ = s[key].contact_view.get_contact_data(dt=self._env.physics_dt)
+                fr, *_ = s[key].contact_view.get_friction_data(dt=self._env.physics_dt)
+                acc = acc + wp.to_torch(fn).sum() + wp.to_torch(fr).sum()
+        self.sink = self.sink + acc
 
 
 @configclass

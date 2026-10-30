@@ -9,8 +9,9 @@ not N). Cells never touch, so collision filtering stays off; every pose a caller
 
 Scene keys: `robot`; one RigidObject per pool instance named by `prim_name(uid)` (e.g. M4_01, M4_03_c2), so the
 recorder's states read `rigid_object/<name>`; Mimic frame markers `grasp_frame`, `seat_frame`, `spot_frame`
-(kinematic, no collider, invisible); `robot_contact` (every robot link vs every object) and `object_contact` (net
-force on every object); cameras `table`, `side`, `wrist`.
+(kinematic, no collider, invisible); `robot_contact_<link>` (that robot link vs every object), `object_contact` (net
+force on every object), `object_env_contact_<name>` (that object vs every non-robot collider); cameras `table`,
+`side`, `wrist`.
 """
 
 from __future__ import annotations
@@ -41,6 +42,9 @@ ROBOT_PATH = CELL + "/ER4iA"
 STATIC_COLLIDERS = tuple(f"{CELL}/{n}" for n in ("Table", "Mat", "Floor"))   # every non-robot static collider
                                                                               # (mimic_check.py --list_colliders)
 EXTRAS_PARK_M = (2.6, 1.6, 0.0)     # env-local m, behind the table and side cameras (layout.PARK_ORIGIN_MM region)
+# Every robot rigid body (the robot_contact sensors; ContactMetrics checks it against the articulation). PhysX filters
+# only pair one sensor body per env with each filter, so each link (and each object, below) is its own sensor.
+ROBOT_LINKS = ("robot_base", "J1_link", "J2_link", "J3_link", "J4_link", "J5_link", "J6_link", "JawL", "JawR")
 CAMERA_PATHS = {"table": CELL + "/TableCam", "side": CELL + "/SideCam", "wrist": CELL + "/ER4iA/J6_link/WristCam"}
 # Position-controlled arm like the real FANUC: stiff joint PD, gravity off on the links (the real controller
 # compensates it). Gains are chosen for < 0.05 mm steady-state TCP error, not identified from the real arm.
@@ -154,16 +158,19 @@ def make_scene_cfg(pool: list[str], contact: dict, jaw_force_n: float, home_rad:
 
         for name in assets.EXTRAS:
             setattr(scene, f"extra_{name}", RigidObjectCfg(prim_path=f"{EXTRAS_ROOT}/{name}", spawn=None))
-    scene.robot_contact = ContactSensorCfg(
-        prim_path=ROBOT_PATH + "/.*", track_contact_points=True, max_contact_data_count_per_prim=512,
-        filter_prim_paths_expr=[f"{OBJECTS_ROOT}/{n}" for n in names])
+    # each robot link against every pool object (robot_contact_<link>; contact_metrics.SensorGroup reads them as one)
+    for link in ROBOT_LINKS:
+        setattr(scene, f"robot_contact_{link}", ContactSensorCfg(
+            prim_path=f"{ROBOT_PATH}/{link}", track_contact_points=True, max_contact_data_count_per_prim=512,
+            filter_prim_paths_expr=[f"{OBJECTS_ROOT}/{n}" for n in names]))
     scene.object_contact = ContactSensorCfg(prim_path=f"{OBJECTS_ROOT}/.*")
-    # every object against everything that is NOT the robot (other objects, table, mat, floor), per contact point:
+    # each object against everything that is NOT the robot (other objects, table, mat, floor), per contact point:
     # the seating torque comes only from these (contact_metrics.py)
-    scene.object_env_contact = ContactSensorCfg(
-        prim_path=f"{OBJECTS_ROOT}/.*", track_contact_points=True, track_friction_forces=True,
-        max_contact_data_count_per_prim=512,
-        filter_prim_paths_expr=[f"{OBJECTS_ROOT}/{n}" for n in names] + list(STATIC_COLLIDERS))
+    for n in names:
+        setattr(scene, f"object_env_contact_{n}", ContactSensorCfg(
+            prim_path=f"{OBJECTS_ROOT}/{n}", track_contact_points=True, track_friction_forces=True,
+            max_contact_data_count_per_prim=512,
+            filter_prim_paths_expr=[f"{OBJECTS_ROOT}/{m}" for m in names] + list(STATIC_COLLIDERS)))
     w, h = image_size
     for cam in cameras:
         setattr(scene, cam, CameraCfg(prim_path=CAMERA_PATHS[cam], spawn=None, width=w, height=h, update_period=0.0,

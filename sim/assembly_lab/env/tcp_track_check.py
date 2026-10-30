@@ -73,7 +73,7 @@ def carry_test(env, part: str) -> tuple[float, float]:
         print(f"[carry] {part} {name}: slip {s_:.3f} mm pivot {p_:.2f} deg", flush=True)
     f = env.env.scene["robot"].root_view.get_dof_projected_joint_forces()
     f = np.asarray(f.numpy() if hasattr(f, "numpy") else f.cpu())[0].reshape(-1)[env.term.jaw_ids]
-    sensor = env.env.scene["robot_contact"]
+    sensor = env.env._metrics.robot
     pad = sensor.data.net_forces_w.torch[0].cpu().numpy()
     pads = [round(float(np.linalg.norm(pad[sensor.body_names.index(n)])), 2) for n in ("JawL", "JawR")]
     print(f"[carry] {part}: pad normal per finger N={pads} transmitted jaw force N={np.round(f, 2).tolist()} "
@@ -104,7 +104,7 @@ def grip_tests(env, part: str, hold_row: list) -> float:
     as_np = lambda a: a.cpu().numpy() if hasattr(a, "cpu") else np.asarray(a.numpy())
     proj = as_np(view.get_dof_projected_joint_forces())[0].reshape(-1)
     print(f"[grip] {part}: PhysX projected jaw joint forces N={np.round(proj[env.term.jaw_ids], 2).tolist()}", flush=True)
-    sensor = env.env.scene["robot_contact"]
+    sensor = env.env._metrics.robot
     fm = sensor.data.force_matrix_w.torch[0][:, env.env.names.index(env.env.names[env.env.pool.index(part)])].cpu().numpy()
     for name, f in zip(sensor.body_names, fm):
         if np.linalg.norm(f) > 0.01:
