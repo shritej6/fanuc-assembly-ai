@@ -211,6 +211,7 @@ export_inc() {
           --inputs \$files --out ~/t12_data/lerobot/$name --workers ${EXPORT_WORKERS:-6} && \
         printf '%s\n' \$files >> ~/t12_data/a7/exported_$run.txt" || { echo "[export] $h $s failed"; continue; }
       "${SSH[@]}" "$h" "test -f ~/t12_data/lerobot/$name/meta/info.json" || continue
+      [[ "$h" == "$GATHER" ]] && { echo "[export] $h $s -> $GATHER:~/t12_data/lerobot/$name"; continue; }
       ssh -o ControlPath=none -o ConnectTimeout=15 -n "$h" "tar -C ~/t12_data/lerobot -cf - $name" | \
         ssh -o ControlPath=none -o ConnectTimeout=15 "$GATHER" "mkdir -p ~/t12_data/lerobot && tar -C ~/t12_data/lerobot -xf -" \
         && echo "[export] $h $s -> $GATHER:~/t12_data/lerobot/$name" || echo "[export] $h $s relay FAILED"
