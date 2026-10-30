@@ -156,6 +156,9 @@ class AssemblyCellEnv:
         """{env: (layout, frames_fn)}: place those cells now; each settles during the following step_tcp_many calls
         (holding home) while the other cells keep running, then shows up in ready_resets(). Its recorder episode
         starts at the settled scene (the settle steps are not recorded)."""
+        if self._obs is None:
+            raise RuntimeError("begin_reset needs one reset_many() first: the observation and recorder buffers only "
+                               "exist after Isaac Lab's env.reset()")
         busy = sorted(set(resets) & self.env.settling)
         if busy:
             raise ValueError(f"envs {busy} are already resetting")
