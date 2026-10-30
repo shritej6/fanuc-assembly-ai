@@ -76,7 +76,15 @@ class TcpAction(ActionTerm):
         tgt = self._asset.data.joint_pos_target.torch.clone()
         tgt[0, self.arm_ids] = torch.tensor(self.q_cmd, dtype=tgt.dtype, device=tgt.device)
         d = 0.0 if self.force_open else self.grip_cmd * self.travel
-        tgt[0, self.jaw_ids[0]], tgt[0, self.jaw_ids[1]] = -d, d
+        if self.cfg.jaw_lead_m > 0.0 and d >= 0.5 * self.travel:
+            # software rack-and-pinion: both jaws target the same closing depth, mean(|q_l|, |q_r|) plus a lead that
+            # squeezes with stiffness * lead = the per-finger force; an off-centre jaw pair feels stiffness * offset
+            q = self._asset.data.joint_pos.torch[0, self.jaw_ids]
+            m = 0.5 * (q[1] - q[0])
+            tgt[0, self.jaw_ids[0]] = -torch.clamp(m + self.cfg.jaw_lead_m, max=d)
+            tgt[0, self.jaw_ids[1]] = torch.clamp(m + self.cfg.jaw_lead_m, max=d)
+        else:
+            tgt[0, self.jaw_ids[0]], tgt[0, self.jaw_ids[1]] = -d, d
         self._asset.set_joint_position_target_index(target=tgt, full_data=True)
         self._env.accumulate_contacts()
         if self._k == self._env.cfg.decimation:      # last physics step before this env step renders
@@ -98,4 +106,5 @@ class TcpActionCfg(ActionTermCfg):
     asset_name: str = "robot"
     home_rad: tuple = MISSING
     jaw_travel_m: float = MISSING
+    jaw_lead_m: float = 0.0    # > 0: synchronised closing (see apply_actions); jaw force / jaw drive stiffness
     ik_every: int = 5          # physics steps between IK solves (10 ms at the 2 ms physics step)

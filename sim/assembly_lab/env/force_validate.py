@@ -32,6 +32,7 @@ ap.add_argument("--tol", type=float, default=0.05)
 ap.add_argument("--seated_down", type=float, default=1.0, help="N pressing the seated parts (low, so the twist "
                 "beats face friction and the peg walls carry it)")
 ap.add_argument("--seated_twists", type=lambda s: [float(x) for x in s.split(",")], default=[0.02, 0.05, 0.08])
+ap.add_argument("--offsets", type=lambda s: [float(x) for x in s.split(",")], default=[0.0, 0.5, 0.6, 1.0, 2.0])
 ap.add_argument("--drop_mm", type=float, default=4.0, help="offset-insert start height above the seat")
 ap.add_argument("--twist", type=float, default=0.02, help="N m about z; above mu N r_eff the part spins (not static)")
 args = ap.parse_args()
@@ -118,6 +119,7 @@ def run_group(products: list[int], push: list[str]):
     return env, rows, pushed
 
 
+CAD_CAPTURE_MM = 0.5    # objects.yaml capture_mm / clearance: the unchamfered 3 mm stops block any larger offset
 BASE_HOLD_N = 30.0      # presses each base onto the table so the base itself cannot turn (table friction ~0.2 N m)
 
 
@@ -178,10 +180,8 @@ def seated_twist(env, pairs: list[tuple[str, str]], twist: float) -> list[dict]:
 
 def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[dict]:
     """Drop each FREE part from 4 mm above its seat, offset `offset_mm` sideways (+x), and press it down 3 N for 2 s.
-    CAD capture of a free part: the 0.5 mm-chamfered peg tip (radius 1.5 mm) must land inside the 0.5 mm-chamfered
-    socket mouth (radius 3.0 mm), i.e. offsets up to 1.5 mm slide in and must seat (< 0.3 mm high); 2 mm must jam
-    (>= 2 mm high, on the peg tops). A part held stiffly by the gripper captures less (agent 2: 0.5 mm; demo_check
-    --offset_mm tests that)."""
+    CAD capture (height maps of the STLs): up to 0.5 mm offset in x the part goes in (< 0.3 mm high); from 0.6 mm the
+    unchamfered 3 mm front stops block it, so it must jam (>= 2 mm high)."""
     hold = _seat(env, pairs, "fv offset insert")
     e = env.env
     seats = {part: e.solver.seat_tf_for(part, base, e.object_poses_mm()) for base, part in pairs}
@@ -201,7 +201,7 @@ def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[d
              "height_above_seat_mm": round(float(d[2, 3]), 3),
              "tilt_deg": round(float(np.degrees(np.arccos(np.clip(d[2, 2], -1.0, 1.0)))), 3),
              "xy_from_seat_mm": [round(float(d[0, 3]), 3), round(float(d[1, 3]), 3)]}
-        r["ok"] = d[2, 3] < 0.3 if offset_mm <= 1.5 else d[2, 3] >= 2.0
+        r["ok"] = d[2, 3] < 0.3 if offset_mm <= CAD_CAPTURE_MM else d[2, 3] >= 2.0
         rows.append(r)
         print(f"[fv] offset insert {r}", flush=True)
     for base, part in pairs:
@@ -212,9 +212,9 @@ def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[d
 
 def main() -> None:
     env, rest, pushed = run_group([1, 2, 3, 4, 5, 6], ["F01", "F04", "M1_01", "M4_01", "M2_02", "M5_03"])
-    pairs = [("F04", "M4_01"), ("F01", "M1_01"), ("F05", "M5_01")]
+    pairs = [(f"F0{p}", f"M{p}_01") for p in range(1, 7)]
     seated = [r for t in args.seated_twists for r in seated_twist(env, pairs, t)]
-    inserts = [r for off in (0.0, 1.0, 2.0) for r in offset_insert(env, pairs, off)]
+    inserts = [r for off in args.offsets for r in offset_insert(env, pairs, off)]
     ok_rest = sum(r["ok"] for r in rest)
     report = {"tolerance": args.tol, "push": PUSH, "rest": rest, "pushed": pushed, "seated_twist": seated,
               "offset_insert": inserts,

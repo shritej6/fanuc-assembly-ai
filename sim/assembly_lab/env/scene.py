@@ -13,7 +13,6 @@ force on every object); cameras `table`, `side`, `wrist`.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import MISSING
 from pathlib import Path
@@ -42,6 +41,10 @@ CAMERA_PATHS = {"table": "/World/TableCam", "side": "/World/SideCam", "wrist": "
 ARM_STIFFNESS = 2.0e5     # N m / rad
 ARM_DAMPING = 2.0e3       # N m s / rad
 ARM_EFFORT = 1.0e4        # N m (no saturation: the real arm is position controlled)
+# Jaw drives (tcp_track_check.py): 10 x the starter stiffness keeps the software sync lead (force / stiffness) at
+# 0.085 mm for 34 N, and a 2 x force cap leaves the drive headroom to hold the pinch while it corrects asymmetry.
+JAW_STIFF_X = 10.0        # x scene_config.JAW_DRIVE_STIFF
+JAW_EFFORT_X = 2.0        # x the per-finger force
 
 
 def prim_name(uid: str) -> str:
@@ -65,7 +68,7 @@ def spawn_cell(prim_path: str, cfg: CellSpawnerCfg, translation=None, orientatio
 
     stage = sim_utils.get_current_stage()
     assets.build_cell(stage, cfg.contact)
-    assets.set_jaw_force(stage, cfg.jaw_force_n)
+    assets.set_jaw_force(stage, JAW_EFFORT_X * cfg.jaw_force_n)
     assets.robot_physics(stage, cfg.contact)
     solver = L.LayoutSolver()
     cache = assets.object_cache_dir(cfg.contact)
@@ -100,12 +103,9 @@ def make_scene_cfg(pool: list[str], contact: dict, jaw_force_n: float, home_rad:
         actuators={
             "arm": ImplicitActuatorCfg(joint_names_expr=["J[1-6]"], stiffness=ARM_STIFFNESS, damping=ARM_DAMPING,
                                        effort_limit_sim=ARM_EFFORT),
-            # jaw_r follows jaw_l through a mimic joint (assets.set_jaw_force): one drive, 2 x the per-finger force
-            "jaws": ImplicitActuatorCfg(joint_names_expr=["jaw_l"], stiffness=2.0 * C.JAW_DRIVE_STIFF,
-                                        damping=float(os.environ.get("T12_JAW_DAMP_X", "2.0")) * C.JAW_DRIVE_DAMP,
-                                        effort_limit_sim=2.0 * jaw_force_n),
-            "jaw_follower": ImplicitActuatorCfg(joint_names_expr=["jaw_r"], stiffness=0.0, damping=0.0,
-                                                effort_limit_sim=2.0 * jaw_force_n)})
+            # two independent drives, synchronised in software every physics step (actions.TcpAction)
+            "jaws": ImplicitActuatorCfg(joint_names_expr=["jaw_.*"], stiffness=JAW_STIFF_X * C.JAW_DRIVE_STIFF,
+                                        damping=C.JAW_DRIVE_DAMP, effort_limit_sim=JAW_EFFORT_X * jaw_force_n)})
     names = [prim_name(u) for u in pool]
     for n in names:
         setattr(scene, n, RigidObjectCfg(prim_path=f"{OBJECTS_ROOT}/{n}", spawn=None))

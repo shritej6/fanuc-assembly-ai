@@ -78,6 +78,7 @@ class _OmniPBR:
 
 _starter_shims()
 import cell
+import layout as L
 import scene_config as C
 from layout import pla_mass_kg, read_binary_stl
 
@@ -213,24 +214,15 @@ def install_teamv_fingers(stage, contact: dict) -> None:
         PhysxSchema.PhysxContactReportAPI.Apply(stage.GetPrimAtPath(jaw)).CreateThresholdAttr().Set(0.0)
 
 
-def set_jaw_force(stage, force_n: float) -> None:
-    """Couple the jaws like the real SMC MHZL2 (rack-and-pinion synchronised): jaw_r mimics jaw_l (q_r = -q_l, a
-    PhysX mimic-joint constraint) and only jaw_l is driven. With two independent drives the jaws rested asymmetric
-    (-5.6 / +3.9 mm) and the gripped part floated sideways under push loads. Through the gear constraint one drive
-    of 2 x force_n squeezes with force_n per finger (scene.py sets the same limit on the actuator)."""
-    left = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS['L']}")
-    right = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS['R']}")
-    UsdPhysics.DriveAPI.Get(left, "linear").GetMaxForceAttr().Set(2.0 * float(force_n))
-    drive_r = UsdPhysics.DriveAPI.Get(right, "linear")
-    for attr in (drive_r.GetStiffnessAttr(), drive_r.GetDampingAttr(), drive_r.GetMaxForceAttr()):
-        attr.Set(0.0)
-    mimic = PhysxSchema.PhysxMimicJointAPI.Apply(right, JAW_MIMIC_AXIS)
-    mimic.GetReferenceJointRel().SetTargets([left.GetPath()])
-    mimic.GetGearingAttr().Set(1.0)          # PhysX: q_follower + gearing * q_reference + offset = 0
-    mimic.GetOffsetAttr().Set(0.0)
-
-
-JAW_MIMIC_AXIS = "rotX"      # PhysX mimic API token for the single DOF of a 1-DOF joint (revolute or prismatic)
+def set_jaw_force(stage, max_force_n: float) -> None:
+    """Cap both independent jaw drives at max_force_n (scene.JAW_EFFORT_X x the per-finger force; scene.py sets the
+    same limit on the actuator). actions.TcpAction synchronises them in software like the real SMC MHZL2 rack-and-pinion: every physics
+    step both target mean(|q_l|, |q_r|) plus a lead, stiffness * lead = the per-finger force. A PhysX mimic joint
+    (hard q_r = -q_l constraint) did keep the jaws symmetric but put 500-690 N m of spurious torque on J5 (0.73 mm
+    TCP error); two plain drives without the retargeting rested asymmetric (-5.6 / +3.9 mm)."""
+    for side in ("L", "R"):
+        joint = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS[side]}")
+        UsdPhysics.DriveAPI.Get(joint, "linear").GetMaxForceAttr().Set(float(max_force_n))
 
 
 # ---------------------------------------------------------------- objects
@@ -271,8 +263,25 @@ def write_object_usd(out: Path, stl: Path, contact: dict) -> float:
     sdf.CreateSdfMarginAttr().Set(float(margin))
     sdf.CreateSdfNarrowBandThicknessAttr().Set(float(contact["sdf_narrow_band_thickness"]))
     contact_offsets(mesh, contact)
+    if stl.name.startswith("F"):
+        add_stop_boxes(stage, tris, contact)
     stage.GetRootLayer().Save()
     return mass
+
+
+def add_stop_boxes(stage, tris: np.ndarray, contact: dict) -> None:
+    """Exact, invisible box colliders over a base's unchamfered stops (stop_colliders.py), next to the SDF: the SDF
+    rounds their corners, and parts offset 1-1.5 mm slid off them and seated where CAD jams beyond 0.5 mm."""
+    import stop_colliders
+
+    for k, (x0, x1, y0, y1, z0, z1) in enumerate(stop_colliders.sharp_boxes(tris)):
+        cube = UsdGeom.Cube.Define(stage, f"/Object/stop_{k}")
+        cube.CreateSizeAttr(1.0)
+        cube.AddTranslateOp().Set(Gf.Vec3d((x0 + x1) / 2000.0, (y0 + y1) / 2000.0, (z0 + z1) / 2000.0))
+        cube.AddScaleOp().Set(Gf.Vec3f((x1 - x0) / 1000.0, (y1 - y0) / 1000.0, (z1 - z0) / 1000.0))
+        cube.CreateVisibilityAttr().Set(UsdGeom.Tokens.invisible)
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        contact_offsets(cube.GetPrim(), contact)
 
 
 def add_object(stage, prim_path: str, usd: Path, pose_world_m: np.ndarray) -> None:
@@ -284,10 +293,13 @@ def add_object(stage, prim_path: str, usd: Path, pose_world_m: np.ndarray) -> No
     xf.AddTransformOp().Set(Gf.Matrix4d(np.asarray(pose_world_m, float).T.tolist()))
     mesh = stage.GetPrimAtPath(prim_path + "/mesh")
     bind_physics(mesh, UsdShade.Material(stage.GetPrimAtPath(PLA_MAT)))
+    for child in prim.GetChildren():
+        if child.GetName().startswith("stop_"):
+            bind_physics(child, UsdShade.Material(stage.GetPrimAtPath(PLA_MAT)))
     UsdShade.MaterialBindingAPI.Apply(mesh).Bind(UsdShade.Material(stage.GetPrimAtPath(LOOK_BLACK_PLA)))
 
 
-OBJECT_USD_VERSION = 4      # bump when write_object_usd changes (v2: SDF margin floor; v3: sleep thresholds; v4: welded)
+OBJECT_USD_VERSION = 5      # bump when write_object_usd changes (v2 SDF margin floor, v3 sleep, v4 welded, v5 stop boxes)
 
 
 def object_cache_dir(contact: dict) -> Path:
@@ -309,6 +321,55 @@ def robot_physics(stage, contact: dict) -> None:
         if prim.HasAPI(UsdPhysics.RigidBodyAPI):
             PhysxSchema.PhysxContactReportAPI.Apply(prim).CreateThresholdAttr().Set(0.0)
             PhysxSchema.PhysxRigidBodyAPI.Apply(prim).CreateDisableGravityAttr().Set(True)
+    add_gripper_body_mass(stage)
+
+
+# SMC MHZL2-16D: 135 g (catalog listings: RS Online 841-2331, sparepartsnow, IMS Supply; confirmed by Main 2026-10-30).
+# The robot USD gives J6_link only the bare flange (13.8 g) and each actuator jaw C.JAW_MASS (blade + carriage); the
+# body carries the rest. A 14 g J6_link under two 32 g jaws left the PhysX articulation ill-conditioned: jaw_r's
+# drive force partly vanished (14 N reached the part for a 53 N drive) and a mimic joint put ~500 N m on J5.
+GRIPPER_TOTAL_KG = 0.135
+
+
+def add_gripper_body_mass(stage) -> None:
+    """Give J6_link the MHZL2 body mass (total minus the two modelled jaws) with the body mesh's inertia."""
+    body = UsdGeom.Mesh(stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/SMCBody"))
+    pts = np.array(body.GetPointsAttr().Get(), float)
+    tris = np.array(body.GetFaceVertexIndicesAttr().Get(), int).reshape(-1, 3)
+    xf = UsdGeom.Xformable(body.GetPrim())
+    to_link = np.array(xf.ComputeLocalToWorldTransform(Usd.TimeCode.Default())).T @ np.linalg.inv(
+        np.array(UsdGeom.Xformable(stage.GetPrimAtPath(cell.FLANGE)).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default())).T)
+    pts = pts @ to_link[:3, :3].T + to_link[:3, 3]
+    vol, com_b, inertia_b = L.mesh_mass_properties(pts, tris)
+    if vol <= 0:
+        raise RuntimeError(f"MHZL2 body mesh is not closed / outward ({vol * 1e6:.2f} cm3)")
+    m_b = GRIPPER_TOTAL_KG - 2 * C.JAW_MASS
+    inertia_b *= m_b / vol
+    api = UsdPhysics.MassAPI(stage.GetPrimAtPath(cell.FLANGE))
+    m0, com0 = api.GetMassAttr().Get(), np.array(api.GetCenterOfMassAttr().Get(), float)
+    d0 = np.array(api.GetDiagonalInertiaAttr().Get(), float)
+    q = api.GetPrincipalAxesAttr().Get()
+    if m0 is None or not m0 > 0 or not d0.any():
+        raise RuntimeError(f"{cell.FLANGE} has no authored mass properties to add the gripper body to")
+    q = Gf.Quatd(q.GetReal(), Gf.Vec3d(q.GetImaginary())) if q is not None else Gf.Quatd(1.0)
+    r0 = np.array(Gf.Matrix3d(Gf.Rotation(q)).GetTranspose(), float)
+    i0 = r0 @ np.diag(d0) @ r0.T
+    m = m0 + m_b
+    com = (m0 * com0 + m_b * com_b) / m
+    shift = lambda mass, d: mass * (d @ d * np.eye(3) - np.outer(d, d))
+    total = i0 + shift(m0, com0 - com) + inertia_b + shift(m_b, com_b - com)
+    w, vec = np.linalg.eigh(total)
+    if np.linalg.det(vec) < 0:
+        vec[:, 0] *= -1
+    rot = Gf.Matrix3d(*vec.T.flatten().tolist())             # Gf rows = principal axes in the link frame
+    api.GetMassAttr().Set(float(m))
+    api.GetCenterOfMassAttr().Set(Gf.Vec3f(*com.tolist()))
+    api.CreateDiagonalInertiaAttr().Set(Gf.Vec3f(*w.tolist()))
+    axes = rot.ExtractRotation().GetQuat()
+    api.CreatePrincipalAxesAttr().Set(Gf.Quatf(axes.GetReal(), Gf.Vec3f(axes.GetImaginary())))
+    print(f"[mass] J6_link + MHZL2 body {m_b * 1000:.1f} g (mesh {vol * 1e6:.1f} cm3): mass {m * 1000:.1f} g, "
+          f"com {np.round(com * 1000, 2).tolist()} mm, principal inertia {w.tolist()}", flush=True)
 
 
 def add_marker(stage, prim_path: str, pos_m) -> None:

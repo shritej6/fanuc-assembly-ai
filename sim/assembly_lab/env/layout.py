@@ -308,3 +308,16 @@ def default_pool(geometry: dict, spare_copies: int = 1) -> list[str]:
     for k in range(2, 2 + spare_copies):
         pool += [f"{tid}#{k}" for tid in sorted(geometry) if tid.startswith("M")]
     return pool
+
+
+def mesh_mass_properties(points: np.ndarray, tris: np.ndarray) -> tuple[float, np.ndarray, np.ndarray]:
+    """(volume, centroid, inertia tensor about the centroid at unit density) of a closed triangle mesh."""
+    a, b, c = points[tris[:, 0]], points[tris[:, 1]], points[tris[:, 2]]
+    v = np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0                 # signed tetra volumes from the origin
+    vol = v.sum()
+    com = ((a + b + c) * v[:, None]).sum(0) / (4.0 * vol)
+    cov = np.zeros((3, 3))
+    for t, w in zip(np.stack([a, b, c], 1), v):                          # canonical tetra covariance
+        cov += w / 20.0 * (t.T @ t + np.outer(t.sum(0), t.sum(0)))
+    cov -= vol * np.outer(com, com)
+    return float(vol), com, np.trace(cov) * np.eye(3) - cov
