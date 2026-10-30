@@ -1,0 +1,89 @@
+# Evaluation scenarios (T12/T18, agent 6). Read by eval/layouts.py; run by eval/run_eval.py.
+# Every case of docs/ROBOT_BRAIN.md section 3, on UNSEEN layouts: seeds start at seed_base, a range kept disjoint from
+# the Mimic generation seeds (mimic/skills.yaml datagen.seed = 1; env variation is drawn by Mimic, not from here).
+# Layouts are explicit dicts (INTERFACES.md), so the env's own randomisation never sees these seeds.
+#
+# requires: what the run needs beyond reset/step_tcp. A scenario whose requirement is missing is SKIPPED with the
+#   reason in the JSON (never counted as a pass):
+#   - env:<method>   the env must have that method (agent 1): inject_foreign, block_holes, force_release, inject_intruder
+#   - director:t09   the case is a planner decision (no GR00T motion of its own): it needs the T09 state machine as
+#                    the director (--director module:Class); the oracle director would pass it trivially.
+# perception: oracle = the director knows truth labels (damaged, fallen, blocker, wrong part) from the layout. This
+#   evaluates GR00T executing the planner's steps, not the detector or the classifier.
+
+version: 1
+seed_base: 910000        # eval seeds: 910000 + 100 * scenario index + layout index
+mimic_seed: 1            # sim/assembly_lab/mimic/skills.yaml datagen.seed (must not fall inside the eval range)
+layouts_per_scenario: 5  # default
+time_limit_s: 600        # default sim seconds per episode
+task_time_s: 120         # sim seconds per planner step before it counts as failed
+part_gap_mm: 12.0        # clear space between loose parts (crowded scenarios override it)
+video_layouts: 1         # record a video for the first N layouts of each scenario
+
+scenarios:
+  # ---- nominal: one product at a time, then two at once
+  - {id: nominal_M1, case: nominal, products: [M1]}
+  - {id: nominal_M2, case: nominal, products: [M2]}
+  - {id: nominal_M3, case: nominal, products: [M3]}
+  - {id: nominal_M4, case: nominal, products: [M4]}
+  - {id: nominal_M5, case: nominal, products: [M5]}
+  - {id: nominal_M6, case: nominal, products: [M6]}
+  - {id: nominal_pair, case: nominal, products: [M2, M5], time_limit_s: 1200}
+
+  # ---- section 3 cases
+  - id: unknown_piece           # not one of the 30 -> defect area if grippable, else obstacle (+ Andon if it blocks)
+    case: foreign
+    products: [M3]
+    requires: [env:inject_foreign]
+  - id: damaged_part            # defect area, then a spare
+    case: damaged
+    products: [M4]
+  - id: damaged_no_spare        # no spare -> Andon
+    case: damaged
+    products: [M6]
+    spare: false
+  - id: fallen_part             # reject + spare (the arm cannot reorient)
+    case: fallen
+    products: [M2]
+  - id: unsure_check            # second close-up, then Andon with both pictures
+    case: unsure
+    products: [M5]
+    requires: [director:t09]
+  - id: lookalike_by_size       # a decoy look-alike lies on the table; the right one goes in, the decoy stays put
+    case: lookalike
+    products: [M4]
+  - id: lookalike_guides
+    case: lookalike
+    products: [M6]
+    decoy_role: "03"
+  - id: missing_then_spare      # build the other product first, then the spare
+    case: missing
+    products: [M1, M4]
+    time_limit_s: 1200
+  - id: missing_no_spare        # ... then Andon (which part, which slot)
+    case: missing
+    products: [M3, M5]
+    spare: false
+    time_limit_s: 1200
+  - id: crowded_blocker         # move the blocker to an empty spot first; never push
+    case: crowded
+    products: [M5]
+  - id: wont_seat               # retry once, then pull out and inspect; blocked holes -> Andon
+    case: wont_seat
+    products: [M1]
+    requires: [env:block_holes]
+  - id: dropped_in_carry        # find it; upright -> re-pick; fallen -> reject + spare
+    case: dropped
+    products: [M2]
+    requires: [env:force_release]
+  - id: fix_wrong_part          # wrong part under another: remove in reverse sheet order, fix, rebuild
+    case: fix_reverse
+    products: [M1]
+  - id: final_two_angle_check   # finished product: close-up from 2 wrist angles
+    case: final_check
+    products: [M3]
+    requires: [director:t09]
+  - id: intrusion               # freeze (keep holding), re-scan, re-plan
+    case: intrusion
+    products: [M6]
+    requires: [env:inject_intruder]
