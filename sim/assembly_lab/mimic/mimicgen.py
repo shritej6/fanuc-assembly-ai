@@ -99,6 +99,7 @@ class RecordedDemo:
     part: np.ndarray          # (T + 1, 4, 4) mm, CAD local frame of the target before each action (+ after the last)
     line: int = 0             # 0-based line of this episode in <file>.meta.jsonl (agent 3's drop tags use it)
     carry_drift_mm: float = 0.0  # agent 3's in_hand_drift_mm["carry"]: worst slip of the held part in free carry
+    pull_drift_mm: float = 0.0   # in_hand_drift_mm["pull"] (pull_out, newer metas): slip in the fingers during the pull
 
 
 def _part_local_mm(d, oid: str, z_off_m: float, to_local) -> np.ndarray:
@@ -151,7 +152,7 @@ def read_recorded(path: str, to_local=None, kept_only: bool = True) -> list[Reco
                                     len(json.loads(tries)) if isinstance(tries, str) else 0,
                                     d["actions"][()].astype(np.float64), o["tcp_pose"][()].astype(np.float64)[:, :6],
                                     frames, _part_local_mm(d, oid, z_off, to_local), n,
-                                    float(drift.get("carry", 0.0))))
+                                    float(drift.get("carry", 0.0)), float(drift.get("pull", 0.0))))
     return out
 
 
@@ -226,6 +227,8 @@ def load_sources(paths, signals: list[str], refs: list[str], held_seat: list[boo
                 why = "drop tag"
             elif demo.carry_drift_mm > MAX_CARRY_DRIFT_MM:
                 why = "carry drift"
+            elif demo.pull_drift_mm > MAX_CARRY_DRIFT_MM:  # agent 3 2026-10-30: the same limit for the pull itself
+                why = "pull drift"
             elif cases is not None and demo.case not in cases:
                 why = f"case {demo.case}"
             elif max_seat_tries is not None and demo.seat_tries > max_seat_tries:

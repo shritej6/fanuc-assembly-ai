@@ -165,6 +165,10 @@ def test_sources_skip_drop_tags_and_carry_drift(recorded, tmp_path):
         f["data/demo_0"].attrs["in_hand_drift_mm"] = json.dumps({"carry": 0.6, "contact": 0.1})
     _, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
     assert counts["used"] == 0 and counts["skipped"]["carry drift"] == 1
+    with h5py.File(path, "a") as f:
+        f["data/demo_0"].attrs["in_hand_drift_mm"] = json.dumps({"carry": 0.2, "pull": 2.0})
+    _, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
+    assert counts["skipped"]["pull drift"] == 1
 
 
 def test_stage_seeds_copies_only_closed_files_with_drop_lists(tmp_path):
@@ -225,3 +229,13 @@ def test_env_manifest_md5_is_stamped_from_the_repo_copy(tmp_path):
     assert env_manifest_md5(tmp_path) == "unverified"
     (tmp_path / "ENV_MANIFEST_MD5").write_text("dbcfe5fd48d73cde763ffdc4316291a5\n")
     assert env_manifest_md5(tmp_path) == "dbcfe5fd48d73cde763ffdc4316291a5"
+
+
+def test_pull_drift_is_the_worst_slide_in_the_fingers():
+    from sim.assembly_lab.mimic.generate import pull_drift_mm
+
+    def obs(tcp_z, part_z):
+        return {"tcp_pose": [300, 0, tcp_z, 180, 0, 0], "sim": {"object_poses": {"M1_01": [300, 0, part_z, 0, 0, 0]}}}
+
+    before = obs(100, 50)
+    assert pull_drift_mm(before, [obs(110, 60), obs(120, 68), obs(130, 80)], "M1_01") == 2.0

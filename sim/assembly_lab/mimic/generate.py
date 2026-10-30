@@ -111,6 +111,14 @@ def connector(pose: np.ndarray, gripper: float, goal: np.ndarray, skill: str, su
     return m.segments
 
 
+def pull_drift_mm(before: dict, during: list[dict], oid: str) -> float:
+    """Worst slide of the part in the fingers during the pull, from the grip read once the fingers closed."""
+    from ..skills import checks
+
+    h0 = checks.in_hand(before, oid)[:3, 3]
+    return round(max(float(np.linalg.norm(checks.in_hand(o, oid)[:3, 3] - h0)) for o in during), 4)
+
+
 def free_space_starts(subtasks) -> list[bool]:
     """Subtasks that start in free space (the first, or one on a new reference frame): trimmed to their corridor and
     reached through a rise-cross-descend connector. The others continue in contact from where the last one ended."""
@@ -324,10 +332,15 @@ class Generator:
             if len(tail):
                 rec.run([replace(segs[-1], rows=tail)])
         elif sub.term_signal == "pulled":
+            n0 = len(rec.frames)
             rec.run(segs)
             ok, why = checks.grasp_ok(self.ep["before_pull"], rec.obs, oid)
             if not ok:
                 raise EpisodeFailed(f"pull-out: {why}")
+            pulled = [f.obs for f in rec.frames[n0:]] + [rec.obs]
+            drift = pull_drift_mm(self.ep["before_pull"], pulled, oid)
+            rec.gate_log.check("pull_drift_mm", drift, MAX_CARRY_DRIFT_MM)
+            rec.gate_log.require(("pull_drift_mm",))  # the pull_out seed filter, applied to generated demos too
             rec.in_hand[oid] = checks.in_hand(rec.obs, oid)
             rec.holding = oid
         elif sub.term_signal == "placed":
