@@ -12,6 +12,11 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
+# CAD source and assembly sheets (cad/); versions of the workspace that produced the committed sheets
+cad = ["cadquery>=2.8", "matplotlib>=3.11", "numpy>=1.26"]
+
+[tool.uv]
+default-groups = ["dev", "cad"]
 
 [tool.ruff]
 line-length = 120

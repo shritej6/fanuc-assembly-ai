@@ -6,7 +6,7 @@ An agent may only start a task that is READY and owned by it.
 | ID | Task | Owner | Status | Branch | Depends on | Day |
 |---|---|---|---|---|---|---|
 | T01 | Repo scaffold, rules, coord files, contracts v1, vendored official client (`run.py --mock` passes) | CLAUDE | REVIEW | main (initial commit) | none | Mon |
-| T02 | Assembly instruction sheets for all 6 products (pictures from CAD, order 01→04, reverse to dismantle) | CLAUDE | READY | feature/T02-assembly-sheets | T01 | Mon |
+| T02 | Assembly instruction sheets for all 6 products (pictures from CAD, order 01→04, reverse to dismantle) | CLAUDE | REVIEW | feature/T02-assembly-sheets | T01 | Mon |
 | T03 | CAD risk ranking v0 (min wall, slender features, layer direction, insertion clearance) → spare/print list | CLAUDE | READY | feature/T03-cad-risk | T01 | Mon |
 | T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | BACKLOG | feature/T04-catalog | T01 | Mon |
 | T05 | Adapter layer: `robot/adapter.py` (Sim / Mock / Cell), `policy.py` wiring, UF0 TCP-box guard | CODEX | BACKLOG | feature/T05-adapters | T01 | Mon |
@@ -30,6 +30,7 @@ An agent may only start a task that is READY and owned by it.
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
 | T25 | Test-bed data: parts in installed orientation (arm cannot reorient), any yaw, fallen -> reject; ~70k images (test-bed, fixed-height identity close-ups, insertion alignment, reject/spare) + Cosmos | CLAUDE | IN PROGRESS (READY by user 2026-10-28) | feature/T25-testbed-sets | T08, T11 | Wed–Thu |
+| T29 | Grasp + insert frames for all 30 objects from the printed CAD (grip pads, TCP point, roll offset, STL->installed frame), checked against the real gripper gap | CLAUDE | IN PR (user, 2026-10-29) | feature/T29-grasp-frames | T02 | Thu |
 
 ## User-only actions (physical / accounts)
 
