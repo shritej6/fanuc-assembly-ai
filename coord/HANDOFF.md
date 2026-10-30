@@ -2,6 +2,23 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 16:55 · T12 Mimic generation + LeRobot export (agent 7, running) · CLAUDE · on `feature/T12-mimic`
+
+- Changed: `sim/assembly_lab/mimic/` (`mimicgen.py` reads agent 3's recorder files, `generate.py` pick_insert +
+  pull_out with agent 3's gates, `run_generation.py` per-host workers, `scale_generation.sh` controller,
+  `stage_seeds.py` closed seeds + drop tags, `export_lerobot.py` / `validate_lerobot.py`), tests in
+  `tests/assembly_lab/test_mimic_*.py`.
+- Run (Mac controller): `M=sim/assembly_lab/mimic/scale_generation.sh; HOSTS="..." $M repo; $M seeds;
+  MIMIC_GROUPS="pick_insert:5 pick_insert:6" TARGET=300 MAXATT=600 $M launch g1 fa-g21:0,1:1; $M status g1;
+  SKILLS="pick_insert pull_out" $M export g1`.
+- Gates: generated demos pass the same gates as agent 3's sources, plus carry drift and pull drift <= 0.5 mm. Seeds
+  are only closed files (run10_closed.txt), minus drop tags. Every demo carries `env_manifest_md5` (repo_sync2:
+  dbcfe5fd48d73cde763ffdc4316291a5).
+- Measured (1 env per GPU, 3 cameras): pull_out p4 4/4 kept, 563 s per attempt; pick_insert p4 2/3 kept on the
+  current code. Cameras off: 1.49 vs 1.87 s/step, so rendering is about 20 % of the step.
+- Not training data: runs t*, r0, r1, p1 and tnc (the old env, or tests).
+- Next: more GPUs as each gets GEN_READY, incremental export and prepare_dataset at 150 / 300 accepted, num_envs > 1.
+
 ## 2026-10-30 01:30 · T18 evaluator + real-arm guard (agent 6, in progress) · CLAUDE · not yet committed
 
 - Changed (untracked on `feature/T12-mimic`): `policy_learn/deploy/` (`guards.py`, `groot_policy.py` `GrootPolicy`,
