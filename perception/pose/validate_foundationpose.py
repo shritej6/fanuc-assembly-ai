@@ -99,7 +99,7 @@ def check_geometry(args: argparse.Namespace) -> None:
     cfg = load_camera_config(args.repo)
     K = intrinsics(cfg, tuple(cfg["resolution"]))
     inside = total = 0
-    for chunk in sorted(args.data.glob("chunk_*")):
+    for chunk in sorted(c for data in args.data for c in data.glob("chunk_*")):
         for path in sorted((chunk / "labels").glob("*.json"))[: args.scenes]:
             for item in scene_items(chunk, path.stem, cfg):
                 u, v = project(K, item["truth"])
@@ -118,34 +118,88 @@ def load_views(chunk: Path, stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarr
     return rgb, depth, seg
 
 
+def make_estimator(args: argparse.Namespace, item: dict, cache: dict, models: tuple) -> tuple:
+    if item["object_id"] not in cache:
+        from estimater import FoundationPose
+
+        scorer, refiner, glctx = models
+        mesh = trimesh.load(args.repo / item["stl"], force="mesh")
+        mesh.apply_scale(0.001)
+        estimator = FoundationPose(model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh,
+                                   scorer=scorer, refiner=refiner, debug=0, glctx=glctx,
+                                   debug_dir=str(args.out / "debug"))
+        if args.upright_prior_deg is not None:
+            apply_upright_prior(estimator, args.up_stl[item["object_id"]], args.up_cam, args.upright_prior_deg)
+        cache[item["object_id"]] = (mesh, estimator, np.asarray(mesh.sample(2000)))
+    return cache[item["object_id"]]
+
+
+def apply_upright_prior(estimator, up_stl: np.ndarray, up_cam: np.ndarray, max_deg: float) -> None:
+    import torch
+
+    from perception.pose.grasp_tolerance import upright_hypotheses
+
+    keep = upright_hypotheses(estimator.rot_grid.cpu().numpy(), up_stl, up_cam, max_deg)
+    if not keep.any():
+        raise ValueError(f"no start rotation within {max_deg} deg of upright")
+    estimator.rot_grid = estimator.rot_grid[torch.as_tensor(keep, device=estimator.rot_grid.device)]
+
+
+def noisy(depth: np.ndarray, sigma_mm: float, rng: np.random.Generator) -> np.ndarray:
+    """Depth with i.i.d. Gaussian noise on valid pixels (sigma in mm); 0 stays 0 (no reading)."""
+    if sigma_mm <= 0:
+        return depth
+    return np.where(depth > 0, depth + rng.normal(0.0, sigma_mm / 1000.0, depth.shape), 0.0).astype(np.float32)
+
+
+def estimate_rows(args, state: dict, chunk: Path, stem: str, K: np.ndarray, cfg: dict) -> list[dict]:
+    """--repeat registrations of each scored object in one scene, until a part has --per-part objects.
+
+    Fresh depth noise is drawn for every registration when --depth-noise-mm is set.
+    """
+    items = [i for i in scene_items(chunk, stem, cfg) if state["counts"].get(i["object_id"], 0) < args.per_part
+             and (args.rest is None or i["rest"] == args.rest)]
+    if not items:
+        return []
+    rgb, depth, seg = load_views(chunk, stem)
+    models, cache, rng = state["models"], state["cache"], state["rng"]
+    rows = []
+    for item in items:
+        mask = seg == item["seg_value"]
+        if mask.sum() < 30 or state["counts"].get(item["object_id"], 0) >= args.per_part:
+            continue
+        state["counts"][item["object_id"]] = state["counts"].get(item["object_id"], 0) + 1
+        _, estimator, points = make_estimator(args, item, cache, models)
+        for run_index in range(args.repeat):
+            estimate = np.asarray(estimator.register(K=K, rgb=rgb, depth=noisy(depth, args.depth_noise_mm, rng),
+                                                     ob_mask=mask, iteration=args.iterations))
+            rows.append({"scene": f"{chunk.name}/{stem}", "uid": item["uid"], "object_id": item["object_id"],
+                         "rest": item["rest"], "run": run_index, "depth_noise_mm": args.depth_noise_mm,
+                         "estimate": estimate.tolist(), "truth": item["truth"].tolist(),
+                         **errors(estimate, item["truth"], points)})
+    return rows
+
+
 def run(args: argparse.Namespace) -> None:
     import nvdiffrast.torch as dr
-    from estimater import FoundationPose, PoseRefinePredictor, ScorePredictor
+    from estimater import PoseRefinePredictor, ScorePredictor
 
     cfg = load_camera_config(args.repo)
     K = intrinsics(cfg, DEPTH_SIZE)
-    scorer, refiner, glctx = ScorePredictor(), PoseRefinePredictor(), dr.RasterizeCudaContext()
-    meshes, estimators, rows = {}, {}, []
-    stems = [(c, p.stem) for c in sorted(args.data.glob("chunk_*")) for p in sorted((c / "labels").glob("*.json"))]
-    for chunk, stem in stems[: args.scenes]:
-        rgb, depth, seg = load_views(chunk, stem)
-        for item in scene_items(chunk, stem, cfg):
-            mask = seg == item["seg_value"]
-            if mask.sum() < 30:
-                continue
-            if item["object_id"] not in estimators:
-                mesh = trimesh.load(args.repo / item["stl"], force="mesh")
-                mesh.apply_scale(0.001)
-                meshes[item["object_id"]] = mesh
-                estimators[item["object_id"]] = FoundationPose(
-                    model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh, scorer=scorer,
-                    refiner=refiner, debug=0, glctx=glctx, debug_dir=str(args.out / "debug"))
-            estimate = estimators[item["object_id"]].register(K=K, rgb=rgb, depth=depth, ob_mask=mask,
-                                                              iteration=args.iterations)
-            points = np.asarray(meshes[item["object_id"]].sample(2000))
-            rows.append({"scene": f"{chunk.name}/{stem}", "uid": item["uid"], "object_id": item["object_id"],
-                         "rest": item["rest"],
-                         **errors(np.asarray(estimate), item["truth"], points)})
+    if args.upright_prior_deg is not None:
+        from perception.pose.grasp_tolerance import load_grasp_points
+
+        # the calibrated (unjittered) camera: the cell knows its calibration, not each scene's jitter
+        nominal = np.linalg.inv(camera_to_world_cv(cfg, {"translate_mm": [0, 0, 0], "rotate_deg": [0, 0, 0]}))
+        args.up_cam = nominal[:3, :3] @ np.array([0.0, 0.0, 1.0])
+        args.up_stl = {k: v["up_stl"] for k, v in load_grasp_points(args.grasp_frames).items()}
+    state = {"models": (ScorePredictor(), PoseRefinePredictor(), dr.RasterizeCudaContext()), "cache": {},
+             "rng": np.random.default_rng(args.seed), "counts": {}}
+    rows: list[dict] = []
+    for data in args.data:
+        stems = [(c, p.stem) for c in sorted(data.glob("chunk_*")) for p in sorted((c / "labels").glob("*.json"))]
+        for chunk, stem in stems[: args.scenes]:
+            rows.extend(estimate_rows(args, state, chunk, stem, K, cfg))
     write_summary(rows, args.out)
 
 
@@ -173,10 +227,19 @@ def write_summary(rows: list[dict], out: Path) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--repo", type=Path, required=True, help="this repository (STL files, camera config)")
-    ap.add_argument("--data", type=Path, required=True, help="a test-bed set directory holding chunk_* (e.g. N)")
+    ap.add_argument("--data", type=Path, nargs="+", required=True,
+                    help="test-bed set directories holding chunk_* (e.g. N S)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--scenes", type=int, default=60)
     ap.add_argument("--iterations", type=int, default=5)
+    ap.add_argument("--repeat", type=int, default=1, help="registrations per object, for repeatability")
+    ap.add_argument("--depth-noise-mm", type=float, default=0.0, help="i.i.d. Gaussian depth noise per pixel")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--per-part", type=int, default=10**9, help="stop scoring a part after this many objects")
+    ap.add_argument("--rest", choices=("installed", "fallen"), help="score only parts in this rest state")
+    ap.add_argument("--upright-prior-deg", type=float,
+                    help="start only from rotations whose installed up is within this angle of the table's up")
+    ap.add_argument("--grasp-frames", type=Path, help="cad/grasp_frames.json (installed up axis per part)")
     ap.add_argument("--check-geometry", action="store_true", help="only verify the camera/object poses against boxes")
     args = ap.parse_args()
     check_geometry(args) if args.check_geometry else run(args)
