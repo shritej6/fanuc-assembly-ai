@@ -119,9 +119,11 @@ export_run() {
         rm -rf ~/t12_data/lerobot/$name; PATH=~/t12_data/a7/bin:\$PATH $TOOLS python -m sim.assembly_lab.mimic.export_lerobot \
           --inputs \$files --out ~/t12_data/lerobot/$name --workers 8" || echo "[export] $h $s failed"
       if [[ "$h" != "$GATHER" ]]; then
-        mkdir -p "$SCR/lerobot"
-        "${RSYNC[@]}" "${h}:t12_data/lerobot/$name" "$SCR/lerobot/" 2>/dev/null || continue
-        "${RSYNC[@]}" "$SCR/lerobot/$name" "${GATHER}:t12_data/lerobot/"
+        # relay host -> controller -> gather as one tar stream, replacing the previous export of this host
+        "${SSH[@]}" "$h" "test -f ~/t12_data/lerobot/$name/meta/info.json" || continue
+        ssh -o ControlPath=none -o ConnectTimeout=15 -n "$h" "tar -C ~/t12_data/lerobot -cf - $name" | \
+          ssh -o ControlPath=none -o ConnectTimeout=15 "$GATHER" \
+            "mkdir -p ~/t12_data/lerobot && rm -rf ~/t12_data/lerobot/$name && tar -C ~/t12_data/lerobot -xf -"
       fi
     done
   done
