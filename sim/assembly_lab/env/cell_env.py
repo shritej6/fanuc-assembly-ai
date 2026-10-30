@@ -22,6 +22,18 @@ settled False if the cap is hit). Layout x, y place each object's CAD local orig
 CellEnvCfg(disturbances=True) adds the eval hooks inject_foreign(x, y, yaw), block_holes(part, base),
 force_release(), inject_intruder(x, y) / clear_intruder() (mimic_env.py).
 Policies never read `sim` (INTERFACES.md).
+
+Several cells in one process (CellEnvCfg(num_envs=N), lockstep): every cell resets together and steps together.
+
+    obs = env.reset_many([layout_0, ..., layout_N-1], [frames_fn_0, ...])   # list of N obs, settled together
+    out = env.step_tcp_many({0: (rows, dt), 3: (rows, dt)})                # {env: obs} for the envs asked
+    env.end_episode(env_id, ok)                                             # recorder: mark + export that cell now
+
+step_tcp_many plays every listed env's rows at once; an env that runs out of rows (or is not listed) holds its last
+TCP command until the longest list is done (those hold steps are recorded too: end_episode an env before its next
+step_tcp_many when its episode is over, and reset_many drops whatever it recorded after that). An IK failure in one
+env does not stop the others: that env holds and its obs carries "ik_error" (with one env, TcpError is raised as
+before).
 """
 
 from __future__ import annotations
@@ -68,6 +80,7 @@ class CellEnvCfg:
     contact_overrides: dict = field(default_factory=dict)
     disturbances: bool = False                # eval props + hooks: inject_foreign, block_holes, force_release, inject_intruder
     jitter: dict = field(default_factory=dict)  # per-episode {cam_pos_mm, cam_rot_deg, light_frac}; {} = nominal views
+    num_envs: int = 1                         # cells stepped in lockstep in this process (reset_many / step_tcp_many)
 
 
 class AssemblyCellEnv:
@@ -92,7 +105,7 @@ class AssemblyCellEnv:
                                jaw_force_n=self.cfg.jaw_force_n, settle_s=self.cfg.settle_s, drop_mm=self.cfg.drop_mm,
                                home_rad=np.deg2rad([home[f"J{i}"] for i in range(1, 7)]), sampler=self.cfg.sampler,
                                device=self.cfg.device, jitter=self.cfg.jitter,
-                               extras=self.cfg.disturbances)
+                               extras=self.cfg.disturbances, num_envs=self.cfg.num_envs)
         env_cfg.terminations.time_out = None          # the recorder layer decides when an episode ends
         env_cfg.terminations.success = None
         if self.cfg.record_to:
@@ -107,6 +120,7 @@ class AssemblyCellEnv:
         self.dt = self.env.physics_dt
         self.masses = {u: L.pla_mass_kg(REPO / self.solver.geometry[L.type_id(u)]["stl"])[0] for u in self.pool}
         self._obs = None
+        self._ended: set[int] = set()     # envs whose recorder episode end_episode exported (later steps are idle)
         if self.cfg.disturbances:     # only then do the hooks exist (eval/run_eval.py checks hasattr)
             for name in ("inject_foreign", "block_holes", "force_release", "inject_intruder", "clear_intruder"):
                 setattr(self, name, getattr(self.env, name))
@@ -117,10 +131,35 @@ class AssemblyCellEnv:
 
     # ------------------------------------------------------------------ API
     def reset(self, layout: dict, frames_fn=None) -> dict:
-        self.env.layout_override, self.env.frames_fn = layout, frames_fn
+        if self.cfg.num_envs != 1:
+            raise ValueError(f"reset() drives one cell; this env has {self.cfg.num_envs}: use reset_many")
+        return self.reset_many([layout], [frames_fn])[0]
+
+    def reset_many(self, layouts: list[dict], frames_fns: list | None = None) -> list[dict]:
+        """Reset every cell together: env k gets layouts[k] (+ frames_fns[k]); all settle at once."""
+        if len(layouts) != self.cfg.num_envs:
+            raise ValueError(f"reset_many needs one layout per env ({self.cfg.num_envs}), got {len(layouts)}")
+        fns = frames_fns or [None] * len(layouts)
+        for ep, lay, fn in zip(self.env.eps, layouts, fns):
+            ep.layout_override, ep.frames_fn = lay, fn
+        rm = self.env.recorder_manager
+        if self._ended and rm is not None:
+            rm.reset(env_ids=sorted(self._ended))      # drop the idle steps recorded after end_episode
+        self._ended.clear()
         self._obs, _ = self.env.reset()
         self.env._metrics.reset_chunk()
-        return self._observe()
+        return [self._observe(e) for e in range(self.cfg.num_envs)]
+
+    def end_episode(self, env_id: int, ok: bool) -> None:
+        """Mark env_id's recorder episode succeeded / failed and export it now (its cell idles until reset_many)."""
+        import torch
+
+        rm = self.env.recorder_manager
+        if rm is not None:
+            ids = torch.tensor([env_id], device=self.env.device)
+            rm.set_success_to_episodes(ids, torch.tensor([[bool(ok)]], dtype=torch.bool, device=self.env.device))
+            rm.export_episodes(ids)
+        self._ended.add(int(env_id))
 
     def set_frames(self, frames_mm: dict) -> None:
         """Set / move the Mimic frames after reset (prefer reset(frames_fn=...): the recorder's initial state is
@@ -129,19 +168,40 @@ class AssemblyCellEnv:
 
     def step_tcp(self, rows, dt: float) -> dict:
         """Play act_tcp rows like the real cell: each row is an absolute TCP target reached over dt seconds."""
-        import torch
+        if self.cfg.num_envs != 1:
+            raise ValueError(f"step_tcp drives one cell; this env has {self.cfg.num_envs}: use step_tcp_many")
+        return self.step_tcp_many({0: (rows, dt)})[0]
 
+    def _env_steps(self, env_id: int, rows, dt: float) -> list[list[float]]:
+        """The per-env-step actions of one act_tcp chunk: round(dt / step_dt) straight-line sub-targets per row, each
+        starting where the previous sub-target ended as TcpAction.tcp_cmd will hold it (the float32 action)."""
         rows = np.atleast_2d(np.asarray(rows, dtype=float))
         if not 1 <= len(rows) <= 100 or not 0.1 - 1e-9 <= dt <= 1.0 + 1e-9:
             raise tcp.TcpError(f"chunk of {len(rows)} rows at dt={dt}: CellClient allows 1-100 rows, dt 0.1-1.0 s")
         rows = np.array([tcp.check_row(r) for r in rows])
         n = max(1, round(dt / self.cfg.step_dt))
-        self.env._metrics.reset_chunk()
+        prev, out = self.term.tcp_cmd[env_id], []
         for row in rows:
-            for pose in tcp.interpolate(self.term.tcp_cmd, row, n):
-                action = torch.tensor([[*pose, row[6]]], dtype=torch.float32, device=self.env.device)
-                self._obs, *_ = self.env.step(action)
-        return self._observe()
+            for pose in tcp.interpolate(prev, row, n):
+                out.append([*pose, row[6]])
+                prev = np.asarray(pose, dtype=np.float32).astype(float)
+        return out
+
+    def step_tcp_many(self, requests: dict) -> dict[int, dict]:
+        """{env_id: (rows, dt)} -> {env_id: obs}: every listed env plays its chunk; the others hold."""
+        import torch
+
+        plans = {int(e): self._env_steps(int(e), rows, dt) for e, (rows, dt) in requests.items()}
+        ids = sorted(plans)
+        self.env._metrics.reset_chunk(ids)
+        term = self.term
+        for k in range(max(len(p) for p in plans.values())):
+            act = np.concatenate([term.tcp_cmd, term.grip_cmd[:, None]], axis=1)
+            for e in ids:
+                if k < len(plans[e]) and e not in term.ik_errors:
+                    act[e] = plans[e][k]
+            self._obs, *_ = self.env.step(torch.tensor(act, dtype=torch.float32, device=self.env.device))
+        return {e: self._observe(e) for e in ids}
 
     def close(self) -> None:
         if self.cfg.record_to and self.env.recorder_manager is not None:
@@ -152,38 +212,41 @@ class AssemblyCellEnv:
             AssemblyCellEnv.app = None
 
     # ------------------------------------------------------------------ obs
-    def _images(self) -> tuple[dict, dict]:
+    def _images(self, env_id: int = 0) -> tuple[dict, dict]:
         images, depth = {}, {}
         for cam in self.cfg.cameras:
             out = self.env.scene[cam].data.output
-            images[cam] = out["rgb"].torch[0, ..., :3].cpu().numpy().astype(np.uint8)
+            images[cam] = out["rgb"].torch[env_id, ..., :3].cpu().numpy().astype(np.uint8)
             if "distance_to_image_plane" in out:
-                d = np.nan_to_num(out["distance_to_image_plane"].torch[0, ..., 0].cpu().numpy(), posinf=0.0)
+                d = np.nan_to_num(out["distance_to_image_plane"].torch[env_id, ..., 0].cpu().numpy(), posinf=0.0)
                 depth[cam] = np.clip(d * 1000.0, 0, 65535).astype(np.uint16)
         return images, depth
 
-    def _observe(self) -> dict:
-        e = self.env
-        images, depth = self._images()
+    def _observe(self, env_id: int = 0) -> dict:
+        e, k = self.env, env_id
+        ep = e.eps[k]
+        images, depth = self._images(k)
         by_name = dict(zip(e.names, e.pool))
-        now, chunk = e._metrics.current(), e._metrics.chunk()
-        signals = e._signals() if e.task.target is not None else {}
-        obs = {"t": time.time(), "images": images, "joints": np.array(e.joints_obs(), dtype=np.float32),
-               "tcp_pose": [round(v, 3) for v in e.tcp_obs()], "instruction": e.instruction,
+        now, chunk = e._metrics.current(k), e._metrics.chunk(k)
+        signals = e._signals(k) if ep.task.target is not None else {}
+        obs = {"t": time.time(), "images": images, "joints": np.array(e.joints_obs(k), dtype=np.float32),
+               "tcp_pose": [round(v, 3) for v in e.tcp_obs(k)], "instruction": ep.instruction,
                "sim": {"object_poses": {u: [round(v, 3) for v in L.pose6_from_tf(tf)]
-                                        for u, tf in e.object_poses_mm().items()},
+                                        for u, tf in e.object_poses_mm(k).items()},
                        "contact": {by_name[n]: v for n, v in now["contact"].items()},
                        "contact_peak": {by_name[n]: v for n, v in chunk["contact_peak"].items()},
                        "robot_touch": {by_name[n]: v for n, v in chunk["robot_touch"].items()},
                        "jaw_n": {by_name[n]: v for n, v in now["jaw_n"].items()},
-                       "signals": signals, "signals_latched": dict(e.task.latched),
-                       "target": e.task.target, "base": e.task.base,
-                       "frames": {f: L.pose6_from_tf(tf) for f, tf in e.frames_mm().items()},
-                       "tcp_cmd": [float(v) for v in self.term.tcp_cmd], "clipped_rows": self.term.clipped,
-                       "on_table": {u: p.role != "parked" for u, p in e.placements.items()},
-                       "settled": bool(e.settled), "settle_s": round(float(e.settle_s), 3),
-                       "settle_detail": e.settle_detail}}
-        sub = e._metrics.substep_log()
+                       "signals": signals, "signals_latched": dict(ep.task.latched),
+                       "target": ep.task.target, "base": ep.task.base,
+                       "frames": {f: L.pose6_from_tf(tf) for f, tf in e.frames_mm(k).items()},
+                       "tcp_cmd": [float(v) for v in self.term.tcp_cmd[k]], "clipped_rows": int(self.term.clipped[k]),
+                       "on_table": {u: p.role != "parked" for u, p in ep.placements.items()},
+                       "settled": bool(ep.settled), "settle_s": round(float(ep.settle_s), 3),
+                       "settle_detail": ep.settle_detail}}
+        if k in self.term.ik_errors:
+            obs["sim"]["ik_error"] = self.term.ik_errors[k]
+        sub = e._metrics.substep_log(k)
         if sub is not None:
             obs["sim"]["substep_contact"] = {by_name[n]: v for n, v in sub.items()}
         if depth:

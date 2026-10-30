@@ -4,11 +4,17 @@ this same class for agent 3's recorder (reset(layout) / step_tcp).
 
 Frames: every pose Mimic sees (eef, target eef, object frames) is a 4x4 in UF0 metres. Actions are act_tcp rows
 [x, y, z, w, p, r, gripper] in UF0 mm / deg, one per env step (step_dt, default 0.1 s). EEF name: "er4ia".
+
+Several cells (cfg.scene.num_envs > 1): every cell has its own episode state (EnvEpisode: task, layout, settle
+result); every method that reads or writes one cell takes env_id (default 0), the Mimic hooks take env_ids, and the
+observation / termination terms return one row per env. Poses are relative to each env's origin (UF0 of that cell).
+A reset with layouts for several envs places them all, then settles them together (settle.py).
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 
 import contact_metrics
 import layout as L
@@ -22,6 +28,7 @@ from isaaclab.envs import ManagerBasedRLEnvCfg, ManagerBasedRLMimicEnv
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
 from isaaclab.utils import configclass
 from scene import FRAMES, JAW_STIFF_X, make_scene_cfg, prim_name
+from settle import settle
 from task import SKILL_SIGNALS, TaskState
 
 # reset settling (coordinator spec): at rest for hold_s, give up at cap_s
@@ -30,6 +37,20 @@ SETTLE = {"lin_m_s": 0.001, "ang_rad_s": math.radians(0.5), "dforce_n": 0.05, "h
 
 EEF = "er4ia"
 SKILLS_YAML = L.REPO / "sim" / "assembly_lab" / "mimic" / "skills.yaml"
+
+
+@dataclass
+class EnvEpisode:
+    """One cell's episode state."""
+
+    task: TaskState
+    layout_override: dict | None = None
+    frames_fn: object = None
+    placements: dict = field(default_factory=dict)
+    settled: bool = False
+    settle_s: float = 0.0
+    settle_detail: dict = field(default_factory=dict)
+    instruction: str = ""
 
 
 @configclass
@@ -45,15 +66,10 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         self.solver = L.LayoutSolver()
         self.pool = list(t["pool"])
         self.names = [prim_name(u) for u in self.pool]
-        self.task = TaskState(t["skill"], self.solver)
+        self.eps = [EnvEpisode(TaskState(t["skill"], self.solver)) for _ in range(cfg.scene.num_envs)]
         self.rng = np.random.default_rng(t.get("seed", 0))
-        self.layout_override: dict | None = None
-        self.frames_fn = None
-        self.placements: dict = {}
-        self.settled, self.settle_s, self.settle_detail = False, 0.0, {}
-        self.instruction = ""
         self._sig_key = None
-        self._sig_now: dict = {}
+        self._sig_now: list[dict] = [{} for _ in self.eps]
         self._metrics = None
         self._wrist = None
         self._nominal = None
@@ -61,6 +77,30 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self._metrics = contact_metrics.ContactMetrics(self)
         self._wrist = self._wrist_mount()
+
+    # ------------------------------------------------------------------ env 0 shorthands (one-cell callers)
+    task = property(lambda self: self.eps[0].task)
+    placements = property(lambda self: self.eps[0].placements)
+    settled = property(lambda self: self.eps[0].settled)
+    settle_s = property(lambda self: self.eps[0].settle_s)
+    settle_detail = property(lambda self: self.eps[0].settle_detail)
+    instruction = property(lambda self: self.eps[0].instruction)
+
+    @property
+    def layout_override(self) -> dict | None:
+        return self.eps[0].layout_override
+
+    @layout_override.setter
+    def layout_override(self, lay: dict | None) -> None:
+        self.eps[0].layout_override = lay
+
+    @property
+    def frames_fn(self):
+        return self.eps[0].frames_fn
+
+    @frames_fn.setter
+    def frames_fn(self, fn) -> None:
+        self.eps[0].frames_fn = fn
 
     # ------------------------------------------------------------------ poses (UF0 mm 4x4 unless named _m)
     def _top(self) -> float:
@@ -87,67 +127,89 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
             out.append(L.world_m_to_uf0(tf, self._top()))
         return out
 
-    def object_poses_mm(self) -> dict[str, np.ndarray]:
-        return dict(zip(self.pool, self._rows_to_mm(self._pose_rows(self.names))))
+    def object_poses_mm(self, env_id: int = 0) -> dict[str, np.ndarray]:
+        return dict(zip(self.pool, self._rows_to_mm(self._pose_rows(self.names, env_id))))
 
-    def frames_mm(self) -> dict[str, np.ndarray]:
-        return dict(zip(FRAMES, self._rows_to_mm(self._pose_rows(list(FRAMES)))))
+    def frames_mm(self, env_id: int = 0) -> dict[str, np.ndarray]:
+        return dict(zip(FRAMES, self._rows_to_mm(self._pose_rows(list(FRAMES), env_id))))
 
     def _to_m(self, tf_mm: np.ndarray) -> torch.Tensor:
         m = np.array(tf_mm, float)
         m[:3, 3] /= 1000.0
         return torch.tensor(m, dtype=torch.float32, device=self.device)
 
-    def frame_matrix_m(self, name: str) -> torch.Tensor:
-        return self._to_m(self.frames_mm()[name]).unsqueeze(0)
+    def _env_list(self, env_ids=None) -> list[int]:
+        if env_ids is None:
+            return list(range(self.num_envs))
+        return [int(e) for e in (env_ids.tolist() if isinstance(env_ids, torch.Tensor) else env_ids)]
 
-    def arm_q(self) -> np.ndarray:
+    def frame_matrix_m(self, name: str, env_ids=None) -> torch.Tensor:
+        """(len(env_ids), 4, 4) frame pose, UF0 m."""
+        return torch.stack([self._to_m(self.frames_mm(e)[name]) for e in self._env_list(env_ids)])
+
+    def arm_q(self, env_id: int = 0) -> np.ndarray:
         term = self.action_manager.get_term("tcp")
-        return self.scene["robot"].data.joint_pos.torch[0].cpu().double().numpy()[term.arm_ids]
+        return self.scene["robot"].data.joint_pos.torch[env_id].cpu().double().numpy()[term.arm_ids]
 
-    def eef_matrix_m(self) -> torch.Tensor:
-        x, y, z, w, p, r = tcp.tcp_pose(self.arm_q())
-        tf = L.translation(x, y, z)
-        tf[:3, :3] = L.fanuc_rotation(w, p, r)
-        return self._to_m(tf).unsqueeze(0)
+    def eef_matrix_m(self, env_ids=None) -> torch.Tensor:
+        """(len(env_ids), 4, 4) TCP pose from the simulated joints (FK), UF0 m."""
+        out = []
+        for e in self._env_list(env_ids):
+            x, y, z, w, p, r = tcp.tcp_pose(self.arm_q(e))
+            tf = L.translation(x, y, z)
+            tf[:3, :3] = L.fanuc_rotation(w, p, r)
+            out.append(self._to_m(tf))
+        return torch.stack(out)
 
-    def joints_obs(self) -> list[float]:
+    def joints_obs(self, env_id: int = 0) -> list[float]:
         term = self.action_manager.get_term("tcp")
-        q = self.scene["robot"].data.joint_pos.torch[0].cpu().double().numpy()
+        q = self.scene["robot"].data.joint_pos.torch[env_id].cpu().double().numpy()
         grip = float(np.clip(-q[term.jaw_ids[0]] / term.travel, 0.0, 1.0))
         return [*np.rad2deg(q[term.arm_ids]), grip]
 
-    def tcp_obs(self) -> list[float]:
-        return tcp.tcp_pose(self.arm_q())
+    def tcp_obs(self, env_id: int = 0) -> list[float]:
+        return tcp.tcp_pose(self.arm_q(env_id))
 
     # ------------------------------------------------------------------ layout / frames
-    def _write_poses(self, names: list[str], tfs_mm: list[np.ndarray]) -> None:
-        origin = self._origin_m(0)
+    def _write_poses(self, names: list[str], tfs_mm: list[np.ndarray], env_id: int = 0) -> None:
+        origin = self._origin_m(env_id)
+        ids = torch.tensor([env_id], device=self.device)
         for n, tf in zip(names, tfs_mm):
             w = L.uf0_to_world_m(tf, self._top())
             pose = torch.tensor([[*(w[:3, 3] + origin), *L.quat_xyzw(w[:3, :3])]], dtype=torch.float32,
                                 device=self.device)
             obj = self.scene[n]
-            obj.write_root_pose_to_sim_index(root_pose=pose)
+            obj.write_root_pose_to_sim_index(root_pose=pose, env_ids=ids)
             if n not in FRAMES:                       # frame markers are kinematic
-                obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros((1, 6), device=self.device))
+                obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros((1, 6), device=self.device), env_ids=ids)
 
-    def apply_layout(self, lay: dict) -> dict[str, np.ndarray]:
-        """Place every pool object (parked if not named), arm home, gripper open, settle; returns body poses."""
+    def _place(self, lay: dict, env_id: int) -> None:
+        """Every pool object of env `env_id` at its layout pose (parked if not named), arm home, gripper open."""
         floor_z = -(self._top() + L.UF0_ABOVE_BASE_M) * 1000.0
-        self.placements = {p.uid: p for p in self.solver.solve(lay, self.pool, floor_z)}
+        ep = self.eps[env_id]
+        ep.placements = {p.uid: p for p in self.solver.solve(lay, self.pool, floor_z)}
         drop = L.translation(0, 0, self.cfg.t12["drop_mm"])
-        self._write_poses(self.names, [drop @ self.placements[u].tf_uf0 for u in self.pool])
-        self.park_extras()
+        self._write_poses(self.names, [drop @ ep.placements[u].tf_uf0 for u in self.pool], env_id)
+        self.park_extras(env_id)
         robot = self.scene["robot"]
-        q = robot.data.default_joint_pos.torch.clone()
-        robot.write_joint_state_to_sim_index(position=q, velocity=torch.zeros_like(q), full_data=True)
-        robot.set_joint_position_target_index(target=q, full_data=True)
-        self.action_manager.get_term("tcp").reset()
-        self.settled, self.settle_s = self._settle()
-        self.instruction = lay.get("instruction", "")
+        ids = torch.tensor([env_id], device=self.device)
+        q = robot.data.default_joint_pos.torch[ids].clone()
+        robot.write_joint_state_to_sim_index(position=q, velocity=torch.zeros_like(q), env_ids=ids)
+        robot.set_joint_position_target_index(target=q, env_ids=ids)
+        self.action_manager.get_term("tcp").reset([env_id])
+        ep.instruction = lay.get("instruction", "")
+
+    def _settle_envs(self, env_ids: list[int]) -> None:
+        for e, (ok, sim_s, detail) in settle(self, env_ids, SETTLE, self.cfg.t12["settle_s"]).items():
+            ep = self.eps[e]
+            ep.settled, ep.settle_s, ep.settle_detail = ok, sim_s, detail
         self.sync_wrist_camera()
-        return self.object_poses_mm()
+
+    def apply_layout(self, lay: dict, env_id: int = 0) -> dict[str, np.ndarray]:
+        """Place every pool object (parked if not named), arm home, gripper open, settle; returns body poses."""
+        self._place(lay, env_id)
+        self._settle_envs([env_id])
+        return self.object_poses_mm(env_id)
 
     # ------------------------------------------------------------------ wrist camera
     def _wrist_mount(self):
@@ -155,7 +217,7 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
 
         The RTX render does not move a camera prim parented under an articulation link when physics writes the link
         pose (measured: the wrist sensor stayed at its spawn pose while J6 moved 0.5 m), so the camera is re-posed
-        from the simulated J6 pose before every render."""
+        from the simulated J6 pose before every render. The transform is (E, 4, 4): per-env jitter moves each mount."""
         if "wrist" not in self.scene.sensors:
             return None
         from pxr import UsdGeom
@@ -164,7 +226,8 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         prim = self.scene.stage.GetPrimAtPath(env_path(CAMERA_PATHS["wrist"], 0))   # every env's mount is the same
         local = np.array(UsdGeom.Xformable(prim).GetLocalTransformation(), dtype=float).T   # column-vector form
         body = list(self.scene["robot"].body_names).index(prim.GetParent().GetName())
-        return body, torch.tensor(local, dtype=torch.float32, device=self.device)
+        local_t = torch.tensor(local, dtype=torch.float32, device=self.device)
+        return body, local_t.unsqueeze(0).repeat(self.num_envs, 1, 1)
 
     def sync_wrist_camera(self) -> None:
         if self._wrist is None:
@@ -172,93 +235,49 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         import isaaclab.utils.math as M
 
         body, local = self._wrist
-        pose = self.scene["robot"].data.body_link_pose_w.torch[:, body]            # (1, 7) pos + quat xyzw
-        link = torch.eye(4, device=self.device).unsqueeze(0)
+        pose = self.scene["robot"].data.body_link_pose_w.torch[:, body]            # (E, 7) pos + quat xyzw
+        link = torch.eye(4, device=self.device).repeat(self.num_envs, 1, 1)
         link[:, :3, :3] = M.matrix_from_quat(pose[:, 3:7])
         link[:, :3, 3] = pose[:, :3]
         cam = link @ local
         self.scene["wrist"].set_world_poses(cam[:, :3, 3], M.quat_from_matrix(cam[:, :3, :3]), convention="opengl")
 
-    def _settle(self) -> tuple[bool, float]:
-        """Step physics until every object is at rest for SETTLE["hold_s"]; give up at SETTLE["cap_s"] and say so.
-
-        Motion is the displacement over a sliding SETTLE["window_s"] window (position change / window < 1 mm/s,
-        rotation change / window < 0.5 deg/s), so a one-step solver velocity spike is not motion but sustained
-        motion still fails; every object's net contact force must change < 0.05 N between physics steps. On failure
-        settle_detail names the worst object and value for each quantity. Returns (settled, simulated seconds)."""
-        import isaaclab.utils.math as M
-
-        objs = [self.scene[n] for n in self.names]
-        net = self.scene["object_contact"]
-        dt = self.physics_dt
-        need, cap = max(1, round(SETTLE["hold_s"] / dt)), round(SETTLE["cap_s"] / dt)
-        w = max(1, round(SETTLE["window_s"] / dt))
-        hist_p, hist_q = [], []
-        prev_f, calm, best = None, 0, 0
-        fails = {"lin": 0, "ang": 0, "dforce": 0}
-        self.settle_detail = {}
-        lin = ang = dfo = None
-        for k in range(1, cap + 1):
-            self.scene.write_data_to_sim()
-            self.sim.step(render=False)
-            self.scene.update(dt=dt)
-            hist_p.append(torch.stack([o.data.root_link_pos_w.torch[0] for o in objs]).clone())
-            hist_q.append(torch.stack([o.data.root_link_quat_w.torch[0] for o in objs]).clone())
-            f = net.data.net_forces_w.torch[0].clone()
-            dfo = None if prev_f is None else (f - prev_f).norm(dim=-1)
-            prev_f = f
-            if len(hist_p) <= w or dfo is None:
-                continue
-            p0, q0 = hist_p.pop(0), hist_q.pop(0)
-            lin = (hist_p[-1] - p0).norm(dim=-1) / (w * dt)
-            ang = M.quat_error_magnitude(hist_q[-1], q0) / (w * dt)
-            ok = {"lin": bool(lin.max() < SETTLE["lin_m_s"]), "ang": bool(ang.max() < SETTLE["ang_rad_s"]),
-                  "dforce": bool(dfo.max() < SETTLE["dforce_n"])}
-            for key, good in ok.items():
-                fails[key] += 0 if good else 1
-            calm = calm + 1 if all(ok.values()) else 0
-            best = max(best, calm)
-            if calm >= need and k * dt >= self.cfg.t12["settle_s"]:
-                return True, k * dt
-        if lin is None:                                          # cap shorter than one window: nothing measured
-            self.settle_detail = {"longest_calm_s": 0.0, "failed_steps": fails}
-            return False, cap * dt
-        f_order = list(net.body_names)
-        worst = lambda v: (self.pool[int(v.argmax())], float(v.max()))
-        self.settle_detail = {
-            "max_lin_mm_s": [worst(lin)[0], round(worst(lin)[1] * 1000, 3)],
-            "max_ang_deg_s": [worst(ang)[0], round(math.degrees(worst(ang)[1]), 3)],
-            "max_dforce_N": [self.pool[self.names.index(f_order[int(dfo.argmax())])], round(float(dfo.max()), 4)],
-            "longest_calm_s": round(best * dt, 3), "failed_steps": fails}
-        return False, cap * dt
-
-    def set_frames(self, frames_mm: dict[str, np.ndarray]) -> None:
+    def set_frames(self, frames_mm: dict[str, np.ndarray], env_id: int = 0) -> None:
         missing = [f for f in FRAMES if f not in frames_mm]
         if missing:
             raise ValueError(f"set_frames needs all of {FRAMES}; missing {missing}")
-        self._write_poses(list(FRAMES), [np.asarray(frames_mm[f], float) for f in FRAMES])
+        self._write_poses(list(FRAMES), [np.asarray(frames_mm[f], float) for f in FRAMES], env_id)
         self.scene.write_data_to_sim()
-        self.task.infer(self.object_poses_mm(), {f: np.asarray(frames_mm[f], float) for f in FRAMES})
+        self.eps[env_id].task.infer(self.object_poses_mm(env_id), {f: np.asarray(frames_mm[f], float) for f in FRAMES})
         self._sig_key = None
 
-    def sample_episode(self) -> None:
-        """Reset event: the thin layer's layout (+ frames callback) when given, else the configured sampler."""
+    def sample_episode(self, env_ids=None) -> None:
+        """Reset event: each env's layout (+ frames callback) when the thin layer gave one, else the configured
+        sampler. Envs with a layout are placed first and settled together."""
         if self._restoring:
             return
-        if self.layout_override is not None:
-            poses = self.apply_layout(self.layout_override)
-            frames = self.frames_fn(poses) if self.frames_fn else _placeholder_frames(poses, self.pool)
-            self.layout_override, self.frames_fn = None, None
-        else:
-            frames = _load_sampler(self.cfg.t12.get("sampler"))(self, self.rng)
-        self.set_frames(frames)
-        self.apply_jitter()
+        ids = self._env_list(env_ids)
+        given = [e for e in ids if self.eps[e].layout_override is not None]
+        for e in given:
+            self._place(self.eps[e].layout_override, e)
+        if given:
+            self._settle_envs(given)
+        for e in ids:
+            ep = self.eps[e]
+            if e in given:
+                poses = self.object_poses_mm(e)
+                frames = ep.frames_fn(poses) if ep.frames_fn else _placeholder_frames(poses, self.pool)
+                ep.layout_override, ep.frames_fn = None, None
+            else:
+                frames = _load_sampler(self.cfg.t12.get("sampler"))(_CellView(self, e), self.rng)
+            self.set_frames(frames, e)
+        self.apply_jitter(ids)
         if self._metrics is not None:
-            self._metrics.reset_episode()
+            self._metrics.reset_episode(ids)
 
-    def reachable(self, tf_mm: np.ndarray) -> bool:
+    def reachable(self, tf_mm: np.ndarray, env_id: int = 0) -> bool:
         try:
-            tcp.solve(L.pose6_from_tf(tf_mm), self.arm_q())
+            tcp.solve(L.pose6_from_tf(tf_mm), self.arm_q(env_id))
             return True
         except tcp.TcpError:
             return False
@@ -278,33 +297,40 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
 
     def step_peak_vector(self) -> torch.Tensor:
         if self._metrics is None:      # the observation manager probes term shapes before __init__ finishes
-            return torch.zeros((1, 4), device=self.device)
+            return torch.zeros((self.num_envs, 4), device=self.device)
         return self._metrics.peak_vector()
 
-    def _signals(self) -> dict[str, bool]:
-        key = int(self.common_step_counter), int(self.episode_length_buf[0])
-        if key != self._sig_key and self.task.target is not None and self._metrics is not None:
-            m = self._metrics.current()
-            t = self.names[self.pool.index(self.task.target)]
-            self._sig_now = self.task.signals(self.object_poses_mm(), self.frames_mm(), m["jaw_n"][t],
-                                              m["touch_n"][t], self.action_manager.get_term("tcp").grip_cmd)
+    def _signals(self, env_id: int = 0) -> dict[str, bool]:
+        """Instantaneous signals of env `env_id`; all envs are evaluated together once per env step (and after a
+        reset / set_frames), which also advances every env's latches."""
+        key = int(self.common_step_counter), tuple(self.episode_length_buf.tolist())
+        if key != self._sig_key and self._metrics is not None:
+            grip = self.action_manager.get_term("tcp").grip_cmd
+            for e, ep in enumerate(self.eps):
+                if ep.task.target is None:
+                    continue
+                m = self._metrics.current(e)
+                t = self.names[self.pool.index(ep.task.target)]
+                self._sig_now[e] = ep.task.signals(self.object_poses_mm(e), self.frames_mm(e), m["jaw_n"][t],
+                                                   m["touch_n"][t], float(grip[e]))
             self._sig_key = key
-        return self._sig_now
+        return self._sig_now[env_id]
 
-    def latched_signal(self, name: str) -> bool:
-        self._signals()
-        return self.task.latched.get(name, False)
+    def latched_signal(self, name: str, env_id: int = 0) -> bool:
+        self._signals(env_id)
+        return self.eps[env_id].task.latched.get(name, False)
 
-    def episode_success(self) -> bool:
-        if self.task.target is None:
+    def episode_success(self, env_id: int = 0) -> bool:
+        task = self.eps[env_id].task
+        if task.target is None:
             return False
-        now = self._signals()
-        t = self.names[self.pool.index(self.task.target)]
-        return self.task.success(now, self._metrics.current()["touch_n"][t])
+        now = self._signals(env_id)
+        t = self.names[self.pool.index(task.target)]
+        return task.success(now, self._metrics.current(env_id)["touch_n"][t])
 
     # ------------------------------------------------------------------ Isaac Lab Mimic API
     def get_robot_eef_pose(self, eef_name: str, env_ids=None) -> torch.Tensor:
-        return self.eef_matrix_m()
+        return self.eef_matrix_m(env_ids)
 
     def target_eef_pose_to_action(self, target_eef_pose_dict: dict, gripper_action_dict: dict,
                                   action_noise_dict: dict | None = None, env_id: int = 0) -> torch.Tensor:
@@ -331,13 +357,15 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         return {EEF: actions[..., -1:]}
 
     def get_object_poses(self, env_ids=None) -> dict[str, torch.Tensor]:
-        poses = {f: self._to_m(tf).unsqueeze(0) for f, tf in self.frames_mm().items()}
-        poses.update({n: self._to_m(tf).unsqueeze(0) for n, tf in zip(self.names, self.object_poses_mm().values())})
-        return poses
+        ids = self._env_list(env_ids)
+        per_env = [{**self.frames_mm(e), **dict(zip(self.names, self.object_poses_mm(e).values()))} for e in ids]
+        return {k: torch.stack([self._to_m(p[k]) for p in per_env]) for k in per_env[0]}
 
     def get_subtask_term_signals(self, env_ids=None) -> dict[str, torch.Tensor]:
-        self._signals()
-        return {s: torch.tensor([float(self.task.latched.get(s, False))], device=self.device)
+        ids = self._env_list(env_ids)
+        for e in ids:
+            self._signals(e)
+        return {s: torch.tensor([float(self.eps[e].task.latched.get(s, False)) for e in ids], device=self.device)
                 for s in SKILL_SIGNALS[self.task.skill]}
 
     def reset_to(self, state, env_ids, seed=None, is_relative=False):
@@ -346,14 +374,31 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
             out = super().reset_to(state, env_ids, seed=seed, is_relative=is_relative)
         finally:
             self._restoring = False
-        self.action_manager.get_term("tcp").reset()
+        ids = self._env_list(env_ids)
+        self.action_manager.get_term("tcp").reset(ids)
         self.sync_wrist_camera()
-        self.apply_jitter()
-        self.task.infer(self.object_poses_mm(), self.frames_mm())
+        self.apply_jitter(ids)
+        for e in ids:
+            self.eps[e].task.infer(self.object_poses_mm(e), self.frames_mm(e))
         self._sig_key = None
         if self._metrics is not None:
-            self._metrics.reset_episode()
+            self._metrics.reset_episode(ids)
         return out
+
+
+class _CellView:
+    """What an episode sampler sees of one cell (sampler.py signature: api.apply_layout / pool / solver / skill /
+    reachable), bound to env `env_id`."""
+
+    def __init__(self, env: CellMimicEnv, env_id: int):
+        self.env, self.env_id = env, env_id
+        self.pool, self.solver, self.skill = env.pool, env.solver, env.skill
+
+    def apply_layout(self, lay: dict) -> dict[str, np.ndarray]:
+        return self.env.apply_layout(lay, self.env_id)
+
+    def reachable(self, tf_mm: np.ndarray) -> bool:
+        return self.env.reachable(tf_mm, self.env_id)
 
 
 def _placeholder_frames(poses: dict, pool: list[str]) -> dict[str, np.ndarray]:

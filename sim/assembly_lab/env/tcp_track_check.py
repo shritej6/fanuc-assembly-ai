@@ -143,14 +143,14 @@ def report(env, tag: str) -> float:
     robot = e.scene["robot"]
     q = robot.data.joint_pos.torch[0].cpu().double().numpy()
     q_arm = q[term.arm_ids]
-    err = np.rad2deg(q_arm - np.asarray(term.q_cmd))
+    err = np.rad2deg(q_arm - np.asarray(term.q_cmd[0]))
     fk = np.asarray(tcp.tcp_pose(q_arm))
-    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd)))
-    d = fk[:3] - np.asarray(term.tcp_cmd[:3])
+    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd[0])))
+    d = fk[:3] - np.asarray(term.tcp_cmd[0, :3])
     jaw = q[term.jaw_ids] * 1000.0
     from scene import ARM_STIFFNESS
     print(f"[track] {tag}: dq_deg={np.round(err, 4).tolist()} torque_Nm={np.round(np.deg2rad(err) * ARM_STIFFNESS, 1).tolist()}"
-          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[:3], 3).tolist()}"
+          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[0, :3], 3).tolist()}"
           f" jaws_mm={np.round(jaw, 3).tolist()}", flush=True)
     return float(np.linalg.norm(d))
 

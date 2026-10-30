@@ -91,10 +91,11 @@ def env_torque(normal_f, points, normals, n_counts, n_starts, friction, f_points
 
 
 def robot_loaded(touch_n, pair_n, eps=1e-3):
-    """(N,) bool: the robot loads object i this physics step, i.e. a robot link touches it (touch_n[i] > eps) or it
-    touches an object a robot link touches (pair_n[i, j] > eps, the contact force between objects i and j)."""
+    """(..., N) bool: the robot loads object i this physics step, i.e. a robot link touches it (touch_n[i] > eps) or it
+    touches an object a robot link touches (pair_n[i, j] > eps, the contact force between objects i and j). Leading
+    dims (envs) broadcast: touch_n (..., N), pair_n (..., N, N)."""
     touched = touch_n > eps
-    return touched | ((pair_n > eps) & touched[None, :]).any(-1)
+    return touched | ((pair_n > eps) & touched[..., None, :]).any(-1)
 
 
 def guard_torque(raw_tz, loaded):

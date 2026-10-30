@@ -93,3 +93,25 @@ def test_part_twisted_by_the_robot_on_a_peg_reads_the_peg_torque():
     loaded = T.robot_loaded(np.array([3.0, 0.0, 0.0]), pair)
     guard = T.guard_torque(raw, loaded)
     assert np.allclose(guard, [0.06, 0.06, 0.0]) and raw[2] > 0.0
+
+
+def test_robot_loaded_per_env_matches_each_env_alone():
+    rng = np.random.default_rng(3)
+    touch = rng.choice([0.0, 0.5], size=(4, 5))
+    pair = rng.choice([0.0, 0.2], size=(4, 5, 5))
+    batched = T.robot_loaded(touch, pair)
+    assert batched.shape == (4, 5)
+    for e in range(4):
+        assert np.array_equal(batched[e], T.robot_loaded(touch[e], pair[e]))
+
+
+def test_env_major_buffer_gives_each_env_its_own_torque():
+    # 2 envs x 2 bodies, flattened env-major as the contact view reports them; only env 1 body 0 has a couple
+    fn, p, nrm, c, s, _, _, fc, fs = _empty(4, 1)
+    fr = np.array([[0.0, 2.0, 0.0], [0.0, -2.0, 0.0]])
+    fp = np.array([[0.01, 0.0, 0.0], [-0.01, 0.0, 0.0]]) + [5.0, 0.0, 0.0]      # env 1 sits 5 m along x
+    fc, fs = fc.copy(), fs.copy()
+    fc[2, 0], fs[2, 0] = 2, 0
+    com = np.array([[0.0, 0, 0], [0.1, 0, 0], [5.0, 0, 0], [5.1, 0, 0]])
+    tz, _, _ = T.env_torque(fn, p, nrm, c, s, fr, fp, fc, fs, com, np.tile([0, 0, 1.0], (4, 1)), max_arm=0.1)
+    assert np.allclose(tz.reshape(2, 2), [[0.0, 0.0], [0.04, 0.0]])

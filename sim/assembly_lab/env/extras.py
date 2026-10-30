@@ -15,10 +15,17 @@ def _axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
     return np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * k @ k
 
 
+def _light_env(path: str) -> int | None:
+    """The env a light prim belongs to (/World/envs/env_<k>/...), None for a shared light."""
+    parts = path.split("/")
+    return int(parts[3][4:]) if len(parts) > 3 and parts[2] == "envs" and parts[3].startswith("env_") else None
+
+
 class CellExtrasMixin:
     # ------------------------------------------------------------------ visual jitter (Mimic diversity)
     def _nominal_views(self) -> dict:
-        """Nominal camera poses (fixed cameras: world; wrist: J6 mount) and light intensities, read once."""
+        """Nominal camera poses (fixed cameras: world, (E, ...); wrist: J6 mounts (E, 4, 4)) and light intensities,
+        read once. Lights: every authored light (each cell's own, plus the shared dome)."""
         from pxr import UsdLux
 
         views = {}
@@ -31,15 +38,16 @@ class CellExtrasMixin:
             if prim.HasAPI(UsdLux.LightAPI):
                 attr = UsdLux.LightAPI(prim).GetIntensityAttr()
                 if attr.HasAuthoredValue():
-                    lights.append((attr, float(attr.Get())))
+                    lights.append((attr, float(attr.Get()), _light_env(str(prim.GetPath()))))
         return {"views": views, "wrist": None if self._wrist is None else self._wrist[1].clone(), "lights": lights}
 
-    def apply_jitter(self) -> None:
+    def apply_jitter(self, env_ids=None) -> None:
         """Per-episode camera / light jitter from cfg.t12["jitter"] = {cam_pos_mm, cam_rot_deg, light_frac} (0 = off).
 
-        Each fixed camera and the wrist mount move by N(0, cam_pos_mm) per axis and rotate by N(0, cam_rot_deg) about a
-        random axis; every authored light intensity is scaled by U(1 - light_frac, 1 + light_frac). Nominal values are
-        restored first, so jitter never accumulates."""
+        For each env in env_ids (default all), each fixed camera and the wrist mount move by N(0, cam_pos_mm) per axis
+        and rotate by N(0, cam_rot_deg) about a random axis; every authored light intensity is scaled by
+        U(1 - light_frac, 1 + light_frac): each env's own lights, and the shared dome only when every env is reset
+        together (it lights all cells). Nominal values are restored first, so jitter never accumulates."""
         j = self.cfg.t12.get("jitter") or {}
         pos_m, rot_rad, frac = j.get("cam_pos_mm", 0.0) / 1000.0, math.radians(j.get("cam_rot_deg", 0.0)), j.get("light_frac", 0.0)
         if not (pos_m or rot_rad or frac):
@@ -57,14 +65,19 @@ class CellExtrasMixin:
             d[:3, 3] = torch.tensor(self.rng.normal(0.0, pos_m, 3), dtype=torch.float32, device=self.device)
             return d
 
+        ids = self._env_list(env_ids)
         for cam, (pos, quat) in self._nominal["views"].items():
-            d = delta()
-            self.scene[cam].set_world_poses(pos + d[:3, 3], M.quat_from_matrix(d[:3, :3] @ M.matrix_from_quat(quat)),
-                                            convention="opengl")
+            for e in ids:
+                d = delta()
+                q = M.quat_from_matrix(d[:3, :3] @ M.matrix_from_quat(quat[e:e + 1]))
+                self.scene[cam].set_world_poses((pos[e] + d[:3, 3]).unsqueeze(0), q, env_ids=[e], convention="opengl")
         if self._nominal["wrist"] is not None:
-            self._wrist = (self._wrist[0], self._nominal["wrist"] @ delta())
+            for e in ids:
+                self._wrist[1][e] = self._nominal["wrist"][e] @ delta()
             self.sync_wrist_camera()
-        for attr, value in self._nominal["lights"]:
+        for attr, value, owner in self._nominal["lights"]:
+            if (owner is None and len(ids) < self.num_envs) or (owner is not None and owner not in ids):
+                continue
             attr.Set(value * float(self.rng.uniform(1.0 - frac, 1.0 + frac)))
 
     # ------------------------------------------------------------------ disturbances (eval scenarios, agent 6)
@@ -74,22 +87,23 @@ class CellExtrasMixin:
             raise RuntimeError("disturbance props are off: build the env with CellEnvCfg(disturbances=True)")
         return self.scene[key]
 
-    def _place_extra(self, name: str, tf_mm: np.ndarray) -> None:
+    def _place_extra(self, name: str, tf_mm: np.ndarray, env_id: int = 0) -> None:
         import isaaclab.utils.math as M
 
         world = torch.tensor(L.uf0_to_world_m(tf_mm, self._top()), dtype=torch.float32, device=self.device)
-        pos = world[:3, 3] + self.scene.env_origins[0]
+        pos = world[:3, 3] + self.scene.env_origins[env_id]
         pose = torch.cat([pos, M.quat_from_matrix(world[:3, :3])]).unsqueeze(0)
         obj = self._extra(name)
-        obj.write_root_pose_to_sim_index(root_pose=pose)
-        obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros((1, 6), device=self.device))
+        ids = torch.tensor([env_id], device=self.device)
+        obj.write_root_pose_to_sim_index(root_pose=pose, env_ids=ids)
+        obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros((1, 6), device=self.device), env_ids=ids)
 
-    def park_extras(self) -> None:
+    def park_extras(self, env_id: int = 0) -> None:
         import assets
 
         if any(k.startswith("extra_") for k in self.scene.rigid_objects):
             for name in assets.EXTRAS:
-                self._park_extra(name)
+                self._park_extra(name, env_id)
 
     def inject_foreign(self, x_mm: float, y_mm: float, yaw_deg: float = 0.0) -> None:
         """Drop the unknown 30 x 20 x 15 mm piece (not one of the 30) flat on the table at UF0 (x, y)."""
@@ -119,7 +133,7 @@ class CellExtrasMixin:
     def clear_intruder(self) -> None:
         self._park_extra("Intruder")
 
-    def _park_extra(self, name: str) -> None:
+    def _park_extra(self, name: str, env_id: int = 0) -> None:
         import assets
         from scene import EXTRAS_PARK_M
 
@@ -128,9 +142,9 @@ class CellExtrasMixin:
         world = L.translation(EXTRAS_PARK_M[0] * 1000, (EXTRAS_PARK_M[1] + 0.4 * k) * 1000, EXTRAS_PARK_M[2] * 1000
                               + size[2] / 2)
         world[:3, 3] /= 1000.0
-        self._place_extra(name, L.world_m_to_uf0(world, self._top()))
+        self._place_extra(name, L.world_m_to_uf0(world, self._top()), env_id)
 
     def force_release(self) -> None:
         """Open the gripper now whatever the policy commands (dropped-in-carry case); the override ends when the policy
         itself commands open (gripper < 0.5) or at reset."""
-        self.action_manager.get_term("tcp").force_open = True
+        self.action_manager.get_term("tcp").force_open[0] = True

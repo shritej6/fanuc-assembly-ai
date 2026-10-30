@@ -156,7 +156,7 @@ def main() -> None:
     held_peak = obs["sim"]["contact_peak"][part]["torque_Nm"]
     m = env.env._metrics
     k = env.env.pool.index(ids[0])
-    base_fz = float(m.env_force[k, 2])
+    base_fz = float(m.env_force[0, k, 2])
     print(f"[smoke] raw {ids[0]} contacts: {m.raw_env_contacts(env.env.names[k])}", flush=True)
     print(f"[smoke] torque check: held part in the air torque_Nm now {held_torque} (lift-chunk peak {held_peak}, "
           f"robot pinch estimate {obs['sim']['contact'][part]['torque_robot_est_Nm']:.4f}); resting {ids[0]} "
