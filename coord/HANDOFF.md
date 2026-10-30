@@ -20,9 +20,10 @@ Newest first. One entry per finished task.
   `CellRuntimeBlockedError` until the T09 semantic queue uses controller-owned evidence-bound release tokens, the
   served checkpoint has reviewed semantic-skill/evaluation evidence and supervised process identity, limits are
   measured, live T28/T30 perception is configured, and full robot/held-part physical safety providers are reviewed.
-- Measured gates on the final snapshot: focused T37 suite **218 passed, 1 optional pandas skip**; full sandbox suite
-  **1435 passed, 5 sandbox-only failures, 5 optional skips**; the complete failing H100 shell module passed **8/8**
-  outside the sandbox. Ruff lint and format, both uv locks/environments, shell syntax, diff whitespace, 24-file
+- Measured gates on the final snapshot: focused T37 suite **218 passed, 1 optional pandas skip**; the complete full
+  suite outside the macOS sandbox passed **1440 tests with 5 optional dependency skips and 0 failures** in 156.84 s.
+  The sandbox-only run had five `/dev/fd` denials in the H100 shell module, which passed **8/8** outside the sandbox.
+  Ruff lint and format, both uv locks/environments, shell syntax, diff whitespace, 24-file
   Python size limits, and the protected-client check passed. `robot/cell/cell_client.py` remained byte-identical to
   `origin/main` at SHA-1 `49bb7fc3602b9554d944d80ff889f96bdc88b125`.
 - Official software-only smoke: `cd robot/cell && uv run --locked --offline run.py --mock` completed **3 rollouts,
