@@ -53,8 +53,8 @@ def _request(**changes: object) -> FinalBuildRequest:
     return FinalBuildRequest(**values)  # type: ignore[arg-type]
 
 
-def _completion(content: str, model: str = MODEL_ID, finish: str = "stop", reasoning: str = "looked") -> bytes:
-    message = {"role": "assistant", "content": content, "reasoning_content": reasoning}
+def _completion(content: str | None, model: str = MODEL_ID, finish: str = "stop") -> bytes:
+    message = {"role": "assistant", "content": content}
     return json.dumps({"model": model, "choices": [{"message": message, "finish_reason": finish}]}).encode()
 
 
@@ -103,9 +103,15 @@ def test_fail_verdict_is_a_rebuild_signal_not_an_error() -> None:
     assert result.passed is False and result.explanation == "top part tilted"
 
 
-def test_answer_after_unparsed_think_block_is_accepted() -> None:
-    content = '<think>gap visible</think>\n{"verdict": "fail", "reason": "raised"}'
-    assert parse_completion(_completion(content, reasoning="")).passed is False
+def test_a_single_json_code_fence_is_the_same_answer() -> None:
+    content = '<think>flat</think>\n```json\n{"verdict": "pass", "reason": "seated"}\n```'
+    assert parse_completion(_completion(content)).passed is True
+
+
+def test_answer_after_a_think_block_keeps_the_reasoning_separate() -> None:
+    content = '<think>\ngap visible under the cover\n</think>\n{"verdict": "fail", "reason": "raised"}'
+    verdict = parse_completion(_completion(content))
+    assert (verdict.passed, verdict.reason, verdict.reasoning) == (False, "raised", "gap visible under the cover")
 
 
 @pytest.mark.parametrize(
@@ -118,7 +124,11 @@ def test_answer_after_unparsed_think_block_is_accepted() -> None:
         _completion('{"verdict": "pass", "reason": "ok", "confidence": 1}'),
         _completion('{"verdict": "pass", "reason": "   "}'),
         _completion("pass"),
-        _completion('```json\n{"verdict": "pass", "reason": "ok"}\n```'),
+        _completion(None),
+        _completion('<think>looks seated</think>'),
+        _completion('<think>a</think>{"verdict": "pass", "reason": "ok"}</think>{"verdict": "fail", "reason": "x"}'),
+        _completion('```json\n{"verdict": "pass", "reason": "ok"}\n```\n```json\n{"verdict": "fail", "reason": "x"}\n```'),
+        _completion('{"verdict": "fail", "reason": "gap"}\n</think>\n\nfail'),
         b"not json",
         json.dumps({"model": MODEL_ID, "choices": []}).encode(),
     ],

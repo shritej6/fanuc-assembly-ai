@@ -1,7 +1,10 @@
 """Production Cosmos Reason 2 (8B) port for the final-build gate, over vLLM's OpenAI-compatible API.
 
 The endpoint is the official ``nvidia/Cosmos-Reason2-8B`` weights at a pinned revision, served by vLLM with
-``--served-model-name Cosmos-Reason2-8B`` and ``--reasoning-parser qwen3`` (serving/cosmos_reason2/serve.sh). The
+``--served-model-name Cosmos-Reason2-8B`` (serving/cosmos_reason2/serve.sh). The server runs without a reasoning
+parser: the model may or may not open a ``<think>`` block, and vLLM's qwen3 parser files a think-less answer as
+reasoning with no content (seen on 2026-10-30), so the port splits ``<think>...</think>`` itself. No JSON-schema
+constraint is sent either, because it would force JSON from the first token and remove the reasoning. The
 port sends the captured image (looked up by capture ID, its SHA-256 re-checked) and a recipe-derived prompt, and turns
 the model's final JSON answer into a ``CosmosReasonResult``. Anything it cannot verify, such as a digest mismatch,
 transport failure, truncated or unparseable answer or a different served model, raises ``CosmosReasonUnavailable``,
@@ -14,6 +17,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.request
@@ -35,6 +39,7 @@ LOGGER = logging.getLogger(__name__)
 MODEL_REPO = "nvidia/Cosmos-Reason2-8B"
 MODEL_REVISION = "a9fae2cf89dc64db96b12860417f0eb403013bb9"
 MODEL_ID = "Cosmos-Reason2-8B"
+_FENCE = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
 TAXONOMY_PATH = Path(__file__).resolve().parents[1] / "contracts" / "taxonomy.json"
 
 # NVIDIA's reasoning add-on (cosmos-reason2 cosmos_reason2_utils/text.py), appended to the default system prompt.
@@ -47,16 +52,6 @@ Your reasoning.
 </think>
 
 Write your final answer immediately after the </think> tag."""
-
-ANSWER_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "verdict": {"type": "string", "enum": ["pass", "fail"]},
-        "reason": {"type": "string", "maxLength": 300},
-    },
-    "required": ["verdict", "reason"],
-    "additionalProperties": False,
-}
 
 Transport = Callable[[str, bytes, float], bytes]
 
@@ -188,10 +183,6 @@ def build_payload(prompt: str, image: bytes, config: EndpointConfig) -> bytes:
         "max_tokens": config.max_tokens,
         "temperature": config.temperature,
         "seed": 0,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "build_check", "schema": ANSWER_SCHEMA, "strict": True},
-        },
     }
     return json.dumps(body).encode("utf-8")
 
@@ -208,14 +199,14 @@ def parse_completion(raw: bytes) -> BuildVerdict:
         raise CosmosReasonUnavailable(f"endpoint served {model!r}, not {MODEL_ID}")
     if choice.get("finish_reason") != "stop":
         raise CosmosReasonUnavailable(f"Cosmos Reason 2 answer did not finish ({choice.get('finish_reason')!r})")
-    reasoning = message.get("reasoning_content") or ""
-    answer = _strip_think(message.get("content"))
-    return _parse_answer(answer, reasoning if isinstance(reasoning, str) else "")
+    reasoning, answer = _split_think(message.get("content"))
+    return _parse_answer(answer, reasoning)
 
 
 def _parse_answer(answer: str, reasoning: str) -> BuildVerdict:
+    fenced = _FENCE.fullmatch(answer)
     try:
-        verdict = json.loads(answer)
+        verdict = json.loads(fenced.group(1) if fenced else answer)
     except ValueError as error:
         raise CosmosReasonUnavailable("Cosmos Reason 2 final answer is not JSON") from error
     if not isinstance(verdict, dict) or set(verdict) != {"verdict", "reason"}:
@@ -228,13 +219,14 @@ def _parse_answer(answer: str, reasoning: str) -> BuildVerdict:
     return BuildVerdict(label == "pass", reason.strip(), reasoning)
 
 
-def _strip_think(content: object) -> str:
-    if not isinstance(content, str):
+def _split_think(content: object) -> tuple[str, str]:
+    if not isinstance(content, str) or not content.strip():
         raise CosmosReasonUnavailable("Cosmos Reason 2 returned no final answer")
     text = content.strip()
-    if "</think>" in text:
-        text = text.split("</think>", 1)[1].strip()
-    return text
+    if "</think>" not in text:
+        return "", text
+    reasoning, answer = text.split("</think>", 1)
+    return reasoning.replace("<think>", "", 1).strip(), answer.strip()
 
 
 def _verified_image(images: CaptureImageSource, request: FinalBuildRequest) -> bytes:

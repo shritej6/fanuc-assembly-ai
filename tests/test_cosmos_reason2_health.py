@@ -27,7 +27,7 @@ def _server(model_id: str, root: str, content: str) -> HTTPServer:
         def do_POST(self) -> None:
             request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             assert request["messages"][1]["content"][0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
-            message = {"content": content, "reasoning_content": "checked the top part"}
+            message = {"content": "<think>checked the top part</think>" + content}
             self._send({"model": model_id, "choices": [{"message": message, "finish_reason": "stop"}]})
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
