@@ -78,16 +78,16 @@ def test_pick_insert_can_never_authorize_release_in_the_same_skill() -> None:
     ("intent", "trained_skill"),
     [
         (_intent(), "pick_insert"),
-        (_intent(skill=SemanticSkill.PULL_OUT, final_gripper=1.0), "pull_out"),
         (
             _intent(
-                skill=SemanticSkill.PLACE_FREE,
+                skill=SemanticSkill.RELEASE_RETREAT,
                 final_gripper=0.0,
                 release_tcp=(401.8, 50.0, -301.2, -180.0, 0.0, 90.0),
                 release_authorized=True,
             ),
-            "place_free",
+            "pick_insert",
         ),
+        (_intent(skill=SemanticSkill.PULL_OUT, final_gripper=1.0), "pull_out"),
         (
             _intent(
                 skill=SemanticSkill.DEFECT_DROP,
@@ -113,6 +113,35 @@ def test_trained_semantic_skills_use_the_exact_t12_instruction_contract(
     )
 
     assert semantic_instruction(intent) == instruction(plan_ids, intent.plan_target)
+
+
+def test_verified_release_continues_the_same_pick_insert_episode_instruction() -> None:
+    pick_insert = _intent()
+    release = _intent(
+        skill=SemanticSkill.RELEASE_RETREAT,
+        final_gripper=0.0,
+        release_tcp=(401.8, 50.0, -301.2, -180.0, 0.0, 90.0),
+        release_authorized=True,
+    )
+
+    assert semantic_instruction(release) == semantic_instruction(pick_insert)
+
+
+@pytest.mark.parametrize(
+    "intent",
+    [
+        _intent(skill=SemanticSkill.INSPECT_VIEW, contact=None),
+        _intent(
+            skill=SemanticSkill.PLACE_FREE,
+            final_gripper=0.0,
+            release_tcp=(401.8, 50.0, -301.2, -180.0, 0.0, 90.0),
+            release_authorized=True,
+        ),
+    ],
+)
+def test_semantic_instruction_refuses_skills_absent_from_t18_dataset(intent: MotionIntent) -> None:
+    with pytest.raises(MotionIntentError, match="no T18 demonstrations"):
+        semantic_instruction(intent)
 
 
 @pytest.mark.parametrize(

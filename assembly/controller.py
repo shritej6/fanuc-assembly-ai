@@ -145,6 +145,8 @@ class AssemblyController(
         self._part_held = False
         self._held_instance_id: str | None = None
         self._resume_acknowledged = False
+        self._pending_post_place_operator_decision = None
+        self._pending_recovery_transfer_operator_decision = None
         self._coarse_xy_by_instance: dict[str, tuple[float, float]] = {}
         self._intrusion_attempts = 0
         self._intrusion_waiting_for_rescan = False
@@ -227,7 +229,7 @@ class AssemblyController(
             self.inventory,
             snapshot,
             observed_at,
-            held_instance_id=self._held_instance_id or self._pending_drop_release,
+            held_instance_id=self._reconciliation_exempt_instance(),
         )
         self._coarse_xy_by_instance = {
             item.instance_id: item.coarse_xy_mm
@@ -249,7 +251,12 @@ class AssemblyController(
     def _resume_after_scan(self) -> None:
         if self.state_machine.state is not PackMLState.HELD or not self._resume_acknowledged:
             return
-        blocker = self._resume_physical_blocker()
+        if self._pending_post_place_operator_decision is not None:
+            blocker = self._operator_post_place_resume_blocker()
+        elif self._pending_recovery_transfer_operator_decision is not None:
+            blocker = self._operator_recovery_transfer_resume_blocker()
+        else:
+            blocker = self._resume_physical_blocker()
         if blocker is not None:
             self._resume_acknowledged = False
             reason = f"operator resume blocked: unresolved {blocker} requires physical reconciliation"

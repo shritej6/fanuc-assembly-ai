@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from enum import Enum
+from typing import TYPE_CHECKING
 
 from assembly.controller_ports import (
     ControllerEvent,
     EvidencePair,
+    RecoveryTransferEvidence,
     call_port,
 )
+from assembly.inventory import InventoryZone
 from assembly.motion import (
     MotionChunk,
     MotionError,
@@ -18,6 +22,7 @@ from assembly.motion import (
     compile_reinsert,
 )
 from assembly.planner import PlanCandidate, PlannerError, PreparedPlanStep
+from assembly.state_machine import PackMLState
 from assembly.verification import (
     VerificationDecision,
     VerificationOutcome,
@@ -26,8 +31,21 @@ from assembly.verification import (
 )
 from robot.adapter import Observation
 
+if TYPE_CHECKING:
+    from assembly.controller_inspection import PendingReject
+
 # Source: docs/ROBOT_BRAIN.md@2a751da, section 3, "Won't seat".
 _RETRY_LIFT_MM = 3.0
+
+
+class RecoveryTransferOperatorDecision(str, Enum):
+    """Independent operator authority for an advisory recovery-zone check."""
+
+    CONFIRM = "confirm"
+
+
+class RecoveryTransferOperatorDecisionError(ValueError):
+    """Raised when a recovery-zone decision is not bound to a released part."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +59,92 @@ class PendingInsertionLift:
 
 class RecoveryControllerMixin:
     """Execute the sourced one-retry insertion recovery."""
+
+    def _reconciliation_exempt_instance(self) -> str | None:
+        """Keep one in-flight physical instance from becoming unobserved mid-transfer."""
+        if self._held_instance_id is not None:
+            return self._held_instance_id
+        if self._pending_drop_release is not None:
+            return self._pending_drop_release
+        if self._pending_reject is not None:
+            return self._pending_reject.prepared.part.instance_id
+        return None
+
+    def resolve_recovery_transfer(self, decision: RecoveryTransferOperatorDecision) -> None:
+        """Bind operator confirmation; the next fresh observation verifies identity."""
+        if not isinstance(decision, RecoveryTransferOperatorDecision):
+            raise RecoveryTransferOperatorDecisionError(
+                "recovery transfer decision must be a RecoveryTransferOperatorDecision"
+            )
+        if self.state_machine.state is not PackMLState.HELD:
+            raise RecoveryTransferOperatorDecisionError("recovery transfer decision requires Held state")
+        if self._pending_reject is None or self._part_held or not self._release_dispatched:
+            raise RecoveryTransferOperatorDecisionError(
+                "recovery transfer decision requires a released part awaiting verification"
+            )
+        if self._pending_recovery_transfer_operator_decision is not None:
+            raise RecoveryTransferOperatorDecisionError("a recovery transfer operator decision is already pending")
+        self._pending_recovery_transfer_operator_decision = decision
+        self._resume_acknowledged = True
+
+    def _operator_recovery_transfer_resume_blocker(self) -> str | None:
+        conflicts = (
+            (self._pending_install is not None, "verified release"),
+            (self._pending_insertion_lift is not None, "insertion recovery lift"),
+            (self._pending_drop_release is not None, "drop release"),
+            (self._pending_pre_pick is not None, "inspection stop"),
+            (self._awaiting_post, "insertion verification"),
+        )
+        blocker = next((name for active, name in conflicts if active), None)
+        if blocker is not None:
+            return blocker
+        if self._pending_reject is None or not self._release_dispatched:
+            return "reject transfer"
+        if self._part_held:
+            return "released reject part"
+        return None
+
+    def _apply_recovery_transfer_operator_decision(
+        self,
+        pending: PendingReject,
+        evidence: RecoveryTransferEvidence,
+        decision: VerificationDecision,
+    ) -> VerificationDecision:
+        operator = self._pending_recovery_transfer_operator_decision
+        if operator is None:
+            return decision
+        self._pending_recovery_transfer_operator_decision = None
+        if not self._operator_can_confirm_transfer(pending, evidence, decision):
+            return decision
+        part = pending.prepared.part
+        self._events.append(
+            ControllerEvent("operator", pending.prepared.record.product, part.object_id, "recovery transfer confirm")
+        )
+        return VerificationDecision(
+            VerificationOutcome.ACCEPT,
+            VerificationReason.VERIFIED,
+            part.instance_id,
+            part.object_id,
+            decision.advisories,
+        )
+
+    @staticmethod
+    def _operator_can_confirm_transfer(
+        pending: PendingReject,
+        evidence: RecoveryTransferEvidence,
+        decision: VerificationDecision,
+    ) -> bool:
+        part = pending.prepared.part
+        return (
+            decision.outcome is VerificationOutcome.HOLD_ANDON
+            and evidence.target_zone is InventoryZone.REJECT
+            and evidence.inspection.get("verdict") == "uncertain"
+            and evidence.inspection.get("action") == "ask_operator"
+            and evidence.detection.get("instance_id") == part.instance_id
+            and evidence.inspection.get("instance_id") == part.instance_id
+            and evidence.detection.get("object_id") == part.object_id
+            and evidence.inspection.get("object_id") == part.object_id
+        )
 
     def _recover(
         self,

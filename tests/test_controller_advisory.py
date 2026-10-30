@@ -7,8 +7,10 @@ import pytest
 
 from assembly.calibrated_poses import CalibratedPoseError
 from assembly.catalog import load_catalog
-from assembly.controller_ports import EvidencePair
-from assembly.inventory import ObjectCondition
+from assembly.controller_placement import PlacementOperatorDecision
+from assembly.controller_ports import EvidencePair, RecoveryTransferEvidence
+from assembly.controller_recovery import RecoveryTransferOperatorDecision
+from assembly.inventory import InventoryZone, ObjectCondition
 from assembly.planner import RecipePlanner
 from assembly.state_machine import PackMLState
 from robot.adapter import CellAdapter
@@ -75,6 +77,57 @@ class PatchCoreAfterInsertionLiftPerception(RetryAuditPerception):
         payload = dict(inspection["evidence"])
         payload["patchcore_score"] = 0.95
         inspection["evidence"] = payload
+        return replace(evidence, inspection=inspection)
+
+
+class HighFitFoundationPoseSeatRefutation(RetryAuditPerception):
+    def post_place(self, observation, part):
+        evidence = super().post_place(observation, part)
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="uncertain", action="ask_operator")
+        return replace(evidence, inspection=inspection, seated=False, pose_agrees=False)
+
+
+class HighFitFoundationPoseTransferAdvisory(RetryAuditPerception):
+    def scan(self, observation):
+        snapshot = super().scan(observation)
+        if not self.transfer_calls[("p1-1", InventoryZone.REJECT)]:
+            return snapshot
+        return replace(
+            snapshot,
+            items=tuple(item for item in snapshot.items if item.instance_id != "p1-1"),
+        )
+
+    def post_transfer(self, observation, part, target_zone):
+        evidence = super().post_transfer(observation, part, target_zone)
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="uncertain", action="ask_operator", checks_agree=False)
+        return RecoveryTransferEvidence(
+            evidence.detection,
+            inspection,
+            evidence.observed_at_s,
+            evidence.target_zone,
+            pose_agrees=False,
+        )
+
+
+class ReservedDefectTransferAdvisory(HighFitFoundationPoseTransferAdvisory):
+    def pre_pick(self, observation, part):
+        evidence = super().pre_pick(observation, part)
+        if part.instance_id != "p1-1":
+            return evidence
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="broken", action="reject", checks_agree=True)
+        return replace(evidence, inspection=inspection)
+
+
+class FreshExplicitDefectAfterOperatorDecision(HighFitFoundationPoseSeatRefutation):
+    def post_place(self, observation, part):
+        evidence = super().post_place(observation, part)
+        if self.post_calls[part.instance_id] == 1:
+            return evidence
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="broken", action="reject", checks_agree=True)
         return replace(evidence, inspection=inspection)
 
 
@@ -183,3 +236,88 @@ def test_post_lift_patchcore_warning_holds_for_operator_without_reject() -> None
     assert "PatchCore advisory warning" in controller.events[-1].detail
     assert "operator decision is required" in controller.events[-1].detail
     assert not any(event.kind == "rejected" and event.detail == "p1-2" for event in controller.events)
+
+
+def test_high_fit_foundationpose_seat_refutation_holds_without_reinsert_motion() -> None:
+    perception = HighFitFoundationPoseSeatRefutation(
+        _product_one_items(), set(), Counter({"p1-1": 1}), set()
+    )
+    controller = _controller(perception)
+    observation = _observation((1,))
+
+    _run_until(controller, observation, lambda: controller.state_machine.state is PackMLState.HELD)
+
+    assert controller._pending_insertion_lift is None
+    assert controller._motion_queue.active is False
+    assert controller._insertion_retries_by_instance.get("p1-1", 0) == 0
+    assert controller.completed_products == ()
+    assert not any(event.kind == "installed" for event in controller.events)
+    assert not any(event.kind == "retry" and event.object_id == "M1_01" for event in controller.events)
+
+
+def test_operator_accept_consumes_fresh_evidence_then_releases_without_reinsert() -> None:
+    perception = HighFitFoundationPoseSeatRefutation(
+        _product_one_items(), set(), Counter(), set()
+    )
+    controller = _controller(perception)
+    observation = _observation((1,))
+
+    _run_until(controller, observation, lambda: controller.state_machine.state is PackMLState.HELD)
+    calls_before_decision = perception.post_calls["p1-1"]
+    controller.resolve_post_place(PlacementOperatorDecision.ACCEPT)
+    _run_until(
+        controller,
+        observation,
+        lambda: any(event.kind == "installed" and event.object_id == "M1_01" for event in controller.events),
+    )
+
+    assert perception.post_calls["p1-1"] == calls_before_decision + 1
+    assert not any(event.kind == "retry" and event.object_id == "M1_01" for event in controller.events)
+
+
+def test_operator_reinsert_consumes_fresh_evidence_before_recovery_motion() -> None:
+    perception = HighFitFoundationPoseSeatRefutation(
+        _product_one_items(), set(), Counter(), set()
+    )
+    controller = _controller(perception)
+    observation = _observation((1,))
+
+    _run_until(controller, observation, lambda: controller.state_machine.state is PackMLState.HELD)
+    calls_before_decision = perception.post_calls["p1-1"]
+    controller.resolve_post_place(PlacementOperatorDecision.REINSERT)
+    _run_until(controller, observation, lambda: controller._pending_insertion_lift is not None)
+
+    assert perception.post_calls["p1-1"] == calls_before_decision + 1
+    assert controller._insertion_retries_by_instance["p1-1"] == 1
+
+
+def test_fresh_explicit_defect_overrides_stale_operator_accept() -> None:
+    perception = FreshExplicitDefectAfterOperatorDecision(
+        _product_one_items(), set(), Counter(), set()
+    )
+    controller = _controller(perception)
+    observation = _observation((1,))
+
+    _run_until(controller, observation, lambda: controller.state_machine.state is PackMLState.HELD)
+    controller.resolve_post_place(PlacementOperatorDecision.ACCEPT)
+    _run_until(controller, observation, lambda: controller._pending_insertion_lift is not None)
+
+    assert not any(event.kind == "installed" and event.object_id == "M1_01" for event in controller.events)
+
+
+def test_operator_confirms_reject_zone_only_after_fresh_transfer_evidence() -> None:
+    perception = ReservedDefectTransferAdvisory(_product_one_items(), set(), Counter(), set())
+    controller = _controller(perception)
+    observation = _observation((1,))
+
+    _run_until(controller, observation, lambda: controller.state_machine.state is PackMLState.HELD)
+    calls_before_decision = perception.transfer_calls[("p1-1", InventoryZone.REJECT)]
+    assert not any(event.kind == "rejected" and event.detail == "p1-1" for event in controller.events)
+    controller.resolve_recovery_transfer(RecoveryTransferOperatorDecision.CONFIRM)
+    _run_until(
+        controller,
+        observation,
+        lambda: any(event.kind == "rejected" and event.detail == "p1-1" for event in controller.events),
+    )
+
+    assert perception.transfer_calls[("p1-1", InventoryZone.REJECT)] == calls_before_decision + 1

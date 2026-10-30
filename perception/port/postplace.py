@@ -4,16 +4,15 @@ After a placement the part is still in the fingers, so the depth size and the de
 the free-standing part) are not repeated: the fingers sit inside the part's footprint. What is checked is classifier
 identity, the seat and the tilt (placement.py); FoundationPose fit is recorded only as an advisory.
 
-`seated`/`pose_agrees` for the controller: both true only when the seat and tilt are certified; both false when either
-is refuted (the controller then lifts 3 mm and reinserts once); unsure or a doubtful identity -> `uncertain` /
-`ask_operator`, which verify_post_place turns into HOLD_ANDON before it looks at seated.
+FoundationPose seat, tilt, and recovery-zone results are diagnostics only. Even a high-fit result asks the operator,
+so this port never causes an automatic release, reinsert, or recovery transfer.
 """
 
 from __future__ import annotations
 
 from perception.cell.inspect import same_shape
 from perception.port.judge import CloseupThresholds, Judgement
-from perception.port.placement import Check, SeatReport
+from perception.port.placement import SeatReport
 from perception.port.wrist import WristView
 
 
@@ -37,23 +36,17 @@ def post_place_judgement(expected: str, view: WristView, seat: SeatReport,
     identity = _identity(expected, view, thresholds)
     if identity.unsure or identity.action != "use":
         return identity, False, False
-    if view.fit_score < thresholds.pose_fit_min:
-        reason = f"{identity.reason}; no independent seating evidence is available"
-        return Judgement("uncertain", "ask_operator", identity.object_id, False, True, reason), False, False
-    if Check.REFUTED in (seat.seat, seat.tilt):
-        return identity, False, False
-    if seat.unsure:
-        reason = (f"seat error {seat.seat_error_mm:+.2f} mm, tilt {seat.tilt_deg:.2f} deg; bound "
-                  f"{seat.uncertainty.position_mm:.2f} mm / {seat.uncertainty.angle_deg:.2f} deg "
-                  f"({seat.uncertainty.status.value}) cannot certify the 0.3 mm / 1 deg gates")
-        return Judgement("uncertain", "ask_operator", identity.object_id, False, True, reason), False, False
-    return identity, True, True
+    reason = (
+        f"{identity.reason}; FoundationPose seat error {seat.seat_error_mm:+.2f} mm and "
+        f"tilt {seat.tilt_deg:.2f} deg are advisory; operator placement confirmation is required"
+    )
+    return Judgement("uncertain", "ask_operator", identity.object_id, False, True, reason), False, False
 
 
 def transfer_judgement(expected: str, view: WristView, thresholds: CloseupThresholds) -> Judgement:
-    """Identity of the released part at its recovery spot; the zone check is the caller's."""
+    """Keep FoundationPose recovery-zone evidence advisory pending operator confirmation."""
     identity = _identity(expected, view, thresholds)
-    if identity.unsure or identity.action != "use" or view.fit_score >= thresholds.pose_fit_min:
+    if identity.unsure or identity.action != "use":
         return identity
-    reason = f"{identity.reason}; no independent recovery-zone evidence is available"
+    reason = f"{identity.reason}; FoundationPose recovery-zone evidence is advisory"
     return Judgement("uncertain", "ask_operator", identity.object_id, False, True, reason)

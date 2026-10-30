@@ -258,11 +258,12 @@ def _post(evidence: PlacementEvidence, item: InventoryItem):
                              pose_agrees=evidence.pose_agrees)
 
 
-def test_a_certified_seat_is_accepted():
+def test_high_fit_foundationpose_seat_still_requires_operator_authority():
     port, item, evidence = _placed_world()
     _valid(evidence)
-    assert (evidence.seated, evidence.pose_agrees) == (True, True)
-    assert _post(evidence, item).outcome is VerificationOutcome.ACCEPT
+    assert evidence.inspection["action"] == "ask_operator"
+    assert (evidence.seated, evidence.pose_agrees) == (False, False)
+    assert _post(evidence, item).outcome is VerificationOutcome.HOLD_ANDON
     assert port.placement(item.instance_id).seat_error_mm == pytest.approx(0.0, abs=1e-6)
 
 
@@ -285,10 +286,11 @@ def test_low_foundationpose_fit_never_turns_pose_error_into_automatic_recovery()
     assert decision.outcome is VerificationOutcome.HOLD_ANDON
 
 
-def test_a_part_riding_high_is_recovered():
+def test_high_fit_foundationpose_seat_refutation_never_triggers_recovery():
     _, item, evidence = _placed_world(part_z_offset=1.0)
+    assert evidence.inspection["action"] == "ask_operator"
     assert (evidence.seated, evidence.pose_agrees) == (False, False)
-    assert _post(evidence, item).outcome is VerificationOutcome.RECOVER
+    assert _post(evidence, item).outcome is VerificationOutcome.HOLD_ANDON
 
 
 def test_a_preliminary_bound_cannot_certify_the_seat_so_the_operator_decides():
@@ -298,33 +300,37 @@ def test_a_preliminary_bound_cannot_certify_the_seat_so_the_operator_decides():
     assert port.placement(item.instance_id).uncertainty.status is Status.PRELIMINARY
 
 
-def test_a_crooked_part_is_recovered():
+def test_high_fit_foundationpose_tilt_refutation_never_triggers_recovery():
     _, item, evidence = _placed_world(tilt=3.0)
-    assert _post(evidence, item).outcome is VerificationOutcome.RECOVER
+    assert evidence.inspection["action"] == "ask_operator"
+    assert _post(evidence, item).outcome is VerificationOutcome.HOLD_ANDON
 
 
-def test_an_accepted_install_keeps_the_base_observed_under_its_parts():
+def test_foundationpose_only_install_does_not_mark_the_base_as_assembled():
     port, _, evidence = _placed_world()
-    assert evidence.seated
+    assert evidence.seated is False
     base = next(i for i in port.scan(observation(21.0)).items if i.object_id == "F01")
     assert base.condition is ObjectCondition.VERIFIED
-    assert base.instance_id in port._scanner.assembly_bases
+    assert base.instance_id not in port._scanner.assembly_bases
 
 
 # -- post_transfer ----------------------------------------------------------------------------------------------
-def test_a_reject_transfer_is_verified_in_the_reject_zone():
+def test_high_fit_foundationpose_zone_match_never_commits_a_transfer():
     port, geometry, _, pose, _ = _world()
     item = _item(_scanned(port), "M1_02")
+    original_xy = port._xy[item.instance_id]
     dropped = loose_pose("M1_02", 620.0, -350.0)
     pose.poses[("M1_02", "wrist")] = dropped
     geometry.wrist_cloud = top_points("M1_02", dropped)
     evidence = port.post_transfer(observation(30.0, tcp=(620.0, -350.0, -250.0, -180.0, 0.0, 0.0)), item,
                                   InventoryZone.REJECT)
-    assert evidence.pose_agrees is True and evidence.target_zone is InventoryZone.REJECT
+    assert evidence.pose_agrees is False and evidence.target_zone is InventoryZone.REJECT
+    assert evidence.inspection["action"] == "ask_operator"
     decision = verify_recovery_transfer(item.object_id, evidence.detection, evidence.inspection,
                                         expected_instance_id=item.instance_id, thresholds=VERIFY,
                                         pose_agrees=evidence.pose_agrees, allow_rejected=True)
-    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
+    assert port._xy[item.instance_id] == original_xy
     staged = port.post_transfer(observation(31.0, tcp=(620.0, -350.0, -250.0, -180.0, 0.0, 0.0)), item,
                                 InventoryZone.STAGED)
     assert staged.pose_agrees is False

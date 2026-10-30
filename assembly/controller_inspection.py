@@ -410,6 +410,7 @@ class InspectionControllerMixin:
             allow_rejected=True,
         )
         self._record_verification_advisories(pending.prepared.part, decision)
+        decision = self._apply_recovery_transfer_operator_decision(pending, evidence, decision)
         if decision.outcome is not VerificationOutcome.ACCEPT or current.gripper != 0.0:
             self._hold(f"reject transfer was not independently verified for {pending.prepared.part.instance_id!r}")
             return

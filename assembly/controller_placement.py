@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from assembly.controller_ports import (
     ControllerEvent,
     PlacementEvidence,
@@ -12,6 +14,7 @@ from assembly.controller_ports import (
 from assembly.inventory import InventoryShortageError, InventoryZone, ObjectCondition
 from assembly.motion import Waypoint, compile_release_retreat
 from assembly.planner import PreparedPlanStep
+from assembly.state_machine import PackMLState
 from assembly.verification import (
     VerificationDecision,
     VerificationOutcome,
@@ -21,8 +24,50 @@ from assembly.verification import (
 from robot.adapter import Observation
 
 
+class PlacementOperatorDecision(str, Enum):
+    """Independent operator authority after an advisory placement hold."""
+
+    ACCEPT = "accept"
+    REINSERT = "reinsert"
+
+
+class PlacementOperatorDecisionError(ValueError):
+    """Raised when an operator decision is not bound to a held placement."""
+
+
 class PlacementControllerMixin:
     """Keep a placed part held until two independent checks accept it."""
+
+    def resolve_post_place(self, decision: PlacementOperatorDecision) -> None:
+        """Bind a typed operator choice; the next fresh observation executes it."""
+        if not isinstance(decision, PlacementOperatorDecision):
+            raise PlacementOperatorDecisionError("post-place decision must be a PlacementOperatorDecision")
+        if self.state_machine.state is not PackMLState.HELD:
+            raise PlacementOperatorDecisionError("post-place decision requires Held state")
+        if self._prepared is None or not self._awaiting_post or not self._part_held:
+            raise PlacementOperatorDecisionError("post-place decision requires the current part held for verification")
+        if self._pending_post_place_operator_decision is not None:
+            raise PlacementOperatorDecisionError("a post-place operator decision is already pending")
+        self._pending_post_place_operator_decision = decision
+        self._resume_acknowledged = True
+
+    def _operator_post_place_resume_blocker(self) -> str | None:
+        conflicts = (
+            (self._pending_install is not None, "verified release"),
+            (self._pending_insertion_lift is not None, "insertion recovery lift"),
+            (self._pending_reject is not None, "reject transfer"),
+            (self._pending_drop_release is not None, "drop release"),
+            (self._pending_pre_pick is not None, "inspection stop"),
+            (self._release_dispatched, "uncommitted release"),
+        )
+        blocker = next((name for active, name in conflicts if active), None)
+        if blocker is not None:
+            return blocker
+        if self._prepared is None or not self._awaiting_post:
+            return "post-place verification"
+        if not self._part_held:
+            return "post-place part is not held"
+        return None
 
     def _placement_decision(self, prepared: PreparedPlanStep, evidence: PlacementEvidence) -> VerificationDecision:
         if prepared.verification_target is None:
@@ -49,10 +94,12 @@ class PlacementControllerMixin:
         self._require_fresh_evidence(evidence, PlacementEvidence, observed_at, "post-place evidence")
         decision = self._placement_decision(prepared, evidence)
         self._record_verification_advisories(prepared.part, decision)
-        self._awaiting_post = False
+        decision = self._apply_post_place_operator_decision(prepared, evidence, decision)
         if decision.outcome is VerificationOutcome.ACCEPT:
+            self._awaiting_post = False
             return self._queue_verified_release(prepared, observation, current, observed_at)
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
+            self._awaiting_post = True
             if decision.reason is VerificationReason.PATCHCORE_WARNING:
                 self._hold(
                     f"PatchCore advisory warning for {prepared.record.object_id}; operator decision is required"
@@ -60,7 +107,47 @@ class PlacementControllerMixin:
             else:
                 self._hold(f"post-place checks disagree for {prepared.record.object_id}")
             return True
+        self._awaiting_post = False
         return self._recover(prepared, decision, observation, current, observed_at)
+
+    def _apply_post_place_operator_decision(
+        self,
+        prepared: PreparedPlanStep,
+        evidence: PlacementEvidence,
+        decision: VerificationDecision,
+    ) -> VerificationDecision:
+        operator = self._pending_post_place_operator_decision
+        if operator is None:
+            return decision
+        self._pending_post_place_operator_decision = None
+        if not self._operator_can_resolve_advisory(prepared, evidence, decision):
+            return decision
+        accepting = operator is PlacementOperatorDecision.ACCEPT
+        outcome = VerificationOutcome.ACCEPT if accepting else VerificationOutcome.RECOVER
+        reason = VerificationReason.VERIFIED if accepting else VerificationReason.NOT_SEATED
+        self._events.append(
+            ControllerEvent("operator", prepared.record.product, prepared.record.object_id, f"post-place {operator.value}")
+        )
+        return VerificationDecision(outcome, reason, prepared.part.instance_id, prepared.part.object_id, decision.advisories)
+
+    @staticmethod
+    def _operator_can_resolve_advisory(
+        prepared: PreparedPlanStep,
+        evidence: PlacementEvidence,
+        decision: VerificationDecision,
+    ) -> bool:
+        if decision.outcome is not VerificationOutcome.HOLD_ANDON:
+            return False
+        expected_instance = prepared.part.instance_id
+        expected_object = prepared.part.object_id
+        return (
+            evidence.inspection.get("verdict") == "uncertain"
+            and evidence.inspection.get("action") == "ask_operator"
+            and evidence.detection.get("instance_id") == expected_instance
+            and evidence.inspection.get("instance_id") == expected_instance
+            and evidence.detection.get("object_id") == expected_object
+            and evidence.inspection.get("object_id") == expected_object
+        )
 
     def _queue_verified_release(
         self,
