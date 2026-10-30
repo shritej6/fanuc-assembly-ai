@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -30,10 +31,11 @@ ap.add_argument("--device", default="cuda:0")
 ap.add_argument("--tol", type=float, default=0.05)
 ap.add_argument("--seated_down", type=float, default=1.0, help="N pressing the seated parts (low, so the twist "
                 "beats face friction and the peg walls carry it)")
-ap.add_argument("--seated_twist", type=float, default=0.02)
+ap.add_argument("--seated_twists", type=lambda s: [float(x) for x in s.split(",")], default=[0.02, 0.05, 0.08])
 ap.add_argument("--twist", type=float, default=0.02, help="N m about z; above mu N r_eff the part spins (not static)")
 args = ap.parse_args()
 
+import layout as L
 from cell_env import AssemblyCellEnv, CellEnvCfg
 
 G = 9.81
@@ -115,42 +117,104 @@ def run_group(products: list[int], push: list[str]):
     return env, rows, pushed
 
 
-def seated_twist(env, pairs: list[tuple[str, str]]) -> list[dict]:
-    """Seat each part on its base, press it down 5 N and twist it about z: once the part turns through its peg
-    clearance the base's peg walls (normal contacts) hold the twist, so torque_raw_Nm must read the applied twist."""
+BASE_HOLD_N = 30.0      # presses each base onto the table so the base itself cannot turn (table friction ~0.2 N m)
+
+
+def _yaw_deg(r: np.ndarray) -> float:
+    return float(np.degrees(np.arctan2(r[1, 0], r[0, 0])))
+
+
+def _seat(env, pairs: list[tuple[str, str]], label: str) -> list[float]:
     objs = []
     for k, (base, part) in enumerate(pairs):
         x, y = GRID[2 * k]
         objs += [{"id": base, "x": x, "y": y, "yaw": 0.0}, {"id": part, "state": f"on:{base}"}]
-    obs = env.reset({"objects": objs, "instruction": "fv seated"})
-    hold = [*obs["tcp_pose"], 0.0]
+    obs = env.reset({"objects": objs, "instruction": label})
+    for base, _ in pairs:
+        wrench(env, base, True, side=False, down=BASE_HOLD_N, twist=0.0)
+    return [*obs["tcp_pose"], 0.0]
+
+
+def peg_clearance_deg(base: str, part: str) -> float:
+    """Yaw play of `part` on `base` from CAD (objects.yaml): per-side clearance over half the distance between the
+    base's two round locating pegs (the part turns about their midpoint)."""
+    objs = yaml.safe_load(L.OBJECTS_YAML.read_text())["objects"]
+    pegs = [np.array(p["xy_mm"], float) for p in objs[L.type_id(base)]["pegs"] if p.get("shape") == "round"]
+    clear = next(m["clearance_per_side_mm"] for m in objs[L.type_id(part)]["mates_with"])
+    return float(np.degrees(np.arctan(clear / (0.5 * np.linalg.norm(pegs[0] - pegs[1])))))
+
+
+def seated_twist(env, pairs: list[tuple[str, str]], twist: float) -> list[dict]:
+    """Seat each part on its (held) base, press it down and twist it about z. The pegs must stop it within the CAD
+    clearance (0.5 mm per side over ~15.6 mm: <= 1.8 deg relative to the base) or it must lift >= 2 mm to ride over
+    them; once stopped, the base's peg walls carry the twist, so torque_raw_Nm should read it (per-contact check)."""
+    hold = _seat(env, pairs, "fv seated twist")
     for _, part in pairs:
-        wrench(env, part, True, side=False, down=args.seated_down, twist=args.seated_twist)
+        wrench(env, part, True, side=False, down=args.seated_down, twist=twist)
     p0 = env.env.object_poses_mm()
-    averaged(env, hold, 5)                                           # turn into the pegs, then measure
+    averaged(env, hold, 5)
     loaded = averaged(env, hold)
     p1 = env.env.object_poses_mm()
     rows = []
     for base, part in pairs:
-        d = p0[part][:3, :3].T @ p1[part][:3, :3]
-        n, _lat, tq, cov = loaded[part]
-        r = {"object": part, "on": base, "expect_torque_Nm": args.seated_twist, "torque_raw_Nm": round(float(tq), 5),
-             "normal_N": round(float(n), 4), "expect_normal_N": round(env.masses[part] * G + args.seated_down, 4),
-             "turned_deg": round(float(np.degrees(np.arctan2(d[1, 0], d[0, 0]))), 3), "coverage": round(float(cov), 3),
-             "rose_mm": round(float(p1[part][2, 3] - p0[part][2, 3]), 3)}           # pegs 2.5 mm: turning far needs a rise
-        r["torque_ok"] = within(tq, args.seated_twist, args.tol)
-        r["normal_ok"] = within(n, env.masses[part] * G + args.seated_down, args.tol)
+        rel0, rel1 = np.linalg.inv(p0[base]) @ p0[part], np.linalg.inv(p1[base]) @ p1[part]
+        _n, _lat, tq, cov = loaded[part]
+        r = {"object": part, "on": base, "twist_Nm": twist, "down_N": args.seated_down,
+             "turn_vs_base_deg": round(_yaw_deg(rel0[:3, :3].T @ rel1[:3, :3]), 3),
+             "rise_vs_base_mm": round(float(rel1[2, 3] - rel0[2, 3]), 3),
+             "base_turn_deg": round(_yaw_deg(p0[base][:3, :3].T @ p1[base][:3, :3]), 3),
+             "torque_raw_Nm": round(float(tq), 5), "coverage": round(float(cov), 3)}
+        r["cad_clearance_deg"] = round(peg_clearance_deg(base, part), 3)
+        r["held"] = abs(r["turn_vs_base_deg"]) <= r["cad_clearance_deg"] + 0.1 or r["rise_vs_base_mm"] >= 2.0
+        r["torque_ok"] = within(tq, twist, args.tol)
         rows.append(r)
         print(f"[fv] seated twist {r}", flush=True)
+    for base, part in pairs:
         wrench(env, part, False)
+        wrench(env, base, False)
+    return rows
+
+
+def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[dict]:
+    """Drop each FREE part from 4 mm above its seat, offset `offset_mm` sideways (+x), and press it down 3 N for 2 s.
+    CAD capture of a free part: the 0.5 mm-chamfered peg tip (radius 1.5 mm) must land inside the 0.5 mm-chamfered
+    socket mouth (radius 3.0 mm), i.e. offsets up to 1.5 mm slide in and must seat (< 0.3 mm high); 2 mm must jam
+    (>= 2 mm high, on the peg tops). A part held stiffly by the gripper captures less (agent 2: 0.5 mm; demo_check
+    --offset_mm tests that)."""
+    hold = _seat(env, pairs, "fv offset insert")
+    e = env.env
+    seats = {part: e.solver.seat_tf_for(part, base, e.object_poses_mm()) for base, part in pairs}
+    names = [e.names[e.pool.index(part)] for _, part in pairs]
+    e._write_poses(names, [L.translation(offset_mm, 0.0, 4.0) @ seats[part] for _, part in pairs])
+    e.scene.write_data_to_sim()
+    for _, part in pairs:
+        wrench(env, part, True, side=False, down=3.0, twist=0.0)
+    for _ in range(20):
+        env.step_tcp([hold], 0.1)
+    poses = e.object_poses_mm()
+    rows = []
+    for base, part in pairs:
+        seat = e.solver.seat_tf_for(part, base, poses)
+        d = np.linalg.inv(seat) @ poses[part]
+        r = {"object": part, "on": base, "offset_mm": offset_mm, "height_above_seat_mm": round(float(d[2, 3]), 3),
+             "xy_from_seat_mm": [round(float(d[0, 3]), 3), round(float(d[1, 3]), 3)]}
+        r["ok"] = d[2, 3] < 0.3 if offset_mm <= 1.5 else d[2, 3] >= 2.0
+        rows.append(r)
+        print(f"[fv] offset insert {r}", flush=True)
+    for base, part in pairs:
+        wrench(env, part, False)
+        wrench(env, base, False)
     return rows
 
 
 def main() -> None:
     env, rest, pushed = run_group([1, 2, 3, 4, 5, 6], ["F01", "F04", "M1_01", "M4_01", "M2_02", "M5_03"])
-    seated = seated_twist(env, [("F04", "M4_01"), ("F01", "M1_01"), ("F05", "M5_01")])
+    pairs = [("F04", "M4_01"), ("F01", "M1_01"), ("F05", "M5_01")]
+    seated = [r for t in args.seated_twists for r in seated_twist(env, pairs, t)]
+    inserts = [r for off in (0.0, 1.0, 2.0) for r in offset_insert(env, pairs, off)]
     ok_rest = sum(r["ok"] for r in rest)
     report = {"tolerance": args.tol, "push": PUSH, "rest": rest, "pushed": pushed, "seated_twist": seated,
+              "offset_insert": inserts,
               "rest_ok": f"{ok_rest}/{len(rest)}"}
     out = args.out.expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +222,8 @@ def main() -> None:
     print(f"[fv] rest within {args.tol:.0%}: {ok_rest}/{len(rest)}; push normal "
           f"{sum(p['normal_ok'] for p in pushed)}/{len(pushed)} lateral {sum(p['lateral_ok'] for p in pushed)}/"
           f"{len(pushed)} torque {sum(p['torque_ok'] for p in pushed)}/{len(pushed)} -> {out}", flush=True)
-    failed = ok_rest < len(rest) or not all(p["normal_ok"] and p["lateral_ok"] and p["sign_ok"] for p in pushed)
+    failed = ok_rest < len(rest) or not all(p["normal_ok"] and p["lateral_ok"] and p["sign_ok"] for p in pushed) \
+        or not all(r["held"] for r in seated) or not all(r["ok"] for r in inserts)
     print(f"[fv] {'FAIL: force guard numbers do not match known loads' if failed else 'PASS'}", flush=True)
     env.close()            # closing the app ends the process, so the verdict is printed first
     if failed:

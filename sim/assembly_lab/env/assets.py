@@ -214,9 +214,23 @@ def install_teamv_fingers(stage, contact: dict) -> None:
 
 
 def set_jaw_force(stage, force_n: float) -> None:
-    for tag in ("L", "R"):
-        joint = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS[tag]}")
-        UsdPhysics.DriveAPI.Get(joint, "linear").GetMaxForceAttr().Set(float(force_n))
+    """Couple the jaws like the real SMC MHZL2 (rack-and-pinion synchronised): jaw_r mimics jaw_l (q_r = -q_l, a
+    PhysX mimic-joint constraint) and only jaw_l is driven. With two independent drives the jaws rested asymmetric
+    (-5.6 / +3.9 mm) and the gripped part floated sideways under push loads. Through the gear constraint one drive
+    of 2 x force_n squeezes with force_n per finger (scene.py sets the same limit on the actuator)."""
+    left = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS['L']}")
+    right = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS['R']}")
+    UsdPhysics.DriveAPI.Get(left, "linear").GetMaxForceAttr().Set(2.0 * float(force_n))
+    drive_r = UsdPhysics.DriveAPI.Get(right, "linear")
+    for attr in (drive_r.GetStiffnessAttr(), drive_r.GetDampingAttr(), drive_r.GetMaxForceAttr()):
+        attr.Set(0.0)
+    mimic = PhysxSchema.PhysxMimicJointAPI.Apply(right, JAW_MIMIC_AXIS)
+    mimic.GetReferenceJointRel().SetTargets([left.GetPath()])
+    mimic.GetGearingAttr().Set(1.0)          # PhysX: q_follower + gearing * q_reference + offset = 0
+    mimic.GetOffsetAttr().Set(0.0)
+
+
+JAW_MIMIC_AXIS = "rotX"      # PhysX mimic API token for the single DOF of a 1-DOF joint (revolute or prismatic)
 
 
 # ---------------------------------------------------------------- objects

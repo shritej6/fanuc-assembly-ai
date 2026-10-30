@@ -23,7 +23,7 @@ ap.add_argument("--pool", default="F04,M4_01")
 ap.add_argument("--device", default="cuda:0")
 args = ap.parse_args()
 
-from cell_env import AssemblyCellEnv, CellEnvCfg  # noqa: E402
+from cell_env import AssemblyCellEnv, CellEnvCfg
 
 
 def attr(prim, name):
@@ -49,8 +49,10 @@ def describe(prim) -> dict:
         idx = UsdGeom.Mesh(prim).GetFaceVertexIndicesAttr().Get()
         out.update(points=len(pts), tris=len(idx) // 3, z_mm=[round(float(pts[:, 2].min()) * 1000, 2),
                                                                round(float(pts[:, 2].max()) * 1000, 2)])
-        out["world_scale"] = [round(float(v), 4) for v in
-                              UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(0).ExtractScale()]
+        from pxr import Gf
+
+        m = Gf.Transform(UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(0))
+        out["world_scale"] = [round(float(v), 4) for v in m.GetScale()]
     fp = UsdPhysics.FilteredPairsAPI(prim)
     if fp and fp.GetFilteredPairsRel():
         out["filtered_pairs"] = [str(t) for t in fp.GetFilteredPairsRel().GetTargets()]

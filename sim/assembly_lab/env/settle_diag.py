@@ -23,6 +23,7 @@ ap.add_argument("--product", type=int, default=4)
 ap.add_argument("--installed", type=int, default=1)
 ap.add_argument("--steps", type=int, default=400)
 ap.add_argument("--seed", type=int, default=7)
+ap.add_argument("--twist", type=float, default=0.0, help="N m about z on the first seated part from step 1 (+1 N down)")
 ap.add_argument("--device", default="cuda:0")
 args = ap.parse_args()
 
@@ -67,6 +68,22 @@ def main() -> None:
                 print(f"[diag] step1 {u}: {len(raw['normal'])} contacts, deepest (filter, sep mm, fn N, point in base "
                       f"frame mm, normal) {[(c['filter'], c['sep'], c['fn'], loc(c['p']), c['n']) for c in seps]}",
                       flush=True)
+        if args.twist and k == 1:
+            ids1 = torch.tensor([0], device=e.device)
+            objs[seated[0]].permanent_wrench_composer.set_forces_and_torques_index(
+                forces=torch.tensor([[[0.0, 0.0, -1.0]]], device=e.device),
+                torques=torch.tensor([[[0.0, 0.0, args.twist]]], device=e.device), body_ids=ids1, env_ids=ids1,
+                is_global=True)
+        if seated and k in (1, 25, 100, 200):
+            raw = e._metrics.raw_env_contacts(e.names[e.pool.index(seated[0])])
+            base = objs[f"F0{p}"].data
+            R = M.matrix_from_quat(base.root_link_quat_w.torch[0:1])[0]
+            on_base = [c for c in raw["normal"] if c["filter"] == 0]
+            pts = [[round(v * 1000, 1) for v in (R.T @ (torch.tensor(c["p"], device=R.device)
+                                                       - base.root_link_pos_w.torch[0])).tolist()] + [c["fn"]]
+                   for c in on_base]
+            print(f"[diag] k={k} {seated[0]} on base: {len(on_base)} normal contacts, {len(raw['friction'])} friction "
+                  f"anchors; points (x, y, z mm in base frame, fn N): {pts}", flush=True)
         if k % 10 == 0 or k <= 3:
             row = []
             for u, o in objs.items():

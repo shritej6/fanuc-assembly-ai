@@ -21,9 +21,14 @@ Per object:
   torque3d_Nm: full magnitude of the gated torque. torque_robot_est_Nm: the old estimate (|torque of the robot-link
   forces about the COM|, logging only: the pinch couple fires in the air).
 Peaks are kept per env step (reset by begin_step) and per episode chunk (reset by the thin layer).
+With T12_SUBSTEP_LOG=1 every physics substep's [normal_N, lateral_N, torque_Nm, robot_touch_N] per object is also kept
+for the last env step (substep_log(); obs["sim"]["substep_contact"]), to see seat-contact impulses (costs a GPU sync
+per substep, so it is off by default).
 """
 
 from __future__ import annotations
+
+import os
 
 import contact_torque
 import isaaclab.utils.math as M
@@ -53,6 +58,8 @@ class ContactMetrics:
         self.env_force = torch.zeros((n, 3), device=env.device)
         self.env_net = torch.zeros((n, 3), device=env.device)
         self._jaw = torch.zeros((n, 2), device=env.device)
+        self.log_substeps = os.environ.get("T12_SUBSTEP_LOG") == "1"
+        self._substeps: list = []
 
     def _compute(self) -> None:
         f = self.robot.data.force_matrix_w.torch[0]                 # (B, N, 3) force on robot link b from object n
@@ -123,9 +130,24 @@ class ContactMetrics:
         self._compute()
         self._step_peak = torch.maximum(self._step_peak, self._now)
         self._chunk_peak = torch.maximum(self._chunk_peak, self._now)
+        if self.log_substeps:
+            self._substeps.append(self._now[:, :4].cpu().numpy())
 
     def begin_step(self) -> None:
         self._step_peak.zero_()
+        self._substeps = []
+
+    def substep_log(self) -> dict | None:
+        """{object: [[normal_N, lateral_N, torque_Nm, robot_touch_N] per physics substep]} for the last env step, objects
+        with any contact load only; None unless T12_SUBSTEP_LOG=1."""
+        if not self.log_substeps:
+            return None
+        rows = {}
+        for k, n in enumerate(self.env.names):
+            trace = [[round(float(v), 4) for v in sub[k]] for sub in self._substeps]
+            if any(any(t) for t in trace):
+                rows[n] = trace
+        return rows
 
     def reset_episode(self) -> None:
         self._step_peak.zero_()

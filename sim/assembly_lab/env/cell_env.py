@@ -183,6 +183,9 @@ class AssemblyCellEnv:
                        "on_table": {u: p.role != "parked" for u, p in e.placements.items()},
                        "settled": bool(e.settled), "settle_s": round(float(e.settle_s), 3),
                        "settle_detail": e.settle_detail}}
+        sub = e._metrics.substep_log()
+        if sub is not None:
+            obs["sim"]["substep_contact"] = {by_name[n]: v for n, v in sub.items()}
         if depth:
             obs["depth"] = depth
         return obs

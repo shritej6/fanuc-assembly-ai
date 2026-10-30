@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,7 @@ sys.path.insert(0, str(HERE))
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", type=Path, required=True)
 ap.add_argument("--device", default="cuda:0")
+ap.add_argument("--offset_mm", type=float, default=0.0, help="shift the insert target +x (UF0) to test jamming")
 args = ap.parse_args()
 
 import layout as L
@@ -85,18 +87,41 @@ def main() -> None:
     f = {k: list(v) for k, v in obs["sim"]["frames"].items()}
     up = lambda p, dz: [p[0], p[1], p[2] + dz, *p[3:6]]
     plan = [("above", up(f["grasp_frame"], 60), 0, 1.0), ("down", f["grasp_frame"], 0, 1.0),
-            ("close", f["grasp_frame"], 1, 0.5), ("lift", up(f["grasp_frame"], 60), 1, 1.0)]
+            ("close", f["grasp_frame"], 1, 0.5)]
     obs = run(env, plan, part)
+    # the synchronised jaws centre the part on the first close; a second close on the now-centred part must not move it
+    before = np.array(obs["sim"]["object_poses"][part][:3])
+    obs = run(env, [("reopen", f["grasp_frame"], 0, 0.5), ("reclose", f["grasp_frame"], 1, 0.5)], part)
+    shift = float(np.linalg.norm(np.array(obs["sim"]["object_poses"][part][:3]) - before))
+    print(f"[demo] re-close on the centred part moved it {shift:.3f} mm (synchronised jaws: <= 0.02 mm)", flush=True)
+    obs = run(env, [("lift", up(f["grasp_frame"], 60), 1, 1.0)], part)
     # carry the part's MEASURED in-hand pose to the base's current CAD seat (the grasp shifts the part sub-mm and
     # the free base may have moved), as a vision-corrected skill would
     poses = env.env.object_poses_mm()
     tcp_tf = L.translation(*obs["tcp_pose"][:3])
     tcp_tf[:3, :3] = L.fanuc_rotation(*obs["tcp_pose"][3:6])
     seat = L.pose6_from_tf(env.solver.seat_tf_for(part, base, poses) @ np.linalg.inv(poses[part]) @ tcp_tf)
-    plan = [("over_seat", up(seat, 60), 1, 1.0), ("approach", up(seat, 10.0), 1, 1.0),
-            ("insert", [up(seat, 10.0 - 0.25 * k) for k in range(1, 41)], 1, 0.1), ("open", seat, 0, 0.5),
-            ("retreat", up(seat, 60), 0, 1.0)]
-    run(env, plan, part)
+    seat[0] += args.offset_mm
+    base0 = env.env.object_poses_mm()[base][:3, 3].copy()
+    run(env, [("over_seat", up(seat, 60), 1, 1.0), ("approach", up(seat, 10.0), 1, 1.0)], part)
+    t0 = time.time()
+    for k in range(1, 43):                    # 0.25 mm per 0.1 s env step, one trace row each, 0.5 mm into the seat
+        s = env.step_tcp([[*up(seat, 10.0 - 0.25 * k), 1]], 0.1)["sim"]
+        poses = env.env.object_poses_mm()
+        d = np.linalg.inv(env.solver.seat_tf_for(part, base, poses)) @ poses[part]
+        c = s["contact_peak"][part]
+        sub = s.get("substep_contact", {}).get(part)
+        print(f"[demo] insert row {k}: tcp dz {10.0 - 0.25 * k:.2f} mm, part above seat {d[2, 3]:.3f} mm "
+              f"xy {d[0, 3]:.3f} {d[1, 3]:.3f}, peak normal {c['normal_N']:.3f} lateral {c['lateral_N']:.3f} N "
+              f"torque {c['torque_Nm']:.4f} N m" + (f", substep normal {[t[0] for t in sub]}" if sub else ""),
+              flush=True)
+    insert_hz = 42 / (time.time() - t0)
+    poses = env.env.object_poses_mm()
+    d = np.linalg.inv(env.solver.seat_tf_for(part, base, poses)) @ poses[part]
+    print(f"[demo] offset {args.offset_mm} mm: part {d[2, 3]:.3f} mm above seat before release "
+          f"({'SEATED' if abs(d[2, 3]) < 0.3 and np.hypot(d[0, 3], d[1, 3]) < 1.0 else 'NOT SEATED'}); insert {insert_hz:.2f} env steps/s; "
+          f"base moved {np.round(poses[base][:3, 3] - base0, 3).tolist()} mm during the insert", flush=True)
+    run(env, [("open", seat, 0, 0.5), ("retreat", up(seat, 60), 0, 1.0)], part)
     print(f"[demo] success={env.env.episode_success()} -> {out}", flush=True)
     env.close()
 

@@ -99,8 +99,11 @@ def make_scene_cfg(pool: list[str], contact: dict, jaw_force_n: float, home_rad:
         actuators={
             "arm": ImplicitActuatorCfg(joint_names_expr=["J[1-6]"], stiffness=ARM_STIFFNESS, damping=ARM_DAMPING,
                                        effort_limit_sim=ARM_EFFORT),
-            "jaws": ImplicitActuatorCfg(joint_names_expr=["jaw_.*"], stiffness=C.JAW_DRIVE_STIFF,
-                                        damping=C.JAW_DRIVE_DAMP, effort_limit_sim=jaw_force_n)})
+            # jaw_r follows jaw_l through a mimic joint (assets.set_jaw_force): one drive, 2 x the per-finger force
+            "jaws": ImplicitActuatorCfg(joint_names_expr=["jaw_l"], stiffness=2.0 * C.JAW_DRIVE_STIFF,
+                                        damping=2.0 * C.JAW_DRIVE_DAMP, effort_limit_sim=2.0 * jaw_force_n),
+            "jaw_follower": ImplicitActuatorCfg(joint_names_expr=["jaw_r"], stiffness=0.0, damping=0.0,
+                                                effort_limit_sim=2.0 * jaw_force_n)})
     names = [prim_name(u) for u in pool]
     for n in names:
         setattr(scene, n, RigidObjectCfg(prim_path=f"{OBJECTS_ROOT}/{n}", spawn=None))
