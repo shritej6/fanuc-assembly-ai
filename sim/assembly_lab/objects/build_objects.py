@@ -72,6 +72,14 @@ def locating_features(n: int, role: int, feats: dict) -> list[dict]:
     return located
 
 
+# xy capture from a CAD column sweep (agent 1, 2026-10-30): the upper part dropped at 0-4 mm offsets in 8 directions
+# onto the base + earlier steps; capture = min over directions of the end of the lead-in ramp (slope >= 0.35, steeper
+# than PLA friction). Overrides the declared-mate value where a side has no chamfer (run10: every M4_02 landed on
+# M4_01's flat top at the declared 2.0 mm).
+CAPTURE_SWEEP_MM = {(3, 2): 1.4, (4, 2): 0.5, (4, 4): 0.5, (5, 4): 0.5, (6, 4): 0.5}
+CAPTURE_SWEEP_NOTE = "CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was {}"
+
+
 def insertion(n: int, role: int, feats: dict, sweep: dict) -> dict | None:
     if role == 0:
         return None
@@ -83,10 +91,13 @@ def insertion(n: int, role: int, feats: dict, sweep: dict) -> dict | None:
                   for _, w, y in F.importlib.import_module(F.MODULES[4]).GUIDE_RIBS]
     clearance = min(m["clearance_per_side_mm"] for m in lower)
     capture = min(m["capture_mm"] for m in lower)
+    source = None
+    if (n, role) in CAPTURE_SWEEP_MM:
+        source, capture = CAPTURE_SWEEP_NOTE.format(capture), CAPTURE_SWEEP_MM[(n, role)]
     r_eff = max(radii) if radii else None
     cad_tol = math.degrees(clearance / r_eff) if r_eff else None
     tols = [t for t in (cad_tol, (sweep or {}).get("yaw_tol_deg")) if t is not None and r_eff]
-    return {"onto": [m["with"] for m in lower], "axis": [0.0, 0.0, -1.0],
+    out = {"onto": [m["with"] for m in lower], "axis": [0.0, 0.0, -1.0],
             "engagement_mm": max(m["engagement_mm"] for m in lower),
             "xy_clearance_mm": clearance, "xy_capture_mm": capture,
             "r_eff_mm": round(r_eff, 3) if r_eff else None,
@@ -97,6 +108,9 @@ def insertion(n: int, role: int, feats: dict, sweep: dict) -> dict | None:
             "combined_rule": "|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to "
                              "be caught by the chamfer",
             "sim_sweep": sweep}
+    if source:
+        out["xy_capture_source"] = source
+    return out
 
 
 def mesh_entry(oid: str, frame: dict) -> tuple[dict, M.HeightMap]:

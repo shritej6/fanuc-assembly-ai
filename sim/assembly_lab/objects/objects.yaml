@@ -4789,11 +4789,10 @@ objects:
       engagement_mm: 9.0
       xy_clearance_mm: 0.5
       xy_capture_mm: 1.4
-      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 3.0'
       r_eff_mm: 8.0
       yaw_tol_deg: 3.581
       yaw_tol_cad_deg: 3.581
-      yaw_capture_deg: 21.486
+      yaw_capture_deg: 10.027
       yaw_tol_rule: min(clearance / r_eff from the CAD features, the simulated sweep); None = yaw-free (round)
       combined_rule: '|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to be caught by
         the chamfer'
@@ -4802,6 +4801,7 @@ objects:
         shift_tol_mm: 0.375
         symmetry: every 360 deg
         source: sdg/data/insertion_tolerance.json
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 3.0'
     max_force:
       axial_N: 15.0
       lateral_N: 4.5
@@ -5602,11 +5602,10 @@ objects:
       engagement_mm: 13.0
       xy_clearance_mm: 0.5
       xy_capture_mm: 0.5
-      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 2.0'
       r_eff_mm: 12.971
       yaw_tol_deg: 2.209
       yaw_tol_cad_deg: 2.209
-      yaw_capture_deg: 8.834
+      yaw_capture_deg: 2.209
       yaw_tol_rule: min(clearance / r_eff from the CAD features, the simulated sweep); None = yaw-free (round)
       combined_rule: '|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to be caught by
         the chamfer'
@@ -5615,6 +5614,7 @@ objects:
         shift_tol_mm: 0.5
         symmetry: every 360 deg
         source: sdg/data/insertion_tolerance.json
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 2.0'
     max_force:
       axial_N: 15.0
       lateral_N: 4.5
@@ -6005,11 +6005,10 @@ objects:
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
       xy_capture_mm: 0.5
-      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
-      yaw_capture_deg: 4.378
+      yaw_capture_deg: 2.189
       yaw_tol_rule: min(clearance / r_eff from the CAD features, the simulated sweep); None = yaw-free (round)
       combined_rule: '|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to be caught by
         the chamfer'
@@ -6018,6 +6017,7 @@ objects:
         shift_tol_mm: 0.5
         symmetry: every 180 deg
         source: sdg/data/insertion_tolerance.json
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
     max_force:
       axial_N: 15.0
       lateral_N: 4.5
@@ -6917,11 +6917,10 @@ objects:
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
       xy_capture_mm: 0.5
-      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
-      yaw_capture_deg: 4.378
+      yaw_capture_deg: 2.189
       yaw_tol_rule: min(clearance / r_eff from the CAD features, the simulated sweep); None = yaw-free (round)
       combined_rule: '|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to be caught by
         the chamfer'
@@ -6930,6 +6929,7 @@ objects:
         shift_tol_mm: 0.5
         symmetry: every 180 deg
         source: sdg/data/insertion_tolerance.json
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
     max_force:
       axial_N: 2.5
       lateral_N: 4.5
@@ -7812,11 +7812,10 @@ objects:
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
       xy_capture_mm: 0.5
-      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
-      yaw_capture_deg: 4.378
+      yaw_capture_deg: 2.189
       yaw_tol_rule: min(clearance / r_eff from the CAD features, the simulated sweep); None = yaw-free (round)
       combined_rule: '|xy error| + r_eff * |yaw error (rad)| <= xy_clearance_mm to seat; <= xy_capture_mm to be caught by
         the chamfer'
@@ -7825,6 +7824,7 @@ objects:
         shift_tol_mm: 0.5
         symmetry: every 180 deg
         source: sdg/data/insertion_tolerance.json
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
     max_force:
       axial_N: 2.5
       lateral_N: 4.5
