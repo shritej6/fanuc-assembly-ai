@@ -125,11 +125,12 @@ def test_generation_rollup_measures_from_worker_stats(tmp_path):
         d = tmp_path / "pick_insert" / "p4"
         d.mkdir(parents=True, exist_ok=True)
         (d / f"w{w}.hdf5.stats.json").write_text(json.dumps({
-            "skill": "pick_insert", "accepted": acc, "attempts": att, "wall_s": wall,
+            "skill": "pick_insert", "product": 4, "accepted": acc, "attempts": att, "wall_s": wall,
             "failed_gates": {"final_xy_mm": att - acc}}))
     s = rollup(tmp_path)["pick_insert"]
     assert s["acceptance_rate"] == round(100 / 150, 4) and s["demos_per_worker_hour"] == 100.0
     assert s["failed_gates"] == {"final_xy_mm": 50}
+    assert rollup(tmp_path)["pick_insert:4"]["workers"] == 2
 
 
 @needs_ffmpeg

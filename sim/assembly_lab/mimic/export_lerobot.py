@@ -1,6 +1,6 @@
 """Convert accepted Isaac Lab Mimic HDF5 demos into a GR00T N1.7 LeRobot v2.1 dataset.
 
-An episode is exported only if (1) its HDF5 `success` attr is true and (2) its whole contact trace passes the force
+An episode is exported only if (1) agent 3 kept it (attr `kept`; `success` for files without it) and (2) its whole contact trace passes the force
 guard (physics/limits.yaml). Rejections are counted per reason in `meta/t12_export_report.json`, never dropped
 silently. Per frame: state = joints J1..J6 (deg) + gripper + TCP [x, y, z mm, w, p, r deg] (UF0);
 action = the absolute act_tcp row [x, y, z, w, p, r, gripper] the arm must reach by the next frame.
@@ -53,7 +53,10 @@ def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ..
         for key in sorted(f["data"].keys(), key=lambda k: int(k.split("_")[-1])):
             counts["seen"] += 1
             demo = f["data"][key]
-            if not bool(demo.attrs.get("success", False)):
+            if "actions" not in demo:  # a reset that never ran a step
+                counts["empty"] = counts.get("empty", 0) + 1
+                continue
+            if not accepted_attr(demo.attrs):
                 counts["not_success"] += 1
                 continue
             if bool(demo.attrs.get("KINEMATIC_DRY_RUN", False)):
@@ -65,11 +68,32 @@ def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ..
             if contact_key not in demo["obs"]:
                 counts["no_contact_obs"] += 1
                 continue
-            if not check_trace(demo["obs"][contact_key][()], limits).ok:
+            if not check_trace(demo["obs"][contact_key][()][:, :3], limits).ok:  # col 3 = robot_touch_N (env)
                 counts["force"] += 1
                 continue
             accepted.append(EpisodeRef(path, key))
     return accepted, counts
+
+
+def _truthy(v) -> bool:
+    if isinstance(v, bytes):
+        v = v.decode()
+    return v.lower() in ("true", "1") if isinstance(v, str) else bool(v)
+
+
+def accepted_attr(attrs) -> bool:
+    """Agent 3's `kept` decides when present (all gates, annotated at close); the Isaac Lab recorder's `success` attr
+    is overwritten at reset by the env's success term, so it is used only for files without agent 3's metadata."""
+    if "kept" in attrs:
+        return _truthy(attrs["kept"])
+    return _truthy(attrs.get("success", False))
+
+
+def recorded_dt(path: str) -> float | None:
+    """Seconds per recorded row from the recorder's env_args (dt x decimation), None if the file has no sim_args."""
+    with h5py.File(path, "r") as f:
+        args = json.loads(f["data"].attrs.get("env_args", "{}")).get("sim_args")
+    return float(args["dt"]) * int(args["decimation"]) if args else None
 
 
 def frame_indices(n_steps: int, sim_dt: float, fps: int) -> tuple[np.ndarray, np.ndarray]:
@@ -173,8 +197,11 @@ def export(inputs: list[str], out: Path, sim_dt: float, fps: int, size: tuple[in
     limits = load_limits(limits_path or REPO / spec.raw["force_guard"]["limits_file"])
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(f"{out} is not empty: export into a fresh directory")
-    refs, report = [], {"files": len(inputs), "limits": limits.__dict__}
+    refs, report = [], {"files": len(inputs), "limits": limits.__dict__, "sim_dt": sim_dt, "fps": fps}
     for path in inputs:
+        dt = recorded_dt(path)
+        if dt is not None and abs(dt - sim_dt) > 1e-9:
+            raise ValueError(f"{path} records one row per {dt} s, not --sim-dt {sim_dt} s")
         acc, counts = screen(path, limits, contact_key)
         refs += acc
         for k, v in counts.items():
@@ -223,7 +250,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inputs", nargs="+", required=True, help="generated Mimic HDF5 files (successful ones)")
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--sim-dt", type=float, default=0.2, help="time per recorded row (skills/motion.py DT_S)")
+    ap.add_argument("--sim-dt", type=float, default=0.1, help="time per recorded row (skills/motion.py DT_S = env step)")
     ap.add_argument("--fps", type=int, default=5, help="exported frame rate = 1 / act dt on the cell")
     ap.add_argument("--width", type=int, default=640, help="frame width (DATA_FORMAT.md: 640)")
     ap.add_argument("--height", type=int, default=360, help="frame height (DATA_FORMAT.md: 360)")

@@ -1,10 +1,11 @@
-"""Isaac Lab Mimic data multiplier for the T12 assembly cell (agent 4).
+"""Isaac Lab Mimic data multiplier for the T12 assembly cell (agents 4 / 7).
 
-Agent 1's AssemblyCellEnv is a single-env SimulationContext wrapper, not the ManagerBasedRLMimicEnv that Isaac Lab's
-annotate_demos.py / generate_dataset.py need, so `mimicgen.py` + `generate.py` run the same Mimic algorithm directly
-on it (object-centric subtask segments, nearest-neighbour source selection, interpolation, action noise) and keep
-only demos that pass the precision gates.
+`generate.py` runs the MimicGen algorithm (object-centric subtask segments, nearest-neighbour source selection,
+connectors, tapered action noise; `mimicgen.py`) over agent 1's env through agent 3's IsaacBackend + EpisodeRecorder,
+so every generated demo passes exactly the gates a scripted source demo must pass and is written by the same Isaac Lab
+recorder. `run_generation.py` launches workers on one host; `scale_generation.sh` drives several hosts, then
+`export_lerobot.py` / `validate_lerobot.py` produce the GR00T LeRobot v2.1 dataset.
 
 Host-safe: catalog, frames, force_guard, gates, instructions, spec, mimicgen, lerobot_writer, export_lerobot,
-validate_lerobot, run_generation. Needs Isaac Lab (or the kinematic double): generate.
+validate_lerobot, run_generation. Needs Isaac Lab: generate.
 """
