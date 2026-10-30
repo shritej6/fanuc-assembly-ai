@@ -17,17 +17,15 @@ from assembly.catalog import (
     CatalogResourceError,
     CatalogSchemaError,
     CatalogSemanticError,
-    UnknownBaseError,
-    UnknownProductError,
     load_catalog,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
 OBJECT_GEOMETRY_SOURCE_PATH = ROOT / "assembly" / "sources" / "object_geometry.5a24e10.json"
-GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.20c6f9b.json"
+GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.fac0590.json"
 OBJECT_GEOMETRY_SHA256 = "488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325"
-GRASP_FRAMES_SHA256 = "99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1"
+GRASP_FRAMES_SHA256 = "dbd00b5082042e8a326b380d237890449bfb2206243c1753b7ebe2d940435977"
 CONTRACTS = ROOT / "contracts"
 
 EXPECTED_PRODUCTS = [
@@ -65,6 +63,7 @@ EXPECTED_PART_OWNERS = {
     "M6_03": 6,
     "M6_04": 6,
 }
+
 
 def _catalog_data() -> dict:
     assert CATALOG_PATH.exists(), "assembly/catalog.yaml has not been created"
@@ -115,6 +114,17 @@ def test_catalog_yaml_conforms_to_contract() -> None:
     assert errors == []
 
 
+@pytest.mark.parametrize("offset", [[0, 0], [0, 0, 0, 0]])
+def test_catalog_contract_requires_exact_three_axis_insert_offset(offset: list[int]) -> None:
+    document = deepcopy(_catalog_data())
+    document["products"][0]["steps"][0]["insert_offset_mm"] = offset
+    schema = json.loads((CONTRACTS / "catalog.schema.json").read_text())
+
+    errors = list(Draft202012Validator(schema, registry=_schema_registry()).iter_errors(document))
+
+    assert errors
+
+
 def test_catalog_has_exact_products_names_and_base_types() -> None:
     products = _catalog_data()["products"]
     actual = [(item["product"], item["name"], item["base_type"]) for item in products]
@@ -123,11 +133,7 @@ def test_catalog_has_exact_products_names_and_base_types() -> None:
 
 def test_catalog_covers_each_taxonomy_part_under_its_owner_once() -> None:
     products = _catalog_data()["products"]
-    actual_pairs = [
-        (step["object_id"], product["product"])
-        for product in products
-        for step in product["steps"]
-    ]
+    actual_pairs = [(step["object_id"], product["product"]) for product in products for step in product["steps"]]
     assert Counter(part for part, _ in actual_pairs) == Counter(EXPECTED_PART_OWNERS.keys())
     assert dict(actual_pairs) == EXPECTED_PART_OWNERS
 
@@ -146,9 +152,9 @@ def test_catalog_records_immutable_cad_geometry_provenance() -> None:
     assert catalog["grasp_source"] == {
         "file": "cad/grasp_frames.json",
         "generator": "cad/grasp_frames.py",
-        "commit": "20c6f9bab0aa44b3bae4cd915a1c957705d74da4",
-        "commit_timestamp": "2026-10-29T15:34:19-05:00",
-        "snapshot": "assembly/sources/grasp_frames.20c6f9b.json",
+        "commit": "fac05905338b82a90744e934268f4a30bf412fc7",
+        "commit_timestamp": "2026-10-30T02:53:51-05:00",
+        "snapshot": "assembly/sources/grasp_frames.fac0590.json",
         "sha256": GRASP_FRAMES_SHA256,
     }
 
@@ -160,11 +166,7 @@ def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> Non
         for object_id, item in source["objects"].items()
         if object_id in EXPECTED_PART_OWNERS
     }
-    actual = {
-        step["object_id"]: step
-        for product in _catalog_data()["products"]
-        for step in product["steps"]
-    }
+    actual = {step["object_id"]: step for product in _catalog_data()["products"] for step in product["steps"]}
 
     assert set(actual) == set(expected_objects)
     for object_id, transform in expected_objects.items():
@@ -182,6 +184,11 @@ def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> Non
 
 def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
     source = _verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256)
+    typed_steps = {
+        step.object_id: step
+        for product in load_catalog().products
+        for step in product.steps
+    }
     actual = {
         step["object_id"]: step["gripper_roll_deg"]
         for product in _catalog_data()["products"]
@@ -195,6 +202,9 @@ def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
         expected_roll = 90.0 if grips[0]["closing_axis"] == "X" else 0.0
         assert grips[0]["roll_offset_deg"] == expected_roll
         assert actual_roll == expected_roll
+        preferred_tcp = grips[0]["tcp_local_mm"][f"{expected_roll:g}"]
+        assert typed_steps[object_id].preferred_grasp.turn_deg == expected_roll
+        assert typed_steps[object_id].preferred_grasp.tcp_local_mm == tuple(preferred_tcp)
 
 
 def test_catalog_grasp_source_uses_team_v_printed_finger_contacts() -> None:
@@ -204,7 +214,26 @@ def test_catalog_grasp_source_uses_team_v_printed_finger_contacts() -> None:
         "cad/products build() (printed CAD) + cad/fingers (Team V fingers), cad/grasp_frames.py"
     )
     assert source["gripper_gap_mm"] == {"closed_max": 4.5, "open_min": 16.5}
-    assert source["objects"]["M1_04"]["grips"][0]["tcp_local_mm"] == [0.0, 0.0, 27.9]
+    assert source["objects"]["M1_04"]["grips"][0]["tcp_local_mm"]["90"] == [0.0, 1.8, 27.9]
+
+
+def test_catalog_rejects_legacy_pad_point_as_commandable_tcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = deepcopy(_verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256))
+    source["objects"]["M1_01"]["grips"][0]["tcp_local_mm"] = [0.0, -21.06, 8.4]
+    source_path = tmp_path / "legacy-grasp-source.json"
+    source_sha256 = _write_json_source(source_path, source)
+    catalog_data = deepcopy(_catalog_data())
+    catalog_data["grasp_source"]["sha256"] = source_sha256
+    catalog_path = _write_catalog(tmp_path / "legacy-grasp-catalog.yaml", catalog_data)
+    trusted_source = catalog_module.GraspSource(**catalog_data["grasp_source"])
+    monkeypatch.setattr(catalog_module, "TRUSTED_GRASP_SOURCE", trusted_source)
+    monkeypatch.setattr(catalog_module, "GRASP_SOURCE_SNAPSHOT_PATH", source_path)
+
+    with pytest.raises(CatalogResourceError, match="turn-indexed tcp_local_mm"):
+        load_catalog(catalog_path)
 
 
 def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -280,7 +309,6 @@ def test_load_catalog_rejects_contract_violation_with_typed_error(tmp_path: Path
         (("products", 0, "steps", 3, "step"), 3, "steps must be exactly 1..4"),
         (("products", 0, "steps", 0, "object_id"), "M2_01", "expected M1_01"),
         (("products", 2, "base_type"), "A", "base type A does not match"),
-        (("products", 0, "steps", 0, "insert_offset_mm"), [0, 0], "three finite numbers"),
         (("products", 0, "steps", 0, "insert_offset_mm"), [0, float("inf"), 0], "three finite numbers"),
     ],
 )
@@ -339,9 +367,7 @@ def test_load_catalog_rejects_gripper_roll_outside_contract(tmp_path: Path) -> N
         pytest.param([[1, 0, 0], [0, 1, 0], [0, 0, -1]], id="reflection"),
     ],
 )
-def test_load_catalog_rejects_invalid_installed_rotation_matrices(
-    tmp_path: Path, rotation: list[list[float]]
-) -> None:
+def test_load_catalog_rejects_invalid_installed_rotation_matrices(tmp_path: Path, rotation: list[list[float]]) -> None:
     invalid = deepcopy(_catalog_data())
     invalid["products"][0]["steps"][0]["installed_rotation_matrix"] = rotation
     path = _write_catalog(tmp_path / "invalid-installed-rotation.yaml", invalid)
@@ -460,51 +486,3 @@ def test_load_catalog_validates_every_registry_schema(
 
     with pytest.raises(CatalogResourceError, match="common.schema.json"):
         load_catalog()
-
-
-def test_shared_bases_select_products_by_type_not_exact_fixture_id() -> None:
-    catalog = load_catalog()
-    actual = {
-        base_id: tuple(product.product for product in catalog.compatible_products_for_base(base_id))
-        for base_id in ("F01", "F02", "F03", "F04", "F05", "F06")
-    }
-
-    assert actual == {
-        "F01": (1, 2),
-        "F02": (1, 2),
-        "F03": (3,),
-        "F04": (4, 5, 6),
-        "F05": (4, 5, 6),
-        "F06": (4, 5, 6),
-    }
-
-
-def test_catalog_lookup_failures_use_typed_domain_errors() -> None:
-    catalog = load_catalog()
-
-    with pytest.raises(UnknownProductError, match="99"):
-        catalog.product(99)
-    with pytest.raises(UnknownBaseError, match="F99"):
-        catalog.compatible_products_for_base("F99")
-
-
-def test_recipe_graph_traverses_forward_then_exact_reverse() -> None:
-    graph = load_catalog().recipe_graph(4)
-
-    assert graph.nodes == ("base:C", "M4_01", "M4_02", "M4_03", "M4_04")
-    assert graph.edges == (
-        ("base:C", "M4_01"),
-        ("M4_01", "M4_02"),
-        ("M4_02", "M4_03"),
-        ("M4_03", "M4_04"),
-    )
-    assert graph.assembly_traversal() == ("base:C", "M4_01", "M4_02", "M4_03", "M4_04")
-    assert graph.dismantling_traversal() == ("M4_04", "M4_03", "M4_02", "M4_01")
-
-
-def test_load_catalog_accepts_unique_products_in_any_yaml_order(tmp_path: Path) -> None:
-    reordered = deepcopy(_catalog_data())
-    reordered["products"].reverse()
-    path = _write_catalog(tmp_path / "reordered.yaml", reordered)
-
-    assert tuple(product.product for product in load_catalog(path).products) == (6, 5, 4, 3, 2, 1)

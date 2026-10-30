@@ -3,7 +3,9 @@
 # Motion planning must transform both through the measured fixture pose; neither
 # value is an absolute UF0 TCP target. Gripper rolls are T29 grasp-frame offsets:
 # commanded TCP r = measured part yaw + roll_offset_deg. T29 defines X-closing
-# grips as 90 degrees and Y-closing grips as 0 degrees.
+# grips as 90 degrees and Y-closing grips as 0 degrees. Only that source-
+# validated turn is authorized by this catalog; the algebraic 180-degree
+# alternative remains unavailable to CELL until physical clearance evidence lands.
 geometry_source:
   file: sdg/data/object_geometry.json
   generator: sdg/tools/object_geometry.py
@@ -14,10 +16,10 @@ geometry_source:
 grasp_source:
   file: cad/grasp_frames.json
   generator: cad/grasp_frames.py
-  commit: 20c6f9bab0aa44b3bae4cd915a1c957705d74da4
-  commit_timestamp: "2026-10-29T15:34:19-05:00"
-  snapshot: assembly/sources/grasp_frames.20c6f9b.json
-  sha256: 99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1
+  commit: fac05905338b82a90744e934268f4a30bf412fc7
+  commit_timestamp: "2026-10-30T02:53:51-05:00"
+  snapshot: assembly/sources/grasp_frames.fac0590.json
+  sha256: dbd00b5082042e8a326b380d237890449bfb2206243c1753b7ebe2d940435977
 products:
   - product: 1
     name: Rotary Knob Module
