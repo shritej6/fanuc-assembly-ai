@@ -2,6 +2,29 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T13 detector + wrist classifier · CODEX · REVIEW
+
+- Extracted the T13-owned final test-bed training path from the broader T27 work onto `feature/T13-detector`:
+  detector sets N/R/Q, classifier set O, 30 exact part identities, three foreign labels, and 24 per-part fallen
+  labels. Set-P, PatchCore, FoundationPose, weak-set fine-tuning, and the defect head remain outside this task.
+- Production preparation now records every consumed chunk and fails unless the manifest contains exactly N=40,
+  R=20, Q=8, and O=48 with the approved Cosmos ranges. Production detector/classifier entry points reject legacy
+  profiles; loose movable parts without `rest` fail closed while bases and foreign objects remain valid.
+- Preserved the measured RT-DETR evaluation-memory fix, 40 GB A100 effective-batch recipe, H100 recipe, and the
+  30-epoch classifier configuration. Updated `docs/T13_TRAINING.md` to the current N/R/Q/O runbook.
+- Retained Rosie artifacts: `~/fanuc-t27-results/fanuc-t27-runs/main/full/{detector,classifier}`. Independently read
+  on 2026-10-30: detector test mAP `0.715298`, mAP50 `0.776050`, mAR100 `0.922475`; detector model SHA-256
+  `b054f9aa224f56081998a77b778ff6336985a65bfbc2bb658b1036fc0d3fd785`. Classifier held-out accuracy
+  `0.8627371820750909`, macro F1 `0.8628792062852598` over 2,477 samples; classifier model SHA-256
+  `3d0ec5eb28545de301101433af5ef7057d4e6ccc23083cf417b4d8bae472557f`.
+- The classifier artifact contains all 30 labels, a 30x30 confusion matrix, and explicit look-alike group results.
+  Source limitation remains explicit: legacy chunk metadata reports `code_commits: ["unknown"]`, and source-side
+  transfer hashes were not retained; the retained derived-data provenance and final model hashes are measured.
+- Verification: `uv run pytest -q -p no:cacheprovider` -> 200 passed; `uv run ruff check .` -> passed;
+  `uv lock --check` and `git diff --check` -> passed.
+- Next: Claude reviews the T13 PR; the user merges it. Do not duplicate training. PR #7 should be rebased/split after
+  T13 lands so its unrelated T14/FoundationPose/Set-P/T31 blockers do not prevent accepting these measured models.
+
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 
 - User said go (2026-10-28 ~08:00): T13 and T14 are READY for Codex.
