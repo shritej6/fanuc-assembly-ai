@@ -11,6 +11,7 @@ DETECTOR = ROOT / "perception" / "configs" / "rtdetr_t4.yaml"
 CLASSIFIER = ROOT / "perception" / "configs" / "classifier_t4.yaml"
 H100_DETECTOR = ROOT / "perception" / "configs" / "rtdetr_h100.yaml"
 H100_CLASSIFIER = ROOT / "perception" / "configs" / "classifier_h100.yaml"
+A100_40G_DETECTOR = ROOT / "perception" / "configs" / "rtdetr_a100_40g.yaml"
 
 
 def test_ml_group_pins_security_compatible_torch_pair() -> None:
@@ -86,10 +87,10 @@ def test_classifier_config_requires_pretrained_resnet18_and_30_outputs() -> None
 
 
 @pytest.mark.parametrize(
-    ("path", "task", "image_size", "batch_size", "workers"),
+    ("path", "task", "image_size", "batch_size", "workers", "epochs"),
     [
-        (H100_DETECTOR, "detector", 1280, 20, 8),
-        (H100_CLASSIFIER, "classifier", 224, 64, 4),
+        (H100_DETECTOR, "detector", 1280, 20, 8, 20),
+        (H100_CLASSIFIER, "classifier", 224, 64, 4, 30),
     ],
 )
 def test_h100_configs_use_bf16_without_an_fp16_scaler(
@@ -98,6 +99,7 @@ def test_h100_configs_use_bf16_without_an_fp16_scaler(
     image_size: int,
     batch_size: int,
     workers: int,
+    epochs: int,
 ) -> None:
     config = load_training_config(path)
 
@@ -111,6 +113,25 @@ def test_h100_configs_use_bf16_without_an_fp16_scaler(
     assert config["training"]["gradient_accumulation_steps"] == 1
     assert config["training"]["per_device_train_batch_size"] == batch_size
     assert config["training"]["dataloader_num_workers"] == workers
+    assert config["training"]["num_train_epochs"] == epochs
+
+
+def test_a100_40g_detector_preserves_the_h100_effective_batch() -> None:
+    h100 = load_training_config(H100_DETECTOR)
+    a100 = load_training_config(A100_40G_DETECTOR)
+
+    def effective_batch(training: dict) -> int:
+        return training["per_device_train_batch_size"] * training["gradient_accumulation_steps"]
+
+    assert a100["training"]["per_device_train_batch_size"] == 5
+    assert effective_batch(a100["training"]) == effective_batch(h100["training"]) == 20
+    split = {"per_device_train_batch_size", "gradient_accumulation_steps"}
+    assert {key: value for key, value in a100["training"].items() if key not in split} == {
+        key: value for key, value in h100["training"].items() if key not in split
+    }
+    assert {key: value for key, value in a100.items() if key != "training"} == {
+        key: value for key, value in h100.items() if key != "training"
+    }
 
 
 @pytest.mark.parametrize(

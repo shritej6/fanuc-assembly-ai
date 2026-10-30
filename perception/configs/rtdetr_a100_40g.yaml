@@ -1,0 +1,47 @@
+task: detector
+hardware_profile: h100
+model:
+  name: PekingU/rtdetr_r50vd
+  revision: df939e661d8c52e80608d1ec566561aabd25a4e7
+  image_size: 1280
+training:
+  seed: 1337
+  num_train_epochs: 20
+  max_steps: -1
+  max_train_samples: null
+  max_eval_samples: null
+  learning_rate: 0.00005
+  weight_decay: 0.0001
+  warmup_ratio: 0.05
+  # Measured 40 GB A100 recipe: preserve the H100 effective batch of 20 with headroom.
+  per_device_train_batch_size: 5
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  dataloader_num_workers: 8
+  fp16: false
+  bf16: true
+  tf32: false
+  remove_unused_columns: false
+  eval_do_concat_batches: false
+  eval_strategy: epoch
+  save_strategy: epoch
+  logging_strategy: steps
+  logging_steps: 50
+  load_best_model_at_end: true
+  metric_for_best_model: eval_map
+  greater_is_better: true
+  save_total_limit: 3
+smoke:
+  num_train_epochs: 1
+  max_steps: 2
+  max_train_samples: 16
+  max_eval_samples: 8
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  dataloader_num_workers: 0
+  eval_strategy: steps
+  save_strategy: steps
+  logging_strategy: steps
+  eval_steps: 1
+  save_steps: 1
+  logging_steps: 1
