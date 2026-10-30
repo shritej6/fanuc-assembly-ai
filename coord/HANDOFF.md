@@ -25,6 +25,15 @@ Newest first. One entry per finished task.
   pad line, so a 15 N insertion guard load is 0.33 N m about the closing axis; estimated real pad torsion capacity is
   ~0.14 N m (mu ~ 1 ESTIMATE, not measured). Expect the part to pivot in the fingers before the force guard trips;
   insert slowly near the seat and stop at first touch.
+- Touch-stop result (agent 3, repo_runA = env A + skills 2c50db5 + objects.yaml 0ccb44a): P1 M1_01 3/3 and P4 M4_01
+  3/3 kept on the first attempt; seat z -0.098 to -0.099 mm, xy 0.075-0.237 mm, tilt <= 0.008 deg, first contact
+  1.5-6.8 N, peak torque <= 0.040 N m, carry drift <= 0.012 mm. But env A FAILS the pad-penetration limit: grasp_diag
+  penetration_max 0.401 mm (limit 0.2 mm), so jaw_q opens ~0.15 mm per side as the seat contact lets the solver push the
+  pads partly out.
+- Candidates for a later fine-tune (not in today's dataset, which stays on sync2): env A (`repo_envA`, md5
+  14c92bdfd166002a712fab9f3dc2b3f8, penetration 0.40 mm FAIL) and env C (`~/t12_data/repo_envC` on fa-mimic / fa-sim =
+  env A + c4ffab0 physics_cfg, depenetration 5.0, md5 96b2a2a3ef64c8406db0eb315dbd1a91; meets every grip limit,
+  penetration <= 0.05 mm, untested with the touch-stop skill). Next step: run agent 3's touch-stop P1-P6 on env C.
 - Next: agent 3's touch-stop verdict on env A (becomes the run-2 env only if every product seats); finer seat steps or
   a substep-force stop; the 4.6 deg M1_02 rotation while M1_03 closes; edge-grip axial push.
 
