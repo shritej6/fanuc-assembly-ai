@@ -44,6 +44,15 @@ def _obs(spec_keys: dict) -> dict:
                                                                         spec_keys["images"].items()}}
 
 
+def meta_matches(demo) -> bool:
+    """The annotated meta belongs to this recorded episode: its step count equals the recorded rows and the plan obs
+    the annotation adds are there (a chunk with more meta lines than episodes gets them shifted onto the wrong demo)."""
+    steps = demo.attrs.get("steps")
+    if steps is not None and int(steps) != demo["actions"].shape[0]:
+        return False
+    return "plan_ids" in demo["obs"] and "plan_target" in demo["obs"]
+
+
 def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ...] = ("table_cam", "side_cam",
                                                                                      "wrist_cam")) -> tuple[list, dict]:
     """Cheap pass: success attr, force guard, no dry-run stamp, all 3 cameras. Returns accepted refs + counts."""
@@ -58,6 +67,9 @@ def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ..
                 continue
             if not accepted_attr(demo.attrs):
                 counts["not_success"] += 1
+                continue
+            if not meta_matches(demo):  # agent 3's annotate paired this demo with another attempt's meta line
+                counts["meta_mismatch"] = counts.get("meta_mismatch", 0) + 1
                 continue
             if bool(demo.attrs.get("KINEMATIC_DRY_RUN", False)):
                 counts["dry_run"] += 1

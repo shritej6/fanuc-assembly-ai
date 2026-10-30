@@ -155,3 +155,23 @@ def test_screen_rejects_dry_runs_and_missing_cameras(setup, tmp_path):
         del f["data/demo_3/obs/wrist_cam"]
     refs, counts = E.screen(str(path), load_limits(limits), "sim_contact_peak")
     assert refs == [] and counts["dry_run"] == 1 and counts["no_images"] == 1
+
+
+def test_meta_matches_rejects_a_shifted_annotation(tmp_path):
+    import h5py
+    import numpy as np
+
+    from sim.assembly_lab.mimic.export_lerobot import meta_matches
+
+    with h5py.File(tmp_path / "f.hdf5", "w") as f:
+        d = f.create_group("data/demo_0")
+        d.create_dataset("actions", data=np.zeros((393, 7)))
+        d.create_group("obs").create_dataset("plan_ids", data=np.zeros((393, 4)))
+        d["obs"].create_dataset("plan_target", data=np.zeros((393, 1)))
+        d.attrs["steps"] = 393
+        assert meta_matches(d)
+        d.attrs["steps"] = 82  # another attempt's meta line (chunk had 2 metas for 1 episode)
+        assert not meta_matches(d)
+        d.attrs["steps"] = 393
+        del d["obs/plan_ids"]  # annotate skipped the plan obs on a count mismatch
+        assert not meta_matches(d)
