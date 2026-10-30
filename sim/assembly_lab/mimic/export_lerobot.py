@@ -81,6 +81,9 @@ def _truthy(v) -> bool:
     return v.lower() in ("true", "1") if isinstance(v, str) else bool(v)
 
 
+PROVENANCE = ("generator", "env_manifest_md5", "case", "scenario")  # demo attrs copied to meta/t12_episodes.jsonl
+
+
 def accepted_attr(attrs) -> bool:
     """Agent 3's `kept` decides when present (all gates, annotated at close); the Isaac Lab recorder's `success` attr
     is overwritten at reset by the env's success term, so it is used only for files without agent 3's metadata."""
@@ -163,8 +166,9 @@ def convert_episode(job: dict) -> dict:
             W.encode_mp4(frames, W.video_path(root, ep, cam), job["fps"])
             stats[f"observation.images.{cam}"] = W.image_stats(frames)
         peak = demo["obs"][job["contact_key"]][()].max(axis=0).tolist()
+        prov = {k: str(demo.attrs[k]) for k in PROVENANCE if k in demo.attrs}
     return {"ref": job["ref"], "episode_index": ep, "state": state, "action": action, "stats": stats,
-            "task": instruction(ids, target), "plan": decode_plan_ids(ids), "force_peak": peak}
+            "task": instruction(ids, target), "plan": decode_plan_ids(ids), "force_peak": peak, "provenance": prov}
 
 
 def write_parquet(root: Path, rec: dict, task_index: int, start_index: int, fps: int) -> dict:
@@ -240,7 +244,7 @@ def _finish(out: Path, records: list[dict], fps: int, size: tuple[int, int], rep
     with open(out / "meta/t12_episodes.jsonl", "w") as f:
         for rec in sorted(records, key=lambda r: r["episode_index"]):
             f.write(json.dumps({"episode_index": rec["episode_index"], "source": list(rec["ref"]),
-                                "force_peak": rec["force_peak"], **rec["plan"]}) + "\n")
+                                "force_peak": rec["force_peak"], **rec["plan"], **rec.get("provenance", {})}) + "\n")
     report.update(exported=len(records), frames=int(index), tasks=len(tasks))
     (out / "meta/t12_export_report.json").write_text(json.dumps(report, indent=2))
     return report

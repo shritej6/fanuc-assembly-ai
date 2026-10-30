@@ -3,7 +3,7 @@
 # Every step is idempotent; workers run detached on the hosts (nohup), so the controller may sleep in between.
 #
 #   M=sim/assembly_lab/mimic/scale_generation.sh
-#   $M repo                           # repo_a7 = fa-sim:~/t12_data/repo_run10 (agent 3's skills + agent 1's env) + mimic/
+#   $M repo                           # repo_a7 = fa-sim run10 copy + repo_sync2 env (md5-verified) + mimic/
 #   $M seeds                          # agent 3's closed seed files (+ drop tags) from fa-mimic -> every host
 #   MIMIC_GROUPS="pick_insert:4 pick_insert:6" TARGET=50 MAXATT=400 \
 #     $M launch r1 fa-sim:1,2,3:2 fa-mimic:0,1,2,3:2 fa-gen1:0,1,2,3:2 fa-a6k-1:0,1:2 fa-l40s-1:0:2
@@ -18,7 +18,9 @@ GATHER=${GATHER:-fa-mimic}
 SKILLS=${SKILLS:-"pick_insert"}
 SCR=${SCR:-${TMPDIR:-/tmp}/t12_a7}
 SRC_REPO_HOST=${SRC_REPO_HOST:-fa-sim}
-SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skills + gates + env the seeds came from
+SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skills + gates the seeds came from
+ENV_REPO=${ENV_REPO:-t12_data/repo_sync2}  # the current env (real gripper mass); overlaid on SRC_REPO
+ENV_MD5=${ENV_MD5:-dbcfe5fd48d73cde763ffdc4316291a5}  # md5 of ${ENV_REPO}.md5, the manifest of its files
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SSH=(ssh -o ControlPath=none -o ConnectTimeout=15 -n)
 RSYNC=(rsync -a -e "ssh -o ControlPath=none -o ConnectTimeout=15")
@@ -38,8 +40,27 @@ seeds() {
 }
 
 repo() {
+  # repo_a7 = agent 3's run10 copy (skills, robot/, policy_learn) + the current env (ENV_REPO, verified against its md5
+  # manifest, whose own md5 must be ENV_MD5) + this checkout's mimic/. ENV_MANIFEST_MD5 is stamped into every demo.
   mkdir -p "$SCR/repo_a7"
   "${RSYNC[@]}" --delete --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${SRC_REPO}/" "$SCR/repo_a7/"
+  "${RSYNC[@]}" --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${ENV_REPO}/" "$SCR/repo_a7/"
+  "${RSYNC[@]}" "${SRC_REPO_HOST}:${ENV_REPO}.md5" "$SCR/env_manifest.md5"
+  python3 - "$SCR/env_manifest.md5" "$SCR/repo_a7" "$ENV_MD5" <<'PY'
+import hashlib, sys
+from pathlib import Path
+manifest, root, want = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+got = hashlib.md5(manifest.read_bytes()).hexdigest()
+if got != want:
+    sys.exit(f"env manifest md5 {got} != expected {want}")
+bad = [name for digest, name in (line.split(None, 1) for line in manifest.read_text().splitlines() if line.strip())
+       if not name.strip().startswith("sim/assembly_lab/mimic/")  # replaced by this checkout's mimic/ below
+       and hashlib.md5((root / name.strip()).read_bytes()).hexdigest() != digest]
+if bad:
+    sys.exit(f"env files differ from the manifest: {bad[:10]}")
+(root / "ENV_MANIFEST_MD5").write_text(want + "\n")
+print(f"[repo] env verified against manifest {want}")
+PY
   "${RSYNC[@]}" "$HERE/sim/assembly_lab/mimic/" "$SCR/repo_a7/sim/assembly_lab/mimic/" --exclude __pycache__
   for h in $HOSTS; do
     "${RSYNC[@]}" --delete --exclude __pycache__ "$SCR/repo_a7/" "${h}:t12_data/repo_a7/"

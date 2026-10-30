@@ -399,8 +399,18 @@ class Generator:
         if rec is None:
             self.backend.finish(False)
             return
-        rec.meta = {**rec.meta, "generator": "mimicgen", "mimic_sources": json.dumps(self.ep.get("sources", []))}
+        rec.meta = {**rec.meta, "generator": "mimicgen", "mimic_sources": json.dumps(self.ep.get("sources", [])),
+                    "env_manifest_md5": env_manifest_md5()}
         self.record._finish(self.backend, self.run_cfg, rec, ok, self.scenario, reason)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def env_manifest_md5(repo: Path = REPO_ROOT) -> str:
+    """md5 of the env manifest this repo copy was verified against (scale_generation.sh repo writes ENV_MANIFEST_MD5)."""
+    f = repo / "ENV_MANIFEST_MD5"
+    return f.read_text().strip() if f.exists() else "unverified"
 
 
 def chunk_path(out: Path, k: int) -> Path:

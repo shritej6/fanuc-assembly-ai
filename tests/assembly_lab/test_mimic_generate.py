@@ -217,3 +217,11 @@ def test_validator_counts_frames_without_ffprobe(monkeypatch, tmp_path):
     monkeypatch.setattr(V.shutil, "which", lambda name: None)
     monkeypatch.setitem(sys.modules, "imageio_ffmpeg", SimpleNamespace(count_frames_and_secs=lambda p: (151, 30.2)))
     assert V._video_frames(tmp_path / "x.mp4") == 151
+
+
+def test_env_manifest_md5_is_stamped_from_the_repo_copy(tmp_path):
+    from sim.assembly_lab.mimic.generate import env_manifest_md5
+
+    assert env_manifest_md5(tmp_path) == "unverified"
+    (tmp_path / "ENV_MANIFEST_MD5").write_text("dbcfe5fd48d73cde763ffdc4316291a5\n")
+    assert env_manifest_md5(tmp_path) == "dbcfe5fd48d73cde763ffdc4316291a5"
