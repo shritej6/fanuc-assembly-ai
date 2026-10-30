@@ -1,0 +1,1165 @@
+{
+ "source": "cad/stl (print frame, mm)",
+ "defects": [
+  "snapped_tab",
+  "missing_feature",
+  "layer_split",
+  "warp",
+  "scale_97",
+  "scale_103"
+ ],
+ "variants": {
+  "M1_01__snapped_tab": {
+   "volume_ratio": 0.8256,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M1_01__missing_feature": {
+   "volume_ratio": 0.9065,
+   "extents_mm": [
+    36.0,
+    41.65,
+    16.0
+   ]
+  },
+  "M1_01__layer_split": {
+   "volume_ratio": 0.9843,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M1_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.51
+   ]
+  },
+  "M1_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    34.92,
+    47.53,
+    15.52
+   ]
+  },
+  "M1_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    37.08,
+    50.47,
+    16.48
+   ]
+  },
+  "M1_02__snapped_tab": {
+   "volume_ratio": 0.8942,
+   "extents_mm": [
+    20.55,
+    22.0,
+    15.61
+   ]
+  },
+  "M1_02__missing_feature": {
+   "volume_ratio": 0.9555,
+   "extents_mm": [
+    22.0,
+    18.7,
+    17.0
+   ]
+  },
+  "M1_02__layer_split": {
+   "volume_ratio": 0.9672,
+   "extents_mm": [
+    22.0,
+    22.0,
+    17.0
+   ]
+  },
+  "M1_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    22.0,
+    22.0,
+    17.1
+   ]
+  },
+  "M1_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    21.34,
+    21.34,
+    16.49
+   ]
+  },
+  "M1_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    22.65,
+    22.66,
+    17.51
+   ]
+  },
+  "M1_03__snapped_tab": {
+   "volume_ratio": 0.9206,
+   "extents_mm": [
+    23.2,
+    23.2,
+    17.7
+   ]
+  },
+  "M1_03__missing_feature": {
+   "volume_ratio": 0.9178,
+   "extents_mm": [
+    19.72,
+    23.2,
+    20.0
+   ]
+  },
+  "M1_03__layer_split": {
+   "volume_ratio": 0.9702,
+   "extents_mm": [
+    23.2,
+    23.2,
+    20.0
+   ]
+  },
+  "M1_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    23.2,
+    23.2,
+    20.01
+   ]
+  },
+  "M1_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    22.5,
+    22.5,
+    19.4
+   ]
+  },
+  "M1_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    23.9,
+    23.9,
+    20.6
+   ]
+  },
+  "M1_04__snapped_tab": {
+   "volume_ratio": 0.7225,
+   "extents_mm": [
+    25.0,
+    34.0,
+    8.0
+   ]
+  },
+  "M1_04__missing_feature": {
+   "volume_ratio": 0.8699,
+   "extents_mm": [
+    25.0,
+    28.9,
+    8.0
+   ]
+  },
+  "M1_04__layer_split": {
+   "volume_ratio": 0.961,
+   "extents_mm": [
+    25.0,
+    34.0,
+    8.0
+   ]
+  },
+  "M1_04__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    25.0,
+    34.0,
+    8.7
+   ]
+  },
+  "M1_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    24.25,
+    32.98,
+    7.76
+   ]
+  },
+  "M1_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    25.75,
+    35.02,
+    8.24
+   ]
+  },
+  "M2_01__snapped_tab": {
+   "volume_ratio": 0.8196,
+   "extents_mm": [
+    34.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M2_01__missing_feature": {
+   "volume_ratio": 0.9671,
+   "extents_mm": [
+    34.0,
+    41.65,
+    16.0
+   ]
+  },
+  "M2_01__layer_split": {
+   "volume_ratio": 0.9845,
+   "extents_mm": [
+    34.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M2_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    34.0,
+    49.0,
+    16.53
+   ]
+  },
+  "M2_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    32.98,
+    47.53,
+    15.52
+   ]
+  },
+  "M2_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    35.02,
+    50.47,
+    16.48
+   ]
+  },
+  "M2_02__snapped_tab": {
+   "volume_ratio": 0.8866,
+   "extents_mm": [
+    22.0,
+    20.15,
+    15.71
+   ]
+  },
+  "M2_02__missing_feature": {
+   "volume_ratio": 0.9673,
+   "extents_mm": [
+    22.0,
+    18.7,
+    16.0
+   ]
+  },
+  "M2_02__layer_split": {
+   "volume_ratio": 0.9685,
+   "extents_mm": [
+    22.0,
+    22.0,
+    16.0
+   ]
+  },
+  "M2_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    22.0,
+    22.0,
+    16.1
+   ]
+  },
+  "M2_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    21.34,
+    21.34,
+    15.52
+   ]
+  },
+  "M2_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    22.65,
+    22.66,
+    16.48
+   ]
+  },
+  "M2_03__snapped_tab": {
+   "volume_ratio": 0.9215,
+   "extents_mm": [
+    22.0,
+    22.0,
+    16.26
+   ]
+  },
+  "M2_03__missing_feature": {
+   "volume_ratio": 0.9055,
+   "extents_mm": [
+    22.0,
+    18.7,
+    18.0
+   ]
+  },
+  "M2_03__layer_split": {
+   "volume_ratio": 0.9658,
+   "extents_mm": [
+    22.0,
+    22.0,
+    18.0
+   ]
+  },
+  "M2_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    22.0,
+    22.0,
+    18.01
+   ]
+  },
+  "M2_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    21.34,
+    21.34,
+    17.46
+   ]
+  },
+  "M2_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    22.65,
+    22.66,
+    18.54
+   ]
+  },
+  "M2_04__snapped_tab": {
+   "volume_ratio": 0.792,
+   "extents_mm": [
+    27.0,
+    32.81,
+    8.0
+   ]
+  },
+  "M2_04__missing_feature": {
+   "volume_ratio": 0.9066,
+   "extents_mm": [
+    27.0,
+    28.9,
+    8.0
+   ]
+  },
+  "M2_04__layer_split": {
+   "volume_ratio": 0.9616,
+   "extents_mm": [
+    27.0,
+    34.0,
+    8.0
+   ]
+  },
+  "M2_04__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    27.0,
+    34.0,
+    8.66
+   ]
+  },
+  "M2_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    26.19,
+    32.98,
+    7.76
+   ]
+  },
+  "M2_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    27.81,
+    35.02,
+    8.24
+   ]
+  },
+  "M3_01__snapped_tab": {
+   "volume_ratio": 0.8159,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M3_01__missing_feature": {
+   "volume_ratio": 0.9702,
+   "extents_mm": [
+    36.0,
+    41.65,
+    16.0
+   ]
+  },
+  "M3_01__layer_split": {
+   "volume_ratio": 0.9833,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.0
+   ]
+  },
+  "M3_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    36.0,
+    49.0,
+    16.51
+   ]
+  },
+  "M3_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    34.92,
+    47.53,
+    15.52
+   ]
+  },
+  "M3_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    37.08,
+    50.47,
+    16.48
+   ]
+  },
+  "M3_02__snapped_tab": {
+   "volume_ratio": 0.8567,
+   "extents_mm": [
+    22.0,
+    16.37,
+    16.02
+   ]
+  },
+  "M3_02__missing_feature": {
+   "volume_ratio": 0.9472,
+   "extents_mm": [
+    18.7,
+    18.0,
+    17.0
+   ]
+  },
+  "M3_02__layer_split": {
+   "volume_ratio": 0.9698,
+   "extents_mm": [
+    22.0,
+    18.0,
+    17.0
+   ]
+  },
+  "M3_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    22.0,
+    18.0,
+    17.12
+   ]
+  },
+  "M3_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    21.34,
+    17.46,
+    16.49
+   ]
+  },
+  "M3_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    22.66,
+    18.54,
+    17.51
+   ]
+  },
+  "M3_03__snapped_tab": {
+   "volume_ratio": 0.9344,
+   "extents_mm": [
+    24.0,
+    20.0,
+    15.19
+   ]
+  },
+  "M3_03__missing_feature": {
+   "volume_ratio": 0.8481,
+   "extents_mm": [
+    20.4,
+    20.0,
+    16.0
+   ]
+  },
+  "M3_03__layer_split": {
+   "volume_ratio": 0.9879,
+   "extents_mm": [
+    24.0,
+    20.0,
+    16.0
+   ]
+  },
+  "M3_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    24.0,
+    20.0,
+    16.01
+   ]
+  },
+  "M3_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    23.28,
+    19.4,
+    15.52
+   ]
+  },
+  "M3_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    24.72,
+    20.6,
+    16.48
+   ]
+  },
+  "M3_04__snapped_tab": {
+   "volume_ratio": 0.7694,
+   "extents_mm": [
+    29.0,
+    32.81,
+    8.0
+   ]
+  },
+  "M3_04__missing_feature": {
+   "volume_ratio": 0.909,
+   "extents_mm": [
+    29.0,
+    28.9,
+    8.0
+   ]
+  },
+  "M3_04__layer_split": {
+   "volume_ratio": 0.9615,
+   "extents_mm": [
+    29.0,
+    34.0,
+    8.0
+   ]
+  },
+  "M3_04__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    29.0,
+    34.0,
+    8.66
+   ]
+  },
+  "M3_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    28.13,
+    32.98,
+    7.76
+   ]
+  },
+  "M3_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    29.87,
+    35.02,
+    8.24
+   ]
+  },
+  "M4_01__snapped_tab": {
+   "volume_ratio": 0.8234,
+   "extents_mm": [
+    48.0,
+    31.8,
+    18.0
+   ]
+  },
+  "M4_01__missing_feature": {
+   "volume_ratio": 0.7539,
+   "extents_mm": [
+    40.8,
+    31.8,
+    20.0
+   ]
+  },
+  "M4_01__layer_split": {
+   "volume_ratio": 0.987,
+   "extents_mm": [
+    48.0,
+    31.8,
+    20.0
+   ]
+  },
+  "M4_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    48.0,
+    31.8,
+    20.47
+   ]
+  },
+  "M4_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    46.56,
+    30.85,
+    19.4
+   ]
+  },
+  "M4_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    49.44,
+    32.75,
+    20.6
+   ]
+  },
+  "M4_02__snapped_tab": {
+   "volume_ratio": 0.9197,
+   "extents_mm": [
+    24.0,
+    18.0,
+    17.97
+   ]
+  },
+  "M4_02__missing_feature": {
+   "volume_ratio": 0.8691,
+   "extents_mm": [
+    20.4,
+    18.0,
+    20.0
+   ]
+  },
+  "M4_02__layer_split": {
+   "volume_ratio": 0.9746,
+   "extents_mm": [
+    24.0,
+    18.0,
+    20.0
+   ]
+  },
+  "M4_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    24.0,
+    18.0,
+    20.1
+   ]
+  },
+  "M4_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    23.28,
+    17.46,
+    19.4
+   ]
+  },
+  "M4_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    24.72,
+    18.54,
+    20.6
+   ]
+  },
+  "M4_03__snapped_tab": {
+   "volume_ratio": 0.9363,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M4_03__missing_feature": {
+   "volume_ratio": 0.9111,
+   "extents_mm": [
+    36.0,
+    34.0,
+    13.0
+   ]
+  },
+  "M4_03__layer_split": {
+   "volume_ratio": 0.948,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M4_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.41
+   ]
+  },
+  "M4_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    34.92,
+    38.8,
+    12.61
+   ]
+  },
+  "M4_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    37.08,
+    41.2,
+    13.39
+   ]
+  },
+  "M4_04__snapped_tab": {
+   "volume_ratio": 0.7432,
+   "extents_mm": [
+    26.0,
+    8.94,
+    15.09
+   ]
+  },
+  "M4_04__missing_feature": {
+   "volume_ratio": 0.8871,
+   "extents_mm": [
+    22.1,
+    10.0,
+    17.0
+   ]
+  },
+  "M4_04__layer_split": {
+   "volume_ratio": 0.9599,
+   "extents_mm": [
+    26.0,
+    10.0,
+    17.0
+   ]
+  },
+  "M4_04__warp": {
+   "volume_ratio": 1.0001,
+   "extents_mm": [
+    26.0,
+    10.0,
+    16.71
+   ]
+  },
+  "M4_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    25.22,
+    9.7,
+    16.49
+   ]
+  },
+  "M4_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    26.78,
+    10.3,
+    17.51
+   ]
+  },
+  "M5_01__snapped_tab": {
+   "volume_ratio": 0.9006,
+   "extents_mm": [
+    48.0,
+    31.0,
+    20.0
+   ]
+  },
+  "M5_01__missing_feature": {
+   "volume_ratio": 0.9576,
+   "extents_mm": [
+    40.8,
+    31.8,
+    20.0
+   ]
+  },
+  "M5_01__layer_split": {
+   "volume_ratio": 0.9884,
+   "extents_mm": [
+    48.0,
+    31.8,
+    20.0
+   ]
+  },
+  "M5_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    48.0,
+    31.8,
+    20.47
+   ]
+  },
+  "M5_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    46.56,
+    30.85,
+    19.4
+   ]
+  },
+  "M5_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    49.44,
+    32.75,
+    20.6
+   ]
+  },
+  "M5_02__snapped_tab": {
+   "volume_ratio": 0.929,
+   "extents_mm": [
+    26.0,
+    20.0,
+    18.2
+   ]
+  },
+  "M5_02__missing_feature": {
+   "volume_ratio": 0.8608,
+   "extents_mm": [
+    22.1,
+    20.0,
+    20.0
+   ]
+  },
+  "M5_02__layer_split": {
+   "volume_ratio": 0.9741,
+   "extents_mm": [
+    26.0,
+    20.0,
+    20.0
+   ]
+  },
+  "M5_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    26.0,
+    20.0,
+    20.09
+   ]
+  },
+  "M5_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    25.22,
+    19.4,
+    19.4
+   ]
+  },
+  "M5_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    26.78,
+    20.6,
+    20.6
+   ]
+  },
+  "M5_03__snapped_tab": {
+   "volume_ratio": 0.9388,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M5_03__missing_feature": {
+   "volume_ratio": 0.9043,
+   "extents_mm": [
+    36.0,
+    34.0,
+    13.0
+   ]
+  },
+  "M5_03__layer_split": {
+   "volume_ratio": 0.9474,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M5_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.41
+   ]
+  },
+  "M5_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    34.92,
+    38.8,
+    12.61
+   ]
+  },
+  "M5_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    37.08,
+    41.2,
+    13.39
+   ]
+  },
+  "M5_04__snapped_tab": {
+   "volume_ratio": 0.7424,
+   "extents_mm": [
+    26.0,
+    8.94,
+    15.09
+   ]
+  },
+  "M5_04__missing_feature": {
+   "volume_ratio": 0.8884,
+   "extents_mm": [
+    22.1,
+    10.0,
+    17.0
+   ]
+  },
+  "M5_04__layer_split": {
+   "volume_ratio": 0.9598,
+   "extents_mm": [
+    26.0,
+    10.0,
+    17.0
+   ]
+  },
+  "M5_04__warp": {
+   "volume_ratio": 1.0001,
+   "extents_mm": [
+    26.0,
+    10.0,
+    16.71
+   ]
+  },
+  "M5_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    25.22,
+    9.7,
+    16.49
+   ]
+  },
+  "M5_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    26.78,
+    10.3,
+    17.51
+   ]
+  },
+  "M6_01__snapped_tab": {
+   "volume_ratio": 0.811,
+   "extents_mm": [
+    48.0,
+    30.0,
+    20.0
+   ]
+  },
+  "M6_01__missing_feature": {
+   "volume_ratio": 0.9576,
+   "extents_mm": [
+    40.8,
+    30.0,
+    20.0
+   ]
+  },
+  "M6_01__layer_split": {
+   "volume_ratio": 0.9883,
+   "extents_mm": [
+    48.0,
+    30.0,
+    20.0
+   ]
+  },
+  "M6_01__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    48.0,
+    30.0,
+    20.49
+   ]
+  },
+  "M6_01__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    46.56,
+    29.1,
+    19.4
+   ]
+  },
+  "M6_01__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    49.44,
+    30.9,
+    20.6
+   ]
+  },
+  "M6_02__snapped_tab": {
+   "volume_ratio": 0.9237,
+   "extents_mm": [
+    26.0,
+    20.0,
+    18.2
+   ]
+  },
+  "M6_02__missing_feature": {
+   "volume_ratio": 0.8596,
+   "extents_mm": [
+    22.1,
+    20.0,
+    20.0
+   ]
+  },
+  "M6_02__layer_split": {
+   "volume_ratio": 0.9725,
+   "extents_mm": [
+    26.0,
+    20.0,
+    20.0
+   ]
+  },
+  "M6_02__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    26.0,
+    20.0,
+    20.09
+   ]
+  },
+  "M6_02__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    25.22,
+    19.4,
+    19.4
+   ]
+  },
+  "M6_02__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    26.78,
+    20.6,
+    20.6
+   ]
+  },
+  "M6_03__snapped_tab": {
+   "volume_ratio": 0.9363,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M6_03__missing_feature": {
+   "volume_ratio": 0.9111,
+   "extents_mm": [
+    36.0,
+    34.0,
+    13.0
+   ]
+  },
+  "M6_03__layer_split": {
+   "volume_ratio": 0.9474,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.0
+   ]
+  },
+  "M6_03__warp": {
+   "volume_ratio": 1.0,
+   "extents_mm": [
+    36.0,
+    40.0,
+    13.41
+   ]
+  },
+  "M6_03__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    34.92,
+    38.8,
+    12.61
+   ]
+  },
+  "M6_03__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    37.08,
+    41.2,
+    13.39
+   ]
+  },
+  "M6_04__snapped_tab": {
+   "volume_ratio": 0.8178,
+   "extents_mm": [
+    26.0,
+    10.0,
+    16.07
+   ]
+  },
+  "M6_04__missing_feature": {
+   "volume_ratio": 0.8873,
+   "extents_mm": [
+    22.1,
+    10.0,
+    17.0
+   ]
+  },
+  "M6_04__layer_split": {
+   "volume_ratio": 0.9594,
+   "extents_mm": [
+    26.0,
+    10.0,
+    17.0
+   ]
+  },
+  "M6_04__warp": {
+   "volume_ratio": 1.0001,
+   "extents_mm": [
+    26.0,
+    10.0,
+    16.71
+   ]
+  },
+  "M6_04__scale_97": {
+   "volume_ratio": 0.9127,
+   "extents_mm": [
+    25.22,
+    9.7,
+    16.49
+   ]
+  },
+  "M6_04__scale_103": {
+   "volume_ratio": 1.0927,
+   "extents_mm": [
+    26.78,
+    10.3,
+    17.51
+   ]
+  }
+ }
+}

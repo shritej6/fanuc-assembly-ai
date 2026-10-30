@@ -1,0 +1,311 @@
+# Synthetic image sets (docs/PLAN.md section 6, docs/SDG_PLAN.md). Counts are images, not scenes.
+# s_per_image is an ESTIMATE (5.5 s on a T4, real-time render) until the pilot measures it.
+
+defaults:
+  chunk_size: 500
+  s_per_image_estimate: 5.5
+  image_size: {table: [1920, 1080], side: [1920, 1080], wrist: [1280, 720]}
+  depth: {table: [640, 400], wrist: [848, 480]}   # what the real cell can send (DEPTH=True)
+  material: black_pla
+  spares: [M2_03, M2_02, M1_03, M6_02, M3_03, M4_04]   # RISK_RANKING_v0 print list (PRELIMINARY)
+  defect_types: [snapped_tab, missing_feature, scale_97, scale_103, warp, layer_split]
+  foreign_objects: [screw_m3, tape_roll, cube_10mm]
+
+# Pilot = the first 375 images of chunk 0 of each set (1,500 images). Specs are deterministic and the generator
+# skips finished scenes, so the full run reuses every pilot image. Purpose: label QA on all outputs + real s/img.
+pilot:
+  images_per_set: 375
+  sets: [A, B, C, D]
+
+sets:
+  A:
+    images: 16000
+    seed: 2000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.35, 0.2, 0.15, 0.15, 0.15]   # step 0..4 per product
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 0.3
+      spares_in_store: [0, 6]
+      rejects: [0, 2]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.35
+      arm_in_view_prob: 0.4
+
+  B:
+    images: 24000          # ~800 per object (30 objects), per the stack
+    seed: 3000
+    model: wrist look-alike classifier
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation]
+    per_object: 800
+    target_plan: all_objects   # the wrist target cycles through all 30 objects
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 0.5
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.5
+      arm_in_view_prob: 0.0
+    wrist:
+      standoff_mm: [120.0, 260.0]   # fingertip-to-part height range over the target
+      tilt_deg: [0.0, 20.0]
+      target_offset_mm: 15.0
+
+  C:
+    images: 8000
+    seed: 4000
+    model: anomalib PatchCore (train on good only; defect renders are the test set)
+    cameras: [wrist]
+    outputs: [rgb, instance_segmentation, depth]
+    good_fraction: 0.75
+    target_plan: parts         # the wrist target cycles through the 24 parts
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 0]
+      cluster_prob: 0.2
+      arm_in_view_prob: 0.0
+    wrist: {standoff_mm: [120.0, 200.0], tilt_deg: [0.0, 10.0], target_offset_mm: 5.0}
+
+  D:
+    images: 6000
+    seed: 5000
+    model: build check (recipe check + Cosmos Reason 2 evaluation)
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, high, tilted, wrong_part]
+    build_state_weights: [0.4, 0.2, 0.2, 0.2]
+    high_mm: [1.5, 4.0]
+    tilt_deg: [4.0, 12.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.2
+      arm_in_view_prob: 0.3
+    wrist: {standoff_mm: [140.0, 220.0], tilt_deg: [0.0, 15.0], target_offset_mm: 5.0}
+
+  # ---------------------------------------------------------------- edge-case sets (docs/SDG_PLAN.md section 11)
+  # Same models as A-D, trained on the union. Each set pushes one axis past the nominal ranges, so the models see
+  # the bad cases the real cell can produce. E stays reserved for GR00T demos (T12).
+
+  F:                       # detector under bad light, bad sensor and a drifted camera mount
+    images: 8000
+    seed: 6000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.35, 0.2, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 2]
+      wrong_part_trap_prob: 0.3
+      spares_in_store: [0, 6]
+      rejects: [0, 2]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.35
+      arm_in_view_prob: 0.4
+      pose_sampling: uniform
+    randomization: &hard_look
+      camera_jitter: {translate_mm: 15.0, rotate_deg: 2.5}   # table / side mounts only; wrist stays nominal
+      lighting:
+        dome_intensity_scale: [0.15, 3.0]
+        rect_intensity_scale: [0.1, 3.5]
+        color_temperature_k: [2700, 7500]
+      black_pla:
+        base_color_rgb: [[0.008, 0.008, 0.008], [0.08, 0.08, 0.08]]   # other filament batches, dusty prints
+        roughness: [0.2, 0.85]
+        specular: [0.3, 0.7]
+        layer_line_normal_strength: [0.0, 1.0]
+      post:
+        motion_blur_prob: 0.4
+        gaussian_noise_sigma: [0.0, 0.04]
+        jpeg_quality: [45, 95]
+
+  G:                       # detector in heavy clutter: touching clusters, arm occluding, full store and tray
+    images: 8000
+    seed: 7000
+    model: detector (Faster R-CNN or RT-DETR)
+    cameras: [table, side]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    scene:
+      products: 3
+      assembly_step_weights: [0.5, 0.2, 0.1, 0.1, 0.1]   # mostly unbuilt: the most loose parts
+      defects_per_scene: [0, 3]
+      wrong_part_trap_prob: 0.6
+      spares_in_store: [4, 6]
+      rejects: [1, 3]
+      foreign_objects: [1, 3]
+      cluster_prob: 0.9
+      arm_in_view_prob: 0.8
+      pose_sampling: uniform
+
+  H:                       # wrist look-alike classifier, hard: rare poses, touching neighbours, off-centre, steep
+    images: 12000          # 400 per object
+    seed: 8000
+    model: wrist look-alike classifier
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation]
+    per_object: 400
+    target_plan: all_objects
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 1.0
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 2]
+      cluster_prob: 0.9
+      arm_in_view_prob: 0.0
+      pose_sampling: uniform
+    wrist: {standoff_mm: [90.0, 320.0], tilt_deg: [0.0, 30.0], target_offset_mm: 40.0}
+    randomization: *hard_look
+
+  I:                       # PatchCore under hard conditions: good parts must not alarm, defects must still show
+    images: 6000
+    seed: 9000
+    model: anomalib PatchCore (good renders extend the training set; defect renders are test only)
+    cameras: [wrist]
+    outputs: [rgb, instance_segmentation, depth]
+    good_fraction: 0.6
+    target_plan: parts
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 0]
+      cluster_prob: 0.5
+      arm_in_view_prob: 0.0
+      pose_sampling: uniform
+    wrist: {standoff_mm: [100.0, 240.0], tilt_deg: [0.0, 20.0], target_offset_mm: 15.0}
+    randomization: *hard_look
+
+  J:                       # build check at the decision boundary: barely high, barely tilted, seated within tolerance
+    images: 6000
+    seed: 10000
+    model: build check (recipe check + Cosmos Reason 2 evaluation)
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, high, tilted, wrong_part]
+    build_state_weights: [0.4, 0.25, 0.25, 0.1]
+    seated_noise_mm: 0.3   # a seated print may sit up to 0.3 mm proud and is still seated
+    high_mm: [0.4, 1.5]    # D covers 1.5-4.0; labels carry the exact offset (build_offset)
+    tilt_deg: [1.0, 4.0]   # D covers 4-12
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.3
+    wrist: {standoff_mm: [120.0, 260.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
+
+  # ---------------------------------------------------------------- close-ups (section 11)
+  # Close standoffs so each part's shape, edges and layer lines fill more of the frame.
+
+  K:                       # every object, every resting pose, close up: what each part looks like
+    images: 2400           # 80 per object
+    seed: 11000
+    model: wrist look-alike classifier + detector fine-tune (photoreal subset)
+    cameras: [wrist]
+    outputs: [rgb, bbox_2d_tight, instance_segmentation, depth]
+    per_object: 80
+    target_plan: all_objects
+    scene:
+      products: 3
+      assembly_step_weights: [0.4, 0.15, 0.15, 0.15, 0.15]
+      defects_per_scene: [0, 0]
+      wrong_part_trap_prob: 0.5
+      spares_in_store: [0, 0]
+      rejects: [0, 0]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.5
+      arm_in_view_prob: 0.0
+      pose_sampling: uniform
+    wrist: {standoff_mm: [70.0, 180.0], tilt_deg: [0.0, 25.0], target_offset_mm: 10.0}
+    randomization: *hard_look
+
+  L:                       # assembled structure close up: every product at every step, mostly seated
+    images: 1600
+    seed: 12000
+    model: build check (recipe check + Cosmos Reason 2 evaluation), photoreal subset
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, high, tilted, wrong_part]
+    build_state_weights: [0.55, 0.15, 0.15, 0.15]
+    seated_noise_mm: 0.3
+    high_mm: [0.4, 4.0]
+    tilt_deg: [1.0, 12.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.0
+    wrist: {standoff_mm: [80.0, 200.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
+
+  M:                       # mis-assembly: shifted off the pegs, turned the wrong way, tilted, wrong look-alike
+    images: 6000           # (edge cases EC-016/029/032/033/035/089/091). Every mis-built part rests ON the stack:
+    seed: 13000            # lifted by sdg/data/build_clearance.json, labelled with shift / yaw / tilt / lift
+    model: build check (recipe check + Cosmos Reason 2 evaluation)
+    cameras: [wrist, side]
+    outputs: [rgb, depth, instance_segmentation]
+    build_states: [seated, shifted, rotated, tilted, high, wrong_part]
+    build_state_weights: [0.3, 0.2, 0.2, 0.1, 0.1, 0.1]
+    seated_noise_mm: 0.3
+    high_mm: [0.5, 3.0]
+    tilt_deg: [1.0, 12.0]
+    shift_mm: [0.5, 4.0]
+    scene:
+      products: 3
+      assembly_step_weights: [0.0, 0.25, 0.25, 0.25, 0.25]
+      defects_per_scene: [0, 1]
+      wrong_part_trap_prob: 0.0
+      spares_in_store: [0, 6]
+      rejects: [0, 1]
+      foreign_objects: [0, 1]
+      cluster_prob: 0.3
+      arm_in_view_prob: 0.3
+    wrist: {standoff_mm: [100.0, 240.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
+
+randomization:              # applied by the Isaac generator to every scene
+  camera_jitter: {translate_mm: 6.0, rotate_deg: 0.8}   # real camera mounts are calibrated; keep this small
+  lighting:
+    dome_intensity_scale: [0.5, 1.6]
+    rect_intensity_scale: [0.4, 1.8]
+    color_temperature_k: [3500, 6500]
+  black_pla:
+    base_color_rgb: [[0.015, 0.015, 0.015], [0.045, 0.045, 0.045]]
+    roughness: [0.35, 0.65]
+    specular: [0.4, 0.6]
+    layer_line_normal_strength: [0.0, 0.6]
+  post:
+    motion_blur_prob: 0.15
+    gaussian_noise_sigma: [0.0, 0.015]
+    jpeg_quality: [80, 98]   # the cell sends JPEG when IMAGE_FORMAT is jpeg
