@@ -5,9 +5,9 @@
 - classifier: the wrist ResNet-18 run directory written by perception/classifier/train.py; its labels are the
   ontology's classifier labels and its crops are the training crops (target box x 1.3, perception/crops.py), resized
   and centre-cropped as the evaluation transform does;
-- PatchCore: one anomalib checkpoint per part (perception/brev/h100_t14.sh); its crops are the training crops (square,
-  context 1.3, perception/anomaly/testbed.py) and its score is anomalib's normalised score, whose decision threshold
-  (0.5) anomalib set from that part's measured validation split.
+- PatchCore: one anomalib checkpoint per part (perception/anomaly/coverage_eval.py); its crops are the training crops
+  (square, context 1.3, perception/anomaly/testbed.py) and its score is PatchCore's raw image score (no anomalib
+  normalisation), compared against the part's threshold measured by coverage_eval on held-out good crops.
 Torch, transformers and anomalib load lazily, so the decision logic around them stays importable and testable.
 """
 
@@ -100,23 +100,34 @@ class Classifier:
         return self.labels[best], float(probs[best])
 
 
+def patchcore_raw_scores(model: Any, images: list[Any], device: Any) -> list[float]:
+    """Raw PatchCore image scores: the model's own pre-processing, then the torch model, no post-processor.
+
+    Crops differ in size, so each one goes through the pre-processor (which resizes) on its own before batching.
+    """
+    import torch
+
+    batch = torch.cat([model.pre_processor(image.unsqueeze(0)) for image in images]).to(device)
+    return [float(v) for v in model.model(batch).pred_score.reshape(-1)]
+
+
 class PatchCoreBank:
     """One fitted PatchCore per part; a part without a checkpoint is a load error, not a pass."""
 
     def __init__(self, root: Path, parts: tuple[str, ...]) -> None:
         from anomalib.models import Patchcore
 
+        self.device = _device()
         self.models: dict[str, Any] = {}
         for part in parts:
-            ckpts = sorted((root / "runs" / part).rglob("*.ckpt"))
-            if not ckpts:
+            ckpt = root / "runs" / part / "model.ckpt"
+            if not ckpt.is_file():
                 raise ModelLoadError(f"{root}: no PatchCore checkpoint for {part}")
-            self.models[part] = Patchcore.load_from_checkpoint(ckpts[-1]).eval()
+            self.models[part] = Patchcore.load_from_checkpoint(ckpt).to(self.device).eval()
 
     def __call__(self, part: str, crop: Image.Image) -> float:
         import torch
         from torchvision.transforms.functional import to_tensor
 
         with torch.inference_mode():
-            result = self.models[part](to_tensor(crop.convert("RGB")).unsqueeze(0))
-        return float(result.pred_score.reshape(-1)[0])
+            return patchcore_raw_scores(self.models[part], [to_tensor(crop.convert("RGB"))], self.device)[0]
