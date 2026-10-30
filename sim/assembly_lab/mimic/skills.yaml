@@ -16,6 +16,8 @@ eef_name: er4ia            # single end effector: the ER-4iA with the Team V fin
 # (cad/products/parameters.py), so the contact subtasks stay far below it; free-space motion gets more so GR00T sees
 # recoveries from small offsets.
 rot_deg_per_mm: 1.0
+# release_retreat: no noise. The fingers open around a seated or set-down part and rise straight up; measured on the
+# first generated run, free noise on those rows dragged a seated part 1.14 mm sideways.
 noise_profiles:
   free:    {pos_mm: 1.0}
   contact: {pos_mm: 0.15}
@@ -28,7 +30,7 @@ skills:
     subtasks:
       - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped, term_offset: [5, 10],  noise: free,    interp_steps: 8}
       - {name: carry_insert,    object_ref: seat_frame,  term_signal: seated,  term_offset: [0, 0],   noise: contact, interp_steps: 10}
-      - {name: release_retreat, object_ref: seat_frame,  term_signal: null,    term_offset: [0, 0],   noise: free,    interp_steps: 3}
+      - {name: release_retreat, object_ref: seat_frame,  term_signal: null,    term_offset: [0, 0],   noise: none,    interp_steps: 3}
   pull_out:
     seed_dir: pull_out
     description: grip an installed part, pull straight up with a 1 deg wiggle, set it down on a remembered test-bed spot
@@ -36,14 +38,14 @@ skills:
       - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped,  term_offset: [5, 10], noise: free,    interp_steps: 8}
       - {name: pull_free,       object_ref: grasp_frame, term_signal: pulled,   term_offset: [0, 0],  noise: contact, interp_steps: 2}
       - {name: carry_set_down,  object_ref: spot_frame,  term_signal: placed,   term_offset: [0, 0],  noise: free,    interp_steps: 10}
-      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,     term_offset: [0, 0],  noise: free,    interp_steps: 3}
+      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,     term_offset: [0, 0],  noise: none,    interp_steps: 3}
   place_free:
     seed_dir: place_free
     description: move a blocking or not-yet-needed part to a remembered empty test-bed spot (set down, never dropped)
     subtasks:
       - {name: approach_grasp,  object_ref: grasp_frame, term_signal: grasped, term_offset: [5, 10], noise: free, interp_steps: 8}
       - {name: carry_set_down,  object_ref: spot_frame,  term_signal: placed,  term_offset: [0, 0],  noise: free, interp_steps: 10}
-      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,    term_offset: [0, 0],  noise: free, interp_steps: 3}
+      - {name: release_retreat, object_ref: spot_frame,  term_signal: null,    term_offset: [0, 0],  noise: none, interp_steps: 3}
   defect_drop:
     seed_dir: defect_drop
     description: pick a damaged, fallen-reject or foreign part and drop it in the defect area

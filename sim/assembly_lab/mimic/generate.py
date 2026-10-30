@@ -166,18 +166,25 @@ class Generator:
             return seat_object_frame(rec.frame_pose(rec.obs, "seat_frame"), self.ep["grasp_frame"], self.ep["part0"])
         return rec.frame_pose(rec.obs, sub.object_ref)
 
-    def subtask_rows(self, rec, i: int, sub, plans) -> tuple[list, str]:
+    def subtask_rows(self, rec, i: int, sub, plans, src=None) -> tuple[list, object]:
+        """Connector + transformed rows of subtask i (source chosen by nearest frame unless `src` is given)."""
         from ..skills.motion import Segment
 
-        oid = plans[0].object_id
         frame = self._new_frame(rec, i, sub, plans)
-        src = select_source(self.segments[i], frame, oid, self.spec.raw["selection"]["nn_k"], self.rng)
+        if src is None:
+            src = select_source(self.segments[i], frame, plans[0].object_id, self.spec.raw["selection"]["nn_k"],
+                                self.rng)
+        rows = self._rows(rec, i, sub, plans, src, frame)
+        careful = i == len(self.sk.subtasks) - 1
+        lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=careful)
+        return [*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], src
+
+    def _rows(self, rec, i: int, sub, plans, src, frame) -> np.ndarray:
         if self.held[i]:
-            rows = transform_held(src.rows, src.frame_pose, frame, src.in_hand, rec.in_hand[oid])
+            rows = transform_held(src.rows, src.frame_pose, frame, src.in_hand, rec.in_hand[plans[0].object_id])
         else:
             rows = transform_rows(src.rows, src.frame_pose, frame)
-        last = i == len(self.sk.subtasks) - 1
-        if last:
+        if i == len(self.sk.subtasks) - 1:
             rows = align_r(trim_after_retreat(rows), rec.pose[5])
         else:
             rows = trim_to_corridor(rows)
@@ -187,8 +194,26 @@ class Generator:
         rows = taper_noise(rows, rows[contact_row(rows), :3], pos_mm, pos_mm * float(self.spec.raw["rot_deg_per_mm"]),
                            self.rng)
         check_rows(rows, self.skill)
-        lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=last)
-        return [*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], src.demo
+        return rows
+
+    def _insert(self, rec, i: int, sub, plans) -> object:
+        """Held insert: carry to the top of the seat corridor, re-measure the part in the fingers (as the scripted
+        insert does before entry, so carry slip is absorbed), re-transform the corridor rows, then enter."""
+        from ..skills import checks
+        from ..skills.motion import Segment
+        from ..skills.runner import EpisodeFailed
+
+        oid = plans[0].object_id
+        segs, src = self.subtask_rows(rec, i, sub, plans)
+        rec.run(segs[:-1])
+        rec.in_hand[oid] = checks.in_hand(rec.obs, oid)
+        rows = self._rows(rec, i, sub, plans, src, self._new_frame(rec, i, sub, plans))
+        lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=True)
+        rec.run([*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], soft_stop=True)
+        ok, err = rec._seated(plans[1])
+        if not ok:
+            raise EpisodeFailed(f"not seated: { {k: round(float(v), 3) for k, v in err.items()} }")
+        return src
 
     # --- one episode ----------------------------------------------------------------------------------------
     def _begin(self, rec, plans) -> None:
@@ -234,17 +259,15 @@ class Generator:
 
         ins = plans[1]
         for i, sub in enumerate(self.sk.subtasks):
-            segs, src = self.subtask_rows(rec, i, sub, plans)
-            self.ep["sources"].append(src)
-            if sub.term_signal == "grasped":
-                self._grasp(rec, segs, plans)
-            elif sub.term_signal == "seated":
-                rec.run(segs, soft_stop=True)  # as the scripted insert: stop pressing when contact builds up
-                ok, err = rec._seated(ins)
-                if not ok:
-                    raise EpisodeFailed(f"not seated: {err}")
+            if sub.term_signal == "seated":
+                src = self._insert(rec, i, sub, plans)
             else:
-                rec.run(segs)
+                segs, src = self.subtask_rows(rec, i, sub, plans)
+                if sub.term_signal == "grasped":
+                    self._grasp(rec, segs, plans)
+                else:
+                    rec.run(segs)
+            self.ep["sources"].append(src.demo)
             if sub.term_signal:
                 rec.mark(sub.term_signal)
         gates.seat_gates(rec.gate_log, checks.object_pose(rec.obs, ins.object_id), ins.seated_object_pose,
