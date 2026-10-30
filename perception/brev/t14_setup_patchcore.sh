@@ -161,13 +161,12 @@ if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (8, 9)
     raise RuntimeError(f"expected one Brev L4 capability 8.9, got {torch.cuda.get_device_capability()}")
 if torch.cuda.device_count() != 1 or torch.cuda.get_device_name().strip() != "NVIDIA L4":
     raise RuntimeError(f"expected exactly one NVIDIA L4, got {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
-if "sm_89" not in torch.cuda.get_arch_list():
-    raise RuntimeError(f"Torch wheel lacks sm_89 kernels: {torch.cuda.get_arch_list()}")
 probe = torch.ones((1024, 1024), device="cuda")
 checksum = float((probe @ probe).sum().item())
 torch.cuda.synchronize()
-if not math.isfinite(checksum):
-    raise RuntimeError("CUDA smoke produced a non-finite result")
+expected_checksum = float(1024**3)
+if not math.isfinite(checksum) or checksum != expected_checksum:
+    raise RuntimeError(f"CUDA smoke produced {checksum}, expected {expected_checksum}")
 artifact, audit, freeze, requirements, env_dir, platform_path = map(Path, sys.argv[1:7])
 bootstrap_freeze, bootstrap_requirements = map(Path, sys.argv[9:11])
 bootstrap_audit, uv_executable = map(Path, sys.argv[11:13])
@@ -222,6 +221,7 @@ payload = {
     "capability": list(torch.cuda.get_device_capability()),
     "architectures": torch.cuda.get_arch_list(),
     "cuda_probe_checksum": checksum,
+    "cuda_probe_expected": expected_checksum,
     "model": type(Patchcore()).__name__,
     "env_dir": str(env_dir.resolve()),
     "platform_identity": str(platform_path.resolve()),

@@ -108,8 +108,11 @@ def test_brev_environment_is_secure_pinned_and_l4_gated() -> None:
     assert "PIP_*|UV_*) unset" in script
     assert script.count("-m pip check") == 2 and script.count("pip freeze --all") == 2
     assert "get_device_capability() != (8, 9)" in script
-    assert '"sm_89" not in torch.cuda.get_arch_list()' in script
+    assert "torch.cuda.device_count() != 1" in script
     assert 'torch.cuda.get_device_name().strip() != "NVIDIA L4"' in script
+    assert "torch.cuda.synchronize()" in script
+    assert "expected_checksum = float(1024**3)" in script
+    assert '"sm_89" not in torch.cuda.get_arch_list()' not in script
     assert '"runtime_kind": "brev-vm"' in script
     assert '"runtime_sha256": sys.argv[7]' in script
     assert '"torch": version("torch")' in script
