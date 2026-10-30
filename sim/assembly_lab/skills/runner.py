@@ -36,7 +36,8 @@ FIRST_SEAT_N = 0.5  # a seat-phase normal above this on a target is first contac
 FINE_PRESS_MM = 0.02  # after first seat contact, press in steps this small: ~260 N/mm overshoots ~5 N per row,
 #                       not the 6-11.6 N run10 measured with 0.05 mm rows (the 2 N stop still ends the press)
 CONTACT_PHASES = ("touch", "level", "twist", "slide", "push", "touch_down")
-SUBSTEP_PHASES = (*CONTACT_PHASES, "close")  # the jaw close too: run10 M2_01 hit 20.7 N there before any insert
+# the grasp too: run10 M2_01 20.7 N / M1_02 22.3 N tripped on the first lift row after the close (close itself 3-7 N)
+SUBSTEP_PHASES = (*CONTACT_PHASES, "close", "lift_check", "lift")
 # rows where the held part is in the bore or seated, so the fingers may move on it by design (not slip)
 CONSTRAINED_PHASES = (*CONTACT_PHASES, "relieve", "retry_lift", "wiggle_out")
 MAX_LEVEL_CORRECTION_DEG = MAX_TOOL_TILT_DEG - INSERT_TILT_DEG  # leaves room for the 3 deg entry lean

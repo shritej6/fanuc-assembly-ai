@@ -401,7 +401,8 @@ def test_jaw_close_is_in_the_substep_trace(limits):
     env.step_tcp = with_substeps
     rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
     episodes.pick_insert(rec, pick, ins)
-    assert any(t["phase"] == "close" for t in rec.substep_trace)
+    phases = {t["phase"] for t in rec.substep_trace}
+    assert {"close", "lift_check"} <= phases  # run10: the 20-22 N grasp trips came on the first lift row
 
 
 def test_isaac_runs_close_one_file_per_part(tmp_path, monkeypatch):
