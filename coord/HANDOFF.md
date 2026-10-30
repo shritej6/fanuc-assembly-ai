@@ -2,6 +2,33 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T36 ACT + SmolVLA sim-comparison baselines (agent 12, deferred) · CLAUDE · `feature/T36-baselines`
+
+- Scope: SIM COMPARISON ONLY ("is GR00T actually better?"). ACT and SmolVLA are never deployed to the real cell;
+  GR00T N1.7 drives all real-robot motion (user, 2026-10-30). Training deferred to Sunday on the final dataset.
+- Changed: `policy_learn/baselines/` (new): `pins.env` (LeRobot 0.3.3, the last release that reads LeRobot v2.1;
+  smolvla_base pinned before its LeRobot-0.4 pipeline conversion), `lerobot_view.py` (GR00T's prepared train / val
+  split -> one LeRobot v2.1 dataset per split, state = eef_9d + gripper + joints, action = eef_9d + gripper),
+  `policy_server.py` (a LeRobot checkpoint behind GR00T's PolicyServer protocol, so the evaluator runs it as
+  `--policy groot://127.0.0.1:<port>` through the same GrootPolicy guard, no eval-file change), `openloop.py`
+  (held-out open-loop check of any server, GR00T's included), `brev_baselines.sh` (driver, stages env hf prepare view
+  smoke train eval export; HF sync to private `shritej81632/fanuc-baselines`), `run_sim_eval.sh` (tunnels + agent 6's
+  `run_remote.sh`). Tests: `tests/policy_learn/test_baselines.py`.
+- Configs (PRELIMINARY, not tuned): both 16 rows per chunk (3.2 s at the data's 5 Hz, GR00T's horizon; the task
+  brief said 10 Hz but DATA_FORMAT.md and the export are 5 Hz). ACT batch 32, lr 1e-5, ResNet18, 3 cameras at
+  640x360. SmolVLA from the pinned base, batch 64, lr 1e-4, tokenizer_max_length 96 (instructions measure 53-55
+  SmolVLM2 tokens; the base's 48 would cut off the target numbers; the smoke stage refuses longer ones). Image
+  augmentation on (LeRobot's default color transforms). Run length sized from the measured smoke speed to <= 3 h.
+- Verified on CPU (Mac, 2-episode test export `g1_pull_out_fa-gen1`): view loads in LeRobot 0.3.3; ACT 10 steps and
+  SmolVLA 4 steps train and save; both checkpoints serve and answer `GrootPolicy("groot://...")` with guarded 16-row
+  chunks; the whole driver ran end to end for ACT with DEVICE=cpu (prepare -> view -> smoke -> train -> eval ->
+  export). The losses and open-loop errors from those runs are plumbing checks of untrained models, not results.
+- Not tested: on a GPU (no box rented, per coordinator), the HF upload, `run_sim_eval.sh` against Isaac (needs the
+  sim box), the `env` / `hf` stages on Linux.
+- Next (Sunday): rent one H100/A100 80 GB, copy the final export + HF token file, then
+  `REPO=~/fanuc-t36 nohup bash policy_learn/baselines/brev_baselines.sh > ~/t36_baselines.log 2>&1 &`; serve each
+  final checkpoint with `policy_server.py` and run `run_sim_eval.sh` on GR00T's scenarios; delete the box.
+
 ## 2026-10-30 16:55 · T12 Mimic generation + LeRobot export (agent 7, running) · CLAUDE · on `feature/T12-mimic`
 
 - Changed: `sim/assembly_lab/mimic/` (`mimicgen.py` reads agent 3's recorder files, `generate.py` pick_insert +
