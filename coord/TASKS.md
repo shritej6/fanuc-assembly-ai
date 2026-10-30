@@ -30,6 +30,7 @@ An agent may only start a task that is READY and owned by it.
 | T23 | FAT report from the scenario fleet | CLAUDE | BACKLOG | feature/T23-fat | T17 | Fri |
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
 | T26 | Team V error codes in the contracts (inspection `error_codes`, plan step `error_code`) | CLAUDE | REVIEW | feature/T26-error-codes | T01 | Wed |
+| T33 | Add the measured M1_01/M3_01 size-twin look-alike relationship to the taxonomy contract | CODEX | REVIEW | feature/T33-lookalike-contract | T29 | Thu |
 
 ## User-only actions (physical / accounts)
 

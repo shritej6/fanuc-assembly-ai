@@ -70,3 +70,13 @@ def test_readme_explains_every_error_code() -> None:
     readme = (CONTRACTS / "README.md").read_text()
     assert len(codes) == 11
     assert all(f"| `{c}` |" in readme for c in codes)
+
+
+def test_same_size_control_housings_require_a_lookalike_check() -> None:
+    objects = {
+        item["object_id"]: set(item["lookalikes"])
+        for item in json.loads((CONTRACTS / "taxonomy.json").read_text())["objects"]
+    }
+
+    assert "M3_01" in objects["M1_01"]
+    assert "M1_01" in objects["M3_01"]
