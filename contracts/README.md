@@ -14,7 +14,7 @@ Change them only through a PR reviewed by both agents. All poses use the control
 | `plan_step.schema.json` | state machine → motion layer |
 | `packml_state.schema.json` | cell state (PackML) |
 | `birth_certificate.schema.json` | traceability record per product |
-| `catalog.schema.json` | product recipe (filled in T04) |
+| `catalog.schema.json` | product recipe with CAD fixture-frame installed transforms, T29 grasp-roll offsets, and hash-pinned source provenance (filled in T04) |
 
 ## Error codes (`common.schema.json#/$defs/error_code`)
 
