@@ -4,6 +4,7 @@ surgery generate.py does before replay, and the export's acceptance rule. Host-o
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -144,6 +145,7 @@ def test_reason_buckets_drop_numbers():
 
 
 def test_export_accepts_on_agent3_kept():
+    pytest.importorskip("pandas")
     from sim.assembly_lab.mimic.export_lerobot import accepted_attr
 
     assert accepted_attr({"kept": "True", "success": False})
@@ -191,3 +193,16 @@ def test_chunk_paths_keep_worker_stats_at_the_base_name(tmp_path):
     assert GEN.chunk_path(out, 0).name == "host_g3_w0_c000.hdf5"
     assert GEN.chunk_path(out, 12).name == "host_g3_w0_c012.hdf5"
     assert GEN.chunk_path(out, 3).stem.rsplit("_c", 1)[1] == "003"
+
+
+def test_pull_out_trims_only_free_space_subtasks():
+    from sim.assembly_lab.mimic.generate import SCENARIO, free_space_starts, plan_roll
+    from sim.assembly_lab.mimic.spec import load_spec
+
+    spec = load_spec()
+    assert free_space_starts(spec.skills["pull_out"].subtasks) == [True, False, True, False]
+    assert free_space_starts(spec.skills["pick_insert"].subtasks) == [True, True, False]
+    assert SCENARIO["pull_out"] == "fix_above"
+
+    plans = (SimpleNamespace(grasp_tcp=[0, 0, 0, 180, 0, 33.0]), SimpleNamespace(spot_tcp=[0, 0, 0, 180, 0, -90.0]))
+    assert plan_roll(plans, "grasp_frame") == 33.0 and plan_roll(plans, "spot_frame") == -90.0

@@ -32,8 +32,8 @@ from .mimicgen import add_noise as _add_noise
 from .spec import load_spec
 
 TAPER_MM = 20.0  # action noise fades to zero within this distance of the subtask's contact row (precise at contact)
-SCENARIO = {"pick_insert": "build"}  # skills generated so far (the scenario agent 3's backend plans for)
-SOURCE_CASES = {"pick_insert": ("nominal",)}  # recovery cases stage a first try: never a source for nominal motion
+SCENARIO = {"pick_insert": "build", "pull_out": "fix_above"}  # skill -> the scenario agent 3's backend plans for
+SOURCE_CASES = {"pick_insert": ("nominal",), "pull_out": ("fix_above",)}  # staged recovery cases are never sources
 CORRIDOR_MM = 15.0
 RETREAT_XY_MM = 1.0
 
@@ -111,6 +111,19 @@ def connector(pose: np.ndarray, gripper: float, goal: np.ndarray, skill: str, su
     return m.segments
 
 
+def free_space_starts(subtasks) -> list[bool]:
+    """Subtasks that start in free space (the first, or one on a new reference frame): trimmed to their corridor and
+    reached through a rise-cross-descend connector. The others continue in contact from where the last one ended."""
+    return [i == 0 or s.object_ref != subtasks[i - 1].object_ref for i, s in enumerate(subtasks)]
+
+
+def plan_roll(plans, object_ref: str) -> float:
+    """The planner's roll (chosen inside the J6 range) for a subtask frame."""
+    first, second = plans
+    return {"grasp_frame": first.grasp_tcp[5], "seat_frame": getattr(second, "seated_tcp", [0.0] * 6)[5],
+            "spot_frame": getattr(second, "spot_tcp", [0.0] * 6)[5]}[object_ref]
+
+
 def check_rows(rows: np.ndarray, skill: str) -> None:
     """Transformed rows obey the same motion rules as scripted ones (box, tool tilt); raises MotionError."""
     from ..skills.motion import Motion
@@ -135,6 +148,7 @@ class Generator:
         refs = [s.object_ref for s in self.sk.subtasks]
         held = [i > 0 and s.object_ref == "seat_frame" for i, s in enumerate(self.sk.subtasks)]
         self.held = held
+        self.trim = free_space_starts(self.sk.subtasks)
         self.segments, self.source_counts = load_sources(a.seeds, self.sk.signals, refs, held,
                                                          cases=SOURCE_CASES[a.skill], max_seat_tries=1)
         if not self.segments[0]:
@@ -185,8 +199,7 @@ class Generator:
             src = select_source(self.segments[i], frame, plans[0].object_id, self.spec.raw["selection"]["nn_k"],
                                 self.rng)
         rows = self._rows(rec, i, sub, plans, src, frame)
-        careful = i == len(self.sk.subtasks) - 1
-        lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=careful)
+        lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=not self.trim[i])
         return [*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], src
 
     def _rows(self, rec, i: int, sub, plans, src, frame) -> np.ndarray:
@@ -194,12 +207,12 @@ class Generator:
             rows = transform_held(src.rows, src.frame_pose, frame, src.in_hand, rec.in_hand[plans[0].object_id])
         else:
             rows = transform_rows(src.rows, src.frame_pose, frame)
-        if i == len(self.sk.subtasks) - 1:
-            rows = align_r(trim_after_retreat(rows), rec.pose[5])
-        else:
+        if self.trim[i]:
             rows = trim_to_corridor(rows)
-            ref = plans[0].grasp_tcp[5] if i == 0 else plans[1].seated_tcp[5]
-            rows = align_r(rows, ref, contact_row(rows))
+            rows = align_r(rows, plan_roll(plans, sub.object_ref), contact_row(rows))
+        else:
+            rows = trim_after_retreat(rows) if i == len(self.sk.subtasks) - 1 else rows
+            rows = align_r(rows, rec.pose[5])
         pos_mm = sub.noise_pos_m * 1000.0
         rows = taper_noise(rows, rows[contact_row(rows), :3], pos_mm, pos_mm * float(self.spec.raw["rot_deg_per_mm"]),
                            self.rng)
@@ -227,20 +240,28 @@ class Generator:
 
     # --- one episode ----------------------------------------------------------------------------------------
     def _begin(self, rec, plans) -> None:
-        """Same header as agent 3's episodes.pick_insert: meta, instruction, Mimic frames, allowed targets."""
+        """Same header as agent 3's episodes.<skill>: meta, instruction, Mimic frames, allowed targets."""
         from ..skills import checks, episodes
         from ..skills.geometry import pose_to_matrix
 
-        pick, ins = plans
-        oid = pick.object_id
-        base = checks.object_pose(rec.obs, ins.base_id)
-        target = episodes._part_xy_yaw(rec, oid) + [pick.grasp_tcp[5], base[0], base[1], base[5]]
-        episodes._begin(rec, self.skill, oid, ins.base_id, pick.grip_index, "nominal", target)
-        rec.define_frame("grasp_frame", oid, pick.grasp_tcp)
-        rec.define_frame("seat_frame", ins.base_id, ins.seated_tcp)
+        first, second = plans
+        oid = first.object_id
+        start = episodes._part_xy_yaw(rec, oid)
+        if self.skill == "pick_insert":
+            base = checks.object_pose(rec.obs, second.base_id)
+            episodes._begin(rec, self.skill, oid, second.base_id, first.grip_index, "nominal",
+                            start + [first.grasp_tcp[5], base[0], base[1], base[5]])
+            rec.define_frame("seat_frame", second.base_id, second.seated_tcp)
+        else:  # pull_out: set down on a remembered test-bed spot
+            yaw = episodes._spot_yaw(rec, oid, first.grasp_tcp[5], second)
+            episodes._begin(rec, self.skill, oid, None, first.grip_index, SCENARIO[self.skill],
+                            start + [first.grasp_tcp[5], second.spot_tcp[0], second.spot_tcp[1], yaw])
+            rec.define_frame("spot_frame", None, second.spot_tcp)
+        rec.define_frame("grasp_frame", oid, first.grasp_tcp)
         rec.targets.add(oid)
-        self.ep = {"grasp_frame": pose_to_matrix(pick.grasp_tcp),
-                   "part0": pose_to_matrix(checks.object_pose(rec.obs, oid)), "sources": []}
+        self.ep = {"grasp_frame": pose_to_matrix(first.grasp_tcp),
+                   "part0": pose_to_matrix(checks.object_pose(rec.obs, oid)), "sources": [],
+                   "planned_grip": rec._planned_grip(oid, first.grasp_tcp)}
 
     def _grasp(self, rec, segs, plans) -> None:
         """approach_grasp: grip gates once the fingers closed and settled, then agent 3's grasp + slip check."""
@@ -251,7 +272,7 @@ class Generator:
 
         pick = plans[0]
         oid = pick.object_id
-        planned = rec._planned_grip(oid, pick.grasp_tcp)
+        planned = self.ep["planned_grip"]
         head, tail = split_after_close(segs[-1].rows)
         rec.run([*segs[:-1], replace(segs[-1], rows=head)])
         gates.grip_gates(rec.gate_log, rec.obs, oid, planned, pick.grasp_tcp[5])
@@ -264,24 +285,14 @@ class Generator:
         rec.holding = oid
 
     def _run_subtasks(self, rec, plans) -> None:
-        from ..skills import checks, frames, gates
         from ..skills.runner import EpisodeFailed
 
-        ins = plans[1]
         for i, sub in enumerate(self.sk.subtasks):
-            if sub.term_signal == "seated":
-                src = self._insert(rec, i, sub, plans)
-            else:
-                segs, src = self.subtask_rows(rec, i, sub, plans)
-                if sub.term_signal == "grasped":
-                    self._grasp(rec, segs, plans)
-                else:
-                    rec.run(segs)
+            src = self._subtask(rec, i, sub, plans)
             self.ep["sources"].append(src.demo)
             if sub.term_signal:
                 rec.mark(sub.term_signal)
-        gates.seat_gates(rec.gate_log, checks.object_pose(rec.obs, ins.object_id), ins.seated_object_pose,
-                         ins.yaw_tol_deg, frames.installed_up(ins.object_id))
+        self._end_gates(rec, plans)
         rec.go_home()
         rec.close()
         rec.finish_gates()
@@ -291,6 +302,52 @@ class Generator:
         missing = [s for s in self.sk.signals if s not in rec.marks]
         if missing:
             raise EpisodeFailed(f"episode ended without the subtask signals {missing}")
+
+    def _subtask(self, rec, i: int, sub, plans):
+        """Run subtask i with the closed-loop checks agent 3's runner makes at the same signal."""
+        from ..skills import checks, gates
+        from ..skills.runner import EpisodeFailed
+
+        oid = plans[0].object_id
+        if sub.term_signal == "seated":
+            return self._insert(rec, i, sub, plans)
+        segs, src = self.subtask_rows(rec, i, sub, plans)
+        if sub.term_signal == "grasped" and self.skill == "pick_insert":
+            self._grasp(rec, segs, plans)
+        elif sub.term_signal == "grasped":  # pull_out: grip read on the installed part once closed, before the pull
+            from dataclasses import replace
+
+            head, tail = split_after_close(segs[-1].rows)
+            rec.run([*segs[:-1], replace(segs[-1], rows=head)])
+            gates.grip_gates(rec.gate_log, rec.obs, oid, self.ep["planned_grip"], plans[0].grasp_tcp[5])
+            self.ep["before_pull"] = rec.obs
+            if len(tail):
+                rec.run([replace(segs[-1], rows=tail)])
+        elif sub.term_signal == "pulled":
+            rec.run(segs)
+            ok, why = checks.grasp_ok(self.ep["before_pull"], rec.obs, oid)
+            if not ok:
+                raise EpisodeFailed(f"pull-out: {why}")
+            rec.in_hand[oid] = checks.in_hand(rec.obs, oid)
+            rec.holding = oid
+        elif sub.term_signal == "placed":
+            self.ep["expected"] = checks.expected_object(plans[1].spot_tcp, checks.in_hand(rec.obs, oid))
+            rec.run(segs, soft_stop=True)  # as the scripted set-down: release where it touched
+        else:
+            rec.run(segs)
+        return src
+
+    def _end_gates(self, rec, plans) -> None:
+        """The skill's final placement gates, read after the release (as agent 3's episodes do)."""
+        from ..skills import checks, frames, gates
+
+        first, second = plans
+        actual = checks.object_pose(rec.obs, first.object_id)
+        if self.skill == "pick_insert":
+            gates.seat_gates(rec.gate_log, actual, second.seated_object_pose, second.yaw_tol_deg,
+                             frames.installed_up(first.object_id))
+        else:
+            gates.spot_gates(rec.gate_log, actual, self.ep["expected"])
 
     def every_step_others(self, rec, oid: str) -> G.GateReport:
         """mimic/gates.py: no non-target part moved > 1 mm / 2 deg at ANY step (bumped and settled back fails too)."""
@@ -312,11 +369,15 @@ class Generator:
         rec, R = None, self.record
         self.ep = {}
         installed = R._installed_before(self.backend, self.product, part)
+        if self.scenario == "fix_above":  # the part to remove is installed, with everything below it
+            from ..skills.backends import base_of
+
+            installed[part] = base_of(self.product)
         try:
             obs = R._reset(self.backend, self.rng, self.product, self.scenario, installed, part)
             rec = EpisodeRecorder(self.backend.env, ForceGuard(self.limits, per_object=self.per_object), obs,
                                   allow_touch_proxy=self.args.allow_touch_proxy)
-            self._begin(rec, self.backend.pick_insert(obs, part, None))
+            self._begin(rec, self.backend.plans)
             self._run_subtasks(rec, self.backend.plans)
             extra = self.every_step_others(rec, part)
             if not extra.ok:
