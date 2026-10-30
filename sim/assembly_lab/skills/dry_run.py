@@ -43,6 +43,7 @@ class KinematicEnv:
         self.poses = {k: np.asarray(v["pose"], dtype=float) for k, v in self.spec.items()}
         self.held: tuple[str, np.ndarray] | None = None
         self.force: dict[str, float] = {}
+        self.release_preload_N: float | None = None
         return self.observe()
 
     def observe(self) -> dict:
@@ -89,6 +90,7 @@ class KinematicEnv:
                 pose[2] = floor
             self.poses[oid] = pose
             if opening:
+                self.release_preload_N = self.force.get(oid, 0.0)  # axial load in the fingers as they open
                 self.held = None
                 self.poses[oid][2] = max(self._support_z(oid, pose), TABLE_Z)
 

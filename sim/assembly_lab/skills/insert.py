@@ -19,6 +19,7 @@ from .plan import INSERT_TILT_DEG, INSERT_TWIST_DEG, PUSH_MM, RETRY_LIFT_MM, SEA
 from .pull_out import carry
 
 PUSH_HOLD_ROWS = 6
+RELIEVE_HOLD_ROWS = 3  # let the unloaded part settle in the fingers before they open
 SEAT_APPROACH_MM = 1.0  # the last 1 mm to the seat and the push go at PRESS speed
 PRESS = Speed(0.05, 0.05)  # 0.5 mm/s: run7 measured the seat force jump past 15 N within one 0.25 mm row (15.3, 15.8 N
 #                            from below the 9 N soft stop), so each row now adds at most a fifth of that
@@ -142,7 +143,13 @@ def retry_entry(plan: InsertPlan, start, gripper: float, offset, learn: bool = T
 
 
 def release_and_retreat(plan: InsertPlan, start, learn: bool = True) -> list[Segment]:
+    """Unload, then let go, then leave straight up. The push leaves the TCP up to 0.5 mm below the seat with the part
+    preloaded in the fingers; opening under that preload dragged seated parts 0.2-0.33 mm in Isaac (run9: M3_01,
+    M5_01, M6_01), so the TCP first backs off to the seated height (fingers at their grasp height, no axial load)."""
     m = _motion(plan, start, CLOSED, learn)
+    if m.pose[2] < plan.seated_tcp[2]:
+        m.move("relieve", above(m.pose, plan.seated_tcp[2]), PRESS)
+        m.hold("relieve", RELIEVE_HOLD_ROWS)
     m.grip("release", OPEN)
     m.move("retreat", above(m.pose, plan.approach_z_mm), APPROACH)
     m.contact_z = None

@@ -229,3 +229,15 @@ def test_annotate_skips_empty_reset_episodes(tmp_path):
     assert rep["episodes"] == 1 and rep["empty_episodes"] == 1 and not rep["step_mismatch"]
     with h5py.File(p) as f:
         assert f["data/demo_1"].attrs["reason"] == "x" and f["data/demo_1/obs/train_mask"].shape == (3,)
+
+
+def test_release_opens_with_no_axial_preload(limits):
+    """The push preloads the seated part (kinematic spring: 0.5 mm below seat = 5 N); the fingers open only after
+    the TCP has backed off to the seated height, so nothing drags the part as they let go."""
+    env, (pick, ins, *_) = _world()
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    assert env.release_preload_N == pytest.approx(0.0)
+    phases = [f.seg.phase for f in rec.frames]
+    assert phases.index("relieve") < phases.index("release")
+    assert not rec.gate_log.failed
