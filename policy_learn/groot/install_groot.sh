@@ -13,7 +13,22 @@ UV="$HOME/.local/bin/uv"
 
 install_system() {
   sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg git rsync python3-pip > /dev/null
+  # libaio-dev and the CUDA 12.8 toolkit: deepspeed needs CUDA_HOME/nvcc to start (Isaac-GR00T
+  # scripts/deployment/dgpu/install_deps.sh; the 2026-10-30 smoke failed with "CUDA_HOME does not exist" without them).
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg git rsync python3-pip libaio-dev > /dev/null
+  if [[ ! -d /usr/local/cuda ]]; then
+    if ! apt-cache show cuda-toolkit-12-8 &> /dev/null; then
+      local ubuntu keyring
+      ubuntu="$(. /etc/os-release && echo "${VERSION_ID//./}")"
+      keyring="$(mktemp --suffix=.deb)"
+      curl -fsSL -o "$keyring" \
+        "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${ubuntu}/x86_64/cuda-keyring_1.1-1_all.deb"
+      sudo dpkg -i "$keyring"
+      rm -f "$keyring"
+      sudo apt-get update -qq
+    fi
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends cuda-toolkit-12-8 > /dev/null
+  fi
   local major
   major="$(ffmpeg -version | head -1 | sed -E 's/^ffmpeg version n?([0-9]+).*/\1/')"
   if ! [[ "$major" =~ ^[4-7]$ ]]; then
@@ -49,6 +64,7 @@ sync_env() {
   "$GROOT_DIR/.venv/bin/python" - <<'PY'
 import torch, transformers, gr00t, torchcodec  # noqa: F401  torchcodec import fails if ffmpeg is unusable
 import flash_attn  # noqa: F401
+import deepspeed  # noqa: F401  import runs deepspeed's op checks, which raise without CUDA_HOME
 assert torch.cuda.is_available(), "torch sees no GPU"
 print(f"torch {torch.__version__} cuda {torch.version.cuda} gpus {torch.cuda.device_count()} "
       f"transformers {transformers.__version__}")
