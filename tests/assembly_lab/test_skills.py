@@ -328,3 +328,21 @@ def test_watch_logs_the_offset_at_first_base_contact():
     w.observe(_obs(oid, seat + [0.1, 0.0, 1.0, 0, 0, 0]), tcp + [0, 0, 1.0, 0, 0, 0], "level", 2.0)
     assert w.first_contact["phase"] == "touch" and w.first_contact["xy_mm"] == pytest.approx(0.5)
     assert w.first_contact["z_above_seat_mm"] == pytest.approx(1.5)
+
+
+def test_last_fine_zone_over_the_seat_goes_in_fine_rows(plans):
+    """run10: the seat went past 2 N within one 0.05 mm row (6-11.6 N kept, 15.4 / 17 N discarded); the last
+    FINE_ZONE_MM and the push are pressed at FINE (<= 0.02 mm/row), on inserts and on test-bed set-downs."""
+    from sim.assembly_lab.skills.insert import FINE, FINE_ZONE_MM
+
+    ins, spot = plans[1], plans[3]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    rows = np.vstack([s.rows for s in insert(ins, start, 1.0) if s.phase in ("slide", "push")])
+    near = np.flatnonzero(rows[:, 2] <= ins.seated_tcp[2] + FINE_ZONE_MM + 1e-6)
+    steps = np.linalg.norm(np.diff(rows[near[0]:], axis=0)[:, :3], axis=1)
+    assert steps.max() <= FINE.mm + 1e-9 and rows[near[0]:, 2].min() < ins.seated_tcp[2]
+    segs = place_free(spot, np.r_[300.0, 0.0, 0.0, -180.0, 0.0, 0.0], 1.0)
+    touch = np.vstack([s.rows for s in segs if s.phase == "touch_down"])
+    fine = touch[touch[:, 2] <= spot.spot_tcp[2] + FINE_ZONE_MM + 1e-6]
+    d, _ = _steps(fine)
+    assert (d <= FINE.mm + 1e-6).all() and fine[-1, 2] == pytest.approx(spot.spot_tcp[2])

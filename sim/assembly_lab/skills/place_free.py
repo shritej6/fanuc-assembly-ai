@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .insert import PRESS, SEAT_APPROACH_MM
+from .insert import FINE, FINE_ZONE_MM, PRESS, SEAT_APPROACH_MM
 from .motion import APPROACH, OPEN, Motion, Segment, above
 from .plan import SEAT_FLOOR_MM, FreePlacePlan
 from .pull_out import carry
@@ -38,7 +38,8 @@ def set_down(plan: FreePlacePlan, start, gripper: float, learn: bool = True) -> 
         m.move("drop", above(s, s[2] + plan.drop_mm), APPROACH)
         return m.segments
     m.move("set_down", above(s, s[2] + SEAT_APPROACH_MM), APPROACH)
-    m.move("touch_down", s, PRESS)
+    m.move("touch_down", above(s, s[2] + FINE_ZONE_MM), PRESS)
+    m.move("touch_down", s, FINE)  # the table is as stiff as a seat: the last 0.3 mm in 0.02 mm rows
     return m.segments
 
 

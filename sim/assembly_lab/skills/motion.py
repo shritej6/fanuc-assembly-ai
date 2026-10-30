@@ -87,7 +87,8 @@ class Motion:
         """Rows along the straight path, each as far as the local step limit allows and never farther."""
         dist = float(np.linalg.norm(goal[:3] - self.pose[:3]))
         ang = rotation_distance_deg(self.pose, goal)
-        n = max(1, int(np.ceil(max(dist / 0.05, ang / 0.05))))  # dense samples (well under any limit)
+        res_mm, res_deg = min(0.05, speed.mm), min(0.05, speed.deg)  # samples no coarser than the step limit
+        n = max(1, int(np.ceil(max(dist / res_mm, ang / res_deg))))
         rows, last, prev = [], self.pose, self.pose
         for i in range(1, n + 1):
             p = interpolate(self.pose, goal, i / n)

@@ -63,7 +63,8 @@ def test_pick_insert_episode_signals_and_gates(limits):
 
 def test_force_over_limit_discards(limits, tmp_path):
     p = tmp_path / "tight.yaml"
-    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 0.2"))  # the first push row on the 10 N/mm spring passes it
+    # the first 0.02 mm FINE row on the 10 N/mm spring gives 0.2 N: over this limit in one row, before any soft stop
+    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 0.1"))
     env, (pick, ins, *_) = _world()
     rec = EpisodeRecorder(env, ForceGuard(load_limits(p)), env.reset())
     with pytest.raises(EpisodeFailed, match="force guard"):

@@ -23,6 +23,10 @@ RELIEVE_HOLD_ROWS = 3  # let the unloaded part settle in the fingers before they
 SEAT_APPROACH_MM = 1.0  # the last 1 mm to the seat and the push go at PRESS speed
 PRESS = Speed(0.05, 0.05)  # 0.5 mm/s: run7 measured the seat force jump past 15 N within one 0.25 mm row (15.3, 15.8 N
 #                            from below the 9 N soft stop), so each row now adds at most a fifth of that
+FINE = Speed(0.02, 0.02)  # 0.2 mm/s over the seat: ~260 N/mm adds ~5 N per row, so the 2 N stop ends the press near
+#                         7 N worst case (run10 0.05 mm rows: 6-11.6 N kept, 15.4 / 17.0 N discarded)
+FINE_ZONE_MM = 0.3  # FINE from this far above the CAD seated height: run10 first seat contact came at -0.085 to
+#                     -0.099 mm and already above 2 N, so a contact trigger is one row too late
 ENTRY_TOP_MM = 3.0  # start the tilted descent this far above first chamfer contact
 
 
@@ -99,8 +103,9 @@ def _entry(m: Motion, plan: InsertPlan, offset) -> None:
     m.move("twist", twisted_about(above(tgt, h["level"]), pivot, -INSERT_TWIST_DEG), SLOW)
     m.move("twist", above(tgt, h["level"]), SLOW)
     m.move("slide", above(tgt, plan.seated_tcp[2] + SEAT_APPROACH_MM), SLOW)
-    m.move("slide", above(tgt, plan.seated_tcp[2]), PRESS)
-    m.move("push", above(tgt, h["push"]), PRESS)
+    m.move("slide", above(tgt, plan.seated_tcp[2] + FINE_ZONE_MM), PRESS)
+    m.move("slide", above(tgt, plan.seated_tcp[2]), FINE)
+    m.move("push", above(tgt, h["push"]), FINE)
     m.hold("push", PUSH_HOLD_ROWS)
 
 
