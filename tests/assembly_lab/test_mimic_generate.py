@@ -267,3 +267,13 @@ def test_low_force_sources_are_preferred():
     assert 0.9 < picks.count("low") / 400 < 0.97          # weights 0.8 vs 0.05
     peaks = np.array([[3.0, 1.0, 0.01, 0], [12.0, 2.25, 0.02, 0], [1.0, 4.5, 0.0, 0]])
     assert M.force_ratio(peaks, 0, 2) == 0.8 and M.force_ratio(peaks, 0, 3) == 1.0 and M.force_ratio(None, 0, 3) == 0.0
+
+
+def test_rank_sources_tries_every_source_once():
+    eye = np.eye(4)
+    far = eye.copy()
+    far[0, 3] = 500.0
+    segs = [M.SourceSegment(f"d{i}", "M4_01", 4, 1, np.zeros((2, 7)), eye if i < 3 else far, None, 0.1 * i)
+            for i in range(5)]
+    order = [s.demo for s in M.rank_sources(segs, eye, "M4_01", 3, np.random.default_rng(1))]
+    assert sorted(order[:3]) == ["d0", "d1", "d2"] and sorted(order[3:]) == ["d3", "d4"]

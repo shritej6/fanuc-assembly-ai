@@ -280,12 +280,21 @@ def select_source(cands: list[SourceSegment], new_frame: np.ndarray, object_id: 
                   rng: np.random.Generator) -> SourceSegment:
     """nearest_neighbor_object among the same part's segments (else any); among the k nearest, a source is drawn
     with weight = its margin to the force limits (1 - force_ratio, floor 0.05), so low-force seeds are preferred."""
+    return rank_sources(cands, new_frame, object_id, k, rng)[0]
+
+
+def rank_sources(cands: list[SourceSegment], new_frame: np.ndarray, object_id: str, k: int,
+                 rng: np.random.Generator) -> list[SourceSegment]:
+    """All usable sources in the order they are tried: the k nearest (same part first) drawn without replacement
+    with weight = force margin, then the rest by frame distance."""
     same = [c for c in cands if c.object_id == object_id] or cands
     if not same:
         raise ValueError("no source segment for this subtask")
-    near = sorted(same, key=lambda c: _frame_distance(c.frame_pose, new_frame))[:k]
+    order = sorted(same, key=lambda c: _frame_distance(c.frame_pose, new_frame))
+    near, rest = order[:k], order[k:]
     w = np.array([max(1.0 - c.force_ratio, 0.05) for c in near])
-    return near[int(rng.choice(len(near), p=w / w.sum()))]
+    picked = rng.choice(len(near), size=len(near), replace=False, p=w / w.sum())
+    return [near[int(i)] for i in picked] + rest
 
 
 def transform_rows(rows: np.ndarray, src_frame: np.ndarray, new_frame: np.ndarray) -> np.ndarray:

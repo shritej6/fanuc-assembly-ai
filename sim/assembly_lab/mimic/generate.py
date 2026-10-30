@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 from . import gates as G
-from .mimicgen import MAX_CARRY_DRIFT_MM, load_sources, select_source, transform_held, transform_rows
+from .mimicgen import MAX_CARRY_DRIFT_MM, load_sources, rank_sources, transform_held, transform_rows
 from .mimicgen import add_noise as _add_noise
 from .spec import load_spec
 
@@ -201,15 +201,20 @@ class Generator:
 
     def subtask_rows(self, rec, i: int, sub, plans, src=None) -> tuple[list, object]:
         """Connector + transformed rows of subtask i (source chosen by nearest frame unless `src` is given)."""
-        from ..skills.motion import Segment
+        from ..skills.motion import MotionError, Segment
 
         frame = self._new_frame(rec, i, sub, plans)
-        if src is None:
-            src = select_source(self.segments[i], frame, plans[0].object_id, self.spec.raw["selection"]["nn_k"],
-                                self.rng)
-        rows = self._rows(rec, i, sub, plans, src, frame)
+        cands = [src] if src is not None else rank_sources(self.segments[i], frame, plans[0].object_id,
+                                                           self.spec.raw["selection"]["nn_k"], self.rng)
+        for n, cand in enumerate(cands):  # a source whose transformed rows break the Motion limits is not replayed
+            try:
+                rows = self._rows(rec, i, sub, plans, cand, frame)
+                break
+            except MotionError:
+                if n == len(cands) - 1:
+                    raise
         lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=not self.trim[i])
-        return [*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], src
+        return [*lead, Segment(self.skill, sub.name, sub.name, sub.object_ref, rows)], cand
 
     def _rows(self, rec, i: int, sub, plans, src, frame) -> np.ndarray:
         if self.held[i]:
