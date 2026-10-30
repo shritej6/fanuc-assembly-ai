@@ -11,7 +11,8 @@ talk to the cells only through the Hub, which owns the env on the main thread:
             the order the lanes ask (Hub.lock), so <file>.meta.jsonl lines follow the recorder's export order.
     reset   the lane wants a new layout. With per-env reset (env.begin_reset) the cell starts settling at once and
             the others keep stepping; the lane gets its obs from ready_resets() after a later step_tcp_many ({} when
-            every live cell is settling). Otherwise the hub resets every cell together when every live lane waits
+            every live cell is settling). The first reset of all is always a lockstep reset_many, which builds the
+            env's observation buffers. Without begin_reset the hub resets every cell together when every live lane waits
             for one (reset_many) and rotates the recorder file there, when no cell has an episode in progress.
 
 With per-env reset the recorder file rotates between calls whenever no lane is between its meta line and its end
@@ -55,6 +56,7 @@ class Hub:
         self.resetting: set[int] = set()
         self.error: BaseException | None = None
         self.steps = 0
+        self.started = False  # the first reset is always reset_many: Isaac Lab's env.reset() builds the obs buffers
 
     # --- lane side ------------------------------------------------------------------------------------------
     def request(self, k: int, req: tuple):
@@ -104,7 +106,7 @@ class Hub:
         reqs = [self.lanes[k].pending for k in self.live - self.resetting]
         if any(r is not None and r[0] == "end" for r in reqs):
             return True
-        if self._per_env_reset() and any(r is not None and r[0] == "reset" for r in reqs):
+        if self._per_env_reset() and self.started and any(r is not None and r[0] == "reset" for r in reqs):
             return True
         return all(r is not None for r in reqs)  # per-env: [] when every live cell settles -> one hold step
 
@@ -118,7 +120,7 @@ class Hub:
                 self.env.end_episode(k, ok)
             return dict.fromkeys(ends)
         resets = {k: r for k, r in batch.items() if r[0] == "reset"}
-        if resets and self._per_env_reset():
+        if resets and self._per_env_reset() and self.started:
             self.env.begin_reset({k: (r[1], r[2]) for k, r in resets.items()})
             with self.cv:  # the lanes stay blocked until ready_resets() hands them their obs
                 self.resetting |= set(resets)
@@ -156,6 +158,7 @@ class Hub:
             raise LaneFailed("a retired lane never reset: no layout to give its cell")
         obs = self.env.reset_many([self.lanes[k].layout for k in range(self.n)],
                                   [self.lanes[k].frames_fn if k in resets else None for k in range(self.n)])
+        self.started = True
         for k in idle:  # retired: nothing will step this cell; its new episode is ended (empty) at once
             self.env.end_episode(k, False)
         return {k: obs[k] for k in resets}

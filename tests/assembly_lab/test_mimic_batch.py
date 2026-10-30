@@ -47,6 +47,7 @@ class PerEnvResetFake(FakeEnv):
         self.settle, self.settling, self.ready, self.unasked = settle, {}, {}, []
 
     def begin_reset(self, reqs):
+        assert self.resets, "begin_reset before the first reset_many: the env has no obs buffers yet"
         for k, (lay, _) in reqs.items():
             assert not self.in_episode[k] and k not in self.settling
             self.settling[k] = [self.settle, lay]
@@ -112,10 +113,10 @@ def test_lockstep_lanes_step_together_and_meta_follows_export_order():
 def test_per_env_reset_does_not_wait_for_the_slowest_lane():
     env = PerEnvResetFake(2)
     _, metas, errors = _run(env, 2, [1, 6], episodes=3)
-    assert not errors and env.resets == 0
+    assert not errors and env.resets == 1  # only the first reset is lockstep (it builds the obs buffers)
     assert metas.count(0) == 3 and metas.index(0) < metas.index(1)  # lane 0 cycled on while lane 1 still ran
     assert env.unasked == []  # no recording cell was ever held without asking
-    assert env.calls[:2] == [[], []]  # both cells settle first: two hold steps, nothing recorded
+    assert env.calls[:2] == [[0, 1], [1]]  # lane 0 settles its 2nd episode while lane 1 keeps stepping
     assert sum(len(c) for c in env.calls) == 3 * (1 + 6)
 
 

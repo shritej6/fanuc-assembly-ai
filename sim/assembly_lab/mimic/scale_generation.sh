@@ -142,14 +142,18 @@ upload() {
   # LeRobot dataset under LABEL/ (brev_groot.sh: SRC_ROOT=<download>/LABEL). The token stays in the HF cache file.
   local run=$1 label=$2 repo=$3
   "${SSH[@]}" "$GATHER" "set -e; cd ~/t12_data/lerobot; python3 - $run > ~/t12_data/lerobot/${label}_counts.json <<'PY'
-import collections, glob, json, sys
-per, eps = collections.Counter(), 0
+import collections, glob, hashlib, json, os, sys
+per, env, eps = collections.Counter(), collections.Counter(), 0
 for f in glob.glob(f'{sys.argv[1]}_*/meta/t12_episodes.jsonl'):
     for line in open(f):
         e = json.loads(line)
         per[f\"{e['skill']}:{e['product']}\"] += 1
+        env[e.get('env_manifest_md5', 'unknown')] += 1
         eps += 1
-print(json.dumps({'episodes': eps, 'per_skill_product': dict(sorted(per.items()))}, indent=1))
+repo = os.path.expanduser('~/t12_data/repo_a7')
+runner = hashlib.md5(open(f'{repo}/sim/assembly_lab/skills/runner.py', 'rb').read()).hexdigest()
+print(json.dumps({'episodes': eps, 'per_skill_product': dict(sorted(per.items())), 'env_manifest_md5': dict(env),
+                  'generator_repo': {'skills/runner.py_md5': runner}}, indent=1))
 PY
       cat ~/t12_data/lerobot/${label}_counts.json; cd ~/t12_data/repo_a7; \
       ~/.local/bin/uv run -q --no-project --with huggingface_hub python - $run $label $repo <<'PY'
