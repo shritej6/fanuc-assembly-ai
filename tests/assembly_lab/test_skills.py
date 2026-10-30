@@ -155,6 +155,22 @@ def test_pull_wiggle_default_is_the_users_plus_minus_one_deg():
         po.set_wiggle(2.0, 4)  # never more than the user's ±1 deg
 
 
+def test_last_ultra_zone_and_push_go_in_real_robot_repeatability_rows(plans):
+    """main 2026-10-30: 0.02 mm rows still reached 12.5 N of 15; from the CAD seated height + ULTRA_ZONE_MM down to
+    the push target (PUSH_MM below it) every row is <= 0.01 mm (ER-4iA repeatability), ending at the push target."""
+    from sim.assembly_lab.skills.insert import ULTRA, ULTRA_ZONE_MM
+    from sim.assembly_lab.skills.plan import PUSH_MM
+
+    ins = plans[1]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    rows = np.vstack([s.rows for s in insert(ins, start, 1.0) if s.phase in ("slide", "push")])
+    near = np.flatnonzero(rows[:, 2] <= ins.seated_tcp[2] + ULTRA_ZONE_MM + 1e-6)
+    steps = np.linalg.norm(np.diff(rows[near[0]:], axis=0)[:, :3], axis=1)
+    assert ULTRA.mm == pytest.approx(0.01) and steps.max() <= ULTRA.mm + 1e-9
+    assert rows[:, 2].min() == pytest.approx(ins.seated_tcp[2] - PUSH_MM)
+    assert PUSH_MM == pytest.approx(0.05)
+
+
 def test_place_free_sets_down_and_defect_drops(plans):
     _, _, _, spot, defect = plans
     start = np.r_[300.0, 0.0, 0.0, -180.0, 0.0, 0.0]

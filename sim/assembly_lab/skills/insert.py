@@ -27,6 +27,9 @@ FINE = Speed(0.02, 0.02)  # 0.2 mm/s over the seat: ~260 N/mm adds ~5 N per row,
 #                         7 N worst case (run10 0.05 mm rows: 6-11.6 N kept, 15.4 / 17.0 N discarded)
 FINE_ZONE_MM = 0.3  # FINE from this far above the CAD seated height: run10 first seat contact came at -0.085 to
 #                     -0.099 mm and already above 2 N, so a contact trigger is one row too late
+ULTRA = Speed(0.01, 0.01)  # 0.1 mm/s for the last ULTRA_ZONE_MM + PUSH_MM: main 2026-10-30, run10 0.02 mm rows still
+#                           reached 11.4-12.5 N at first seat contact; 0.01 mm is the ER-4iA repeatability, so real
+ULTRA_ZONE_MM = 0.05  # ULTRA from this far above the CAD seated height down to the push target
 ENTRY_TOP_MM = 3.0  # start the tilted descent this far above first chamfer contact
 
 
@@ -104,8 +107,9 @@ def _entry(m: Motion, plan: InsertPlan, offset) -> None:
     m.move("twist", above(tgt, h["level"]), SLOW)
     m.move("slide", above(tgt, plan.seated_tcp[2] + SEAT_APPROACH_MM), SLOW)
     m.move("slide", above(tgt, plan.seated_tcp[2] + FINE_ZONE_MM), PRESS)
-    m.move("slide", above(tgt, plan.seated_tcp[2]), FINE)
-    m.move("push", above(tgt, h["push"]), FINE)
+    m.move("slide", above(tgt, plan.seated_tcp[2] + ULTRA_ZONE_MM), FINE)
+    m.move("slide", above(tgt, plan.seated_tcp[2]), ULTRA)
+    m.move("push", above(tgt, h["push"]), ULTRA)
     m.hold("push", PUSH_HOLD_ROWS)
 
 

@@ -13,6 +13,7 @@ import pytest
 from sim.assembly_lab.skills import checks, dry_run, episodes, frames, gates, record
 from sim.assembly_lab.skills.force_guard import ForceGuard, LimitsError, load_limits
 from sim.assembly_lab.skills.gates import GateFailed
+from sim.assembly_lab.skills.plan import PUSH_MM
 from sim.assembly_lab.skills.runner import EpisodeFailed, EpisodeRecorder
 
 LIMITS = "axial_N: 15.0\nlateral_N: 4.5\ntorque_Nm: 0.1\nstatus: PRELIMINARY\nsource: test\n"
@@ -64,8 +65,8 @@ def test_pick_insert_episode_signals_and_gates(limits):
 
 def test_force_over_limit_discards(limits, tmp_path):
     p = tmp_path / "tight.yaml"
-    # the first 0.02 mm FINE row on the 10 N/mm spring gives 0.2 N: over this limit in one row, before any soft stop
-    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 0.1"))
+    # the first 0.01 mm ULTRA row on the 10 N/mm spring gives 0.1 N: over this limit in one row, before any soft stop
+    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 0.05"))
     env, (pick, ins, *_) = _world()
     rec = EpisodeRecorder(env, ForceGuard(load_limits(p)), env.reset())
     with pytest.raises(EpisodeFailed, match="force guard"):
@@ -326,7 +327,7 @@ def test_in_hand_drift_is_zero_for_a_held_part_and_logged(limits):
     rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
     episodes.pick_insert(rec, pick, ins)
     assert rec.in_hand_drift_mm["carry"] == pytest.approx(0.0, abs=1e-9)
-    assert rec.in_hand_drift_mm["contact"] == pytest.approx(0.1, abs=1e-3)  # the 0.1 mm seat push (PUSH_MM)
+    assert rec.in_hand_drift_mm["contact"] == pytest.approx(PUSH_MM, abs=1e-3)  # the seat push (PUSH_MM)
     assert rec.holding is None  # released at the seat
 
 
@@ -473,7 +474,7 @@ def test_press_steps_drop_to_fine_rows_after_first_seat_contact(limits):
     steps = np.abs(np.diff(z[first:]))
     assert steps.size and steps.max() <= FINE_PRESS_MM + 1e-9
     assert any("pressing at 0.02 mm/row" in e for e in rec.events)
-    assert z[-1] == pytest.approx(ins.seated_tcp[2] - 0.1)  # still ends on the planned push height
+    assert z[-1] == pytest.approx(ins.seated_tcp[2] - PUSH_MM)  # still ends on the planned push height
 
 
 def test_jaw_close_is_in_the_substep_trace(limits):
