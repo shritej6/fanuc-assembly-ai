@@ -9,19 +9,20 @@ from scene import FRAMES
 from task import SKILL_SIGNALS
 
 
-def _vec(env, values) -> torch.Tensor:
-    return torch.tensor([list(values)], dtype=torch.float32, device=env.device)
+def _per_env(env, fn) -> torch.Tensor:
+    """(num_envs, d): fn(env_id) -> d values for every env."""
+    return torch.tensor([list(fn(e)) for e in range(env.num_envs)], dtype=torch.float32, device=env.device)
 
 
 # ---------------------------------------------------------------- observations (policy group)
 def joints(env) -> torch.Tensor:
     """CellClient.observe 'joints': J1..J6 deg + gripper 0 open .. 1 closed."""
-    return _vec(env, env.joints_obs())
+    return _per_env(env, env.joints_obs)
 
 
 def tcp_pose(env) -> torch.Tensor:
     """CellClient.observe 'tcp_pose': UF0 [x y z w p r] mm / deg (UTOOL1 fingertip)."""
-    return _vec(env, env.tcp_obs())
+    return _per_env(env, env.tcp_obs)
 
 
 def eef_pos(env) -> torch.Tensor:
@@ -56,16 +57,16 @@ def contact_peak(env) -> torch.Tensor:
 
 def signal(env, name: str) -> torch.Tensor:
     """Subtask term signal, latched: 0 until the subtask ended, then 1."""
-    return _vec(env, [float(env.latched_signal(name))])
+    return _per_env(env, lambda e: [float(env.latched_signal(name, e))])
 
 
 # ---------------------------------------------------------------- events / terminations
 def reset_episode(env, env_ids) -> None:
-    env.sample_episode()
+    env.sample_episode(env_ids)
 
 
 def success(env) -> torch.Tensor:
-    return torch.tensor([env.episode_success()], dtype=torch.bool, device=env.device)
+    return torch.tensor([env.episode_success(e) for e in range(env.num_envs)], dtype=torch.bool, device=env.device)
 
 
 def time_out(env) -> torch.Tensor:

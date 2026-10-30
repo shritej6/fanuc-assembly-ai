@@ -39,24 +39,24 @@ def finger_contacts(env, part: str, obs_tcp) -> dict:
     """Per jaw body, contacts with the part from the robot contact sensor's PhysX view: normal force, deepest
     penetration (separation < 0) and where the points sit in the TCP frame (z along the tool, 0 = TCP; the NBR pad
     spans the last 3.7 mm above the fingertip, the PLA finger body everything above it)."""
-    sensor = env.env.scene["robot_contact"]
     as_np = lambda a: a.numpy() if hasattr(a, "numpy") and not hasattr(a, "cpu") else a.cpu().numpy()
-    forces, points, _normals, seps, counts, starts = (np.asarray(as_np(x)) for x in
-                                                     sensor.contact_view.get_contact_data(dt=env.dt))
     nf = len(env.env.names)
-    fi = env.env.names.index(env.env.names[env.env.pool.index(part)])
-    counts, starts = counts.reshape(-1, nf), starts.reshape(-1, nf)
+    fi = env.env.pool.index(part)
     tcp_tf = L.translation(*obs_tcp[:3])
     tcp_tf[:3, :3] = L.fanuc_rotation(*obs_tcp[3:6])
     inv = np.linalg.inv(tcp_tf)
-    fric, fcounts, fstarts = None, None, None
-    if hasattr(sensor.contact_view, "get_friction_data"):
-        fr, _, fc, fs = sensor.contact_view.get_friction_data(dt=env.dt)
-        fric = np.asarray(as_np(fr)).reshape(-1, 3)
-        fcounts, fstarts = np.asarray(as_np(fc)).reshape(-1, nf), np.asarray(as_np(fs)).reshape(-1, nf)
     out = {}
     for name in ("JawL", "JawR"):
-        bi = sensor.body_names.index(name)
+        sensor = env.env.scene[f"robot_contact_{name}"]          # one single-body sensor per link (scene.py)
+        forces, points, _normals, seps, counts, starts = (np.asarray(as_np(x)) for x in
+                                                         sensor.contact_view.get_contact_data(dt=env.dt))
+        counts, starts = counts.reshape(-1, nf), starts.reshape(-1, nf)
+        fric, fcounts, fstarts = None, None, None
+        if hasattr(sensor.contact_view, "get_friction_data"):
+            fr, _, fc, fs = sensor.contact_view.get_friction_data(dt=env.dt)
+            fric = np.asarray(as_np(fr)).reshape(-1, 3)
+            fcounts, fstarts = np.asarray(as_np(fc)).reshape(-1, nf), np.asarray(as_np(fs)).reshape(-1, nf)
+        bi = 0                                                   # env 0's (only) body
         n, s0 = int(counts[bi, fi]), int(starts[bi, fi])
         if n == 0:
             continue
@@ -106,7 +106,7 @@ def run(env, part: str, rows: list, dt: float, tag: str) -> dict:
 
     n = max(1, round(dt / env.cfg.step_dt))
     for row in rows:
-        for k, pose in enumerate(tcp.interpolate(env.term.tcp_cmd, np.asarray(row, float), n)):
+        for k, pose in enumerate(tcp.interpolate(env.term.tcp_cmd[0], np.asarray(row, float), n)):
             action = torch.tensor([[*pose, row[6]]], dtype=torch.float32, device=env.env.device)
             env._obs, *_ = env.env.step(action)
             if k % args.every == 0 or k == n - 1:

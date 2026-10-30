@@ -65,7 +65,7 @@ def carry_test(env, part: str) -> tuple[float, float]:
         print(f"[carry] {part} {name}: slip {s_:.3f} mm pivot {p_:.2f} deg", flush=True)
     f = env.env.scene["robot"].root_view.get_dof_projected_joint_forces()
     f = np.asarray(f.numpy() if hasattr(f, "numpy") else f.cpu())[0].reshape(-1)[env.term.jaw_ids]
-    sensor = env.env.scene["robot_contact"]
+    sensor = env.env._metrics.robot
     pad = sensor.data.net_forces_w.torch[0].cpu().numpy()
     pads = [round(float(np.linalg.norm(pad[sensor.body_names.index(n)])), 2) for n in ("JawL", "JawR")]
     print(f"[carry] {part}: pad normal per finger N={pads} transmitted jaw force N={np.round(f, 2).tolist()} "
@@ -83,7 +83,7 @@ def grip_tests(env, part: str, hold_row: list) -> float:
     robot = env.env.scene["robot"]
     as_np = lambda a: a.cpu().numpy() if hasattr(a, "cpu") else np.asarray(a.numpy())
     proj = as_np(robot.root_physx_view.get_dof_projected_joint_forces())[0].reshape(-1)[env.term.jaw_ids]
-    sensor = env.env.scene["robot_contact"]
+    sensor = env.env._metrics.robot
     fm = sensor.data.force_matrix_w.torch[0][:, env.env.pool.index(part)].cpu().numpy()
     pads = [round(float(np.linalg.norm(fm[sensor.body_names.index(n)])), 2) for n in ("JawL", "JawR")]
     print(f"[grip] {part}: pinch on the part per finger N={pads} transmitted jaw force N={np.round(proj, 2).tolist()}"
@@ -121,14 +121,14 @@ def report(env, tag: str) -> float:
     robot = e.scene["robot"]
     q = robot.data.joint_pos.torch[0].cpu().double().numpy()
     q_arm = q[term.arm_ids]
-    err = np.rad2deg(q_arm - np.asarray(term.q_cmd))
+    err = np.rad2deg(q_arm - np.asarray(term.q_cmd[0]))
     fk = np.asarray(tcp.tcp_pose(q_arm))
-    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd)))
-    d = fk[:3] - np.asarray(term.tcp_cmd[:3])
+    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd[0])))
+    d = fk[:3] - np.asarray(term.tcp_cmd[0, :3])
     jaw = q[term.jaw_ids] * 1000.0
     from scene import ARM_STIFFNESS
     print(f"[track] {tag}: dq_deg={np.round(err, 4).tolist()} torque_Nm={np.round(np.deg2rad(err) * ARM_STIFFNESS, 1).tolist()}"
-          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[:3], 3).tolist()}"
+          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[0, :3], 3).tolist()}"
           f" jaws_mm={np.round(jaw, 3).tolist()}", flush=True)
     return float(np.linalg.norm(d))
 
