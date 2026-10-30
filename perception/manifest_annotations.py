@@ -8,6 +8,8 @@ from perception.manifest_types import ManifestError
 from perception.records import Annotation
 from perception.taxonomy import fallen_label
 
+LOOSE_STATES = ("on_table", "in_store")
+
 
 def _bbox(raw: Any, width: int, height: int, context: str) -> tuple[int, int, int, int]:
     if not isinstance(raw, list) or len(raw) != 4 or any(not isinstance(value, int) for value in raw):
@@ -31,6 +33,13 @@ def annotation(
     if object_id not in label2id:
         raise ManifestError(f"unknown object_id {object_id!r} in {context}")
     label = object_id
+    if (
+        fallen_classes
+        and rest is None
+        and object_id.startswith("M")
+        and raw.get("state") in LOOSE_STATES
+    ):
+        raise ManifestError(f"part {object_id} {raw.get('state')} has no rest state in {context}")
     if fallen_classes and rest == "fallen":
         try:
             label = fallen_label(object_id)

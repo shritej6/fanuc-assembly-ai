@@ -12,6 +12,8 @@ MIN_COSMOS_FRACTION = 0.10
 MAX_COSMOS_FRACTION = 0.20
 # Kept independent of prepare.py so a wrongly prepared manifest cannot loosen its own gate.
 TESTBED_RANGES = {"N": (0.20, 0.30), "R": (0.20, 0.30), "Q": (0.20, 0.30), "O": (0.45, 0.55)}
+TESTBED_CHUNKS = {"N": 40, "R": 20, "Q": 8, "O": 48}
+TRAINING_PROFILES = {"detector": "testbed", "identity": "testbed"}
 
 
 class RosieGateError(ValueError):
@@ -41,7 +43,22 @@ def _cosmos_fraction(set_name: str, raw: Any) -> float:
 
 def verify_production_manifest(path: Path) -> dict[str, Any]:
     """Require every set of the manifest's profile to carry its measured Cosmos acceptance share."""
-    metadata = _read_metadata(path)
+    return verify_production_metadata(_read_metadata(path))
+
+
+def verify_training_metadata(metadata: dict[str, Any], target: str) -> dict[str, Any]:
+    """Require a production trainer to consume its complete approved profile."""
+    expected = TRAINING_PROFILES.get(target)
+    if expected is None:
+        raise RosieGateError(f"unknown training target {target!r}")
+    profile = metadata.get("profile", "legacy")
+    if profile != expected:
+        raise RosieGateError(f"{target} training requires a {expected!r} manifest, got profile {profile!r}")
+    return verify_production_metadata(metadata)
+
+
+def verify_production_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Apply production checks to already-loaded manifest metadata."""
     if metadata.get("schema_version") != 2 or metadata.get("content_hash_algorithm") != "sha256":
         raise RosieGateError("production manifest requires schema 2 with SHA-256 image binding")
     if metadata.get("require_cosmos") is not True or metadata.get("include_cosmos") is not True:
@@ -53,7 +70,26 @@ def verify_production_manifest(path: Path) -> dict[str, Any]:
         fraction = _cosmos_fraction(set_name, sets.get(set_name))
         if not low <= fraction <= high:
             raise RosieGateError(f"Cosmos acceptance for set {set_name} is {fraction:.4f}; expected {low:.2f}-{high:.2f}")
+    _verify_complete_chunks(metadata.get("profile", "legacy"), sets)
     return metadata
+
+
+def _verify_complete_chunks(profile: str, sets: dict[str, Any]) -> None:
+    if profile != "testbed":
+        return
+    if set(sets) != set(TESTBED_CHUNKS):
+        raise RosieGateError(
+            f"testbed manifest must hold exactly sets {sorted(TESTBED_CHUNKS)}, found {sorted(sets)}"
+        )
+    for set_name, count in TESTBED_CHUNKS.items():
+        chunks = sets[set_name].get("chunks")
+        wanted = [f"chunk_{index:04d}" for index in range(count)]
+        if not isinstance(chunks, list) or sorted(chunks) != wanted:
+            found = len(chunks) if isinstance(chunks, list) else chunks
+            missing = sorted(set(wanted) - set(chunks)) if isinstance(chunks, list) else wanted
+            raise RosieGateError(
+                f"set {set_name} is incomplete: {found} chunks, expected {count}; missing {missing}"
+            )
 
 
 def _expected_ranges(metadata: dict[str, Any]) -> dict[str, tuple[float, float]]:

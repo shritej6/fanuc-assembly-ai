@@ -88,8 +88,24 @@ def test_per_set_cosmos_range_replaces_the_default_only_for_that_set(tmp_path: P
     assert json.loads(summary.metadata_path.read_text())["sets"]["N"]["cosmos_accepted"] == 5
 
 
-def _metadata(tmp_path: Path, fractions: dict[str, float], **extra) -> Path:
-    sets = {name: {"native_records": 1000, "cosmos_accepted": round(f * 1000)} for name, f in fractions.items()}
+CHUNK_COUNTS = {"N": 40, "R": 20, "Q": 8, "O": 48}
+
+
+def _metadata(
+    tmp_path: Path,
+    fractions: dict[str, float],
+    chunks: dict[str, int] | None = None,
+    **extra,
+) -> Path:
+    counts = {**CHUNK_COUNTS, **(chunks or {})}
+    sets = {
+        name: {
+            "native_records": 1000,
+            "cosmos_accepted": round(fraction * 1000),
+            "chunks": [f"chunk_{index:04d}" for index in range(counts.get(name, 1))],
+        }
+        for name, fraction in fractions.items()
+    }
     path = tmp_path / "metadata.json"
     path.write_text(json.dumps({"schema_version": 2, "content_hash_algorithm": "sha256", "require_cosmos": True,
                                 "include_cosmos": True, "sets": sets, **extra}))
@@ -116,3 +132,70 @@ def test_testbed_plan_trains_only_the_new_sets_with_fallen_classes(tmp_path: Pat
     assert len(load_ontology(taxonomy, fallen_classes=True).detector_labels) == 30 + 3 + 24
     with pytest.raises(ValueError, match="unknown profile"):
         preparation_plan(tmp_path / "d", tmp_path / "o", taxonomy, False, "old")
+
+
+def test_testbed_gate_refuses_missing_chunks_and_extra_sets(tmp_path: Path) -> None:
+    good = {"N": 0.25, "R": 0.25, "Q": 0.25, "O": 0.50}
+    with pytest.raises(RosieGateError, match=r"set O is incomplete: 47 chunks, expected 48"):
+        verify_production_manifest(
+            _metadata(tmp_path, good, {"O": 47}, profile="testbed", fallen_classes=True)
+        )
+    with pytest.raises(RosieGateError, match="must hold exactly sets"):
+        verify_production_manifest(
+            _metadata(tmp_path, {**good, "A": 0.25}, profile="testbed", fallen_classes=True)
+        )
+
+
+def test_frozen_manifest_records_the_chunks_it_read(tmp_path: Path) -> None:
+    _write_testbed_chunk(tmp_path, "N", 1, {"o00": None, "o01": "installed"})
+
+    summary = build_manifests(_config(tmp_path, fallen_classes=True, profile="testbed"))
+
+    assert json.loads(summary.metadata_path.read_text())["sets"]["N"]["chunks"] == ["chunk_0000"]
+
+
+def test_production_trainers_read_only_the_complete_testbed_profile(tmp_path: Path) -> None:
+    from perception.classifier.train import ClassifierTrainingError
+    from perception.classifier.train import _validate_manifest_mode as classifier_gate
+    from perception.detector.train import DetectorTrainError
+    from perception.detector.train import _validate_manifest_mode as detector_gate
+
+    metadata_path = _metadata(
+        tmp_path,
+        {"N": 0.25, "R": 0.25, "Q": 0.25, "O": 0.50},
+        profile="testbed",
+        fallen_classes=True,
+    )
+    metadata = json.loads(metadata_path.read_text())
+    detector_gate(metadata, smoke=False)
+    classifier_gate(metadata, smoke=False)
+    with pytest.raises(DetectorTrainError, match="requires a 'testbed' manifest"):
+        detector_gate({**metadata, "profile": "legacy"}, smoke=False)
+    with pytest.raises(ClassifierTrainingError, match="requires a 'testbed' manifest"):
+        classifier_gate({**metadata, "profile": "legacy"}, smoke=False)
+    detector_gate({**metadata, "profile": "legacy", "require_cosmos": False}, smoke=True)
+
+
+def test_loose_part_requires_rest_but_foreign_objects_and_bases_do_not(tmp_path: Path) -> None:
+    from perception.manifest_annotations import annotation
+
+    label2id = {"foreign_cube_10mm": 0, "F01": 1, "M1_01": 2, "M1_01__fallen": 3}
+    for object_id in ("foreign_cube_10mm", "F01"):
+        raw = {
+            "uid": "o05",
+            "object_id": object_id,
+            "state": "on_table",
+            "bbox_xyxy": [1, 1, 9, 9],
+        }
+        found = annotation(raw, label2id, 64, 48, "N:000000/side", fallen_classes=True)
+        assert (found.label, found.rest) == (object_id, None)
+
+    with pytest.raises(ManifestError, match="part M1_01 on_table has no rest state"):
+        annotation(
+            {"uid": "o06", "object_id": "M1_01", "state": "on_table", "bbox_xyxy": [1, 1, 9, 9]},
+            label2id,
+            64,
+            48,
+            "N:000000/side",
+            fallen_classes=True,
+        )
