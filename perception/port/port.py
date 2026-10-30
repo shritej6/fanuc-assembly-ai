@@ -232,4 +232,3 @@ class CellPerceptionPort:
             boxes.append(box_from_footprint(name, obj.x_mm, obj.y_mm, obj.top_z_mm, footprint,
                                             self._geometry.table_surface_z_mm))
         return tuple(boxes)
-
