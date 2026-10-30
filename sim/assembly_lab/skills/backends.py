@@ -81,19 +81,6 @@ class NoCase(RuntimeError):
     """The sampled layout does not contain the requested recovery case (resampled, counted separately)."""
 
 
-def crowd(rng: np.random.Generator, layout: dict, target: str, gap_mm: float = 2.0) -> None:
-    """Move one loose neighbour right next to `target` so its grip pad may be blocked (the planner decides)."""
-    objs = {o["id"]: o for o in layout["objects"]}
-    t = objs[target]
-    loose = [o for o in layout["objects"] if o["id"] != target and o["id"][0] == "M" and o["state"] == "installed"]
-    if not loose:
-        raise NoCase("no loose neighbour to crowd with")
-    n = loose[int(rng.integers(len(loose)))]
-    a = rng.uniform(0, 2 * math.pi)
-    d = FOOTPRINT_MM["M"] / 2 + gap_mm + FOOTPRINT_MM["M"] / 4
-    n["x"], n["y"] = t["x"] + d * math.cos(a), t["y"] + d * math.sin(a)
-
-
 class KinematicBackend:
     name = "kinematic"
     products = (1,)

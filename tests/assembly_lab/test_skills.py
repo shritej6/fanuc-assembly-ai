@@ -138,6 +138,20 @@ def test_place_free_sets_down_and_defect_drops(plans):
     assert drop[release, 2] == pytest.approx(defect.spot_tcp[2] + defect.drop_mm)
 
 
+def test_set_down_touches_the_table_at_press_speed(plans):
+    """The last SEAT_APPROACH_MM onto the test bed goes at PRESS speed (0.25 mm rows gave 14-19 N touch impulses)."""
+    from sim.assembly_lab.skills.insert import PRESS, SEAT_APPROACH_MM
+
+    _, _, _, spot, _ = plans
+    segs = place_free(spot, np.r_[300.0, 0.0, 0.0, -180.0, 0.0, 0.0], 1.0)
+    touch = np.vstack([s.rows for s in segs if s.phase == "touch_down"])
+    assert touch[-1, 2] == pytest.approx(spot.spot_tcp[2])
+    prev = np.vstack([s.rows for s in segs if s.phase == "set_down"])[-1]
+    assert prev[2] == pytest.approx(spot.spot_tcp[2] + SEAT_APPROACH_MM)
+    d, _ = _steps(np.vstack([prev, touch]))
+    assert (d <= PRESS.mm + 1e-6).all()
+
+
 def test_plan_rules():
     g = np.array([400, 0, -320, -180, 0, 0.0])
     with pytest.raises(PlanError):
@@ -254,3 +268,63 @@ def test_last_mm_and_push_go_at_press_speed(plans):
     near = np.flatnonzero(rows[:, 2] <= ins.seated_tcp[2] + SEAT_APPROACH_MM + 1e-6)
     steps = np.linalg.norm(np.diff(rows[near[0]:], axis=0)[:, :3], axis=1)
     assert steps.max() <= PRESS.mm + 1e-9
+
+
+def _watch(yaw_tol=1.0):
+    import dataclasses
+
+    from sim.assembly_lab.skills import dry_run
+    from sim.assembly_lab.skills.jam import InsertWatch
+
+    objs, seats = dry_run.demo_world()
+    ins = dry_run.demo_plans(objs, seats)[1]
+    return InsertWatch(dataclasses.replace(ins, yaw_tol_deg=yaw_tol))
+
+
+def _obs(oid, pose):
+    return {"sim": {"object_poses": {oid: list(pose)}}}
+
+
+def test_twist_watch_flags_a_part_that_stops_turning_with_the_tcp():
+    from sim.assembly_lab.skills.jam import InsertJam
+
+    w = _watch(yaw_tol=1.0)
+    part, tcp = w.plan.seated_object_pose + [0, 0, 2.0, 0, 0, 0], w.plan.seated_tcp + [0, 0, 2.0, 0, 0, 0]
+    for d in (0.0, 0.5, 1.0, 2.0):  # the part turns with the TCP: fine
+        w.observe(_obs(w.plan.object_id, part + [0, 0, 0, 0, 0, d]), tcp + [0, 0, 0, 0, 0, d], "twist", 0.3)
+    w = _watch(yaw_tol=1.0)
+    w.observe(_obs(w.plan.object_id, part), tcp, "twist", 0.3)
+    with pytest.raises(InsertJam, match="off the commanded twist"):  # wedged: the TCP turns 2 deg, the part does not
+        w.observe(_obs(w.plan.object_id, part), tcp + [0, 0, 0, 0, 0, 2.0], "twist", 0.3)
+
+
+@pytest.mark.parametrize("xy_off,sink,rise,jams", [
+    (0.0, 0.01, 1.5, True),    # in the bore, not sinking, force rising: jam
+    (0.0, 0.05, 1.5, False),   # sinking with the command: seating
+    (0.0, 0.01, 0.2, False),   # not loaded: no jam
+    (5.0, 0.01, 1.5, False),   # on the rim outside the capture: soft stop + retry handle it
+])
+def test_jam_watch(xy_off, sink, rise, jams):
+    from sim.assembly_lab.skills.jam import JAM_ROWS, InsertJam
+
+    w = _watch()
+    oid, part0, tcp0 = w.plan.object_id, w.plan.seated_object_pose + [xy_off, 0, 1.0, 0, 0, 0], w.plan.seated_tcp
+    calls = [(tcp0 + [0, 0, 1.0 - 0.05 * i, 0, 0, 0], part0 - [0, 0, sink * i / JAM_ROWS, 0, 0, 0],
+              0.5 + rise * i / JAM_ROWS) for i in range(JAM_ROWS + 1)]
+    run = lambda: [w.observe(_obs(oid, p), t, "push", f) for t, p, f in calls]
+    if jams:
+        with pytest.raises(InsertJam, match="jam"):
+            run()
+    else:
+        run()
+
+
+def test_watch_logs_the_offset_at_first_base_contact():
+    w = _watch()
+    oid, seat, tcp = w.plan.object_id, w.plan.seated_object_pose, w.plan.seated_tcp
+    w.observe(_obs(oid, seat + [0.4, -0.3, 2.0, 0, 0, 0]), tcp + [0, 0, 2.0, 0, 0, 0], "touch", 0.3)
+    assert w.first_contact is None  # in-hand baseline only
+    w.observe(_obs(oid, seat + [0.4, -0.3, 1.5, 0, 0, 0]), tcp + [0, 0, 1.5, 0, 0, 0], "touch", 1.6)
+    w.observe(_obs(oid, seat + [0.1, 0.0, 1.0, 0, 0, 0]), tcp + [0, 0, 1.0, 0, 0, 0], "level", 2.0)
+    assert w.first_contact["phase"] == "touch" and w.first_contact["xy_mm"] == pytest.approx(0.5)
+    assert w.first_contact["z_above_seat_mm"] == pytest.approx(1.5)

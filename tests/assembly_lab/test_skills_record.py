@@ -11,6 +11,7 @@ import pytest
 
 from sim.assembly_lab.skills import checks, dry_run, episodes, frames, gates, record
 from sim.assembly_lab.skills.force_guard import ForceGuard, LimitsError, load_limits
+from sim.assembly_lab.skills.gates import GateFailed
 from sim.assembly_lab.skills.runner import EpisodeFailed, EpisodeRecorder
 
 LIMITS = "axial_N: 15.0\nlateral_N: 4.5\ntorque_Nm: 0.1\nstatus: PRELIMINARY\nsource: test\n"
@@ -62,7 +63,7 @@ def test_pick_insert_episode_signals_and_gates(limits):
 
 def test_force_over_limit_discards(limits, tmp_path):
     p = tmp_path / "tight.yaml"
-    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 1.0"))  # one 0.05 mm row on the 10 N/mm spring jumps past it
+    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 0.2"))  # the first push row on the 10 N/mm spring passes it
     env, (pick, ins, *_) = _world()
     rec = EpisodeRecorder(env, ForceGuard(load_limits(p)), env.reset())
     with pytest.raises(EpisodeFailed, match="force guard"):
@@ -241,3 +242,120 @@ def test_release_opens_with_no_axial_preload(limits):
     phases = [f.seg.phase for f in rec.frames]
     assert phases.index("relieve") < phases.index("release")
     assert not rec.gate_log.failed
+
+
+class _NoCaseAtReset(record.KinematicBackend):
+    """Isaac-style backend whose reset refuses the layout (the env's settled layout lacks the recovery case)."""
+
+    def reset(self, rng, product, case):
+        raise record.NoCase("not crowded")
+
+
+def test_no_case_at_reset_is_skipped_not_a_crash(tmp_path):
+    lim = tmp_path / "limits.yaml"
+    lim.write_text(LIMITS)
+    summary = record.record(_NoCaseAtReset(), "crowded", [1], 1, tmp_path, 0, 2, lim)
+    part = summary["1:M1_02"]
+    assert part["attempts"] == 0 and part["planner_skipped"] == 11
+    assert "never produced the case" in part["aborted"]
+
+
+def test_motion_rule_break_is_a_robot_failure_not_a_crash(tmp_path, monkeypatch):
+    from sim.assembly_lab.skills.motion import MotionError
+
+    def tilted(*args, **kwargs):
+        raise MotionError("place_free: tool 7.31 deg from straight down > 6.0")
+
+    monkeypatch.setattr(record, "_episode", tilted)
+    lim = tmp_path / "limits.yaml"
+    lim.write_text(LIMITS)
+    part = record.record(record.KinematicBackend(), "crowded", [1], 1, tmp_path, 0, 2, lim)["1:M1_02"]
+    assert part["attempts"] == 2 and part["robot_failed"] == 2 and part["kept_or_would_keep"] == 0
+
+
+def test_wrist_flip_is_a_motion_error_not_a_demo(limits):
+    """check10: J6 spun 352 deg in 4 rows at the tilt row; a > 20 deg/row joint jump must end the attempt."""
+    from sim.assembly_lab.skills.motion import MotionError
+
+    env, (pick, ins, *_) = _world()
+    real_step, calls = env.step_tcp, {"n": 0}
+
+    def flipping_step(rows, dt):
+        obs = real_step(rows, dt)
+        calls["n"] += 1
+        if calls["n"] == 30:
+            obs["joints"] = [0.0] * 5 + [90.0, obs["joints"][6]]
+        return obs
+
+    env.step_tcp = flipping_step
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    with pytest.raises(MotionError, match="J6 moved 90.0 deg"):
+        episodes.pick_insert(rec, pick, ins)
+
+
+def test_tracking_gate_rejects_an_arm_that_misses_held_commands(limits):
+    """check10b: the arm sat ~0.9 mm off its held commands (J5 droop); a kept demo needs <= 0.1 mm."""
+    env, (pick, ins, *_) = _world()
+    real_observe = env.observe
+
+    def drooping():
+        obs = real_observe()
+        obs["tcp_pose"] = list(np.asarray(obs["tcp_pose"]) + [0.6, -0.5, 0.0, 0, 0, 0])
+        return obs
+
+    env.observe = drooping
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    with pytest.raises(EpisodeFailed):  # the skewed in-hand estimate already spoils the seat here
+        episodes.pick_insert(rec, pick, ins)
+    assert rec.tracking_mm == pytest.approx(0.781, abs=1e-3)
+    with pytest.raises(GateFailed, match="tracking_mm=0.781"):
+        rec.finish_gates()
+
+
+def test_tracking_gate_passes_an_arm_on_its_commands(limits):
+    env, (pick, ins, *_) = _world()
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    assert rec.gate_log.values["tracking_mm"] == {"value": 0.0, "limit": 0.1, "pass": True}
+
+
+def test_in_hand_drift_is_zero_for_a_held_part_and_logged(limits):
+    env, (pick, ins, *_) = _world()
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    assert rec.in_hand_drift_mm["carry"] == pytest.approx(0.0, abs=1e-9)
+    assert rec.in_hand_drift_mm["contact"] == pytest.approx(0.1, abs=1e-3)  # the 0.1 mm seat push (PUSH_MM)
+    assert rec.holding is None  # released at the seat
+
+
+def test_in_hand_drift_measures_a_part_slipping_in_the_fingers(limits):
+    """Pinch is ~14.5 N/finger (target ~34): a part sliding in the fingers on the carry must show in the metadata."""
+    env, (pick, ins, *_) = _world()
+    real_observe, state = env.observe, {"rec": None}
+
+    def slipping():
+        obs = real_observe()
+        rec = state["rec"]
+        if rec is not None and rec.holding == pick.object_id:
+            poses = dict(obs["sim"]["object_poses"])
+            poses[pick.object_id] = list(np.asarray(poses[pick.object_id], dtype=float) + [0.3, 0.4, 0, 0, 0, 0])
+            obs["sim"] = {**obs["sim"], "object_poses": poses}
+        return obs
+
+    env.observe = slipping
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    state["rec"] = rec
+    try:
+        episodes.pick_insert(rec, pick, ins)
+    except (EpisodeFailed, GateFailed):
+        pass  # the shifted part misses its seat; the drift is what this test checks
+    assert rec.in_hand_drift_mm["carry"] == pytest.approx(0.5, abs=1e-3)
+
+
+def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
+    """run10: build p1 and wont_seat p1 started in the same second and both opened one HDF5 (h5py lock error)."""
+    a = record.isaac_out_path(tmp_path, "build", 1, 7)
+    b = record.isaac_out_path(tmp_path, "wont_seat", 1, 7)
+    c = record.isaac_out_path(tmp_path, "build", 1, 8)
+    assert a.parent == b.parent == tmp_path / "pick_insert"
+    assert len({a, b, c}) == 3 and a.name.startswith("product_1_")

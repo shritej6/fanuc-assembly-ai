@@ -22,7 +22,8 @@ PULL_WIGGLE_DEG = 1.0  # user: pull out with a ±1 deg wiggle
 SEAT_FLOOR_MM = 1.0  # user: never command below the seated height - 1 mm
 SLOW_ZONE_MM = 5.0  # user: slow last 5 mm
 RETRY_LIFT_MM = 3.0  # user: if not seated, lift 3 mm, re-measure, re-align, retry once
-PUSH_MM = 0.5  # light push: target this far below the CAD seated TCP height (must stay <= SEAT_FLOOR_MM)
+PUSH_MM = 0.1  # push target below the CAD seated TCP: agent 1's substep trace (2026-10-30) ramps 10-17 N when the
+#                command goes 0.25-0.5 mm below the seat (SDF compliance lets a part sink only ~0.12 mm)
 
 
 class PlanError(ValueError):

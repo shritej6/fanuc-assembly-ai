@@ -16,14 +16,25 @@ from . import checks, frames, gates
 from .force_guard import ForceGuard
 from .geometry import matrix_to_pose, pose_to_matrix, wrap_deg
 from .insert import insert, release_and_retreat, retry_clear, retry_entry, retry_lift
-from .motion import DT_S, FREE, MAX_TOOL_TILT_DEG, Motion, Segment, start_pose
+from .jam import InsertJam, InsertWatch
+from .motion import DT_S, FREE, MAX_TOOL_TILT_DEG, Motion, MotionError, Segment, start_pose
 from .pick import pick
-from .place_free import place_free
+from .place_free import release_and_retreat as release_from_spot
+from .place_free import set_down
 from .plan import INSERT_TILT_DEG, FreePlacePlan, InsertPlan, PickPlan, PullOutPlan
 from .pull_out import pull_out
 
 SOFT_STOP_FRAC = 0.6  # stop pressing at 60 % of a force limit; the guard discards anything over 100 %
-CONTACT_PHASES = ("touch", "level", "twist", "slide", "push")
+TRACKING_MM = 0.1  # a kept demo needs the arm on its held commands (run9 <= 0.05 mm; 53b80ea drooped ~1 mm)
+MAX_JOINT_STEP_DEG = 20.0  # obs joints (deg) per 0.1 s row; check10 measured a 352 deg J6 spin over 4 rows
+SUBSTEP_LOG_MIN_N = 1.0  # keep the per-substep contact of insert rows loaded above this (T12_SUBSTEP_LOG=1)
+SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: aligned parts seat at ~0.5 N (agent 2)
+SEAT_PHASES = ("slide", "push", "touch_down")  # straight down onto the seat / table
+SEAT_STOP_N = 2.0  # seat phases stop at this normal: check10 M1_01 seated at 1-4 N in one 0.05 mm row and hit
+#                   17 N in the next (about 260 N/mm), so a 6 N stop never fires between rows
+CONTACT_PHASES = ("touch", "level", "twist", "slide", "push", "touch_down")
+# rows where the held part is in the bore or seated, so the fingers may move on it by design (not slip)
+CONSTRAINED_PHASES = (*CONTACT_PHASES, "relieve", "retry_lift", "wiggle_out")
 MAX_LEVEL_CORRECTION_DEG = MAX_TOOL_TILT_DEG - INSERT_TILT_DEG  # leaves room for the 3 deg entry lean
 
 
@@ -72,6 +83,13 @@ class EpisodeRecorder:
     measure_only: bool = False  # log the touch gate without requiring it (robot_touch not verified yet)
     gate_log: gates.GateLog = field(default_factory=gates.GateLog)
     targets: set[str] = field(default_factory=set)  # objects this episode is allowed to touch and move
+    watch: InsertWatch | None = None  # jam / twist watch while an insertion attempt runs
+    twist_follow_deg: list[float] = field(default_factory=list)  # per insert try: worst part-vs-TCP twist difference
+    seat_contacts: list[dict | None] = field(default_factory=list)  # per insert try: offset at first base contact
+    tracking_mm: float = 0.0  # worst |obs - commanded TCP| on rows whose command has held still for 3 rows
+    substep_trace: list[dict] = field(default_factory=list)  # insert rows with > SUBSTEP_LOG_MIN_N in any substep
+    holding: str | None = None  # the part whose post-grasp in-hand pose is the drift reference
+    in_hand_drift_mm: dict[str, float] = field(default_factory=lambda: {"carry": 0.0, "contact": 0.0})
 
     def __post_init__(self):
         self.pose = checks.tcp_pose(self.obs)
@@ -104,7 +122,19 @@ class EpisodeRecorder:
 
     def _step(self, row: np.ndarray, seg: Segment) -> None:
         self.frames.append(Frame(self.obs, row, seg, max(0, len(self.instructions) - 1)))
+        before = np.asarray(self.obs["joints"][:6], dtype=float)
+        held = len(self.frames) >= 3 and all(np.allclose(f.action[:6], row[:6], atol=1e-6) for f in self.frames[-3:])
         self.obs = self.env.step_tcp(row[None, :], DT_S)
+        if held:  # the command has not moved for 3 rows: the arm must be on it
+            err = float(np.linalg.norm(checks.tcp_pose(self.obs)[:3] - row[:3]))
+            self.tracking_mm = max(self.tracking_mm, err)
+        self._log_substeps(row, seg)
+        self._track_drift(row, seg)
+        jump = np.abs(np.asarray(self.obs["joints"][:6], dtype=float) - before)
+        if jump.max() > MAX_JOINT_STEP_DEG:  # an IK branch / wrist flip: never let it into a demo
+            j = int(jump.argmax())
+            raise MotionError(f"J{j + 1} moved {jump[j]:.1f} deg in one row (> {MAX_JOINT_STEP_DEG:.0f}) in {seg.phase} "
+                              f"at step {len(self.frames) - 1}")
         self.guard.observe(len(self.frames) - 1, self.obs)
         self.touch.observe(self.obs, self.targets)
         if self.guard.pre_touch_violations:
@@ -114,7 +144,29 @@ class EpisodeRecorder:
             v = self.guard.violations[0]
             raise EpisodeFailed(f"force guard: {v.object_id} {v.axis} {v.value:.2f} > {v.limit:.2f} at step {v.step}")
 
-    def _too_hard(self) -> bool:
+    def _log_substeps(self, row: np.ndarray, seg: Segment) -> None:
+        """T12_SUBSTEP_LOG=1: keep the per-substep contact of contact-phase rows loaded above SUBSTEP_LOG_MIN_N
+        (logged before the guard check, so the row that trips the guard is in the trace too)."""
+        sub_all = self.obs["sim"].get("substep_contact") or {}
+        if seg.phase not in CONTACT_PHASES or not sub_all:
+            return
+        for oid, sub in sub_all.items():
+            if max(abs(s[0]) for s in sub) > SUBSTEP_LOG_MIN_N:
+                self.substep_trace.append({"step": len(self.frames) - 1, "phase": seg.phase, "object": oid,
+                                           "tcp_z": round(float(row[2]), 3), "normal_lateral_N": [s[:2] for s in sub]})
+
+    def _track_drift(self, row: np.ndarray, seg: Segment) -> None:
+        """Worst move of the held part in the TCP frame since the grasp (slip watch): free-space carry rows apart
+        from contact rows, where the part is pushed in the fingers on purpose. A grip-open command ends the hold."""
+        if row[6] < 0.5:
+            self.holding = None
+        if self.holding is None:
+            return
+        rel = checks.in_hand(self.obs, self.holding)[:3, 3] - self.in_hand[self.holding][:3, 3]
+        key = "contact" if seg.phase in CONSTRAINED_PHASES else "carry"
+        self.in_hand_drift_mm[key] = max(self.in_hand_drift_mm[key], round(float(np.linalg.norm(rel)), 4))
+
+    def _too_hard(self, phase: str = "") -> bool:
         """Contact building up during an insert (part on the rim, not in the hole): stop pressing and re-check."""
         contact = self.obs["sim"].get("contact_peak", self.obs["sim"].get("contact", {}))
         for oid, c in contact.items():
@@ -122,9 +174,33 @@ class EpisodeRecorder:
                 continue
             for key, lim_key in (("normal_N", "axial_N"), ("lateral_N", "lateral_N")):
                 lim = self.guard.limit(oid, lim_key)
-                if lim is not None and abs(float(c.get(key, 0.0))) > SOFT_STOP_FRAC * lim:
+                seat = key == "normal_N" and phase in SEAT_PHASES and oid in self.targets  # the part going down
+                stop = SEAT_STOP_N if seat else SOFT_STOP_N[key]
+                stop = stop if lim is None else min(stop, SOFT_STOP_FRAC * lim)
+                if abs(float(c.get(key, 0.0))) > stop:
                     return True
         return False
+
+    def _watch_insert(self, row: np.ndarray, seg: Segment) -> None:
+        if self.watch is None:
+            return
+        oid = self.watch.plan.object_id
+        contact = self.obs["sim"].get("contact_peak", self.obs["sim"].get("contact", {})).get(oid, {})
+        try:
+            self.watch.observe(self.obs, row, seg.phase, abs(float(contact.get("normal_N", 0.0))))
+        except InsertJam as e:
+            self.events.append(f"{e} at step {len(self.frames) - 1}")
+            raise EpisodeFailed(str(e)) from e
+
+    def _entry_try(self, plan: InsertPlan, segs: list[Segment]) -> None:
+        """One insertion attempt under the jam / twist watch; its worst twist-follow error goes into the log."""
+        self.watch = InsertWatch(plan)
+        try:
+            self.run(segs, soft_stop=True)
+        finally:
+            self.twist_follow_deg.append(round(self.watch.max_follow_err_deg, 4))
+            self.seat_contacts.append(self.watch.first_contact)
+            self.watch = None
 
     def run(self, segments: list[Segment], stop_after: str | None = None, soft_stop: bool = False) -> list[Segment]:
         """Execute segments in order; return the ones not run yet when `stop_after` phase completes.
@@ -137,7 +213,8 @@ class EpisodeRecorder:
             for row in seg.rows:
                 self._step(row, seg)
                 self.pose, self.gripper = row[:6].copy(), float(row[6])
-                if soft_stop and seg.phase in CONTACT_PHASES and self._too_hard():
+                self._watch_insert(row, seg)
+                if soft_stop and seg.phase in CONTACT_PHASES and self._too_hard(seg.phase):
                     self.events.append(f"soft stop in {seg.phase} at step {len(self.frames) - 1}")
                     return []
             if stop_after is not None and seg.phase == stop_after:
@@ -168,6 +245,7 @@ class EpisodeRecorder:
             raise EpisodeFailed(f"grasp check: {why}")
         self.run(rest)
         self.in_hand[plan.object_id] = checks.in_hand(self.obs, plan.object_id)
+        self.holding = plan.object_id
         self.mark("grasped")
 
     def _offset(self, plan: InsertPlan, oid: str, extra=(0.0, 0.0, 0.0)) -> np.ndarray:
@@ -206,14 +284,14 @@ class EpisodeRecorder:
     def do_insert(self, plan: InsertPlan, misalign=(0.0, 0.0, 0.0), pull_plan: PullOutPlan | None = None) -> str:
         """Returns "seated" or "needs_inspection" (pulled out after the retry failed)."""
         staged = any(misalign)  # an injected first-attempt error is staging: masked out of training
-        self.run(insert(plan, self.pose, self.gripper, self._offset(plan, plan.object_id, misalign), learn=not staged),
-                 soft_stop=True)
+        self._entry_try(plan, insert(plan, self.pose, self.gripper, self._offset(plan, plan.object_id, misalign),
+                                     learn=not staged))
         ok, err = self._seated(plan)
         if not ok:
             self.events.append(f"{plan.object_id} not seated on try 1: {_fmt(err)}")
             self.run(retry_lift(plan, self.pose, self.gripper))
             self.run(retry_clear(plan, self.pose, self.gripper))
-            self.run(retry_entry(plan, self.pose, self.gripper, self._offset(plan, plan.object_id)), soft_stop=True)
+            self._entry_try(plan, retry_entry(plan, self.pose, self.gripper, self._offset(plan, plan.object_id)))
             ok, err = self._seated(plan)
         if not ok:
             self.events.append(f"{plan.object_id} not seated on try 2: {_fmt(err)}; pulling out for inspection")
@@ -240,19 +318,20 @@ class EpisodeRecorder:
         if not ok:
             raise EpisodeFailed(f"pull-out: {why}")
         self.in_hand[plan.object_id] = checks.in_hand(self.obs, plan.object_id)
+        self.holding = plan.object_id
         self.mark("pulled")
 
     def do_place_free(self, plan: FreePlacePlan) -> None:
         t_tcp_obj = checks.in_hand(self.obs, plan.object_id)
         expected = checks.expected_object(plan.spot_tcp, t_tcp_obj)
-        segs = place_free(plan, self.pose, self.gripper)
+        self.run(set_down(plan, self.pose, self.gripper), soft_stop=True)  # soft stop: release where it touched
         if plan.kind == "test_bed":
-            rest = self.run(segs, stop_after="set_down")
             self.mark("placed")
+            self.run(release_from_spot(plan, self.pose, self.gripper))
         else:
-            rest = self.run(segs, stop_after="release")
+            rest = self.run(release_from_spot(plan, self.pose, self.gripper), stop_after="release")
             self.mark("dropped")
-        self.run(rest)
+            self.run(rest)
         actual = checks.object_pose(self.obs, plan.object_id)
         if plan.kind == "test_bed":
             gates.spot_gates(self.gate_log, actual, expected)
@@ -268,7 +347,9 @@ class EpisodeRecorder:
         return np.linalg.inv(pose_to_matrix(checks.object_pose(self.obs, oid))) @ pose_to_matrix(grasp_tcp)
 
     def finish_gates(self) -> None:
-        """Episode-level gates: nothing else moved, and the robot touched only the target."""
+        """Episode-level gates: the arm tracked its commands, nothing else moved, the robot touched only the target."""
+        self.gate_log.check("tracking_mm", self.tracking_mm, TRACKING_MM)
+        self.gate_log.require(("tracking_mm",))
         gates.others_moved(self.gate_log, self.start_poses, self.obs["sim"]["object_poses"], self.targets)
         self.touch.finish(self.gate_log, require=not self.measure_only)
 

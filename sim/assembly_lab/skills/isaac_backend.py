@@ -9,14 +9,20 @@ is made inside the env's reset callback, on the settled layout, and its TCP fram
 
 from __future__ import annotations
 
+import copy
+import functools
+
 import numpy as np
 
 from . import checks, frames
 from .backends import (
+    FOOTPRINT_MM,
+    PART_GAP_MM,
+    WORK_X,
+    WORK_Y,
     NoCase,
     _feasible,
     base_of,
-    crowd,
     drop_near_base,
     free_spot,
     sample_layout,
@@ -32,6 +38,9 @@ from .plan import PullOutPlan
 
 SKILL_OF = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert", "fix_above": "pull_out",
             "crowded": "place_free", "defect": "defect_drop"}
+CROWD_LAYOUTS = 20  # random layouts tried per reset for the crowded case
+CROWD_DIRECTIONS = 24  # neighbour directions tried around the target
+CROWD_GAPS_MM = (1.0, 2.0, 3.0)  # neighbour footprint clear of the target's by this much
 
 
 class IsaacBackend:
@@ -61,7 +70,7 @@ class IsaacBackend:
         self.installed = dict(installed or {})
         layout = sample_layout(rng, [base_of(product), *sheet_parts(product)], self.installed)
         if case == "crowded":
-            crowd(rng, layout, target)
+            layout = self._crowded_layout(rng, product, target)
         if case == "dropped":
             drop_near_base(rng, layout, target, base_of(product))
         self.plans, self.refusal = None, None
@@ -69,6 +78,54 @@ class IsaacBackend:
         if self.refusal:
             raise NoCase(self.refusal)
         return obs
+
+    def _crowded_layout(self, rng, product: int, target: str) -> dict:
+        """A layout where a loose neighbour blocks every wrist turn on `target` (planner-checked on the layout's nominal
+        poses before the env spends a reset on it). The neighbour is set `gap` mm clear of the target's footprint
+        along a random direction (separating axis: the two never overlap); most directions leave one turn free."""
+        last = "no candidate placement"
+        for _ in range(CROWD_LAYOUTS):
+            layout = sample_layout(rng, [base_of(product), *sheet_parts(product)], self.installed)
+            for trial in self._crowd_candidates(rng, layout, target):
+                try:
+                    self._plan(self._obs_like(self._nominal_body_tf(trial)), rng, product, target)
+                    return trial
+                except NoCase as e:
+                    last = str(e)
+        raise NoCase(f"{target}: no crowded layout in {CROWD_LAYOUTS} layouts ({last})")
+
+    def _crowd_candidates(self, rng, layout: dict, target: str):
+        """Copies of `layout` with one loose neighbour moved next to `target` (clear of every other object)."""
+        from ..objects.scene import build_instances, solid_of
+
+        catalog, maps = self.planner.load_catalog()
+        objs = {o["id"]: o for o in layout["objects"]}
+        loose = [k for k, o in objs.items() if k != target and k[0] == "M" and o["state"] == "installed"]
+        if not loose:
+            raise NoCase("no loose neighbour to crowd with")
+        inst = build_instances(scene_from_obs(self._obs_like(self._nominal_body_tf(layout)), self.installed), catalog)
+        t = inst[target]
+        t_pts = _cells(solid_of(t, catalog, maps)) - [t.x, t.y]
+        for n in rng.permutation(loose):
+            n_pts = _cells(solid_of(inst[n], catalog, maps)) - [inst[n].x, inst[n].y]
+            for a in rng.permutation(CROWD_DIRECTIONS) * (2 * np.pi / CROWD_DIRECTIONS):
+                u = np.array([np.cos(a), np.sin(a)])
+                d = (t_pts @ u).max() - (n_pts @ u).min() + float(rng.choice(CROWD_GAPS_MM))
+                x, y = t.x + d * u[0], t.y + d * u[1]
+                if not _spot_clear(layout, (x, y), skip=(n, target)):
+                    continue
+                trial = copy.deepcopy(layout)
+                moved = next(o for o in trial["objects"] if o["id"] == n)
+                moved["x"], moved["y"] = float(x), float(y)
+                yield trial
+
+    @staticmethod
+    def _nominal_body_tf(layout: dict) -> dict:
+        """Body poses (4x4 UF0 mm) the layout asks for, before physics settles them (installed parts: pose unused)."""
+        solver = _layout_solver()
+        return {o["id"]: solver.table_tf(frames.type_id(o["id"]), o.get("x", 0.0), o.get("y", 0.0),
+                                         o.get("yaw", 0.0), "installed")
+                for o in layout["objects"]}
 
     def _obs_like(self, body_tf: dict) -> dict:
         roles = {u: p.role for u, p in self.raw.placements.items()}
@@ -161,6 +218,27 @@ class IsaacBackend:
             print(f"[record] annotated {annotate_path}: {report}", flush=True)
         self.env.close()
         return report
+
+
+def _cells(solid) -> np.ndarray:
+    return np.column_stack([solid.x, solid.y])
+
+
+def _spot_clear(layout: dict, xy, skip) -> bool:
+    """`xy` is in the work area and as far from every other table object as the layout sampler keeps them."""
+    x, y = xy
+    if not (WORK_X[0] <= x <= WORK_X[1] and WORK_Y[0] <= y <= WORK_Y[1]):
+        return False
+    r = FOOTPRINT_MM["M"] / 2
+    return all(np.hypot(x - o["x"], y - o["y"]) >= r + FOOTPRINT_MM[o["id"][0]] / 2 + PART_GAP_MM
+               for o in layout["objects"] if o["id"] not in skip and not o["state"].startswith("on:"))
+
+
+@functools.lru_cache(maxsize=1)
+def _layout_solver():
+    from ..env.layout import LayoutSolver
+
+    return LayoutSolver()
 
 
 def _pose6(tf: np.ndarray) -> list[float]:

@@ -60,3 +60,28 @@ def test_scene_from_obs_marks_installed_and_fallen():
     assert by["M1_02"]["state"] == "fallen"
     assert by["F01"]["state"] == "installed"
 
+
+
+@pytest.mark.parametrize("part", ["M1_02", "M4_01", "M6_01"])
+def test_crowded_layout_blocks_every_turn_without_overlap(part):
+    """The crowded case: the planner refuses every wrist turn on the target until the moved neighbour goes, and the
+    neighbour's footprint stays clear of the target's (no interpenetration for physics to resolve)."""
+    from types import SimpleNamespace
+
+    from sim.assembly_lab.objects.scene import build_instances, solid_of
+    from sim.assembly_lab.skills.isaac_backend import IsaacBackend
+
+    product = int(part[1])
+    order = backends.sheet_parts(product)
+    b = IsaacBackend.__new__(IsaacBackend)
+    b.planner, b.scenario, b.raw = planner, "crowded", SimpleNamespace(placements={})
+    b.installed = {p: backends.base_of(product) for p in order[:order.index(part)]}
+    layout = b._crowded_layout(np.random.default_rng(3), product, part)
+    scene = frames.scene_from_obs(b._obs_like(b._nominal_body_tf(layout)), b.installed)
+    blockers = planner.blockers(scene, part)
+    assert blockers and all(k.startswith(f"M{product}_") for k in blockers)
+    catalog, maps = planner.load_catalog()
+    inst = build_instances(scene, catalog)
+    t, n = (solid_of(inst[k], catalog, maps) for k in (part, blockers[0]))
+    gap = np.hypot(t.x[:, None] - n.x[None, :], t.y[:, None] - n.y[None, :]).min()
+    assert gap >= 0.9  # CROWD_GAPS_MM >= 1, cell centres 0.5 mm apart

@@ -36,12 +36,20 @@ from . import episodes, frames, hdf5_io
 from .backends import KinematicBackend, NoCase, base_of
 from .force_guard import ForceGuard, LimitsError, load_limits
 from .gates import GateFailed
+from .motion import MotionError
 from .runner import EpisodeFailed, EpisodeRecorder, ResetInvalid
 
 DEMO_ROOT = Path.home() / "t12_data" / "demos"
 SEED_DIR = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert",
             "fix_above": "pull_out", "crowded": "place_free", "defect": "defect_drop"}
 STAGED_BEYOND_CAPTURE_MM = 1.0  # the staged first try misses by this much more than the part's chamfer capture
+
+
+def isaac_out_path(out: Path, scenario: str, product: int, seed: int) -> Path:
+    """The Isaac recorder's HDF5 for one job. Scenario and seed are in the name: build and wont_seat share the
+    pick_insert dir, and two such jobs that start in the same second must not open the same file (run10 lock clash)."""
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    return out / SEED_DIR[scenario] / f"product_{product}_{scenario}_{stamp}_s{seed}.hdf5"
 
 
 def _staged(rng: np.random.Generator, capture_mm: float) -> tuple[float, float, float]:
@@ -121,10 +129,10 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
         installed = _installed_before(backend, product, part)
         if scenario == "fix_above":  # the part to remove is installed, with everything below it
             installed[part] = base_of(product)
-        obs = _reset(backend, rng, product, scenario, installed, part)
         t0 = time.time()
         rec = None
         try:
+            obs = _reset(backend, rng, product, scenario, installed, part)  # NoCase: the layout lacks the case
             rec = EpisodeRecorder(backend.env, ForceGuard(limits, per_object=run.per_object), obs,
                                   allow_touch_proxy=run.allow_touch_proxy, measure_only=run.measure_only)
             _episode(backend, rec, rng, scenario, product, part, obs)
@@ -148,15 +156,17 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
             attempts -= 1
             skipped += 1
             if skipped > 5 * max_attempts:
-                raise RuntimeError(f"{scenario} for {part}: the layouts never produced the case ({e})") from e
+                aborted = f"the layouts never produced the case in {skipped} resets ({e})"
+                print(f"[record] {scenario} {part}: stopping this part: {aborted}", flush=True)
+                break
             continue
-        except (EpisodeFailed, GateFailed) as e:
+        except (EpisodeFailed, GateFailed, MotionError) as e:  # MotionError: the plan breaks a motion rule
             invalid_run = 0
             reasons[str(e).split(":")[0]] += 1
             runs.append({"ok": False, "status": "robot_failed", "reason": str(e), "steps": len(rec.frames),
                          "gates": rec.gate_log.values, "peaks": rec.guard.episode_peaks(),
                          "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events,
-                         "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections, "settled": rec.settled,
+                         "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
                          "s": round(time.time() - t0, 1)})
             _finish(backend, run, rec, False, scenario, str(e))
             continue
@@ -166,7 +176,7 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
         runs.append({"ok": True, "status": "kept" if not run.measure_only else "would_keep", "demo": key,
                      "steps": len(rec.frames), "peaks": rec.guard.episode_peaks(), "gates": rec.gate_log.values,
                      "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events, "settled": rec.settled,
-                     "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections,
+                     "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections,
                      "s": round(time.time() - t0, 1)})
     return {"attempts": attempts, "kept_or_would_keep": saved, "robot_failed": attempts - saved,
             "reset_invalid": invalid, "planner_skipped": skipped,
@@ -222,7 +232,7 @@ def _finish(backend, run: Run, rec: EpisodeRecorder, ok: bool, scenario: str, re
         "steps": len(rec.frames), "instruction": rec.instructions[0] if rec.instructions else "",
         "marks": rec.marks, "events": rec.events, "peaks": rec.guard.episode_peaks(),
         "train_mask": [bool(f.seg.learn) for f in rec.frames], "would_keep": bool(ok),
-        "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections}
+        "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections}
     run.metas.append(meta)
     with open(str(run.path) + ".meta.jsonl", "a") as f:
         f.write(json.dumps(meta, default=_jsonable) + "\n")
@@ -315,7 +325,7 @@ def main(argv=None) -> int:
     else:
         from .isaac_backend import IsaacBackend
 
-        path = a.out / SEED_DIR[a.scenario] / f"product_{a.products[0]}_{time.strftime('%Y%m%d_%H%M%S')}.hdf5"
+        path = isaac_out_path(a.out, a.scenario, a.products[0], a.seed)
         path.parent.mkdir(parents=True, exist_ok=True)
         backend = IsaacBackend(a.scenario, a.products[0], str(path), a.device, tuple(a.cameras))
     products = [p for p in a.products if p in backend.products]
