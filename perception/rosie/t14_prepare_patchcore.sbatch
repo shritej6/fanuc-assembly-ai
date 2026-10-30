@@ -1,5 +1,5 @@
 #!/bin/bash
-# Validate C/I and create deterministic, per-part anomalib bbox crops without reserving a GPU.
+# Validate C/I plus evaluation-only T and create deterministic per-part anomalib crops without reserving a GPU.
 #   RUN_ROOT=$HOME/fanuc-t14
 #   DATA_ROOT=$HOME/fanuc-assembly-data/synthetic
 #   CODE_ROOT=$HOME/fanuc-t14-code-<commit>
@@ -30,6 +30,7 @@ test -x "$SINGULARITY"
 test -f "$SIF"
 test -d "$DATA_ROOT/C"
 test -d "$DATA_ROOT/I"
+test -d "$DATA_ROOT/T"
 test -f "$CODE_ROOT/contracts/taxonomy.json"
 test ! -e "$OUTPUT_ROOT"
 NODE_NAME=$(hostname)

@@ -2,6 +2,23 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T14 PatchCore Set T recovery · CODEX · REVIEW, measured rerun pending
+
+- Added evaluation-only Set T ingestion for the installed rear guards `M1_04`, `M2_04`, and `M3_04`. Only
+  `rest=installed` samples are eligible: `variant=ok` goes to `test/good`, non-`ok` variants go to `test/bad`, and
+  fallen samples are excluded. Set T can never enter `train/good`; C/I remain the only PatchCore training sources.
+- Every Set T label and required RGB/depth/segmentation artifact is validated before filtering. The prepared manifest
+  records the rest state and source/crop hashes, preserving the installed-pose evidence used by each measurement.
+- Fixed a pre-existing integration mismatch: preparation writes anomalib's `train/good`, `test/good`, and `test/bad`
+  layout, and the trainer now reads those exact paths. A prepare-to-trainer regression proves the 10/10/10 gate.
+- Independent Rosie audit of all 1,500 Set T labels found accepted installed support of 191 good / 89 bad for
+  `M1_04`, 187 / 82 for `M2_04`, and 197 / 77 for `M3_04`; 20 / 31 / 26 fallen samples were rejected respectively.
+  These are dataset counts, not model metrics.
+- Verified locally: 34 focused tests and the full 107-test suite passed; `ruff check .`, targeted Ruff format,
+  `uv lock --check`, `uv pip check`, `git diff --check`, and shell syntax passed.
+- Next: deploy the immutable commit on Rosie, run `sbatch --test-only` and then the CPU preparation job, inspect the
+  manifest counts, and fit all 24 PatchCore models. T14 remains REVIEW until every metrics file says `measured`.
+
 ## 2026-10-29 · T14 PatchCore recovery · CODEX · REVIEW, installed-pose rear-guard evaluation data blocked
 
 - Code commit `3c395c3`, PR #18: https://github.com/shritej6/fanuc-assembly-ai/pull/18

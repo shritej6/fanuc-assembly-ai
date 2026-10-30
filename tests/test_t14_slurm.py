@@ -54,6 +54,7 @@ def test_patchcore_preparation_job_is_cpu_only_and_contract_complete() -> None:
     assert 'if item["object_id"].startswith("M")' in script
     assert "expected_object_ids=expected_object_ids" in script
     assert "normal_test_modulus=5" in script
+    assert 'test -d "$DATA_ROOT/T"' in script
     assert "attempts/patchcore-${SLURM_JOB_ID}" in script
     assert 'test ! -e "$OUTPUT_ROOT/_INCOMPLETE"' in script
     assert 'test -s "$OUTPUT_ROOT/_READY.json"' in script

@@ -1,7 +1,7 @@
 """Fit one PatchCore model per part and measure only when test support is sufficient.
 
-``train_good`` contains new synthetic O good crops. ``test_good`` and ``test_bad`` contain matching-pose
-synthetic evaluation crops; they never enter PatchCore's memory bank. ``o_test_good`` measures false alarms.
+``train/good`` contains only good C/I crops. ``test/good`` and ``test/bad`` add matching-pose installed rear-guard
+T crops for evaluation; T never enters PatchCore's memory bank. ``o_test_good`` measures false alarms when present.
 """
 
 from __future__ import annotations
@@ -16,6 +16,12 @@ from anomalib.engine import Engine
 from anomalib.models import Patchcore
 
 MIN_TEST = 10  # leaves at least five good and five bad crops after anomalib's 50/50 validation split
+FOLDER_LAYOUT = {
+    "train_good": "train/good",
+    "test_good": "test/good",
+    "test_bad": "test/bad",
+    "o_test_good": "o_test_good",
+}
 
 
 def _count(path: Path) -> int:
@@ -31,7 +37,7 @@ def false_alarm_share(engine: Engine, model: Patchcore, folder: Path) -> float |
 
 
 def fit_and_measure(part_dir: Path, out: Path, workers: int) -> dict:
-    counts = {name: _count(part_dir / name) for name in ("train_good", "test_good", "test_bad", "o_test_good")}
+    counts = {name: _count(part_dir / relative) for name, relative in FOLDER_LAYOUT.items()}
     result: dict = {"part": part_dir.name, "counts": counts}
     evaluation_support = {
         "minimum_per_class": MIN_TEST,
@@ -48,9 +54,9 @@ def fit_and_measure(part_dir: Path, out: Path, workers: int) -> dict:
     datamodule = Folder(
         name=part_dir.name,
         root=part_dir,
-        normal_dir="train_good",
-        normal_test_dir="test_good" if counts["test_good"] else None,
-        abnormal_dir="test_bad" if counts["test_bad"] else None,
+        normal_dir=FOLDER_LAYOUT["train_good"],
+        normal_test_dir=FOLDER_LAYOUT["test_good"] if counts["test_good"] else None,
+        abnormal_dir=FOLDER_LAYOUT["test_bad"] if counts["test_bad"] else None,
         train_batch_size=32,
         eval_batch_size=32,
         num_workers=workers,
@@ -64,7 +70,7 @@ def fit_and_measure(part_dir: Path, out: Path, workers: int) -> dict:
     metrics = engine.test(model=model, datamodule=datamodule, verbose=False)[0]
     result["test"] = {key: float(value) for key, value in metrics.items()}
     result["status"] = "measured"
-    result["o_test_false_alarm_share"] = false_alarm_share(engine, model, part_dir / "o_test_good")
+    result["o_test_false_alarm_share"] = false_alarm_share(engine, model, part_dir / FOLDER_LAYOUT["o_test_good"])
     return result
 
 
