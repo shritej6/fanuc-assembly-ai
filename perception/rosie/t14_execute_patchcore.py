@@ -295,7 +295,11 @@ def _part(code_root: Path, index: int) -> str:
     objects = taxonomy.get("objects")
     if not isinstance(objects, list):
         raise RunBoundaryError("taxonomy objects must be a list")
-    parts = [item.get("object_id") for item in objects if isinstance(item, dict) and item.get("kind") == "part"]
+    parts = [
+        item["object_id"]
+        for item in objects
+        if isinstance(item, dict) and isinstance(item.get("object_id"), str) and item["object_id"].startswith("M")
+    ]
     if (
         len(parts) != 24
         or len(set(parts)) != 24

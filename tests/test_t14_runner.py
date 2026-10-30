@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from perception.brev.t14_benchmark_gate import create_gate
-from perception.rosie.t14_execute_patchcore import RunBoundaryError, execute
+from perception.rosie.t14_execute_patchcore import RunBoundaryError, _part, execute
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "perception/rosie/t14_run_patchcore.sbatch"
@@ -57,10 +57,39 @@ def _parts() -> list[str]:
     return [f"M{product}_{position:02d}" for product in range(1, 7) for position in range(1, 5)]
 
 
+def test_production_taxonomy_resolves_exact_24_parts() -> None:
+    assert [_part(ROOT, index) for index in range(24)] == [
+        "M1_01",
+        "M1_02",
+        "M1_03",
+        "M1_04",
+        "M2_01",
+        "M2_02",
+        "M2_03",
+        "M2_04",
+        "M3_01",
+        "M3_02",
+        "M3_03",
+        "M3_04",
+        "M4_01",
+        "M4_02",
+        "M4_03",
+        "M4_04",
+        "M5_01",
+        "M5_02",
+        "M5_03",
+        "M5_04",
+        "M6_01",
+        "M6_02",
+        "M6_03",
+        "M6_04",
+    ]
+
+
 def _code_snapshot(root: Path) -> tuple[Path, str]:
     code = root / "code"
     (code / "contracts").mkdir(parents=True)
-    objects = [{"kind": "part", "object_id": part} for part in _parts()]
+    objects = [{"object_id": part} for part in _parts()]
     (code / "contracts/taxonomy.json").write_text(json.dumps({"objects": objects}))
     subprocess.run(["git", "init", "-q", str(code)], check=True)
     subprocess.run(["git", "-C", str(code), "add", "contracts/taxonomy.json"], check=True)
