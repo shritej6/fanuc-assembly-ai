@@ -4788,7 +4788,8 @@ objects:
       - -1.0
       engagement_mm: 9.0
       xy_clearance_mm: 0.5
-      xy_capture_mm: 3.0
+      xy_capture_mm: 1.4
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 3.0'
       r_eff_mm: 8.0
       yaw_tol_deg: 3.581
       yaw_tol_cad_deg: 3.581
@@ -5600,7 +5601,8 @@ objects:
       - -1.0
       engagement_mm: 13.0
       xy_clearance_mm: 0.5
-      xy_capture_mm: 2.0
+      xy_capture_mm: 0.5
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 2.0'
       r_eff_mm: 12.971
       yaw_tol_deg: 2.209
       yaw_tol_cad_deg: 2.209
@@ -6002,7 +6004,8 @@ objects:
       - -1.0
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
-      xy_capture_mm: 1.0
+      xy_capture_mm: 0.5
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
@@ -6913,7 +6916,8 @@ objects:
       - -1.0
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
-      xy_capture_mm: 1.0
+      xy_capture_mm: 0.5
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
@@ -7807,7 +7811,8 @@ objects:
       - -1.0
       engagement_mm: 5.0
       xy_clearance_mm: 0.5
-      xy_capture_mm: 1.0
+      xy_capture_mm: 0.5
+      xy_capture_source: 'CAD column sweep (agent 1, 2026-10-30): min over 8 directions of the chamfer ramp end, was 1.0'
       r_eff_mm: 13.086
       yaw_tol_deg: 2.189
       yaw_tol_cad_deg: 2.189
