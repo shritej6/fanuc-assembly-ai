@@ -45,16 +45,23 @@ def test_patchcore_preparation_job_is_cpu_only_and_contract_complete() -> None:
     assert "#SBATCH --gres" not in script
     assert "RUN_ROOT:?set RUN_ROOT" in script
     assert "DATA_ROOT:?set DATA_ROOT" in script
+    assert "T_DATA_ROOT:?set T_DATA_ROOT" in script
     assert "CODE_ROOT:?set CODE_ROOT" in script
     assert "SOURCE_COMMIT:?set SOURCE_COMMIT" in script
-    assert "#   export RUN_ROOT DATA_ROOT CODE_ROOT SOURCE_COMMIT" in script
+    assert "#   export RUN_ROOT DATA_ROOT T_DATA_ROOT CODE_ROOT SOURCE_COMMIT" in script
     assert "discover_patchcore_samples" in script
     assert "prepare_patchcore_folders" in script
     assert 'item["object_id"] for item in taxonomy["objects"]' in script
     assert 'if item["object_id"].startswith("M")' in script
     assert "expected_object_ids=expected_object_ids" in script
     assert "normal_test_modulus=5" in script
-    assert 'test -d "$DATA_ROOT/T"' in script
+    assert 'test -d "$T_DATA_ROOT/T"' in script
+    assert '"t_data_root": str(t_data_root)' in script
+    assert '-B "$DATA_ROOT:$DATA_ROOT:ro"' in script
+    assert '-B "$T_DATA_ROOT:$T_DATA_ROOT:ro"' in script
+    assert '"$CODE_ROOT" "$DATA_ROOT" "$T_DATA_ROOT" "$OUTPUT_ROOT" "$ARTIFACT"' in script
+    assert 't_data_root = Path(sys.argv[3])' in script
+    assert '"source_commit": sys.argv[8]' in script
     assert "attempts/patchcore-${SLURM_JOB_ID}" in script
     assert 'test ! -e "$OUTPUT_ROOT/_INCOMPLETE"' in script
     assert 'test -s "$OUTPUT_ROOT/_READY.json"' in script

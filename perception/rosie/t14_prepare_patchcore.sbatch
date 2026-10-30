@@ -2,10 +2,11 @@
 # Validate C/I plus evaluation-only T and create deterministic per-part anomalib crops without reserving a GPU.
 #   RUN_ROOT=$HOME/fanuc-t14
 #   DATA_ROOT=$HOME/fanuc-assembly-data/synthetic
+#   T_DATA_ROOT=$HOME/fanuc-testbed-data/synthetic
 #   CODE_ROOT=$HOME/fanuc-t14-code-<commit>
 #   SOURCE_COMMIT=<commit>
-#   export RUN_ROOT DATA_ROOT CODE_ROOT SOURCE_COMMIT
-#   sbatch --export=ALL,RUN_ROOT,DATA_ROOT,CODE_ROOT,SOURCE_COMMIT \
+#   export RUN_ROOT DATA_ROOT T_DATA_ROOT CODE_ROOT SOURCE_COMMIT
+#   sbatch --export=ALL,RUN_ROOT,DATA_ROOT,T_DATA_ROOT,CODE_ROOT,SOURCE_COMMIT \
 #     "$CODE_ROOT/perception/rosie/t14_prepare_patchcore.sbatch"
 #SBATCH --job-name=fa-t14-pc-data
 #SBATCH --partition=teaching
@@ -17,6 +18,7 @@ set -euo pipefail
 
 : "${RUN_ROOT:?set RUN_ROOT to the isolated T14 runtime directory}"
 : "${DATA_ROOT:?set DATA_ROOT to the synthetic data directory}"
+: "${T_DATA_ROOT:?set T_DATA_ROOT to the evaluation-only synthetic data directory}"
 : "${CODE_ROOT:?set CODE_ROOT to the exact T14 source snapshot}"
 : "${SOURCE_COMMIT:?set SOURCE_COMMIT to the tested source revision}"
 SINGULARITY=/usr/local/singularity-3.10.0/bin/singularity
@@ -30,16 +32,17 @@ test -x "$SINGULARITY"
 test -f "$SIF"
 test -d "$DATA_ROOT/C"
 test -d "$DATA_ROOT/I"
-test -d "$DATA_ROOT/T"
+test -d "$T_DATA_ROOT/T"
 test -f "$CODE_ROOT/contracts/taxonomy.json"
 test ! -e "$OUTPUT_ROOT"
 NODE_NAME=$(hostname)
 SIF_SHA256=$(sha256sum "$SIF" | awk '{print $1}')
 
 "$SINGULARITY" exec \
-    -B "$CODE_ROOT:$CODE_ROOT:ro" -B "$DATA_ROOT:$DATA_ROOT:ro" -B "$RUN_ROOT" \
+    -B "$CODE_ROOT:$CODE_ROOT:ro" -B "$DATA_ROOT:$DATA_ROOT:ro" \
+    -B "$T_DATA_ROOT:$T_DATA_ROOT:ro" -B "$RUN_ROOT" \
     "$SIF" python - \
-    "$CODE_ROOT" "$DATA_ROOT" "$OUTPUT_ROOT" "$ARTIFACT" \
+    "$CODE_ROOT" "$DATA_ROOT" "$T_DATA_ROOT" "$OUTPUT_ROOT" "$ARTIFACT" \
     "$SLURM_JOB_ID" "$NODE_NAME" "$SOURCE_COMMIT" "$SIF_SHA256" <<'PY'
 import hashlib
 import json
@@ -49,8 +52,9 @@ from pathlib import Path
 
 code_root = Path(sys.argv[1])
 data_root = Path(sys.argv[2])
-output_root = Path(sys.argv[3])
-artifact = Path(sys.argv[4])
+t_data_root = Path(sys.argv[3])
+output_root = Path(sys.argv[4])
+artifact = Path(sys.argv[5])
 sys.path.insert(0, str(code_root))
 
 from perception.anomaly.dataset import (  # noqa: E402
@@ -65,7 +69,7 @@ expected_object_ids = tuple(
 )
 if len(expected_object_ids) != 24 or len(set(expected_object_ids)) != 24:
     raise RuntimeError("taxonomy must contain exactly 24 unique part IDs")
-samples = discover_patchcore_samples(data_root)
+samples = discover_patchcore_samples(data_root, evaluation_root=t_data_root)
 summary = prepare_patchcore_folders(
     samples,
     output_root,
@@ -75,12 +79,13 @@ summary = prepare_patchcore_folders(
 manifest = output_root / "manifest.jsonl"
 ready = output_root / "_READY.json"
 payload = {
-    "slurm_job_id": sys.argv[5],
-    "hostname": sys.argv[6],
-    "source_commit": sys.argv[7],
+    "slurm_job_id": sys.argv[6],
+    "hostname": sys.argv[7],
+    "source_commit": sys.argv[8],
     "singularity_image": "/data/containers/msoe-pytorch-23.05-py3.sif",
-    "singularity_sha256": sys.argv[8],
+    "singularity_sha256": sys.argv[9],
     "data_root": str(data_root),
+    "t_data_root": str(t_data_root),
     "output_root": str(output_root),
     "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
     "ready_sha256": hashlib.sha256(ready.read_bytes()).hexdigest(),

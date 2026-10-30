@@ -16,6 +16,8 @@ Newest first. One entry per finished task.
   These are dataset counts, not model metrics.
 - Verified locally: 34 focused tests and the full 107-test suite passed; `ruff check .`, targeted Ruff format,
   `uv lock --check`, `uv pip check`, `git diff --check`, and shell syntax passed.
+- Rosie stores C/I under `fanuc-assembly-data` and T under `fanuc-testbed-data`; the preparation job therefore accepts
+  separate read-only `DATA_ROOT` and `T_DATA_ROOT` values and records both roots in its provenance artifact.
 - Next: deploy the immutable commit on Rosie, run `sbatch --test-only` and then the CPU preparation job, inspect the
   manifest counts, and fit all 24 PatchCore models. T14 remains REVIEW until every metrics file says `measured`.
 

@@ -195,14 +195,25 @@ def _approved_sample(sample: PatchCoreSample) -> bool:
     return sample.object_id in T_EVALUATION_PARTS and sample.rest == "installed"
 
 
-def discover_patchcore_samples(synthetic_root: Path) -> tuple[PatchCoreSample, ...]:
+def discover_patchcore_samples(
+    synthetic_root: Path,
+    *,
+    evaluation_root: Path | None = None,
+) -> tuple[PatchCoreSample, ...]:
     """Discover C/I training candidates and installed rear-guard T evaluation targets."""
     root = Path(synthetic_root)
     if root.is_symlink():
         raise DatasetBoundaryError(f"synthetic root must not be a symlink: {root}")
+    t_root = root if evaluation_root is None else Path(evaluation_root)
+    if t_root.is_symlink():
+        raise DatasetBoundaryError(f"evaluation root must not be a symlink: {t_root}")
+    sources: tuple[tuple[SetName, Path], ...] = (
+        ("C", root / "C"),
+        ("I", root / "I"),
+        ("T", t_root / "T"),
+    )
     samples: list[PatchCoreSample] = []
-    for set_name in ("C", "I", "T"):
-        set_path = root / set_name
+    for set_name, set_path in sources:
         if not set_path.exists():
             continue
         if set_path.is_symlink():

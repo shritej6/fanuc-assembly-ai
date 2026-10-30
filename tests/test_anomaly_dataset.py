@@ -99,6 +99,20 @@ def test_t_discovery_accepts_only_installed_rear_guards_as_evaluation_only(tmp_p
     ]
 
 
+def test_t_discovery_supports_a_separate_evaluation_root(tmp_path: Path) -> None:
+    training_root = tmp_path / "training"
+    evaluation_root = tmp_path / "evaluation"
+    _write_scene(training_root, "C", "000000", "ok", object_id="M1_04")
+    _write_scene(evaluation_root, "T", "000100", "warp", object_id="M1_04", rest="installed")
+
+    samples = discover_patchcore_samples(training_root, evaluation_root=evaluation_root)
+
+    assert [(sample.sample_id, sample.eligibility) for sample in samples] == [
+        ("C/chunk_0000/000000", "train_eligible"),
+        ("T/chunk_0000/000100", "evaluation_only"),
+    ]
+
+
 def test_t_evaluation_samples_never_enter_patchcore_training(tmp_path: Path) -> None:
     for index in range(5):
         _write_scene(tmp_path, "C", f"{index:06d}", "ok", object_id="M1_04")
