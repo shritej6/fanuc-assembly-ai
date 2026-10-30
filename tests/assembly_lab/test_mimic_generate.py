@@ -206,3 +206,14 @@ def test_pull_out_trims_only_free_space_subtasks():
 
     plans = (SimpleNamespace(grasp_tcp=[0, 0, 0, 180, 0, 33.0]), SimpleNamespace(spot_tcp=[0, 0, 0, 180, 0, -90.0]))
     assert plan_roll(plans, "grasp_frame") == 33.0 and plan_roll(plans, "spot_frame") == -90.0
+
+
+def test_validator_counts_frames_without_ffprobe(monkeypatch, tmp_path):
+    pytest.importorskip("pandas")
+    import sys
+
+    from sim.assembly_lab.mimic import validate_lerobot as V
+
+    monkeypatch.setattr(V.shutil, "which", lambda name: None)
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", SimpleNamespace(count_frames_and_secs=lambda p: (151, 30.2)))
+    assert V._video_frames(tmp_path / "x.mp4") == 151

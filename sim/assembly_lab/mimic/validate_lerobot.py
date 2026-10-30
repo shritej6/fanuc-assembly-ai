@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -29,6 +30,14 @@ def _jsonl(path: Path) -> list[dict]:
 
 
 def _video_frames(path: Path) -> int:
+    """Decoded frame count. The Brev hosts have no ffprobe; there imageio-ffmpeg's ffmpeg decodes every frame."""
+    if shutil.which("ffprobe") is None:
+        import imageio_ffmpeg
+
+        try:
+            return int(imageio_ffmpeg.count_frames_and_secs(str(path))[0])
+        except RuntimeError as e:
+            raise DatasetError(f"ffmpeg cannot read {path}: {e}") from e
     out = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
                           "stream=nb_read_frames", "-of", "csv=p=0", str(path)], capture_output=True, text=True, check=False)
     if out.returncode != 0:
