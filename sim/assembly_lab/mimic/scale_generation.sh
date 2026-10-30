@@ -174,6 +174,50 @@ print(f'READY hf:{repo} {label}/ -> huggingface-cli download {repo} --repo-type 
 PY"
 }
 
+gather() {
+  # copy every closed chunk (+ meta) and the workers' stats / rejects of RUN from each host to $GATHER
+  # ~/t12_data/a7/raw/<host>/<run>/..., sending only files that are new or changed in size (the HF backup reads there)
+  local run=$1 h want have new
+  for h in $HOSTS; do
+    want=$("${SSH[@]}" "$h" "[ -d ~/t12_data/a7/gen/$run ] || exit 0; cd ~/t12_data/a7/gen; \
+        for f in \$(cd ~/t12_data/repo_a7 && python3 -m sim.assembly_lab.mimic.run_generation --closed ~/t12_data/a7/gen/$run); do \
+          f=\${f#\$HOME/t12_data/a7/gen/}; for g in \$f \$f.meta.jsonl; do [ -f \$g ] && stat -c '%s %n' \$g; done; done; \
+        find $run \\( -name '*.stats.json' -o -name '*.rejects.jsonl' \\) -exec stat -c '%s %n' {} +" | sort -u) \
+      || { echo "[gather] $h unreachable"; continue; }
+    [ -n "$want" ] || continue
+    have=$("${SSH[@]}" "$GATHER" "cd ~/t12_data/a7/raw/$h 2>/dev/null && find $run -type f -printf '%s %p\n'" | sort || true)
+    new=$(comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$have") | cut -d' ' -f2-)
+    [ -n "$new" ] || { echo "[gather] $h: nothing new"; continue; }
+    printf '%s\n' "$new" | ssh -o ControlPath=none -o ConnectTimeout=15 "$h" "tar -C ~/t12_data/a7/gen -cf - -T -" | \
+      ssh -o ControlPath=none -o ConnectTimeout=15 "$GATHER" "mkdir -p ~/t12_data/a7/raw/$h && tar -C ~/t12_data/a7/raw/$h -xf -" \
+      && echo "[gather] $h: $(printf '%s\n' "$new" | wc -l | tr -d ' ') files" || echo "[gather] $h FAILED"
+  done
+}
+
+export_inc() {
+  # incremental export: per host and skill, only closed chunks not exported before (~/t12_data/a7/exported_RUN.txt) go
+  # into a new dataset RUN_<skill>_<host>_<stamp>, made on the host (its CPUs) and relayed to $GATHER (mp4 + meta only)
+  local run=$1 stamp h s
+  stamp=$(date -u +%H%M%S)
+  for h in $HOSTS; do
+    for s in $SKILLS; do
+      local name="${run}_${s}_${h}_${stamp}"
+      "${SSH[@]}" "$h" "set -e; cd ~/t12_data/repo_a7; touch ~/t12_data/a7/exported_$run.txt; \
+        files=\$(python3 -m sim.assembly_lab.mimic.run_generation --closed ~/t12_data/a7/gen/$run | grep /$s/ | \
+          grep -vxF -f ~/t12_data/a7/exported_$run.txt || true); \
+        [ -n \"\$files\" ] || exit 0; mkdir -p ~/t12_data/a7/bin; \
+        ln -sf \$($TOOLS python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())') ~/t12_data/a7/bin/ffmpeg; \
+        PATH=~/t12_data/a7/bin:\$PATH $TOOLS python -m sim.assembly_lab.mimic.export_lerobot \
+          --inputs \$files --out ~/t12_data/lerobot/$name --workers ${EXPORT_WORKERS:-6} && \
+        printf '%s\n' \$files >> ~/t12_data/a7/exported_$run.txt" || { echo "[export] $h $s failed"; continue; }
+      "${SSH[@]}" "$h" "test -f ~/t12_data/lerobot/$name/meta/info.json" || continue
+      ssh -o ControlPath=none -o ConnectTimeout=15 -n "$h" "tar -C ~/t12_data/lerobot -cf - $name" | \
+        ssh -o ControlPath=none -o ConnectTimeout=15 "$GATHER" "mkdir -p ~/t12_data/lerobot && tar -C ~/t12_data/lerobot -xf -" \
+        && echo "[export] $h $s -> $GATHER:~/t12_data/lerobot/$name" || echo "[export] $h $s relay FAILED"
+    done
+  done
+}
+
 drain() {
   # retire hosts before their box is deleted: STOP lets every worker finish its attempt (no kept demo is lost), then the
   # last export of the host is relayed to $GATHER (later exports keep it once the host is gone) and the raw files are
@@ -209,5 +253,7 @@ case "${1:-}" in
   export) export_run "$2" ;;
   upload) upload "$2" "$3" "$4" ;;
   drain) shift; drain "$@" ;;
+  exportinc) export_inc "$2" ;;
+  gather) shift; for r in "$@"; do gather "$r"; done ;;
   *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

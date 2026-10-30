@@ -162,7 +162,7 @@ def convert_episode(job: dict) -> dict:
         ids, target = demo["obs"][keys["plan_ids"]][0], demo["obs"][keys["plan_target"]][0]
         stats = {}
         for cam in W.CAMERAS:
-            frames = _resize(demo["obs"][keys[f"img_{cam}"]][obs_idx], job["size"])
+            frames = _resize(demo["obs"][keys[f"img_{cam}"]][()][obs_idx], job["size"])  # h5py fancy index is slow
             W.encode_mp4(frames, W.video_path(root, ep, cam), job["fps"])
             stats[f"observation.images.{cam}"] = W.image_stats(frames)
         peak = demo["obs"][job["contact_key"]][()].max(axis=0).tolist()
@@ -218,7 +218,7 @@ def export(inputs: list[str], out: Path, sim_dt: float, fps: int, size: tuple[in
     jobs = [{"ref": (r.file, r.key), "episode_index": i, "keys": keys, "root": str(out), "sim_dt": sim_dt,
              "fps": fps, "size": size, "contact_key": contact_key} for i, r in enumerate(refs)]
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        records = list(pool.map(convert_episode, jobs, chunksize=4))
+        records = list(pool.map(convert_episode, jobs, chunksize=1))  # ~minutes per episode: spread them all
     return _finish(out, records, fps, size, report)
 
 
