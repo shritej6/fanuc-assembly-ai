@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
@@ -423,6 +424,21 @@ def test_pull_slide_measures_a_part_held_back_by_the_fit(limits):
     except (EpisodeFailed, GateFailed):
         pass
     assert rec.in_hand_drift_mm["pull"] == pytest.approx(2.0, abs=1e-3)
+
+
+def test_pull_wiggle_flag_sets_the_variant_and_rejects_bad_values():
+    po = importlib.import_module("sim.assembly_lab.skills.pull_out")
+
+    default = po.WIGGLE
+    try:
+        record._args(["--backend", "kinematic", "--out", "/tmp/x", "--pull-wiggle", "0.3:8"])
+        assert po.WIGGLE == (0.3, 8)
+        with pytest.raises(SystemExit):
+            record._args(["--backend", "kinematic", "--out", "/tmp/x", "--pull-wiggle", "1.5:4"])
+        with pytest.raises(SystemExit):
+            record._args(["--backend", "kinematic", "--out", "/tmp/x", "--pull-wiggle", "0.3"])
+    finally:
+        po.WIGGLE = default
 
 
 def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):

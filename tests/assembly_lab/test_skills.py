@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import itertools
 
 import numpy as np
@@ -125,6 +126,33 @@ def test_pull_out_straight_with_wiggle(plans):
     assert wig[-1, 2] >= pull.grasp_tcp[2] + pull.engage_mm
     d, _ = _steps(wig)
     assert (d <= SLOW.mm + 1e-6).all()
+
+
+@pytest.mark.parametrize("deg,steps", [(0.3, 8), (0.0, 4), (1.0, 4)])
+def test_pull_wiggle_variants_rise_straight_within_amplitude(plans, deg, steps):
+    """Main-approved A/B on second-layer pulls: the yaw stays within the variant, the lift ends where the default does."""
+    po = importlib.import_module("sim.assembly_lab.skills.pull_out")
+
+    pull, default = plans[2], po.WIGGLE
+    try:
+        po.set_wiggle(deg, steps)
+        wig = np.vstack([s.rows for s in pull_out(pull, HOME) if s.phase == "wiggle_out"])
+    finally:
+        po.WIGGLE = default
+    yaw = np.array([geometry.wrap_deg(r - pull.grasp_tcp[5]) for r in wig[:, 5]])
+    assert np.abs(yaw).max() == pytest.approx(deg, abs=0.05)
+    assert yaw[-1] == pytest.approx(0.0, abs=1e-6)
+    assert np.allclose(wig[:, :2], pull.grasp_tcp[:2], atol=1e-6)
+    assert wig[-1, 2] == pytest.approx(pull.grasp_tcp[2] + pull.engage_mm + 1.0)
+    assert (_steps(wig)[0] <= SLOW.mm + 1e-6).all()
+
+
+def test_pull_wiggle_default_is_the_users_plus_minus_one_deg():
+    po = importlib.import_module("sim.assembly_lab.skills.pull_out")
+
+    assert po.WIGGLE == (PULL_WIGGLE_DEG, 4) and po.wiggle_signs(4) == [1.0, -1.0, 1.0, 0.0]
+    with pytest.raises(ValueError):
+        po.set_wiggle(2.0, 4)  # never more than the user's ±1 deg
 
 
 def test_place_free_sets_down_and_defect_drops(plans):

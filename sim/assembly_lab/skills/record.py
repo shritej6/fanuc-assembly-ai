@@ -37,6 +37,7 @@ from .backends import KinematicBackend, NoCase, base_of, sheet_parts
 from .force_guard import ForceGuard, LimitsError, load_limits
 from .gates import GateFailed
 from .motion import MotionError
+from .pull_out import set_wiggle, wiggle
 from .runner import EpisodeFailed, EpisodeRecorder, ResetInvalid
 
 DEMO_ROOT = Path.home() / "t12_data" / "demos"
@@ -187,7 +188,7 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
             runs.append({"ok": False, "status": "robot_failed", "reason": str(e), "steps": len(rec.frames),
                          "gates": rec.gate_log.values, "peaks": rec.guard.episode_peaks(),
                          "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events,
-                         "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
+                         "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "pull_wiggle": list(wiggle()), "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
                          "s": round(time.time() - t0, 1)})
             _finish(backend, run, rec, False, scenario, str(e))
             continue
@@ -197,7 +198,7 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
         runs.append({"ok": True, "status": "kept" if not run.measure_only else "would_keep", "demo": key,
                      "steps": len(rec.frames), "peaks": rec.guard.episode_peaks(), "gates": rec.gate_log.values,
                      "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events, "settled": rec.settled,
-                     "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections,
+                     "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "pull_wiggle": list(wiggle()), "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections,
                      "s": round(time.time() - t0, 1)})
     return {"attempts": attempts, "kept_or_would_keep": saved, "robot_failed": attempts - saved,
             "reset_invalid": invalid, "planner_skipped": skipped,
@@ -253,7 +254,7 @@ def _finish(backend, run: Run, rec: EpisodeRecorder, ok: bool, scenario: str, re
         "steps": len(rec.frames), "instruction": rec.instructions[0] if rec.instructions else "",
         "marks": rec.marks, "events": rec.events, "peaks": rec.guard.episode_peaks(),
         "train_mask": [bool(f.seg.learn) for f in rec.frames], "would_keep": bool(ok),
-        "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections}
+        "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "pull_wiggle": list(wiggle()), "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections}
     run.metas.append(meta)
     with open(str(run.path) + ".meta.jsonl", "a") as f:
         f.write(json.dumps(meta, default=_jsonable) + "\n")
@@ -329,7 +330,15 @@ def _args(argv):
                          "under ~/t12_data/measure, episodes marked touch_gate=missing / robot_touch_unverified")
     ap.add_argument("--allow-touch-proxy", action="store_true",
                     help="accept the gripper_obj proxy for the 'touched only the target' gate (stamped on every demo)")
+    ap.add_argument("--pull-wiggle", default=None, metavar="DEG:STEPS",
+                    help="pull_out wiggle amplitude and steps for the A/B (default 1.0:4); stamped as pull_wiggle")
     a = ap.parse_args(argv)
+    if a.pull_wiggle is not None:
+        try:
+            deg, steps = a.pull_wiggle.split(":")
+            set_wiggle(float(deg), int(steps))
+        except ValueError as e:
+            ap.error(f"--pull-wiggle {a.pull_wiggle!r}: {e}")
     a.out = a.out or (MEASURE_ROOT if a.measure_only else DEMO_ROOT)
     if a.measure_only and a.out.resolve().is_relative_to(DEMO_ROOT.resolve()):
         ap.error("measure-only runs never write under ~/t12_data/demos")

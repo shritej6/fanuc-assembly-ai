@@ -13,6 +13,26 @@ from .motion import APPROACH, CLOSED, FREE, OPEN, SLOW, Motion, Segment, above
 from .plan import PULL_WIGGLE_DEG, SEAT_FLOOR_MM, SLOW_ZONE_MM, PullOutPlan
 
 WIGGLE_STEPS = 4  # +1, -1, +1, 0 deg while backing out of the engagement
+# (deg, steps) of the wiggle; record.py --pull-wiggle sets it for the main-approved A/B on second-layer pulls (run10
+# probe M1_03: the stack under the pulled part shifted 1-1.5 mm). Default = the user's ±1 deg in 4 steps.
+WIGGLE = (PULL_WIGGLE_DEG, WIGGLE_STEPS)
+
+
+def set_wiggle(deg: float, steps: int) -> None:
+    """Wiggle amplitude (deg, 0 = straight lift) and number of equal rise steps (the last one ends at 0 deg)."""
+    global WIGGLE
+    if deg < 0 or deg > PULL_WIGGLE_DEG or steps < 1:
+        raise ValueError(f"pull wiggle {deg} deg / {steps} steps: need 0 <= deg <= {PULL_WIGGLE_DEG}, steps >= 1")
+    WIGGLE = (float(deg), int(steps))
+
+
+def wiggle() -> tuple[float, int]:
+    return WIGGLE
+
+
+def wiggle_signs(steps: int) -> list[float]:
+    """+1, -1, +1, ... ending at 0 (back to the grasp yaw for the lift)."""
+    return [1.0 if i % 2 == 0 else -1.0 for i in range(steps - 1)] + [0.0]
 
 
 def subtask_name(plan: PullOutPlan) -> str:
@@ -33,9 +53,10 @@ def _wiggle_out(m: Motion, plan: PullOutPlan) -> None:
     z0 = m.pose[2]
     base = m.pose.copy()
     rise = plan.engage_mm + 1.0  # 1 mm past the end of the engagement
-    signs = [1.0, -1.0, 1.0, 0.0][:WIGGLE_STEPS]
+    deg, steps = WIGGLE
+    signs = wiggle_signs(steps)
     for i, s in enumerate(signs, start=1):
-        m.move("wiggle_out", tilted(above(base, z0 + rise * i / len(signs)), 0.0, 0.0, s * PULL_WIGGLE_DEG), SLOW)
+        m.move("wiggle_out", tilted(above(base, z0 + rise * i / len(signs)), 0.0, 0.0, s * deg), SLOW)
 
 
 def pull_out(plan: PullOutPlan, start, gripper: float = OPEN, holding: bool = False,
