@@ -2,7 +2,7 @@
 
 Newest first. One entry per finished task.
 
-## 2026-10-30 · T37 · CODEX · Saturday T09-to-GR00T integration boundary
+## 2026-10-30 · T37 · CODEX · Saturday T09-to-GR00T integration boundary · PR #24
 
 - Integrated the reviewed dependency order on `feature/T37-saturday-cell-integration`: error codes, symmetric
   look-alikes, T05 adapters, T29 grasp frames, T04 catalog, T09 controller, T30 perception boundary, and the T12
