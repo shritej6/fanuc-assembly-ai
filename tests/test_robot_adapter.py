@@ -44,10 +44,10 @@ POLICY_DELEGATION_SCRIPT = textwrap.dedent(
 
         def act(self, observation):
             self.observations.append(observation)
-            return [9.0] * 7
+            return [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
 
-    policy = Policy("unused-checkpoint")
-    assert Policy.ACTION == "joints"
+    policy = Policy("unused-checkpoint", controller=SpyAdapter(), action_mode="tcp", runtime="mock")
+    assert Policy.ACTION == "tcp"
     assert isinstance(policy.adapter, CellAdapter)
     spy = SpyAdapter()
     policy.adapter = spy
@@ -67,9 +67,8 @@ DEFAULT_POLICY_SCRIPT = textwrap.dedent(
 
     from policy import Policy
 
-    joints = [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0]
-    action = Policy().act({"joints": joints, "tcp_pose": None})
-    print(json.dumps({"action": action, "copied": action is not joints}))
+    action = Policy(runtime="mock").act({"joints": [0.0] * 7, "tcp_pose": None})
+    print(json.dumps({"action": action}))
     """
 )
 TCP_POLICY_GUARD_SCRIPT = textwrap.dedent(
@@ -86,9 +85,7 @@ TCP_POLICY_GUARD_SCRIPT = textwrap.dedent(
         def act(self, observation):
             return [149.0, 0.0, 0.0, -180.0, 0.0, 0.0, 0.0]
 
-    Policy.ACTION = "tcp"
-    policy = Policy()
-    policy.adapter._controller = UnsafeController()
+    policy = Policy(controller=UnsafeController(), action_mode="tcp", runtime="mock")
     try:
         policy.act({"joints": [0.0] * 7, "tcp_pose": None})
     except ActionBoundsError as error:
@@ -104,7 +101,14 @@ POLICY_CURRENT_DT_SCRIPT = textwrap.dedent(
     from policy import Policy
     from robot import ActionBoundsError
 
-    policy = Policy()
+    class TcpHold:
+        def reset(self):
+            pass
+
+        def act(self, observation):
+            return [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
+
+    policy = Policy(controller=TcpHold(), action_mode="tcp", runtime="mock")
     Policy.DT = 1.1
     try:
         policy.act({"joints": [0.0] * 7, "tcp_pose": None})
@@ -467,20 +471,17 @@ def test_policy_imports_from_cell_directory_and_delegates_without_pythonpath() -
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
-        "action": [9.0] * 7,
+        "action": [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0],
         "reset_calls": 1,
         "delegated_same_object": True,
     }
 
 
-def test_default_policy_holds_current_joints_when_tcp_pose_is_none() -> None:
+def test_default_mock_policy_bootstraps_valid_tcp_when_pose_is_none() -> None:
     result = run_policy_script(DEFAULT_POLICY_SCRIPT)
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {
-        "action": [-0.0065, 3.2909, -11.8967, -0.0007, -74.8218, -0.0286, 0.0],
-        "copied": True,
-    }
+    assert json.loads(result.stdout) == {"action": [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]}
 
 
 def test_policy_rejects_out_of_box_tcp_controller_output() -> None:

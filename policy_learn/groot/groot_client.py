@@ -26,6 +26,7 @@ from policy_learn.groot.tcp_convert import eef9d_to_tcp, tcp_to_eef9d
 CAMERAS = ("table", "side", "wrist")
 LANGUAGE_KEY = "annotation.human.task_description"
 DT_S = 0.2  # the training data's control step (5 Hz)
+ATTESTATION_PROTOCOL = "fanuc-groot-attestation-v1"
 
 
 class PolicyServerError(RuntimeError):
@@ -68,8 +69,9 @@ def groot_to_rows(action: dict, current_tcp: np.ndarray, execution_horizon: int 
         raise ValueError(f"unexpected action shapes eef_9d {eef.shape} gripper {grip.shape}")
     n = len(eef) if execution_horizon is None else min(execution_horizon, len(eef))
     tcp = eef9d_to_tcp(eef[:n], np.asarray(current_tcp, dtype=np.float64)[3:6])
-    gripper = (grip[:n] >= 0.5).astype(np.float64)  # binary in every demo: 0 open / 1 closed
-    return np.column_stack([tcp, gripper]).tolist()
+    # Preserve model uncertainty. ChunkGuard owns the only reviewed snap/refuse
+    # decision; thresholding here could turn NaN or 0.49 into an authorized open.
+    return np.column_stack([tcp, grip[:n]]).tolist()
 
 
 def pack(data) -> bytes:
@@ -81,8 +83,9 @@ def unpack(raw: bytes):
 
 
 class GrootTcpClient:
-    def __init__(self, host: str = "127.0.0.1", port: int = 5555, timeout_ms: int = 30000,
-                 execution_horizon: int | None = None):
+    def __init__(
+        self, host: str = "127.0.0.1", port: int = 5555, timeout_ms: int = 30000, execution_horizon: int | None = None
+    ):
         self.address = f"tcp://{host}:{port}"
         self.timeout_ms = timeout_ms
         self.execution_horizon = execution_horizon
@@ -116,6 +119,18 @@ class GrootTcpClient:
             return self.call("ping").get("status") == "ok"
         except TimeoutError:
             return False
+
+    def describe(self) -> dict:
+        """Return the server-derived deployment attestation, never a local default."""
+        reply = self.call("describe")
+        valid = (
+            isinstance(reply, dict)
+            and reply.get("protocol") == ATTESTATION_PROTOCOL
+            and isinstance(reply.get("attestation"), dict)
+        )
+        if not valid:
+            raise PolicyServerError("describe: invalid or missing versioned attestation envelope")
+        return dict(reply["attestation"])
 
     def reset(self) -> None:
         self.call("reset", {"options": None})

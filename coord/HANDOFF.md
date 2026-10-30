@@ -2,6 +2,35 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T37 · CODEX · Saturday T09-to-GR00T integration boundary
+
+- Integrated the reviewed dependency order on `feature/T37-saturday-cell-integration`: error codes, symmetric
+  look-alikes, T05 adapters, T29 grasp frames, T04 catalog, T09 controller, T30 perception boundary, and the T12
+  deployment adapter. `robot/cell/policy.py` has an explicit mock path and a strict `runtime="cell"` factory; CELL
+  never falls back to scripted motion, joint hold, the GR00T stub, or an injected controller.
+- Added typed, identity-bound `MotionIntent` and `T09GrootExecutor` boundaries for inspect, pick-insert-hold,
+  release-retreat, pull-out, free placement, and defect drop. T29 object ID, grip index, source SHA, fingertip TCP,
+  wrist turn, base pairing, contact, and release endpoint are checked. Release must begin stationary and open at the
+  authorized endpoint; model/observation gripper ambiguity and nonfinite values fail closed.
+- Added registry-pinned deployment records, exact server attestation, hash-bound measured guard calibration,
+  checkpoint-tree verification, and the local attestation proxy. The approval registry is deliberately empty. The
+  proxy does not yet authenticate the continuing upstream child process or seal its checkpoint directory, so this
+  remains an explicit CELL blocker rather than an authorization claim.
+- Physical status: **software integration verified; real CELL not armed**. `create_cell_policy()` raises
+  `CellRuntimeBlockedError` until the T09 semantic queue uses controller-owned evidence-bound release tokens, the
+  served checkpoint has reviewed semantic-skill/evaluation evidence and supervised process identity, limits are
+  measured, live T28/T30 perception is configured, and full robot/held-part physical safety providers are reviewed.
+- Measured gates on the final snapshot: focused T37 suite **218 passed, 1 optional pandas skip**; full sandbox suite
+  **1435 passed, 5 sandbox-only failures, 5 optional skips**; the complete failing H100 shell module passed **8/8**
+  outside the sandbox. Ruff lint and format, both uv locks/environments, shell syntax, diff whitespace, 24-file
+  Python size limits, and the protected-client check passed. `robot/cell/cell_client.py` remained byte-identical to
+  `origin/main` at SHA-1 `49bb7fc3602b9554d944d80ff889f96bdc88b125`.
+- Official software-only smoke: `cd robot/cell && uv run --locked --offline run.py --mock` completed **3 rollouts,
+  300 actions, 0 rejected**. Its banner proves client compatibility only; it does not override the CELL blockers.
+- Next: Claude reviews the integration PR. Before physical use, implement and review every blocker returned by
+  `assembly.cell_runtime.runtime_blockers()` and run the CSI measured safety/calibration acceptance; do not bypass
+  the factory.
+
 ## 2026-10-30 · T33 · CODEX · M1_01/M3_01 size-twin contract
 
 - Changed: `contracts/taxonomy.json` now marks M1_01 and M3_01 as symmetric look-alikes, so both require the wrist

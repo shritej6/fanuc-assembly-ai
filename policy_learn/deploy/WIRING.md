@@ -1,92 +1,109 @@
-# Wiring GR00T into `robot/cell/policy.py` (for Codex, T05)
+# T09 to GR00T physical-cell wiring
 
-Agent 6 does not edit `robot/cell/*`. This note says how `policy.py` should call the GR00T adapter.
+This is the reviewed runtime boundary for Saturday. It is intentionally fail-closed:
+the mock controller remains available for software tests, while `runtime="cell"` cannot
+emit motion until every physical dependency is present and reviewed.
 
-## What exists
+## Runtime path
 
-| File | What it is |
-|---|---|
-| `policy_learn/deploy/groot_policy.py` | `GrootPolicy`: the official interface (`CAMERAS`, `IMAGE_SIZE`, `ACTION = "tcp"`, `DT = 0.2`, `PREFETCH = False`, `reset()`, `act(obs)`) plus `set_plan(skill, object_id, base_id, grip, case, target, ContactTarget)` for the planner |
-| `policy_learn/deploy/guards.py` | `ChunkGuard`: every chunk is checked before it leaves `act()`. A violation returns one hold row (current pose, gripper unchanged) and a reason; a small overspeed is clamped, with a reason |
-| `policy_learn/groot/groot_client.py` | Agent 5's ZMQ client to the GR00T policy server (eef_9d + gripper, dt 0.2 s) |
-| `policy_learn/deploy/mock_check.py` | Runs `run.py --mock` with `GrootPolicy` swapped in, without editing `robot/cell` |
-
-## policy.py (proposed)
-
-```python
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, for policy_learn/
-
-from policy_learn.deploy.groot_policy import GrootPolicy
-from policy_learn.deploy.guards import ContactTarget
-
-
-class Policy(GrootPolicy):
-    """checkpoint: "groot://127.0.0.1:5555" (the GR00T server, through an ssh tunnel); None reads $GROOT_POLICY."""
-
-    def act(self, obs):
-        step = self.planner.next(obs)  # T09 state machine: the current step and its contact target
-        self.set_plan(step.skill, step.object_id, step.base_id, step.grip, step.case,
-                      [step.part_x, step.part_y, step.part_yaw, step.roll, step.goal_x, step.goal_y, step.goal_yaw],
-                      ContactTarget(step.x, step.y, step.z_contact, label=step.label)
-                      if step.z_contact is not None else None)
-        return super().act(obs)
+```text
+official observation
+  -> T09 state machine
+  -> identity-bound MotionIntent
+  -> T09GrootExecutor
+  -> GrootPolicy (one fresh row)
+  -> learned-policy ChunkGuard
+  -> live-scene SafetySupervisor
+  -> T05 CellAdapter
+  -> official FANUC client
 ```
 
-Rules:
+There is no scripted or joint-hold fallback in CELL mode. A missing dependency raises
+`CellRuntimeBlockedError`; it does not select the mock path.
 
-- **Keep `ACTION = "tcp"` and `DT = 0.2`.** GR00T is trained at 5 Hz. If the chunk is played at another dt, the speed
-  the guard checks no longer matches the speed of the arm.
-- **Keep `PREFETCH = False`.** The guard checks each chunk against the pose it starts from. With prefetch, that pose
-  would be stale.
-- **Call `set_plan` before every `act`.**
-  - It builds the instruction with `sim/assembly_lab/mimic/instructions.instruction`, the function the demos were
-    labelled with. An example: "pick M4_02 at (300, -50, 37) gripping X at roll 127, insert on F04 at (400, 50, 90)".
-  - Do not hand-write instructions with `set_task`. Different words from the training text make GR00T unreliable.
-  - `skill` is one of pick_insert, pull_out, place_free or defect_drop. `case` comes from
-    `sim/assembly_lab/mimic/catalog.CASES`.
-  - Pass the `ContactTarget` of the current insert or grasp:
-    - `z_contact_mm` is the TCP z at the seated pose (CAD seated height).
-    - The guard refuses anything lower than `z_contact_mm - 1` within `radius_mm` (25 mm) of `(x_mm, y_mm)`.
-    - The last 5 mm above `z_contact_mm` runs at the slow limit.
-  - With no target, only the box, tilt, speed, table slow zone and gripper checks apply.
-- **Never bypass the guard.** Do not send `model.predict` rows yourself. `GrootPolicy.guard_log` lists every hold and
-  clamp (rollout, act number, reasons). Log it with the run.
-- **A hold is not an error.**
-  - The arm stays put and `act` is called again with a fresh observation.
-  - If the guard holds three times in a row, the state machine should treat it as "stuck": re-scan and re-plan, then
-    Andon. (Not implemented in the adapter: the state machine owns that decision.)
-- **`tcp_pose` missing.** The mock sends none before the first tcp command. `act` then returns one hold row at the
-  FK-estimated pose and does not call the model. The real cell always sends `tcp_pose`.
-- **Angles near r = ±180.** A decoded rotation flips between r = 179.8 and −179.9 although the fingers barely turn.
-  `act` rewrites each row's w and r as the same orientation, numerically nearest the row before, starting from the
-  reported pose (`nearest_turns`). Without this, the guard holds (it reads 179 → −179 as 358° of J6). Found in the
-  Isaac smoke: the arm froze on its first move toward a grasp at r ≈ 180. A genuinely large turn is still refused.
+## Semantic contract
 
-## How to run
+The deployed checkpoint must attest these skills:
+
+- `inspect_view`
+- `pick_insert_hold`
+- `release_retreat`
+- `pull_out`
+- `place_free`
+- `defect_drop`
+
+`pick_insert_hold` must finish with the gripper closed. T09 performs its independent
+post-place verification before issuing `release_retreat`. The policy consumes exactly
+one action row per fresh observation, so no prefetched trajectory can cross that gate.
+
+## Checkpoint identity
+
+`policy_learn/groot/serve_policy.sh` serves GR00T through the attested proxy. The proxy:
+
+1. hashes the checkpoint tree selected for launch;
+2. compares the hash with a reviewed deployment manifest;
+3. derives `server_verified=true`; and
+4. exposes the versioned `describe` endpoint.
+
+That is necessary but not sufficient for physical authorization. The current proxy
+serves a static envelope and forwards to the upstream port; it does not authenticate
+each response as coming from the original child process, and the upstream checkpoint
+directory is not sealed read-only after verification. Before CELL can be armed, the
+launcher must supervise and authenticate the exact child process and serve from an
+immutable content-addressed checkpoint (or an equivalently reviewed lifecycle).
+
+The CELL client also checks the dataset, catalog, T29 grasp source, exact guard
+calibration, RGB model interface, embodiment, 5 Hz timing, one-row horizon, evaluation
+approval, and release protocol. Table/wrist depth remains an independent T09 perception
+dependency; the GR00T wire format does not claim to consume it. A sidecar file cannot
+self-assert server verification. `APPROVED_DEPLOYMENT_PINS` is deliberately empty on
+this branch; a real checkpoint cannot be selected until a dual-reviewed manifest digest
+is added to that registry.
+
+## Physical authorization gates
+
+`assembly.cell_runtime.runtime_blockers()` is the canonical list. At minimum, CELL
+requires:
+
+- a T09 semantic queue that preserves the hold-before-release protocol;
+- a checkpoint with all six attested skills and reviewed evaluation;
+- measured guard limits with an immutable source;
+- live perception and collision-scene backends with reviewed artifacts; and
+- reviewed full IK, joint limits, robot-link sweeps, and held-part sweeps.
+
+Production limits must be loaded with `GuardLimits.from_calibration(path, sha256)`.
+Setting `status="MEASURED"` in Python is not sufficient: the loader binds every numeric
+limit to the exact reviewed calibration-report bytes.
+
+`SDGReachabilityChecker` and `CADCollisionChecker` are preflight diagnostics only. They
+intentionally advertise incomplete production capabilities, so `SafetySupervisor`
+rejects them for physical authorization. A future CELL provider must seal the complete
+transitive physical sources (solver, joint limits, robot links, UTOOL, fingers, held
+part geometry, and validation evidence) before those capability flags can be true.
+
+The current branch implements and tests these boundaries but deliberately does not
+invent the missing measurements, physical providers, or model capabilities. Therefore
+`create_cell_policy()` still raises `CellRuntimeBlockedError` and produces no real-cell
+action.
+
+The current `MotionIntent.release_authorized` flag exercises the executor protocol in
+software tests only. Before the CELL gate can open, T09 must replace it with a one-shot
+controller-issued token bound to trial, step, part/base identities, fresh observation
+time, release TCP, and independent inspection evidence.
+
+## Safe verification
 
 ```bash
-# plumbing check, no model
-cd robot/cell && GROOT_POLICY=stub uv run python ../../policy_learn/deploy/mock_check.py
-# with the real GR00T server (agent 5's serve_policy.sh on the training box, tunnelled to :5555)
-ssh -N -L 5555:127.0.0.1:5555 fa-train &
-cd robot/cell && GROOT_POLICY=groot://127.0.0.1:5555 \
-  uv run --with pyzmq --with msgpack --with msgpack-numpy python ../../policy_learn/deploy/mock_check.py
+# Software-only official-client loop
+cd robot/cell
+uv run run.py --mock --trials 1 --trial-s 0.5
+
+# Check an attestation without starting a server
+PYTHONPATH=. python -m policy_learn.groot.attested_server \
+  --checkpoint /reviewed/checkpoint \
+  --attestation /reviewed/attestation.json \
+  --verify-only
 ```
 
-`robot/cell/pyproject.toml` has no pyzmq or msgpack. Either T05 adds `pyzmq`, `msgpack` and `msgpack-numpy` there, or
-the run uses `uv run --with ...` as above.
-
-## Guard limits (`GuardLimits`)
-
-- Workspace box x 150–650, y −450 to 450, z −334 to 300 mm; dt 0.1–1.0 s; |w, p, r| ≤ 360. These are the official
-  limits.
-- Fingers-down cone 6°. This covers the 3° insert tilt plus the ±2° twist.
-- The speeds are **PRELIMINARY choices, not measured**:
-  - 150 mm/s and 60°/s in free space;
-  - 10 mm/s and 15°/s in the slow zone;
-  - a step over 3× the limit is refused as a glitch;
-  - the gripper may change only once per chunk, and only while the TCP moves ≤ 2 mm in that step.
-- Agent 3's scripted demos stay inside these limits: 50 mm/s free, 2.5 mm/s slow, 30°/s.
+Do not run `runtime="cell"` until the factory reports no blockers and the CSI physical
+readiness review has approved the measured sources.

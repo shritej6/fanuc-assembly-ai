@@ -14,7 +14,29 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from robot import CellAdapter, Controller, JointPositionHoldController
+from robot import CellAdapter, Controller
+from robot.adapter import TCP_LIMITS
+
+
+class _MockTcpHoldController:
+    """Hold the observed mock TCP, bootstrapping from the official box midpoint."""
+
+    def reset(self) -> None:
+        """The mock-only hold has no rollout state."""
+
+    def act(self, observation: dict) -> list[float]:
+        observed_joints = observation.get("joints")
+        joints = [] if observed_joints is None else list(observed_joints)
+        if len(joints) != 7:
+            raise ValueError("mock observation must contain J1..J6 and gripper")
+        tcp_pose = observation.get("tcp_pose")
+        if tcp_pose is None:
+            xyz = [(lower + upper) / 2.0 for lower, upper, _unit in TCP_LIMITS[:3]]
+            return [*xyz, -180.0, 0.0, 0.0, joints[6]]
+        tcp = list(tcp_pose)
+        if len(tcp) != 6:
+            raise ValueError("mock tcp_pose must contain x, y, z, w, p, r")
+        return [*tcp, joints[6]]
 
 
 class Policy:
@@ -22,11 +44,11 @@ class Policy:
     IMAGE_SIZE = (640, 360)  # (width, height) of the images you get: the whole 16:9 camera frame, resized
     # (not cropped), as in the sim and the recorded datasets
     IMAGE_FORMAT = "png"  # or "jpeg": about 7x smaller, for a slow connection
-    ACTION = "joints"  # what act returns: "joints" or "tcp" (see below)
-    DT = 0.1  # seconds between absolute targets
+    ACTION = "tcp"  # T12 GR00T emits absolute UF0 fingertip targets
+    DT = 0.2  # T12 controller cadence: one guarded row per callback
     PREFETCH = False  # True: if act returns many actions at once, plan the next ones while
     # these still play, so the arm does not stop between them
-    DEPTH: ClassVar[list[str]] = []  # ["table"] and/or ["wrist"]: also those cameras' depth, in obs["depth"]
+    DEPTH: ClassVar[list[str]] = ["table", "wrist"]
 
     def __init__(
         self,
@@ -40,30 +62,46 @@ class Policy:
         self.mock_only = checkpoint == "t09-mock"
         if runtime not in ("mock", "cell"):
             raise ValueError(f"unsupported runtime: {runtime!r}")
-        if self.mock_only:
-            controller, action_mode = self._mock_controller(runtime, controller, action_mode)
-        if controller is None and action_mode is not None:
-            raise ValueError("action_mode requires an explicitly injected controller")
-        if controller is not None and action_mode is None:
-            raise ValueError("an injected controller requires an explicit action_mode")
-        selected = controller or JointPositionHoldController()
+        if runtime == "cell":
+            selected = self._cell_controller(controller, action_mode)
+        else:
+            selected = self._mock_controller(controller, action_mode)
         self.controller = selected
-        self.ACTION = action_mode or type(self).ACTION
+        self.ACTION = type(self).ACTION
         self.adapter = CellAdapter(selected, action_mode=self.ACTION, dt=lambda: self.DT)
 
-    @staticmethod
-    def _mock_controller(
-        runtime: str,
+    def _cell_controller(
+        self,
         controller: Controller | None,
         action_mode: str | None,
-    ) -> tuple[Controller, Literal["tcp"]]:
-        if runtime != "mock":
+    ) -> Controller:
+        if self.mock_only:
             raise ValueError("the t09-mock checkpoint is forbidden outside the local mock runtime")
         if controller is not None or action_mode is not None:
-            raise ValueError("the t09-mock checkpoint does not accept injected controller overrides")
-        from robot.cell.t09_mock_runtime import T09MockController
+            raise ValueError("the cell runtime does not accept injected controller overrides")
+        from assembly.cell_runtime import create_cell_policy
 
-        return T09MockController(), "tcp"
+        return create_cell_policy(checkpoint=self.checkpoint)
+
+    def _mock_controller(
+        self,
+        controller: Controller | None,
+        action_mode: str | None,
+    ) -> Controller:
+        if self.mock_only:
+            if controller is not None or action_mode is not None:
+                raise ValueError("the t09-mock checkpoint does not accept injected controller overrides")
+            from robot.cell.t09_mock_runtime import T09MockController
+
+            return T09MockController()
+        if (controller is None) != (action_mode is None):
+            raise ValueError("mock controller and action_mode must be injected together")
+        if action_mode not in (None, "tcp"):
+            raise ValueError("Policy advertises TCP actions; mock injection must also use action_mode='tcp'")
+        if controller is not None:
+            return controller
+
+        return _MockTcpHoldController()
 
     def reset(self) -> None:
         """Called at the start of every rollout."""

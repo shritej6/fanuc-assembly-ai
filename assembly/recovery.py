@@ -61,6 +61,18 @@ class RetryRecoveryPlan:
     retry_number: int
 
 
+@dataclass(frozen=True, slots=True)
+class _RecoveryCompileContext:
+    inventory: Inventory
+    catalog: Catalog
+    poses: CalibratedPoseProvider
+    current: Waypoint
+    config: MotionConfig
+    max_position_error_mm: float
+    max_orientation_error_deg: float
+    observed_at_s: float
+
+
 class RecoveryTargetProvider(Protocol):
     """Cell-calibrated staging and reject targets; no defaults are safe."""
 
@@ -155,28 +167,21 @@ class RecoveryCoordinator:
         session, failed = self._state()
         stage = session.current
         if stage.kind is RecoveryStageKind.INSERT_SPARE:
-            if session.replacement_instance_id is None:
-                raise RecoveryError("recovery finished without a reserved exact spare")
-            session.advance(stage)
-            self._session = None
-            self._failed = None
+            self._finish_session(session, stage)
             return None
         part = inventory.item(stage.instance_id)
+        context = _RecoveryCompileContext(
+            inventory,
+            catalog,
+            poses,
+            current,
+            config,
+            max_position_error_mm,
+            max_orientation_error_deg,
+            observed_at_s,
+        )
         try:
-            return self._compile_stage(
-                stage,
-                part,
-                failed,
-                inventory,
-                catalog,
-                poses,
-                current,
-                config,
-                max_position_error_mm,
-                max_orientation_error_deg,
-                observed_at_s,
-                grasp,
-            )
+            return self._compile_stage(stage, part, failed, context, grasp)
         except RecoveryError:
             raise
         except Exception as error:
@@ -204,34 +209,37 @@ class RecoveryCoordinator:
             raise RecoveryError("no recovery session is active")
         return self._session, self._failed
 
+    def _finish_session(self, session: RecoverySession, stage: RecoveryStage) -> None:
+        if session.replacement_instance_id is None:
+            raise RecoveryError("recovery finished without a reserved exact spare")
+        session.advance(stage)
+        self._session = None
+        self._failed = None
+
     def _compile_stage(
         self,
         stage: RecoveryStage,
         part: InventoryItem,
         failed: PreparedPlanStep,
-        inventory: Inventory,
-        catalog: Catalog,
-        poses: CalibratedPoseProvider,
-        current: Waypoint,
-        config: MotionConfig,
-        max_position_error_mm: float,
-        max_orientation_error_deg: float,
-        observed_at_s: float,
+        context: _RecoveryCompileContext,
         grasp: OrientedPartPose | None,
     ) -> RecoveryStagePlan:
-        recipe = catalog.product(failed.record.product)
+        recipe = context.catalog.product(failed.record.product)
         recipe_step = next(step for step in recipe.steps if step.object_id == part.object_id)
-        base_pose = poses.base_for(inventory.active_reservation.base, observed_at_s=observed_at_s)
+        base_pose = context.poses.base_for(
+            context.inventory.active_reservation.base,
+            observed_at_s=context.observed_at_s,
+        )
         if stage.kind is RecoveryStageKind.REJECT_FAILED:
             return self._compile_reject_stage(
                 stage,
                 part,
                 recipe_step,
                 base_pose,
-                current,
-                config,
-                max_position_error_mm,
-                max_orientation_error_deg,
+                context.current,
+                context.config,
+                context.max_position_error_mm,
+                context.max_orientation_error_deg,
             )
         if grasp is None:
             raise RecoveryError("recovery re-pick requires a sourced FoundationPose grasp")
@@ -240,12 +248,8 @@ class RecoveryCoordinator:
             part,
             recipe,
             recipe_step,
-            inventory,
-            poses,
+            context,
             base_pose,
-            current,
-            config,
-            observed_at_s,
             grasp,
         )
 
@@ -287,27 +291,25 @@ class RecoveryCoordinator:
         part: InventoryItem,
         recipe: ProductRecipe,
         recipe_step: RecipeStep,
-        inventory: Inventory,
-        poses: CalibratedPoseProvider,
+        context: _RecoveryCompileContext,
         base_pose: OrientedPartPose,
-        current: Waypoint,
-        config: MotionConfig, observed_at_s: float, grasp: OrientedPartPose,
+        grasp: OrientedPartPose,
     ) -> RecoveryStagePlan:
         target, verification_target = self._stage_targets(
             stage,
             part,
             recipe,
             recipe_step,
-            inventory,
-            poses,
-            observed_at_s,
+            context.inventory,
+            context.poses,
+            context.observed_at_s,
         )
         chunks = compile_pick_to_insert(
-            current,
+            context.current,
             grasp,
             target,
             gripper_roll_deg=recipe_step.preferred_grasp.turn_deg,
-            config=config,
+            config=context.config,
         )
         return RecoveryStagePlan(
             stage,

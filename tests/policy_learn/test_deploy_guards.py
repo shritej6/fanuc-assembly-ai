@@ -1,10 +1,22 @@
 """Real-arm guard: every violation is refused (hold + reason) or clamped (with a reason), never passed silently."""
+
 from __future__ import annotations
+
+import hashlib
+import json
 
 import numpy as np
 import pytest
 
-from policy_learn.deploy.guards import ChunkGuard, ContactTarget, GuardLimits, hold_row, tilt_deg
+from policy_learn.deploy.guards import (
+    ChunkGuard,
+    ContactTarget,
+    GuardLimits,
+    InvalidGuardLimitsError,
+    UnsafeHoldError,
+    hold_row,
+    tilt_deg,
+)
 
 HOME = [300.0, 0.0, -90.0, -180.0, 0.0, 0.0]
 DT = 0.1
@@ -163,6 +175,88 @@ def test_clamped_row_rechecked_against_floor():
     assert res.held and any("after clamp" in r and "contact floor" in r for r in res.reasons)
 
 
-def test_hold_row_is_clipped_into_the_box():
-    row = hold_row([100.0, 0.0, -340.0, -180.0, 0.0, 0.0], 0.7)
-    np.testing.assert_allclose(row, [[150.0, 0.0, -334.0, -180.0, 0.0, 0.0, 1.0]])
+def test_hold_row_never_turns_an_invalid_pose_into_a_motion_command():
+    with pytest.raises(UnsafeHoldError, match="cannot issue a TCP hold"):
+        hold_row([100.0, 0.0, -340.0, -180.0, 0.0, 0.0], 0.7)
+
+
+@pytest.mark.parametrize("gripper", [float("nan"), float("inf"), 0.05, 0.5, 0.95, "unknown", True])
+def test_hold_row_never_guesses_an_invalid_gripper_state(gripper):
+    with pytest.raises(UnsafeHoldError, match="gripper"):
+        hold_row(HOME, gripper)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"max_speed_mm_s": float("nan")},
+        {"max_speed_mm_s": -1.0},
+        {"x_mm": (650.0, 150.0)},
+        {"x_mm": (150.0, "far")},
+        {"slow_speed_mm_s": 151.0},
+        {"refuse_factor": 1.0},
+        {"gripper_snap": 0.5},
+    ],
+)
+def test_guard_limits_reject_nonfinite_or_inconsistent_values(changes):
+    with pytest.raises(InvalidGuardLimitsError):
+        GuardLimits(status="MEASURED", source="CSI calibration report r1", **changes)
+
+
+def test_production_limits_require_measured_status_and_source():
+    assert GuardLimits().production_ready is False
+    assert GuardLimits(status="MEASURED", source="unbound claim").production_ready is False
+
+
+def _calibration_report(tmp_path, **changes):
+    defaults = GuardLimits()
+    values = {
+        name: getattr(defaults, name)
+        for name in (
+            "x_mm",
+            "y_mm",
+            "z_mm",
+            "max_abs_wpr_deg",
+            "max_tilt_deg",
+            "max_speed_mm_s",
+            "slow_speed_mm_s",
+            "max_rot_deg_s",
+            "slow_rot_deg_s",
+            "slow_zone_mm",
+            "floor_margin_mm",
+            "refuse_factor",
+            "gripper_snap",
+            "gripper_change_max_step_mm",
+        )
+    }
+    values.update(changes)
+    path = tmp_path / "guard-calibration.json"
+    path.write_text(json.dumps({"status": "MEASURED", "source": "CSI calibration run r1", "limits": values}))
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_production_limits_are_derived_from_a_hash_bound_report(tmp_path):
+    path, digest = _calibration_report(tmp_path, max_speed_mm_s=42.0)
+    limits = GuardLimits.from_calibration(path, digest)
+    assert limits.production_ready is True
+    assert limits.max_speed_mm_s == 42.0
+    with pytest.raises(InvalidGuardLimitsError, match="SHA-256"):
+        GuardLimits.from_calibration(path, "0" * 64)
+
+
+def test_calibration_report_rejects_unknown_fields(tmp_path):
+    path, _ = _calibration_report(tmp_path)
+    payload = json.loads(path.read_text())
+    payload["limits"]["unreviewed"] = 1.0
+    path.write_text(json.dumps(payload))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(InvalidGuardLimitsError, match="unknown"):
+        GuardLimits.from_calibration(path, digest)
+
+
+def test_calibration_report_rejects_symlink(tmp_path):
+    path, digest = _calibration_report(tmp_path)
+    link = tmp_path / "calibration-link.json"
+    link.symlink_to(path)
+    with pytest.raises(InvalidGuardLimitsError, match="non-symlink"):
+        GuardLimits.from_calibration(link, digest)

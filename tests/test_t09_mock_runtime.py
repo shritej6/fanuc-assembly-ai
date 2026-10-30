@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sys
 import tomllib
+import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from robot import guard_tcp_action
@@ -66,7 +68,11 @@ def test_t09_mock_checkpoint_is_explicit_and_forbidden_on_cell(policy_type) -> N
 
     assert policy.mock_only is True
     assert policy.ACTION == "tcp"
-    assert policy_type.ACTION == "joints"
+    assert policy_type.ACTION == "tcp"
+    assert policy_type.DT == 0.2
+    assert policy_type.PREFETCH is False
+    assert policy_type.CAMERAS == ["table", "side", "wrist"]
+    assert policy_type.DEPTH == ["table", "wrist"]
 
 
 def test_t09_mock_bootstraps_executes_faults_and_archives(policy_type) -> None:
@@ -98,16 +104,55 @@ def test_t09_mock_derives_non_default_layout_and_faults_from_trial_prompt(policy
     assert any(event.kind == "retry" and event.object_id == "M5_03" for event in policy.controller.events)
 
 
-def test_default_policy_remains_joint_hold_in_mock_runtime(policy_type) -> None:
-    joints = [-0.5, 3.0, -11.0, 0.0, -74.0, 0.0, 0.0]
+def test_default_policy_uses_explicit_tcp_hold_in_mock_runtime(policy_type) -> None:
+    joints = np.array([-0.5, 3.0, -11.0, 0.0, -74.0, 0.0, 0.0])
     policy = policy_type(runtime="mock")
 
     output = policy.act({"joints": joints, "tcp_pose": None})
 
-    assert output == joints
-    assert output is not joints
+    assert guard_tcp_action(output, dt=policy.DT) == output
+    assert output == [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
     assert policy.mock_only is False
-    assert policy.ACTION == "joints"
+    assert policy.ACTION == "tcp"
+
+
+def test_cell_runtime_uses_strict_factory_without_controller_fallback(policy_type, monkeypatch) -> None:
+    class CellController:
+        def reset(self) -> None:
+            pass
+
+        def act(self, observation):
+            del observation
+            return [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
+
+    calls: list[str | None] = []
+
+    def create_cell_policy(*, checkpoint: str | None):
+        calls.append(checkpoint)
+        return CellController()
+
+    runtime_module = types.ModuleType("assembly.cell_runtime")
+    runtime_module.create_cell_policy = create_cell_policy
+    monkeypatch.setitem(sys.modules, "assembly.cell_runtime", runtime_module)
+
+    policy = policy_type("checkpoint-path", runtime="cell")
+
+    assert calls == ["checkpoint-path"]
+    assert policy.ACTION == "tcp"
+    assert policy.act(_observation()) == [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
+
+
+def test_cell_runtime_rejects_injected_controller_bypass(policy_type) -> None:
+    class Controller:
+        def reset(self) -> None:
+            pass
+
+        def act(self, observation):
+            del observation
+            return [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
+
+    with pytest.raises(ValueError, match="does not accept injected"):
+        policy_type(controller=Controller(), action_mode="tcp", runtime="cell")
 
 
 def test_cell_project_locks_catalog_schema_dependency() -> None:
@@ -118,3 +163,13 @@ def test_cell_project_locks_catalog_schema_dependency() -> None:
     assert "jsonschema>=4.18" in dependencies
     assert 'name = "jsonschema"' in lock
     assert '{ name = "jsonschema", specifier = ">=4.18" }' in lock
+
+
+def test_cell_project_locks_groot_transport_dependencies() -> None:
+    project = tomllib.loads((CELL_DIR / "pyproject.toml").read_text())
+    dependencies = project["project"]["dependencies"]
+    lock = (CELL_DIR / "uv.lock").read_text()
+
+    for name in ("msgpack", "msgpack-numpy", "pyzmq"):
+        assert any(item.startswith(name) for item in dependencies)
+        assert f'name = "{name}"' in lock

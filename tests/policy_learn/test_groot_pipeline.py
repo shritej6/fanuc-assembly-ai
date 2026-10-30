@@ -36,6 +36,7 @@ def _random_tcp(n: int) -> np.ndarray:
 
 # ---------- pose conversion ----------
 
+
 def test_matrix_matches_deploy_guard_convention():
     guards = pytest.importorskip("policy_learn.deploy.guards")
     for w, p, r in _random_tcp(20)[:, 3:]:
@@ -74,27 +75,36 @@ def test_both_euler_solutions_are_the_same_rotation():
 
 # ---------- fake LeRobot export in DATA_FORMAT.md ----------
 
+
 def _episode(ep: int, n: int, start: int) -> pd.DataFrame:
     t = np.arange(n)
     tcp = np.column_stack([400 + t, -50 + 0.5 * t, -300 + 0.2 * t, np.full(n, -180.0), np.zeros(n), 30 + t * 2.0])
     grip = (t >= n // 2).astype(np.float64)
     joints = np.column_stack([RNG.normal(0, 20, (n, 6)), grip])
     action = np.column_stack([np.vstack([tcp[1:], tcp[-1:]]), np.append(grip[1:], grip[-1])])
-    return pd.DataFrame({
-        "observation.state": list(np.column_stack([joints, tcp]).astype(np.float32)),
-        "action": list(action.astype(np.float32)),
-        "timestamp": (t / prep.FPS).astype(np.float32),
-        "frame_index": t, "episode_index": np.full(n, ep), "index": start + t,
-        "task_index": np.full(n, ep % 2),
-    })
+    return pd.DataFrame(
+        {
+            "observation.state": list(np.column_stack([joints, tcp]).astype(np.float32)),
+            "action": list(action.astype(np.float32)),
+            "timestamp": (t / prep.FPS).astype(np.float32),
+            "frame_index": t,
+            "episode_index": np.full(n, ep),
+            "index": start + t,
+            "task_index": np.full(n, ep % 2),
+        }
+    )
 
 
 def make_export(root: Path, n_eps: int = 6, n_frames: int = 30) -> Path:
     (root / "meta").mkdir(parents=True)
     video_feat = {"dtype": "video", "shape": [360, 640, 3], "names": ["height", "width", "channels"]}
     info = {
-        "codebase_version": "v2.1", "robot_type": "fanuc_er4ia", "fps": prep.FPS, "chunks_size": 1000,
-        "data_path": prep.DATA_PATH, "video_path": prep.VIDEO_PATH,
+        "codebase_version": "v2.1",
+        "robot_type": "fanuc_er4ia",
+        "fps": prep.FPS,
+        "chunks_size": 1000,
+        "data_path": prep.DATA_PATH,
+        "video_path": prep.VIDEO_PATH,
         "features": {
             "observation.state": {"dtype": "float32", "shape": [13], "names": None},
             "action": {"dtype": "float32", "shape": [7], "names": None},
@@ -104,8 +114,9 @@ def make_export(root: Path, n_eps: int = 6, n_frames: int = 30) -> Path:
     }
     (root / "meta/info.json").write_text(json.dumps(info))
     tasks = ["pick M4_02 at (412.0, -87.5, yaw 33) gripping X", "insert M4_02 on F04 at (300.0, 120.0, yaw 90)"]
-    (root / "meta/tasks.jsonl").write_text("".join(json.dumps({"task_index": i, "task": s}) + "\n"
-                                                   for i, s in enumerate(tasks)))
+    (root / "meta/tasks.jsonl").write_text(
+        "".join(json.dumps({"task_index": i, "task": s}) + "\n" for i, s in enumerate(tasks))
+    )
     eps = []
     for ep in range(n_eps):
         df = _episode(ep, n_frames, ep * n_frames)
@@ -113,7 +124,9 @@ def make_export(root: Path, n_eps: int = 6, n_frames: int = 30) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
         for cam in prep.CAMERAS:
-            vid = root / prep.VIDEO_PATH.format(episode_chunk=0, episode_index=ep, video_key=f"observation.images.{cam}")
+            vid = root / prep.VIDEO_PATH.format(
+                episode_chunk=0, episode_index=ep, video_key=f"observation.images.{cam}"
+            )
             vid.parent.mkdir(parents=True, exist_ok=True)
             vid.write_bytes(b"not decoded by the prepare step")
         eps.append({"episode_index": ep, "tasks": [tasks[ep % 2]], "length": n_frames})
@@ -152,18 +165,24 @@ def test_modality_slices_pick_the_right_fields(prepared):
     df = pd.read_parquet(out / "train/pick_demo" / prep.DATA_PATH.format(episode_chunk=0, episode_index=0))
     state = np.stack(df["observation.state"].to_numpy())
     m = prep.MODALITY["state"]
-    np.testing.assert_array_equal(state[:, m["gripper"]["start"]:m["gripper"]["end"]], state[:, 6:7])
+    np.testing.assert_array_equal(state[:, m["gripper"]["start"] : m["gripper"]["end"]], state[:, 6:7])
     action = np.stack(df["action"].to_numpy())
     a = prep.MODALITY["action"]["gripper"]
-    assert set(action[:, a["start"]:a["end"]].ravel()) <= {0.0, 1.0}
+    assert set(action[:, a["start"] : a["end"]].ravel()) <= {0.0, 1.0}
 
 
-@pytest.mark.parametrize("breakage, message", [
-    (lambda root: _edit_info(root, fps=10), "fps"),
-    (lambda root: _edit_action(root, 0, 0, 700.0), "leaves"),
-    (lambda root: _edit_action(root, 1, 6, np.nan), "NaN"),
-    (lambda root: next(root.glob("videos/chunk-000/observation.images.side/episode_000002.mp4")).unlink(), "video side"),
-])
+@pytest.mark.parametrize(
+    "breakage, message",
+    [
+        (lambda root: _edit_info(root, fps=10), "fps"),
+        (lambda root: _edit_action(root, 0, 0, 700.0), "leaves"),
+        (lambda root: _edit_action(root, 1, 6, np.nan), "NaN"),
+        (
+            lambda root: next(root.glob("videos/chunk-000/observation.images.side/episode_000002.mp4")).unlink(),
+            "video side",
+        ),
+    ],
+)
 def test_prepare_rejects_bad_exports(tmp_path, breakage, message):
     src = make_export(tmp_path / "src" / "bad")
     breakage(src)
@@ -189,18 +208,26 @@ def _edit_action(root: Path, ep: int, col: int, value: float) -> None:
 
 # ---------- client: observation / action conversion and wire format ----------
 
+
 def _obs() -> dict:
     img = np.zeros((360, 640, 3), np.uint8)
-    return {"images": {c: img for c in ("table", "side", "wrist")}, "joints": [0, 10, -20, 0, -70, 30, 0],
-            "tcp_pose": [400, 0, -300, -180, 0, 30], "trial": {"instruction": "pick M4_02 at (412.0, -87.5, yaw 33)"}}
+    return {
+        "images": {c: img for c in ("table", "side", "wrist")},
+        "joints": [0, 10, -20, 0, -70, 30, 0],
+        "tcp_pose": [400, 0, -300, -180, 0, 30],
+        "trial": {"instruction": "pick M4_02 at (412.0, -87.5, yaw 33)"},
+    }
 
 
 def test_obs_to_groot_shapes_and_dtypes():
     gc = pytest.importorskip("policy_learn.groot.groot_client")
     g = gc.obs_to_groot(_obs())
     assert all(v.shape == (1, 1, 360, 640, 3) and v.dtype == np.uint8 for v in g["video"].values())
-    assert {k: v.shape for k, v in g["state"].items()} == {"eef_9d": (1, 1, 9), "gripper": (1, 1, 1),
-                                                           "joints": (1, 1, 6)}
+    assert {k: v.shape for k, v in g["state"].items()} == {
+        "eef_9d": (1, 1, 9),
+        "gripper": (1, 1, 1),
+        "joints": (1, 1, 6),
+    }
     assert all(v.dtype == np.float32 for v in g["state"].values())
     assert g["language"] == {gc.LANGUAGE_KEY: [["pick M4_02 at (412.0, -87.5, yaw 33)"]]}
     with pytest.raises(ValueError, match="instruction"):
@@ -210,7 +237,7 @@ def test_obs_to_groot_shapes_and_dtypes():
 def _fake_action(obs: dict, horizon: int = 16) -> dict:
     tcp = np.asarray(obs["tcp_pose"], float)
     rows = np.tile(tcp, (horizon, 1))
-    rows[:, 2] -= np.arange(horizon)            # go down 1 mm per row
+    rows[:, 2] -= np.arange(horizon)  # go down 1 mm per row
     rows[:, 5] = 175 + np.arange(horizon) * 1.0  # r crosses 180
     return {"eef_9d": tcp_to_eef9d(rows)[None], "gripper": np.linspace(0, 1, horizon, dtype=np.float32)[None, :, None]}
 
@@ -222,7 +249,7 @@ def test_groot_to_rows_gives_absolute_continuous_act_tcp():
     np.testing.assert_allclose(rows[:, 2], -300 - np.arange(8), atol=1e-3)
     np.testing.assert_allclose(rows[:, 5], 175 + np.arange(8), atol=1e-3)
     np.testing.assert_allclose(rows[:, 3], -180, atol=1e-3)
-    assert set(rows[:, 6]) <= {0.0, 1.0}
+    np.testing.assert_allclose(rows[:, 6], np.linspace(0, 1, 16)[:8], atol=1e-7)
 
 
 def _serve_once(socket, unpack, pack, handler) -> None:
@@ -258,16 +285,50 @@ def test_client_round_trip_over_zmq():
     assert seen["language"][gc.LANGUAGE_KEY] == [["pick M4_02 at (412.0, -87.5, yaw 33)"]]
 
 
+def test_client_describe_requires_the_versioned_attestation_envelope():
+    gc = pytest.importorskip("policy_learn.groot.groot_client")
+
+    class Calling:
+        def __init__(self, reply):
+            self.reply = reply
+
+        def call(self, endpoint, data=None):
+            assert endpoint == "describe" and data is None
+            return self.reply
+
+    valid = {
+        "protocol": "fanuc-groot-attestation-v1",
+        "attestation": {"checkpoint_sha256": "a" * 64},
+    }
+    client = object.__new__(gc.GrootTcpClient)
+    client.call = Calling(valid).call
+    assert client.describe() == valid["attestation"]
+
+    for bad in (
+        {},
+        {"protocol": "wrong", "attestation": {}},
+        {
+            "protocol": "fanuc-groot-attestation-v1",
+            "attestation": [],
+        },
+    ):
+        client.call = Calling(bad).call
+        with pytest.raises(gc.PolicyServerError, match="attestation"):
+            client.describe()
+
+
 # ---------- cross-checks against the real Isaac-GR00T code ----------
+
 
 @pytest.fixture(scope="module")
 def groot():
     sys.path.insert(0, GROOT_SRC)
-    if "gr00t.policy" not in sys.modules:   # skip gr00t/policy/__init__ (it imports torch)
+    if "gr00t.policy" not in sys.modules:  # skip gr00t/policy/__init__ (it imports torch)
         pkg = types.ModuleType("gr00t.policy")
         pkg.__path__ = [str(Path(GROOT_SRC) / "gr00t/policy")]
         sys.modules["gr00t.policy"] = pkg
     from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS
+
     if "new_embodiment" not in MODALITY_CONFIGS:
         importlib.import_module("policy_learn.groot.fanuc_er4ia_config")
     return MODALITY_CONFIGS
@@ -277,6 +338,7 @@ def groot():
 def test_rot6d_matches_groot_end_effector_pose(groot):
     from gr00t.data.state_action.pose import EndEffectorPose
     from gr00t.data.types import ActionFormat
+
     for row in tcp_to_eef9d(_random_tcp(20)):
         pose = EndEffectorPose.from_action_format(row.astype(np.float64), ActionFormat.XYZ_ROT6D)
         np.testing.assert_allclose(pose.xyz_rot6d, row, atol=1e-5)
@@ -288,6 +350,7 @@ def test_groot_stats_and_processor_round_trip(groot, prepared):
     from gr00t.data.embodiment_tags import EmbodimentTag
     from gr00t.data.state_action.state_action_processor import StateActionProcessor
     from gr00t.data.stats import generate_rel_stats, generate_stats
+
     _, out, _ = prepared
     ds = out / "train" / "pick_demo"
     generate_stats(ds)
@@ -296,8 +359,9 @@ def test_groot_stats_and_processor_round_trip(groot, prepared):
     loader = LeRobotEpisodeLoader(ds, cfg)
     stats = loader.get_dataset_statistics()
     assert set(stats["relative_action"]) == {"eef_9d"}
-    proc = StateActionProcessor({"new_embodiment": cfg}, {"new_embodiment": stats}, use_percentiles=True,
-                                use_relative_action=True)
+    proc = StateActionProcessor(
+        {"new_embodiment": cfg}, {"new_embodiment": stats}, use_percentiles=True, use_relative_action=True
+    )
     df = loader[0]
     horizon = len(cfg["action"].delta_indices)
     state = {k: np.stack(df[f"state.{k}"].to_numpy())[:1] for k in cfg["state"].modality_keys}
@@ -313,8 +377,10 @@ def test_groot_stats_and_processor_round_trip(groot, prepared):
 def test_client_bytes_decode_with_groot_serializer(groot):
     gc = pytest.importorskip("policy_learn.groot.groot_client")
     from gr00t.policy.server_client import MsgSerializer
-    request = MsgSerializer.from_bytes(gc.pack({"endpoint": "get_action", "data": {
-        "observation": gc.obs_to_groot(_obs()), "options": None}}))
+
+    request = MsgSerializer.from_bytes(
+        gc.pack({"endpoint": "get_action", "data": {"observation": gc.obs_to_groot(_obs()), "options": None}})
+    )
     obs = request["data"]["observation"]
     assert obs["video"]["wrist"].shape == (1, 1, 360, 640, 3) and obs["state"]["joints"].dtype == np.float32
     reply = gc.unpack(MsgSerializer.to_bytes([_fake_action(_obs()), {}]))

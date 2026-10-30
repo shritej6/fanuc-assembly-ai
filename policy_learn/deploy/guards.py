@@ -15,15 +15,66 @@ passes a bad chunk silently:
 Units: mm, degrees, seconds; frame UF0 (identical to `CellClient.act_tcp`). Fingers straight down: w, p, r = -180, 0, R.
 The speed limits are PRELIMINARY engineering choices, not measured values; tune them only with the user.
 """
+
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import stat
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
 ROW_LEN = 7  # x, y, z, w, p, r, gripper
 MAX_CHUNK = 100
 DT_RANGE = (0.1, 1.0)
+_LIMIT_FIELDS = (
+    "x_mm",
+    "y_mm",
+    "z_mm",
+    "max_abs_wpr_deg",
+    "max_tilt_deg",
+    "max_speed_mm_s",
+    "slow_speed_mm_s",
+    "max_rot_deg_s",
+    "slow_rot_deg_s",
+    "slow_zone_mm",
+    "floor_margin_mm",
+    "refuse_factor",
+    "gripper_snap",
+    "gripper_change_max_step_mm",
+)
+
+
+class UnsafeHoldError(RuntimeError):
+    """The observed TCP cannot be represented as a zero-motion official hold command."""
+
+
+class InvalidGuardLimitsError(ValueError):
+    """Guard limits are non-finite, inverted, or internally inconsistent."""
+
+
+def _finite_scalar(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float, np.number)) and np.isfinite(float(value))
+
+
+def _read_regular_bytes(path: Path, label: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise InvalidGuardLimitsError(f"{label} must be one readable non-symlink file") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise InvalidGuardLimitsError(f"{label} must be one regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            return source.read()
+    except OSError as error:
+        raise InvalidGuardLimitsError(f"{label} could not be read") from error
+    finally:
+        os.close(descriptor)
 
 
 @dataclass(frozen=True)
@@ -33,17 +84,98 @@ class GuardLimits:
     x_mm: tuple[float, float] = (150.0, 650.0)
     y_mm: tuple[float, float] = (-450.0, 450.0)
     z_mm: tuple[float, float] = (-334.0, 300.0)
-    max_abs_wpr_deg: float = 360.0          # the official client's check on w, p, r
-    max_tilt_deg: float = 6.0               # fingers-down cone: insertion tilts about 3 deg plus a +-2 deg twist margin
-    max_speed_mm_s: float = 150.0           # PRELIMINARY
-    slow_speed_mm_s: float = 10.0           # PRELIMINARY: the last 5 mm before contact
-    max_rot_deg_s: float = 60.0             # PRELIMINARY
-    slow_rot_deg_s: float = 15.0            # PRELIMINARY
-    slow_zone_mm: float = 5.0               # ROBOT_BRAIN section 2: the last 5 mm is slow
-    floor_margin_mm: float = 1.0            # ROBOT_BRAIN section 2: never lower than seated height - 1 mm
-    refuse_factor: float = 3.0              # a step over 3x the limit is a glitch: refuse instead of clamp
-    gripper_snap: float = 0.1               # 0.93 counts as closed; 0.5 is refused
+    max_abs_wpr_deg: float = 360.0  # the official client's check on w, p, r
+    max_tilt_deg: float = 6.0  # fingers-down cone: insertion tilts about 3 deg plus a +-2 deg twist margin
+    max_speed_mm_s: float = 150.0  # PRELIMINARY
+    slow_speed_mm_s: float = 10.0  # PRELIMINARY: the last 5 mm before contact
+    max_rot_deg_s: float = 60.0  # PRELIMINARY
+    slow_rot_deg_s: float = 15.0  # PRELIMINARY
+    slow_zone_mm: float = 5.0  # ROBOT_BRAIN section 2: the last 5 mm is slow
+    floor_margin_mm: float = 1.0  # ROBOT_BRAIN section 2: never lower than seated height - 1 mm
+    refuse_factor: float = 3.0  # a step over 3x the limit is a glitch: refuse instead of clamp
+    gripper_snap: float = 0.1  # 0.93 counts as closed; 0.5 is refused
     gripper_change_max_step_mm: float = 2.0  # the gripper opens/closes only while (nearly) still
+    status: str = "PRELIMINARY"
+    source: str = "T12 engineering defaults; not approved for CELL"
+    _calibration_sha256: str | None = field(default=None, init=False, repr=False)
+    _calibration_path: str | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, str) or not isinstance(self.source, str):
+            raise InvalidGuardLimitsError("guard status and source must be strings")
+        intervals = (("x_mm", self.x_mm), ("y_mm", self.y_mm), ("z_mm", self.z_mm))
+        for label, interval in intervals:
+            valid = (
+                isinstance(interval, tuple)
+                and len(interval) == 2
+                and all(_finite_scalar(item) for item in interval)
+                and interval[0] < interval[1]
+            )
+            if not valid:
+                raise InvalidGuardLimitsError(f"{label} must be one finite increasing interval")
+        positive = {
+            "max_abs_wpr_deg": self.max_abs_wpr_deg,
+            "max_tilt_deg": self.max_tilt_deg,
+            "max_speed_mm_s": self.max_speed_mm_s,
+            "slow_speed_mm_s": self.slow_speed_mm_s,
+            "max_rot_deg_s": self.max_rot_deg_s,
+            "slow_rot_deg_s": self.slow_rot_deg_s,
+            "slow_zone_mm": self.slow_zone_mm,
+            "refuse_factor": self.refuse_factor,
+        }
+        if any(not _finite_scalar(value) or value <= 0.0 for value in positive.values()):
+            raise InvalidGuardLimitsError("guard limits must contain finite positive magnitudes")
+        if self.slow_speed_mm_s > self.max_speed_mm_s or self.slow_rot_deg_s > self.max_rot_deg_s:
+            raise InvalidGuardLimitsError("slow-zone limits cannot exceed free-space limits")
+        if self.max_tilt_deg > 180.0 or self.refuse_factor <= 1.0:
+            raise InvalidGuardLimitsError("tilt/refusal limits are outside their valid ranges")
+        if not _finite_scalar(self.floor_margin_mm) or self.floor_margin_mm < 0.0:
+            raise InvalidGuardLimitsError("floor margin must be finite and nonnegative")
+        if not _finite_scalar(self.gripper_snap) or not 0.0 <= self.gripper_snap < 0.5:
+            raise InvalidGuardLimitsError("gripper snap must be finite and below 0.5")
+        if not _finite_scalar(self.gripper_change_max_step_mm) or self.gripper_change_max_step_mm < 0.0:
+            raise InvalidGuardLimitsError("gripper change distance must be finite and nonnegative")
+
+    @property
+    def production_ready(self) -> bool:
+        return (
+            self.status == "MEASURED"
+            and bool(self.source.strip())
+            and self._calibration_sha256 is not None
+            and self._calibration_path is not None
+        )
+
+    @property
+    def calibration_sha256(self) -> str | None:
+        """Digest of the report that supplied every limit, absent for direct constructors."""
+        return self._calibration_sha256
+
+    @classmethod
+    def from_calibration(cls, path: str | Path, expected_sha256: str) -> GuardLimits:
+        """Load every production limit from one immutable measured report."""
+        report = Path(path)
+        raw = _read_regular_bytes(report, "calibration report")
+        measured = hashlib.sha256(raw).hexdigest()
+        if measured != expected_sha256:
+            raise InvalidGuardLimitsError("calibration report does not match its reviewed SHA-256")
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise InvalidGuardLimitsError("calibration report is not valid JSON") from error
+        if not isinstance(payload, dict) or set(payload) != {"status", "source", "limits"}:
+            raise InvalidGuardLimitsError("calibration report fields must be status, source, and limits")
+        values = payload["limits"]
+        if not isinstance(values, dict) or set(values) != set(_LIMIT_FIELDS):
+            raise InvalidGuardLimitsError("calibration report has missing or unknown limit fields")
+        for field_name in ("x_mm", "y_mm", "z_mm"):
+            value = values[field_name]
+            if not isinstance(value, list):
+                raise InvalidGuardLimitsError(f"calibration {field_name} must be a JSON array")
+            values[field_name] = tuple(value)
+        limits = cls(**values, status=payload["status"], source=payload["source"])
+        object.__setattr__(limits, "_calibration_sha256", measured)
+        object.__setattr__(limits, "_calibration_path", str(report.resolve()))
+        return limits
 
 
 DEFAULT_LIMITS = GuardLimits()
@@ -66,9 +198,9 @@ class ContactTarget:
 
 @dataclass(frozen=True)
 class GuardResult:
-    rows: np.ndarray                  # (N, 7) rows safe to send
-    passed: bool                      # True: the chunk went through unchanged
-    held: bool                        # True: the chunk was refused and `rows` is one hold row
+    rows: np.ndarray  # (N, 7) rows safe to send
+    passed: bool  # True: the chunk went through unchanged
+    held: bool  # True: the chunk was refused and `rows` is one hold row
     reasons: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -100,13 +232,37 @@ def _wrap180(a: np.ndarray | float) -> np.ndarray | float:
 
 
 def hold_row(current_pose, gripper: float, limits: GuardLimits | None = None) -> np.ndarray:
-    """Stay where the arm is, keep the gripper as it is. Clipped into the box so the cell accepts it."""
+    """Stay exactly where the arm is; never turn an invalid observation into commanded motion."""
     limits = limits or DEFAULT_LIMITS
-    pose = np.asarray(current_pose, dtype=float)[:6].copy()
+    try:
+        pose = np.asarray(current_pose, dtype=float)
+    except (TypeError, ValueError) as error:
+        raise UnsafeHoldError("cannot issue a TCP hold from a non-numeric pose") from error
+    if pose.shape != (6,) or not np.isfinite(pose).all():
+        raise UnsafeHoldError("cannot issue a TCP hold without one finite six-axis pose")
     for k, (lo, hi) in enumerate((limits.x_mm, limits.y_mm, limits.z_mm)):
-        pose[k] = np.clip(pose[k], lo, hi)
-    grip = 1.0 if float(gripper) >= 0.5 else 0.0
-    return np.concatenate([pose, [grip]])[None, :]
+        if not lo <= pose[k] <= hi:
+            raise UnsafeHoldError("cannot issue a TCP hold from outside the official workspace")
+    if np.abs(pose[3:6]).max() > limits.max_abs_wpr_deg:
+        raise UnsafeHoldError("cannot issue a TCP hold from outside the official orientation bounds")
+    grip = observed_gripper_state(gripper, limits)
+    return np.concatenate([pose.copy(), [grip]])[None, :]
+
+
+def observed_gripper_state(value: object, limits: GuardLimits | None = None) -> float:
+    """Return a binary observed state only when the sensor value is unambiguous."""
+    del limits  # command snapping is not valid authority for observed sensor state
+    if isinstance(value, bool):
+        raise UnsafeHoldError("observed gripper state must be numeric, not boolean")
+    try:
+        gripper = float(value)
+    except (TypeError, ValueError) as error:
+        raise UnsafeHoldError("observed gripper state must be numeric") from error
+    if not np.isfinite(gripper):
+        raise UnsafeHoldError("observed gripper state must be finite")
+    if gripper in (0.0, 1.0):
+        return gripper
+    raise UnsafeHoldError("observed gripper state is neither unambiguously open nor closed")
 
 
 class ChunkGuard:
@@ -125,11 +281,17 @@ class ChunkGuard:
         if reasons:
             return GuardResult(hold, False, True, tuple(reasons))
         chunk = np.array(rows, dtype=float).reshape(-1, ROW_LEN)
-        hard = (self._check_box(chunk) + self._check_orientation(chunk) + self._check_floor(chunk)
-                + self._snap_gripper(chunk))
+        hard = (
+            self._check_box(chunk)
+            + self._check_orientation(chunk)
+            + self._check_floor(chunk)
+            + self._snap_gripper(chunk)
+        )
         if hard:
             return GuardResult(hold, False, True, tuple(hard))
-        start = np.concatenate([np.asarray(current_pose, dtype=float)[:6], [1.0 if current_gripper >= 0.5 else 0.0]])
+        start = np.concatenate(
+            [np.asarray(current_pose, dtype=float)[:6], [observed_gripper_state(current_gripper, self.limits)]]
+        )
         speed_reasons, refused = self._limit_steps(chunk, start, dt)
         grip_reasons = self._check_gripper_motion(chunk, start)
         if refused or grip_reasons:
@@ -207,13 +369,18 @@ class ChunkGuard:
             ratio = max(dist / v_max, ang / w_max)
             if ratio > lim.refuse_factor:
                 zone = "slow zone " if in_slow else ""
-                return [(f"row {i}: step {dist:.1f} mm / {ang:.1f} deg in {dt} s is {ratio:.1f}x the {zone}limit "
-                         f"(refuse above {lim.refuse_factor}x)")], True
+                return [
+                    (
+                        f"row {i}: step {dist:.1f} mm / {ang:.1f} deg in {dt} s is {ratio:.1f}x the {zone}limit "
+                        f"(refuse above {lim.refuse_factor}x)"
+                    )
+                ], True
             if ratio > 1.0:
                 chunk[i, :3] = prev[:3] + d_xyz / ratio
                 chunk[i, 3:6] = prev[3:6] + d_wpr / ratio
-                reasons.append(f"row {i}: step clamped from {dist:.1f} mm / {ang:.1f} deg to the "
-                               f"{'slow ' if in_slow else ''}limit")
+                reasons.append(
+                    f"row {i}: step clamped from {dist:.1f} mm / {ang:.1f} deg to the {'slow ' if in_slow else ''}limit"
+                )
             prev = chunk[i]
         return reasons, False
 
@@ -227,8 +394,12 @@ class ChunkGuard:
             prev = start if i == 0 else chunk[i - 1]
             step = float(np.linalg.norm(chunk[i, :3] - prev[:3]))
             if step > self.limits.gripper_change_max_step_mm:
-                return [(f"row {i}: gripper changes while moving {step:.1f} mm in one step "
-                         f"(limit {self.limits.gripper_change_max_step_mm} mm)")]
+                return [
+                    (
+                        f"row {i}: gripper changes while moving {step:.1f} mm in one step "
+                        f"(limit {self.limits.gripper_change_max_step_mm} mm)"
+                    )
+                ]
         return []
 
 
