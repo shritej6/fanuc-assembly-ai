@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 
 from . import episodes, frames, hdf5_io
-from .backends import KinematicBackend, NoCase, base_of
+from .backends import KinematicBackend, NoCase, base_of, sheet_parts
 from .force_guard import ForceGuard, LimitsError, load_limits
 from .gates import GateFailed
 from .motion import MotionError
@@ -50,6 +50,11 @@ def isaac_out_path(out: Path, scenario: str, product: int, seed: int) -> Path:
     pick_insert dir, and two such jobs that start in the same second must not open the same file (run10 lock clash)."""
     stamp = time.strftime("%Y%m%d_%H%M%S")
     return out / SEED_DIR[scenario] / f"product_{product}_{scenario}_{stamp}_s{seed}.hdf5"
+
+
+def part_path(path: Path, part: str) -> Path:
+    """One part's recorder file next to the job's base name (scenario + seed + part: unique per job and part)."""
+    return path.with_name(f"{path.stem}_{part}{path.suffix}")
 
 
 def _staged(rng: np.random.Generator, capture_mm: float) -> tuple[float, float, float]:
@@ -109,8 +114,14 @@ def record(backend, scenario: str, products: list[int], target: int, out: Path, 
     rng = np.random.default_rng(seed)
     summary = {}
     for product in products:
-        run.path = path or out / SEED_DIR[scenario] / f"product_{product}.hdf5"
-        for part in backend.parts(product):
+        for i, part in enumerate(backend.parts(product)):
+            if not hasattr(backend, "rotate"):  # kinematic: hdf5_io appends every part to one file
+                run.path = path or out / SEED_DIR[scenario] / f"product_{product}.hdf5"
+            else:  # isaac: one closed file per part, the recorder moves on to the next part's file
+                run.path = part_path(path, part)
+                if i > 0:
+                    backend.rotate(run.path)
+                    run.metas = []
             stats = _record_part(backend, scenario, product, part, target, rng, run)
             summary[f"{product}:{part}"] = stats
             _write_stats(run.path, part, scenario, stats)
@@ -327,7 +338,8 @@ def main(argv=None) -> int:
 
         path = isaac_out_path(a.out, a.scenario, a.products[0], a.seed)
         path.parent.mkdir(parents=True, exist_ok=True)
-        backend = IsaacBackend(a.scenario, a.products[0], str(path), a.device, tuple(a.cameras))
+        first = part_path(path, sheet_parts(a.products[0])[0])
+        backend = IsaacBackend(a.scenario, a.products[0], str(first), a.device, tuple(a.cameras))
     products = [p for p in a.products if p in backend.products]
     try:
         record(backend, a.scenario, products, a.target, a.out, a.seed, a.max_attempts, a.limits,
@@ -341,7 +353,7 @@ def main(argv=None) -> int:
         raise
     finally:
         if backend.name == "isaac":
-            backend.close(path)
+            backend.close(backend.record_path)
     return 0
 
 

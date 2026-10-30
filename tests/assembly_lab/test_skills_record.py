@@ -401,3 +401,39 @@ def test_jaw_close_is_in_the_substep_trace(limits):
     rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
     episodes.pick_insert(rec, pick, ins)
     assert any(t["phase"] == "close" for t in rec.substep_trace)
+
+
+def test_isaac_runs_close_one_file_per_part(tmp_path, monkeypatch):
+    """Mimic reads closed files while run10 goes on: every part gets its own recorder file, rotated between parts."""
+    class Rotating:
+        name = "isaac"
+        products = (1,)
+
+        def __init__(self):
+            self.rotations = []
+
+        def parts(self, product):
+            return ["M1_01", "M1_02", "M1_03"]
+
+        def rotate(self, next_path):
+            self.rotations.append(next_path)
+
+    seen = []
+
+    def fake_part(backend, scenario, product, part, target, rng, run):
+        seen.append((part, run.path, len(run.metas)))
+        run.metas.append({"part": part})
+        return {"attempts": 1, "kept_or_would_keep": 1}
+
+    monkeypatch.setattr(record, "_record_part", fake_part)
+    lim = tmp_path / "limits.yaml"
+    lim.write_text(LIMITS)
+    base = record.isaac_out_path(tmp_path, "build", 1, 7)
+    backend = Rotating()
+    record.record(backend, "build", [1], 3, tmp_path, 7, 8, lim, path=base)
+    paths = [p for _, p, _ in seen]
+    assert [p.name for p in paths] == [f"{base.stem}_{part}.hdf5" for part in ("M1_01", "M1_02", "M1_03")]
+    assert backend.rotations == paths[1:]  # the first part records into the file the env was built with
+    assert [n for *_, n in seen] == [0, 0, 0]  # metadata restarts with each file (demo_0 is the file's first)
+    for p in paths:
+        assert p.with_name(p.stem + "_stats.json").exists()

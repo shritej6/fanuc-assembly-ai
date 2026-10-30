@@ -58,6 +58,7 @@ class IsaacBackend:
         self.raw = AssemblyCellEnv(CellEnvCfg(device=device, pool=pool, cameras=tuple(cameras),
                                               skill=SKILL_OF[scenario], record_to=record_to))
         self.env = LocalFrameEnv(self.raw)
+        self.record_path = record_to  # the recorder file now being written; rotate() moves to the next part's
         self.installed: dict[str, str] = {}
         self.plans: tuple | None = None
         self.refusal: str | None = None
@@ -203,6 +204,28 @@ class IsaacBackend:
         if rm is not None:
             rm.set_success_to_episodes(None, torch.tensor([[bool(ok)]], dtype=torch.bool, device=self.raw.env.device))
 
+    def rotate(self, next_path: str) -> dict | None:
+        """Close the current part's file (export its last episode, annotate it) and record on into `next_path`, so
+        each part's demos are readable as soon as that part is done (Mimic reads closed files while the run goes on)."""
+        rm = self.raw.env.recorder_manager
+        if rm is None:
+            return None
+        rm.export_episodes()
+        rm._dataset_file_handler.close()  # Isaac Lab has no public rotate; the handler is the file
+        report = self._annotate(self.record_path)
+        rm._dataset_file_handler = rm.cfg.dataset_file_handler_class_type()
+        rm._dataset_file_handler.create(str(next_path), env_name=getattr(self.raw.env.cfg, "env_name", None))
+        self.record_path = str(next_path)
+        return report
+
+    @staticmethod
+    def _annotate(path) -> dict:
+        from .hdf5_io import annotate_recorder_file
+
+        report = annotate_recorder_file(path)
+        print(f"[record] annotated {path}: {report}", flush=True)
+        return report
+
     def close(self, annotate_path=None) -> dict | None:
         """Export the last episode and close the recorder file, add agent 3's metadata to it, then shut the app down
         (SimulationApp.close() ends the process, so nothing can run after it)."""
@@ -212,10 +235,7 @@ class IsaacBackend:
             rm.export_episodes()
             rm.close()
         if annotate_path is not None:
-            from .hdf5_io import annotate_recorder_file
-
-            report = annotate_recorder_file(annotate_path)
-            print(f"[record] annotated {annotate_path}: {report}", flush=True)
+            report = self._annotate(annotate_path)
         self.env.close()
         return report
 
