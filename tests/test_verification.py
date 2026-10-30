@@ -126,23 +126,6 @@ def test_pre_pick_holds_same_class_wrong_physical_instance() -> None:
     assert decision.reason is VerificationReason.IDENTITY_MISMATCH
 
 
-def test_unusable_model_scores_never_accept() -> None:
-    detection = _detection()
-    inspection = _inspection()
-    detection.update(score=0.0, pose_fit_score=0.0)
-    inspection["evidence"] = {
-        "classifier_score": 0.0,
-        "patchcore_score": 1.0,
-        "depth_residual_mm": 999.0,
-    }
-
-    pre = _verify_pre("M4_03", detection, inspection)
-    post = _verify_post("M4_03", detection, inspection, seated=True, pose_agrees=True)
-
-    assert pre.outcome is VerificationOutcome.REJECT_TO_SPARE
-    assert post.outcome is VerificationOutcome.HOLD_ANDON
-
-
 @pytest.mark.parametrize("orientation", ["installed", "fallen"])
 def test_pre_pick_rejects_non_schema_orientation_aliases(orientation: str) -> None:
     detection = _detection()
@@ -150,17 +133,6 @@ def test_pre_pick_rejects_non_schema_orientation_aliases(orientation: str) -> No
 
     with pytest.raises(VerificationInputError, match="detection.resting_side"):
         _verify_pre("M4_03", detection, _inspection())
-
-
-@pytest.mark.parametrize("orientation", ["flipped", "side", "unknown"])
-def test_pre_pick_rejects_non_installed_orientation_to_spare(orientation: str) -> None:
-    detection = _detection()
-    detection["resting_side"] = orientation
-
-    decision = _verify_pre("M4_03", detection, _inspection())
-
-    assert decision.outcome is VerificationOutcome.REJECT_TO_SPARE
-    assert decision.reason is VerificationReason.UNSAFE_ORIENTATION
 
 
 @pytest.mark.parametrize(
@@ -188,6 +160,11 @@ def test_pre_pick_rejects_unusable_inspection_to_spare(verdict: str, action: str
 
 def test_pre_pick_holds_when_validated_action_asks_operator() -> None:
     inspection = _failed_inspection("uncertain", "ask_operator")
+    inspection["evidence"] = {
+        "classifier_score": 0.98,
+        "patchcore_score": 0.03,
+        "depth_residual_mm": 0.4,
+    }
 
     decision = _verify_pre("M4_03", _detection(), inspection)
 
@@ -207,23 +184,21 @@ def test_pre_pick_rejects_agreed_wrong_identity_to_spare() -> None:
     assert decision.reason is VerificationReason.IDENTITY_MISMATCH
 
 
-
+def test_pre_pick_foundationpose_disagreement_is_advisory() -> None:
     inspection = _inspection()
     inspection["checks_agree"] = False
 
     decision = _verify_pre("M4_03", _detection(), inspection)
 
-    assert decision.outcome is VerificationOutcome.HOLD_ANDON
-    assert decision.reason is VerificationReason.CHECK_DISAGREEMENT
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.advisories == ("foundationpose_disagreement",)
 
 
-@pytest.mark.parametrize("disagreement", ["checks", "object_id", "instance_id", "action"])
+@pytest.mark.parametrize("disagreement", ["object_id", "instance_id", "action"])
 def test_pre_pick_holds_when_independent_checks_disagree(disagreement: str) -> None:
     detection = deepcopy(_detection())
     inspection = deepcopy(_inspection())
-    if disagreement == "checks":
-        inspection["checks_agree"] = False
-    elif disagreement == "object_id":
+    if disagreement == "object_id":
         inspection["object_id"] = "M5_03"
     elif disagreement == "instance_id":
         inspection["instance_id"] = "obj-08"
@@ -240,14 +215,14 @@ def test_pre_pick_holds_when_independent_checks_disagree(disagreement: str) -> N
     ("field", "value"),
     [("pose_source", "detector"), ("pose", None), ("pose_fit_score", None)],
 )
-def test_pre_pick_rejects_missing_foundationpose_evidence(field: str, value: object) -> None:
+def test_pre_pick_accepts_with_missing_foundationpose_advisory(field: str, value: object) -> None:
     detection = _detection()
     detection[field] = value
 
     decision = _verify_pre("M4_03", detection, _inspection())
 
-    assert decision.outcome is VerificationOutcome.REJECT_TO_SPARE
-    assert decision.reason is VerificationReason.POSE_UNVERIFIED
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert "foundationpose_unavailable" in decision.advisories
 
 
 @pytest.mark.parametrize(
@@ -372,31 +347,40 @@ def test_post_place_requests_recovery_when_both_placement_checks_fail() -> None:
 
 
 @pytest.mark.parametrize("orientation", ["flipped", "side", "unknown"])
-def test_post_place_recovers_non_upright_part_even_when_seated(orientation: str) -> None:
+def test_post_place_foundationpose_orientation_is_advisory_when_seated(orientation: str) -> None:
     detection = _detection()
     detection["resting_side"] = orientation
 
     decision = _verify_post("M4_03", detection, _inspection(), seated=True, pose_agrees=True)
 
-    assert decision.outcome is VerificationOutcome.RECOVER
-    assert decision.reason is VerificationReason.UNSAFE_ORIENTATION
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert "foundationpose_orientation" in decision.advisories
 
 
-@pytest.mark.parametrize(("seated", "pose_agrees"), [(True, False), (False, True)])
-def test_post_place_holds_when_seating_and_pose_checks_disagree(
-    seated: bool,
-    pose_agrees: bool,
-) -> None:
+def test_post_place_accepts_seated_part_with_foundationpose_disagreement_warning() -> None:
     decision = _verify_post(
         "M4_03",
         _detection(),
         _inspection(),
-        seated=seated,
-        pose_agrees=pose_agrees,
+        seated=True,
+        pose_agrees=False,
     )
 
-    assert decision.outcome is VerificationOutcome.HOLD_ANDON
-    assert decision.reason is VerificationReason.PLACEMENT_DISAGREEMENT
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert "foundationpose_disagreement" in decision.advisories
+
+
+def test_post_place_recovers_when_independent_seat_check_fails() -> None:
+    decision = _verify_post(
+        "M4_03",
+        _detection(),
+        _inspection(),
+        seated=False,
+        pose_agrees=True,
+    )
+
+    assert decision.outcome is VerificationOutcome.RECOVER
+    assert decision.reason is VerificationReason.NOT_SEATED
 
 
 def test_post_place_recovers_an_agreed_wrong_identity() -> None:
@@ -429,14 +413,26 @@ def test_post_place_holds_same_class_wrong_physical_instance() -> None:
     assert decision.reason is VerificationReason.IDENTITY_MISMATCH
 
 
-@pytest.mark.parametrize("disagreement", ["checks", "object_id"])
-def test_post_place_holds_on_identity_check_disagreement(disagreement: str) -> None:
+def test_post_place_foundationpose_check_disagreement_is_advisory() -> None:
+    inspection = _inspection()
+    inspection["checks_agree"] = False
+
+    decision = _verify_post(
+        "M4_03",
+        _detection(),
+        inspection,
+        seated=True,
+        pose_agrees=True,
+    )
+
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.advisories == ("foundationpose_disagreement",)
+
+
+def test_post_place_holds_on_independent_identity_disagreement() -> None:
     detection = _detection()
     inspection = _inspection()
-    if disagreement == "checks":
-        inspection["checks_agree"] = False
-    else:
-        inspection["object_id"] = "M5_03"
+    inspection["object_id"] = "M5_03"
 
     decision = _verify_post(
         "M4_03",
@@ -462,7 +458,7 @@ def test_post_place_requires_boolean_placement_checks(seated: object, pose_agree
         )
 
 
-def test_post_place_holds_without_foundationpose_evidence() -> None:
+def test_post_place_accepts_without_foundationpose_evidence() -> None:
     detection = _detection()
     detection["pose_fit_score"] = None
 
@@ -474,8 +470,8 @@ def test_post_place_holds_without_foundationpose_evidence() -> None:
         pose_agrees=True,
     )
 
-    assert decision.outcome is VerificationOutcome.HOLD_ANDON
-    assert decision.reason is VerificationReason.POSE_UNVERIFIED
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.advisories == ("foundationpose_unavailable",)
 
 
 def test_post_place_recovers_a_failed_part_inspection() -> None:

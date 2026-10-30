@@ -89,6 +89,9 @@ class _Policy:
     def set_task(self, instruction, target) -> None:
         self.task = (instruction, target)
 
+    def reset(self) -> None:
+        self.task = None
+
     def authorize_release(self) -> None:
         self.release_calls += 1
 
@@ -147,6 +150,30 @@ def test_guard_hold_never_reaches_the_secondary_motion_gate() -> None:
     assert result.blocked is True
     assert result.reasons == ("guard refused",)
     assert safety.calls == []
+
+
+def test_explicit_saturday_mode_keeps_groot_guard_without_claiming_scene_safety() -> None:
+    policy = _Policy((301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0))
+    executor = T09GrootExecutor(
+        policy=policy,
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+
+    result = executor.act(_intent(), observation=_observation(), scene=None)
+
+    assert result.action == [301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
+    assert result.blocked is False
+
+
+def test_scene_safety_remains_fail_closed_by_default() -> None:
+    with pytest.raises(ValueError, match="SafetySupervisor"):
+        T09GrootExecutor(
+            policy=_Policy((301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)),
+            safety=None,
+            tolerances=ExecutionTolerances(0.3, 1.0),
+        )
 
 
 def test_release_authority_is_forwarded_only_for_verified_release_intent() -> None:

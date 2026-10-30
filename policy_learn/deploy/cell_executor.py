@@ -28,6 +28,8 @@ class CellExecutionError(RuntimeError):
 class GuardedPolicy(Protocol):
     last_guard_result: GuardResult | None
 
+    def reset(self) -> None: ...
+
     def set_task(self, instruction: str, target: ContactTarget | None = None) -> None: ...
 
     def authorize_release(self) -> None: ...
@@ -121,22 +123,33 @@ class T09GrootExecutor:
         self,
         *,
         policy: GuardedPolicy,
-        safety: SafetySupervisor,
+        safety: SafetySupervisor | None,
         tolerances: ExecutionTolerances,
+        require_scene_safety: bool = True,
     ) -> None:
+        if require_scene_safety and safety is None:
+            raise ValueError("scene safety requires a SafetySupervisor")
         self._policy = policy
         self._safety = safety
         self._tolerances = tolerances
+        self._require_scene_safety = require_scene_safety
+
+    def reset(self) -> None:
+        """Start a fresh rollout in both the T09 and served-policy layers."""
+        self._policy.reset()
 
     def act(
         self,
         intent: MotionIntent,
         *,
         observation: dict,
-        scene: CollisionScene,
+        scene: CollisionScene | None,
     ) -> GrootExecutionResult:
         current = _observed_waypoint(observation)
-        self._validate_scene(intent, observation, current, scene)
+        if self._require_scene_safety:
+            if scene is None:
+                raise CellExecutionError("live collision scene is required")
+            self._validate_scene(intent, observation, current, scene)
         expected = Waypoint(*intent.endpoint)
         if endpoint_reached(current, expected, self._tolerances):
             return GrootExecutionResult(current.as_action(), _skill_phase(intent), True, False, ())
@@ -158,7 +171,9 @@ class T09GrootExecutor:
             return GrootExecutionResult(target.as_action(), phase, False, True, result.reasons)
         self._validate_release_fence(current, target, release_ready)
         self._validate_gripper_transition(intent, current, target, release_ready)
-        self._validate_motion(intent, current, target, phase, scene)
+        if self._require_scene_safety:
+            assert scene is not None
+            self._validate_motion(intent, current, target, phase, scene)
         return GrootExecutionResult(target.as_action(), phase, False, False, result.reasons)
 
     def _validate_release_fence(
@@ -221,6 +236,8 @@ class T09GrootExecutor:
         phase: MotionPhase,
         scene: CollisionScene,
     ) -> None:
+        if self._safety is None:  # constructor rejects this in scene-safety mode
+            raise CellExecutionError("live-scene SafetySupervisor is unavailable")
         owner = MotionOwner(intent.instance_id, intent.object_id, current.gripper == 1.0)
         try:
             self._safety.validate(

@@ -200,6 +200,17 @@ def _production_policy(rows, tmp_path, *, limits=None, attestation=None) -> Groo
     )
 
 
+def _saturday_policy(rows) -> GrootPolicy:
+    model = GrootServerModel.__new__(GrootServerModel)
+    model.client = FakeClient(rows=rows)
+    model.injected_client = False
+    return GrootPolicy(
+        model=model,
+        saturday_cell=True,
+        limits=GuardLimits(max_tilt_deg=3.0, source="T05 final adapter envelope"),
+    )
+
+
 def test_server_model_gets_planner_instruction_and_no_sim_extras():
     fake = FakeClient()
     pol = GrootPolicy(model=GrootServerModel("x", 0, client=fake))
@@ -269,6 +280,32 @@ def test_production_policy_rejects_stub_and_preliminary_limits(tmp_path):
         )
     with pytest.raises(CellPolicySafetyError, match="MEASURED"):
         _production_policy([TCP + [0.0]], tmp_path, limits=GuardLimits())
+
+
+def test_saturday_cell_requires_a_noninjected_live_server() -> None:
+    with pytest.raises(CellPolicySafetyError, match="stub"):
+        GrootPolicy(model=StubModel(), saturday_cell=True)
+    with pytest.raises(CellPolicySafetyError, match="live GrootServerModel"):
+        GrootPolicy(model=Fixed([TCP + [0.0]]), saturday_cell=True)
+    with pytest.raises(CellPolicySafetyError, match="injected"):
+        GrootPolicy(model=GrootServerModel("x", 0, client=FakeClient()), saturday_cell=True)
+
+
+def test_saturday_cell_keeps_one_row_release_and_final_adapter_tilt_fences() -> None:
+    many = _saturday_policy([TCP + [0.0], TCP + [0.0]])
+    many.act(obs())
+    assert many.last_guard_result is not None and many.last_guard_result.held
+    assert "exactly one row" in many.last_guard_result.reasons[0]
+
+    release = _saturday_policy([TCP + [0.0]])
+    release.act(obs(grip=1.0))
+    assert release.last_guard_result is not None and release.last_guard_result.held
+    assert "release is not authorized" in release.last_guard_result.reasons[0]
+
+    tilted = _saturday_policy([[300.0, 0.0, -90.0, -176.0, 0.0, 0.0, 0.0]])
+    tilted.act(obs())
+    assert tilted.last_guard_result is not None and tilted.last_guard_result.held
+    assert "tilted" in tilted.last_guard_result.reasons[0]
 
 
 def test_production_policy_rejects_a_server_not_matching_the_approved_record(tmp_path):

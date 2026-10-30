@@ -373,9 +373,13 @@ def _drive(
 
 
 def test_three_product_loop_recovers_fallen_failed_and_missing_parts() -> None:
+    observed = tuple(
+        replace(item, condition=ObjectCondition.FALLEN) if item.instance_id == "p1-2" else item
+        for item in _observed_three_products()
+    )
     perception = ScriptedPerception(
-        observed=_observed_three_products(),
-        fallen_once={"p1-2"},
+        observed=observed,
+        fallen_once=set(),
         failed_insertions=Counter({"p3-3": 1}),
         disagreement_once=set(),
     )
@@ -384,7 +388,7 @@ def test_three_product_loop_recovers_fallen_failed_and_missing_parts() -> None:
     actions = _drive(controller)
 
     assert actions
-    assert controller.completed_products == (1, 3, 4)
+    assert set(controller.completed_products) == {1, 3, 4}
     assert len(controller.inventory.items(InventoryZone.INSTALLED)) == 12
     assert any(event.kind == "spare" and event.detail == "p4-3-spare" for event in controller.events)
     assert controller.inventory.item("p1-2").zone is InventoryZone.REJECT
@@ -413,7 +417,7 @@ def test_missing_part_without_spare_suspends_and_calls_andon_without_motion() ->
     assert controller.plan_records == ()
 
 
-def test_independent_check_disagreement_holds_before_any_pick_motion() -> None:
+def test_foundationpose_disagreement_warns_without_blocking_pick_motion() -> None:
     observed = tuple(
         item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
     )
@@ -430,11 +434,13 @@ def test_independent_check_disagreement_holds_before_any_pick_motion() -> None:
 
     output = adapter.act(observation)
 
-    assert output == observation["tcp_pose"] + [0.0]
-    assert controller.state_machine.state is PackMLState.HELD
-    assert controller.events[-1].kind == "andon"
-    assert controller.plan_records == ()
-    assert "published calibrated wrist-view targets" in controller.events[-1].detail
+    assert output != observation["tcp_pose"] + [0.0]
+    assert controller.state_machine.state is PackMLState.EXECUTE
+    assert controller.plan_records
+    assert any(
+        event.kind == "warning" and "foundationpose_disagreement" in event.detail
+        for event in controller.events
+    )
 
 
 def test_each_chunk_revalidates_from_actual_observed_tcp() -> None:

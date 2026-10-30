@@ -83,7 +83,11 @@ def test_t09_mock_bootstraps_executes_faults_and_archives(policy_type) -> None:
     assert all(guard_tcp_action(action, dt=policy.DT) == action for action in actions)
     assert policy.controller.completed_products == (1, 3, 4)
     assert policy.controller.finished is True
-    assert any(event.kind == "spare" and event.object_id == "M1_02" for event in policy.controller.events)
+    assert any(
+        event.kind == "warning" and event.object_id == "M1_02" and "FoundationPose" in event.detail
+        for event in policy.controller.events
+    )
+    assert any(event.kind == "spare" and event.object_id == "M4_03" for event in policy.controller.events)
     assert any(event.kind == "retry" and event.object_id == "M3_03" for event in policy.controller.events)
 
     policy.reset()
@@ -100,7 +104,11 @@ def test_t09_mock_derives_non_default_layout_and_faults_from_trial_prompt(policy
 
     assert all(guard_tcp_action(action, dt=policy.DT) == action for action in actions)
     assert policy.controller.completed_products == (2, 5, 6)
-    assert any(event.kind == "spare" and event.object_id == "M2_02" for event in policy.controller.events)
+    assert any(
+        event.kind == "warning" and event.object_id == "M2_02" and "FoundationPose" in event.detail
+        for event in policy.controller.events
+    )
+    assert any(event.kind == "spare" and event.object_id == "M6_03" for event in policy.controller.events)
     assert any(event.kind == "retry" and event.object_id == "M5_03" for event in policy.controller.events)
 
 

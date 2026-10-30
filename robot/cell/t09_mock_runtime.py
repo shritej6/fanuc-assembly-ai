@@ -359,7 +359,7 @@ def _mock_safety() -> SafetySupervisor:
     )
 
 
-def _build_controller(perception: MockPerception) -> AssemblyController:
+def _controller_kwargs(perception: MockPerception) -> dict[str, object]:
     motion = MotionConfig(
         10.0,
         10.0,
@@ -371,29 +371,41 @@ def _build_controller(perception: MockPerception) -> AssemblyController:
         -180.0,
         "mock-only deterministic runtime fixture",
     )
-    return AssemblyController(
-        catalog=load_catalog(),
-        perception=perception,
-        poses=MockCalibratedPoses(),
-        motion_config=motion,
-        inspection_stop=InspectionStopConfig(
+    return {
+        "catalog": load_catalog(),
+        "perception": perception,
+        "poses": MockCalibratedPoses(),
+        "motion_config": motion,
+        "inspection_stop": InspectionStopConfig(
             -168.0,
             -180.0,
             0.0,
             "PR9 follow-up measured CSI wrist inspection stop",
         ),
-        startup_hold=StartupHoldConfig(
+        "startup_hold": StartupHoldConfig(
             Waypoint(200.0, 0.0, -250.0, -180.0, 0.0, 0.0, 0.0),
             "mock-only deterministic runtime fixture",
         ),
-        safety=_mock_safety(),
-        verification_thresholds=MOCK_THRESHOLDS,
-        execution_tolerances=ExecutionTolerances(0.0, 0.0),
-        perception_tolerances=PerceptionTolerances(0.0, 0.0),
-        recovery_targets=MockRecoveryTargets(),
-        final_verifier=MockFinalProductVerifier(),
-        allow_mock_final_verification=True,
-    )
+        "safety": _mock_safety(),
+        "verification_thresholds": MOCK_THRESHOLDS,
+        "execution_tolerances": ExecutionTolerances(0.0, 0.0),
+        "perception_tolerances": PerceptionTolerances(0.0, 0.0),
+        "recovery_targets": MockRecoveryTargets(),
+        "final_verifier": MockFinalProductVerifier(),
+        "allow_mock_final_verification": True,
+    }
+
+
+def _build_controller(perception: MockPerception) -> AssemblyController:
+    return AssemblyController(**_controller_kwargs(perception))
+
+
+def build_groot_mock_controller(executor) -> AssemblyController:
+    """Software-proof fixture: real T09 states with GR00T as sole row source."""
+    from assembly.groot_controller import GrootAssemblyController
+
+    perception = MockPerception()
+    return GrootAssemblyController(groot_executor=executor, **_controller_kwargs(perception))
 
 
 @dataclass(frozen=True, slots=True)

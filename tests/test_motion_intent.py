@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
-from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
+from assembly.motion_intent import (
+    ContactEnvelope,
+    MotionIntent,
+    MotionIntentError,
+    SemanticSkill,
+    semantic_instruction,
+)
+from sim.assembly_lab.mimic.catalog import encode_plan_ids
+from sim.assembly_lab.mimic.instructions import instruction
 
 
 def _intent(**changes) -> MotionIntent:
@@ -64,6 +72,47 @@ def test_only_verified_release_intent_authorizes_opening() -> None:
 def test_pick_insert_can_never_authorize_release_in_the_same_skill() -> None:
     with pytest.raises(MotionIntentError, match="hold"):
         _intent(release_authorized=True)
+
+
+@pytest.mark.parametrize(
+    ("intent", "trained_skill"),
+    [
+        (_intent(), "pick_insert"),
+        (_intent(skill=SemanticSkill.PULL_OUT, final_gripper=1.0), "pull_out"),
+        (
+            _intent(
+                skill=SemanticSkill.PLACE_FREE,
+                final_gripper=0.0,
+                release_tcp=(401.8, 50.0, -301.2, -180.0, 0.0, 90.0),
+                release_authorized=True,
+            ),
+            "place_free",
+        ),
+        (
+            _intent(
+                skill=SemanticSkill.DEFECT_DROP,
+                case="defect",
+                final_gripper=0.0,
+                release_tcp=(401.8, 50.0, -301.2, -180.0, 0.0, 90.0),
+                release_authorized=True,
+            ),
+            "defect_drop",
+        ),
+    ],
+)
+def test_trained_semantic_skills_use_the_exact_t12_instruction_contract(
+    intent: MotionIntent,
+    trained_skill: str,
+) -> None:
+    plan_ids = encode_plan_ids(
+        trained_skill,
+        intent.object_id,
+        intent.base_object_id,
+        intent.grip_index,
+        intent.case,
+    )
+
+    assert semantic_instruction(intent) == instruction(plan_ids, intent.plan_target)
 
 
 @pytest.mark.parametrize(

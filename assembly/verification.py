@@ -27,6 +27,7 @@ class VerificationReason(str, Enum):
     CHECK_DISAGREEMENT = "check_disagreement"
     NOT_SEATED = "not_seated"
     PLACEMENT_DISAGREEMENT = "placement_disagreement"
+    PATCHCORE_WARNING = "patchcore_warning"
 
 
 class RecoveryAction(str, Enum):
@@ -47,6 +48,7 @@ class VerificationDecision:
     reason: VerificationReason
     instance_id: str
     object_id: str | None
+    advisories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,23 +244,14 @@ def _decision(
     outcome: VerificationOutcome,
     reason: VerificationReason,
     detection: Mapping[str, object],
+    advisories: tuple[str, ...] = (),
 ) -> VerificationDecision:
     return VerificationDecision(
         outcome=outcome,
         reason=reason,
         instance_id=cast(str, detection["instance_id"]),
         object_id=cast(str | None, detection.get("object_id")),
-    )
-
-
-def _detection_passes(detection: Mapping[str, object], thresholds: VerificationThresholds) -> bool:
-    score = cast(float, detection["score"])
-    fit = detection.get("pose_fit_score")
-    return (
-        _has_foundationpose(detection)
-        and score >= thresholds.min_detection_score
-        and isinstance(fit, (int, float))
-        and fit >= thresholds.min_pose_fit_score
+        advisories=advisories,
     )
 
 
@@ -268,8 +261,7 @@ def _checks_disagree(
 ) -> bool:
     verdict = cast(str, inspection.get("verdict"))
     return (
-        inspection.get("checks_agree") is not True
-        or detection.get("instance_id") != inspection.get("instance_id")
+        detection.get("instance_id") != inspection.get("instance_id")
         or detection.get("object_id") != inspection.get("object_id")
         or inspection.get("action") not in _ACTIONS_BY_VERDICT[verdict]
     )
@@ -283,9 +275,33 @@ def _has_foundationpose(detection: Mapping[str, object]) -> bool:
     )
 
 
-def _matches_approved_installed_rest(detection: Mapping[str, object]) -> bool:
-    """Contract 'upright' means the part-specific approved rest, not geometric height."""
-    return detection.get("resting_side") == "upright"
+def _advisories(
+    detection: Mapping[str, object],
+    inspection: Mapping[str, object],
+    thresholds: VerificationThresholds,
+    *,
+    pose_agrees: bool = True,
+) -> tuple[str, ...]:
+    warnings: list[str] = []
+    if cast(float, detection["score"]) < thresholds.min_detection_score:
+        warnings.append("detection_low_confidence")
+    if not _has_foundationpose(detection):
+        warnings.append("foundationpose_unavailable")
+    elif cast(float, detection["pose_fit_score"]) < thresholds.min_pose_fit_score:
+        warnings.append("foundationpose_low_fit")
+    if inspection.get("checks_agree") is not True or not pose_agrees:
+        warnings.append("foundationpose_disagreement")
+    if detection.get("resting_side") != "upright":
+        warnings.append("foundationpose_orientation")
+    return tuple(warnings)
+
+
+def _patchcore_exceeds(inspection: Mapping[str, object], thresholds: VerificationThresholds) -> bool:
+    evidence = inspection.get("evidence")
+    if not isinstance(evidence, Mapping):
+        return False
+    score = evidence.get("patchcore_score")
+    return isinstance(score, (int, float)) and not isinstance(score, bool) and score > thresholds.max_patchcore_score
 
 
 def verify_pre_pick(
@@ -296,24 +312,31 @@ def verify_pre_pick(
     expected_instance_id: str,
     thresholds: VerificationThresholds,
 ) -> VerificationDecision:
-    """Accept a part only after the pre-pick evidence gate succeeds."""
+    """Accept on semantic identity; model scores and FoundationPose are advisory."""
 
     detection, inspection = _validate_inputs(expected_object_id, expected_instance_id, detection, inspection)
+    advisories = _advisories(detection, inspection, thresholds)
     if _checks_disagree(detection, inspection):
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
+        return _decision(
+            VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection, advisories
+        )
     if detection.get("instance_id") != expected_instance_id:
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection)
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection, advisories)
     if detection.get("object_id") != expected_object_id:
-        return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.IDENTITY_MISMATCH, detection)
-    if not _detection_passes(detection, thresholds):
-        return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.POSE_UNVERIFIED, detection)
-    if not _matches_approved_installed_rest(detection):
-        return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.UNSAFE_ORIENTATION, detection)
+        return _decision(
+            VerificationOutcome.REJECT_TO_SPARE, VerificationReason.IDENTITY_MISMATCH, detection, advisories
+        )
+    if inspection.get("verdict") != "ok" and inspection.get("action") != "ask_operator":
+        return _decision(
+            VerificationOutcome.REJECT_TO_SPARE, VerificationReason.INSPECTION_REJECTED, detection, advisories
+        )
+    if _patchcore_exceeds(inspection, thresholds):
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PATCHCORE_WARNING, detection, advisories)
     if inspection.get("action") == "ask_operator":
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
-    if inspection.get("verdict") != "ok":
-        return _decision(VerificationOutcome.REJECT_TO_SPARE, VerificationReason.INSPECTION_REJECTED, detection)
-    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection)
+        return _decision(
+            VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection, advisories
+        )
+    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection, advisories)
 
 
 def verify_post_place(
@@ -331,25 +354,26 @@ def verify_post_place(
     detection, inspection = _validate_inputs(expected_object_id, expected_instance_id, detection, inspection)
     if not isinstance(seated, bool) or not isinstance(pose_agrees, bool):
         _input_error("post_place", "seated and pose_agrees must be booleans")
+    advisories = _advisories(detection, inspection, thresholds, pose_agrees=pose_agrees)
     if _checks_disagree(detection, inspection):
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
-    if not _detection_passes(detection, thresholds):
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.POSE_UNVERIFIED, detection)
+        return _decision(
+            VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection, advisories
+        )
     if detection.get("instance_id") != expected_instance_id:
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection)
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection, advisories)
     if detection.get("object_id") != expected_object_id:
-        return _decision(VerificationOutcome.RECOVER, VerificationReason.IDENTITY_MISMATCH, detection)
+        return _decision(VerificationOutcome.RECOVER, VerificationReason.IDENTITY_MISMATCH, detection, advisories)
+    if inspection.get("verdict") != "ok" and inspection.get("action") != "ask_operator":
+        return _decision(VerificationOutcome.RECOVER, VerificationReason.INSPECTION_REJECTED, detection, advisories)
+    if _patchcore_exceeds(inspection, thresholds):
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PATCHCORE_WARNING, detection, advisories)
     if inspection.get("action") == "ask_operator":
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
-    if inspection.get("verdict") != "ok":
-        return _decision(VerificationOutcome.RECOVER, VerificationReason.INSPECTION_REJECTED, detection)
-    if not _matches_approved_installed_rest(detection):
-        return _decision(VerificationOutcome.RECOVER, VerificationReason.UNSAFE_ORIENTATION, detection)
-    if seated != pose_agrees:
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PLACEMENT_DISAGREEMENT, detection)
+        return _decision(
+            VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection, advisories
+        )
     if not seated:
-        return _decision(VerificationOutcome.RECOVER, VerificationReason.NOT_SEATED, detection)
-    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection)
+        return _decision(VerificationOutcome.RECOVER, VerificationReason.NOT_SEATED, detection, advisories)
+    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection, advisories)
 
 
 def verify_recovery_transfer(
@@ -366,25 +390,42 @@ def verify_recovery_transfer(
     detection, inspection = _validate_inputs(expected_object_id, expected_instance_id, detection, inspection)
     if not isinstance(pose_agrees, bool) or not isinstance(allow_rejected, bool):
         _input_error("recovery_transfer", "pose_agrees and allow_rejected must be booleans")
+    advisories = _advisories(detection, inspection, thresholds)
     exact_identity = all(
         payload.get("instance_id") == expected_instance_id and payload.get("object_id") == expected_object_id
         for payload in (detection, inspection)
     )
     if not exact_identity:
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection)
-    if not _detection_passes(detection, thresholds) or not _transfer_classifier_passes(inspection, thresholds):
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.POSE_UNVERIFIED, detection)
-    if inspection.get("checks_agree") is not True or not pose_agrees:
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PLACEMENT_DISAGREEMENT, detection)
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.IDENTITY_MISMATCH, detection, advisories)
+    if not _transfer_classifier_passes(inspection, thresholds):
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.POSE_UNVERIFIED, detection, advisories)
+    if not pose_agrees:
+        return _decision(
+            VerificationOutcome.HOLD_ANDON, VerificationReason.PLACEMENT_DISAGREEMENT, detection, advisories
+        )
+    blocker = _transfer_inspection_blocker(detection, inspection, allow_rejected)
+    if blocker is not None:
+        return _decision(VerificationOutcome.HOLD_ANDON, blocker, detection, advisories)
+    if not allow_rejected and _patchcore_exceeds(inspection, thresholds):
+        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.PATCHCORE_WARNING, detection, advisories)
+    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection, advisories)
+
+
+def _transfer_inspection_blocker(
+    detection: Mapping[str, object],
+    inspection: Mapping[str, object],
+    allow_rejected: bool,
+) -> VerificationReason | None:
+    verdict = inspection.get("verdict")
     if allow_rejected:
-        verdict = inspection.get("verdict")
         good_disagrees = verdict == "ok" and _checks_disagree(detection, inspection)
         rejected_without_action = verdict != "ok" and inspection.get("action") != "reject"
-        if good_disagrees or rejected_without_action:
-            return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.INSPECTION_REJECTED, detection)
-    elif _checks_disagree(detection, inspection) or not _matches_approved_installed_rest(detection):
-        return _decision(VerificationOutcome.HOLD_ANDON, VerificationReason.CHECK_DISAGREEMENT, detection)
-    return _decision(VerificationOutcome.ACCEPT, VerificationReason.VERIFIED, detection)
+        return VerificationReason.INSPECTION_REJECTED if good_disagrees or rejected_without_action else None
+    if verdict != "ok" or inspection.get("action") != "use":
+        return VerificationReason.INSPECTION_REJECTED
+    if _checks_disagree(detection, inspection):
+        return VerificationReason.CHECK_DISAGREEMENT
+    return None
 
 
 def _transfer_classifier_passes(

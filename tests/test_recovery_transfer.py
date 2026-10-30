@@ -58,6 +58,21 @@ def test_staging_transfer_requires_good_identity_and_installed_pose() -> None:
     assert _verify(_detection(), _inspection()).outcome is VerificationOutcome.ACCEPT
 
 
+def test_staging_transfer_accepts_without_foundationpose_when_zone_and_identity_pass() -> None:
+    detection = _detection()
+    detection.update(pose=None, pose_source="none", pose_fit_score=None)
+    inspection = _inspection()
+    inspection["checks_agree"] = False
+
+    decision = _verify(detection, inspection)
+
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.advisories == (
+        "foundationpose_unavailable",
+        "foundationpose_disagreement",
+    )
+
+
 def test_reject_transfer_accepts_confirmed_defect_with_classifier_identity() -> None:
     inspection = _inspection()
     inspection.update(verdict="print_defect", action="reject")

@@ -174,7 +174,7 @@ class CellPerceptionPort:
         view = self._inspector.look(observation, part.object_id, (tcp.x, tcp.y), self._geometry.table_surface_z_mm)
         zone, _slot = self._geometry.zone(view.pose.x_mm, view.pose.y_mm)
         verdict = transfer_judgement(part.object_id, view, self._thresholds)
-        agrees = zone is _TRANSFER_ZONES[target_zone]
+        agrees = verdict.action == "use" and zone is _TRANSFER_ZONES[target_zone]
         if agrees:
             self._moved(part, view.pose.x_mm, view.pose.y_mm)
         return RecoveryTransferEvidence(detection(part.instance_id, view, verdict.object_id),

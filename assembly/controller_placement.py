@@ -48,11 +48,17 @@ class PlacementControllerMixin:
         evidence = call_port("post-place perception", self._perception.post_place, observation, prepared.part)
         self._require_fresh_evidence(evidence, PlacementEvidence, observed_at, "post-place evidence")
         decision = self._placement_decision(prepared, evidence)
+        self._record_verification_advisories(prepared.part, decision)
         self._awaiting_post = False
         if decision.outcome is VerificationOutcome.ACCEPT:
             return self._queue_verified_release(prepared, observation, current, observed_at)
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
-            self._hold(f"post-place checks disagree for {prepared.record.object_id}")
+            if decision.reason is VerificationReason.PATCHCORE_WARNING:
+                self._hold(
+                    f"PatchCore advisory warning for {prepared.record.object_id}; operator decision is required"
+                )
+            else:
+                self._hold(f"post-place checks disagree for {prepared.record.object_id}")
             return True
         return self._recover(prepared, decision, observation, current, observed_at)
 

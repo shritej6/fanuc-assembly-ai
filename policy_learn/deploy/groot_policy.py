@@ -203,20 +203,36 @@ class GrootPolicy:
         limits: GuardLimits | None = None,
         *,
         production: bool = False,
+        saturday_cell: bool = False,
         approved_deployment: ReviewedDeployment | None = None,
     ):
+        if production and saturday_cell:
+            raise CellPolicySafetyError("production and saturday_cell modes are mutually exclusive")
         self.model = model or load_model(checkpoint)
         active_limits = limits or GuardLimits()
         self.deployment_attestation = (
             _attest_production_model(self.model, active_limits, approved_deployment) if production else None
         )
-        self.production = production
+        if saturday_cell:
+            self._validate_saturday_server()
+        # Saturday keeps the one-row and T09 release fences while explicitly
+        # deferring checkpoint attestation and measured-limit provenance.
+        self.production = production or saturday_cell
+        self.saturday_cell = saturday_cell
         self.guard = ChunkGuard(active_limits)
         self.instruction: str | None = None
         self.guard_log: list[dict] = []  # kept across rollouts, for the run's report
         self.last_guard_result: GuardResult | None = None
         self.release_authorized = False
         self.steps, self.rollout = 0, -1
+
+    def _validate_saturday_server(self) -> None:
+        if isinstance(self.model, StubModel):
+            raise CellPolicySafetyError("the GR00T stub is forbidden in Saturday CELL mode")
+        if not isinstance(self.model, GrootServerModel):
+            raise CellPolicySafetyError("Saturday CELL mode requires a live GrootServerModel")
+        if self.model.injected_client:
+            raise CellPolicySafetyError("Saturday CELL mode forbids injected GR00T clients")
 
     def reset(self) -> None:
         self.instruction, self.steps, self.rollout = None, 0, self.rollout + 1

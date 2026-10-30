@@ -34,9 +34,11 @@ def test_good_part_is_used():
     assert (r["verdict"], r["action"], r["checks_agree"], r["object_id"]) == ("ok", "use", True, "M4_04")
 
 
-def test_snapped_part_is_rejected_even_though_its_identity_is_certain():
+def test_patchcore_threshold_requests_operator_decision_without_reject_motion():
     r = _check(inspect("p1", _ev(patchcore_score=0.9), TH))
-    assert (r["verdict"], r["action"], r["checks_agree"]) == ("broken", "reject", True)
+    assert (r["verdict"], r["action"], r["checks_agree"], r["object_id"]) == (
+        "uncertain", "ask_operator", True, "M4_04")
+    assert r["warnings"] == ["patchcore_threshold_exceeded"]
 
 
 def test_fallen_part_is_rejected_with_the_detector_identity():
@@ -59,17 +61,30 @@ def test_low_classifier_confidence_goes_to_the_operator():
     assert (r["verdict"], r["action"], r["checks_agree"]) == ("uncertain", "ask_operator", False)
 
 
-@pytest.mark.parametrize("fit", [("M5_04", 0.9), ("M4_04", 0.3)])
-def test_classifier_and_pose_fit_disagreeing_goes_to_the_operator(fit):
+@pytest.mark.parametrize(
+    ("fit", "warning"),
+    [
+        (("M5_04", 0.9), "foundationpose_identity_disagreement"),
+        (("M4_04", 0.3), "foundationpose_low_fit"),
+        (None, "foundationpose_unavailable"),
+    ],
+)
+def test_foundationpose_warning_does_not_block_classifier_acceptance(fit, warning):
     r = _check(inspect("p1", _ev(pose_fit=fit), TH))
-    assert (r["action"], r["checks_agree"]) == ("ask_operator", False)
+    assert (r["verdict"], r["action"], r["checks_agree"], r["object_id"]) == (
+        "ok", "use", False, "M4_04")
+    assert r["warnings"] == [warning]
 
 
-def test_missing_evidence_raises():
-    with pytest.raises(InspectError, match="both required"):
-        inspect("p1", _ev(pose_fit=None), TH)
-    with pytest.raises(InspectError, match="PatchCore"):
-        inspect("p1", _ev(patchcore_score=None), TH)
+def test_classifier_evidence_remains_required():
+    with pytest.raises(InspectError, match="classifier"):
+        inspect("p1", _ev(classifier=None), TH)
+
+
+def test_missing_patchcore_is_an_advisory_not_an_acceptance_gate():
+    r = _check(inspect("p1", _ev(patchcore_score=None), TH))
+    assert (r["verdict"], r["action"], r["object_id"]) == ("ok", "use", "M4_04")
+    assert r["warnings"] == ["patchcore_unavailable"]
 
 
 def test_bases_need_no_patchcore():
@@ -78,13 +93,13 @@ def test_bases_need_no_patchcore():
     assert r["action"] == "use"
 
 
-def test_thresholds_must_cover_every_part_and_name_their_source(tmp_path):
+def test_advisory_patchcore_thresholds_may_be_partial_but_must_name_their_source(tmp_path):
     path = tmp_path / "t.json"
     path.write_text(json.dumps({"classifier_min": 0.8, "pose_fit_min": 0.6, "patchcore_max": {"M4_04": 0.5},
                                 "source": "val run 1"}))
     assert Thresholds.load(path, ("M4_04",)).source == "val run 1"
-    with pytest.raises(InspectError, match="M5_04"):
-        Thresholds.load(path, ("M4_04", "M5_04"))
+    partial = Thresholds.load(path, ("M4_04", "M5_04"))
+    assert partial.patchcore_max == {"M4_04": 0.5}
     path.write_text(json.dumps({"classifier_min": float("nan"), "pose_fit_min": 0.6, "patchcore_max": {},
                                 "source": "x"}))
     with pytest.raises(InspectError, match="finite"):
@@ -94,10 +109,24 @@ def test_thresholds_must_cover_every_part_and_name_their_source(tmp_path):
         Thresholds.load(path, ())
 
 
+def test_advisory_patchcore_threshold_map_may_be_omitted_but_must_be_a_mapping(tmp_path):
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({"classifier_min": 0.8, "pose_fit_min": 0.6, "source": "val run 1"}))
+
+    assert Thresholds.load(path, ("M4_04",)).patchcore_max == {}
+
+    path.write_text(
+        json.dumps({"classifier_min": 0.8, "pose_fit_min": 0.6, "patchcore_max": [], "source": "val run 1"})
+    )
+    with pytest.raises(InspectError, match="mapping"):
+        Thresholds.load(path, ("M4_04",))
+
+
 def test_same_shape_bases_agree_but_different_types_do_not():
     agree = _check(inspect("p1", _ev(detector_label="F05", classifier=("F05", 0.9), pose_fit=("F04", 0.9),
                                      patchcore_score=None), TH))
     assert (agree["checks_agree"], agree["action"]) == (True, "use")
     differ = _check(inspect("p1", _ev(detector_label="F03", classifier=("F03", 0.9), pose_fit=("F01", 0.9),
                                       patchcore_score=None), TH))
-    assert (differ["checks_agree"], differ["action"]) == (False, "ask_operator")
+    assert (differ["checks_agree"], differ["action"], differ["object_id"]) == (False, "use", "F03")
+    assert differ["warnings"] == ["foundationpose_identity_disagreement"]

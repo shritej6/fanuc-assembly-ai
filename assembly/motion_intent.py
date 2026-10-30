@@ -33,6 +33,24 @@ def _rounded(value: float) -> str:
 
 def semantic_instruction(intent: MotionIntent) -> str:
     """Stable language contract pinned by the deployment dataset manifest."""
+    trained_skill = {
+        SemanticSkill.PICK_INSERT_HOLD: "pick_insert",
+        SemanticSkill.PULL_OUT: "pull_out",
+        SemanticSkill.PLACE_FREE: "place_free",
+        SemanticSkill.DEFECT_DROP: "defect_drop",
+    }.get(intent.skill)
+    if trained_skill is not None:
+        from sim.assembly_lab.mimic.catalog import encode_plan_ids
+        from sim.assembly_lab.mimic.instructions import instruction
+
+        plan_ids = encode_plan_ids(
+            trained_skill,
+            intent.object_id,
+            intent.base_object_id,
+            intent.grip_index,
+            intent.case,
+        )
+        return instruction(plan_ids, intent.plan_target)
     part = ", ".join(_rounded(value) for value in intent.object_pose)
     goal = ", ".join(_rounded(value) for value in intent.goal_pose)
     grip = f"grip {intent.grip_index} at roll {_rounded(intent.wrist_roll_deg)}"
@@ -46,7 +64,10 @@ def semantic_instruction(intent: MotionIntent) -> str:
     elif intent.skill is SemanticSkill.RELEASE_RETREAT:
         text = f"release {intent.object_id} on {intent.base_object_id}, retreat to ({goal})"
     elif intent.skill is SemanticSkill.PULL_OUT:
-        text = f"pull out {intent.object_id} at ({part}) with {grip}, set down at ({goal})"
+        if intent.final_gripper == 1.0:
+            text = f"pull out {intent.object_id} at ({part}) with {grip}, keep holding at ({goal})"
+        else:
+            text = f"pull out {intent.object_id} at ({part}) with {grip}, set down at ({goal})"
     elif intent.skill is SemanticSkill.PLACE_FREE:
         text = f"pick {intent.object_id} at ({part}) with {grip}, set down at ({goal})"
     else:
@@ -184,10 +205,15 @@ class MotionIntent:
             raise MotionIntentError("release_authorized must be a boolean")
         release_skills = {
             SemanticSkill.RELEASE_RETREAT,
-            SemanticSkill.PULL_OUT,
             SemanticSkill.PLACE_FREE,
             SemanticSkill.DEFECT_DROP,
         }
+        if self.skill is SemanticSkill.PULL_OUT and self.final_gripper == 1.0:
+            if self.release_tcp is not None or self.release_authorized:
+                raise MotionIntentError("pull_out hold cannot authorize release")
+            return
+        if self.skill is SemanticSkill.PULL_OUT:
+            release_skills.add(SemanticSkill.PULL_OUT)
         if self.skill in release_skills:
             if self.release_tcp is None or not self.release_authorized or self.final_gripper != 0.0:
                 raise MotionIntentError(f"{self.skill.value} requires an authorized release TCP and open endpoint")

@@ -82,25 +82,34 @@ def _judge(reading=("M1_02", 0.97, 0.01), fit=0.9, side="upright", size=None):
     return judge("M1_02", WristReading(*reading), fit, side, size or _size(SizeOutcome.CONFIRMS), THRESHOLDS)
 
 
-@pytest.mark.parametrize(("kwargs", "verdict", "action", "unsure"), [
-    ({}, "ok", "use", False),
-    ({"fit": 0.3}, "uncertain", "ask_operator", True),
-    ({"side": "side"}, "flipped", "reject", False),
-    ({"reading": ("M1_02", 0.4, 0.01), "size": _size(SizeOutcome.MATCHES_NOTHING, ())}, "foreign", "reject", False),
-    ({"reading": ("M1_02", 0.97, 0.995)}, "print_defect", "reject", False),
-    ({"reading": ("M1_02", 0.97, 0.7)}, "uncertain", "ask_operator", True),
-    ({"reading": ("M1_02", 0.5, 0.01)}, "uncertain", "ask_operator", True),
+@pytest.mark.parametrize(("kwargs", "verdict", "action", "unsure", "agree"), [
+    ({}, "ok", "use", False, True),
+    ({"fit": 0.3}, "ok", "use", False, False),
+    ({"side": "side"}, "ok", "use", False, False),
+    ({"reading": ("M1_02", 0.4, 0.01), "size": _size(SizeOutcome.MATCHES_NOTHING, ())}, "foreign", "reject", False,
+     True),
+    ({"reading": ("M1_02", 0.97, 0.995)}, "print_defect", "reject", False, True),
+    ({"reading": ("M1_02", 0.97, 0.7)}, "uncertain", "ask_operator", True, False),
+    ({"reading": ("M1_02", 0.5, 0.01)}, "uncertain", "ask_operator", True, False),
     ({"reading": ("M2_02", 0.97, 0.01), "size": _size(SizeOutcome.CONTRADICTS, ("M2_02",))}, "wrong_part", "reject",
-     False),
-    ({"reading": ("M2_02", 0.97, 0.01)}, "uncertain", "ask_operator", True),
-    ({"size": _size(SizeOutcome.CONTRADICTS, ("M2_02",))}, "uncertain", "ask_operator", True),
-    ({"size": _size(SizeOutcome.UNMEASURED, ())}, "uncertain", "ask_operator", True),
-    ({"size": _size(SizeOutcome.CANNOT_SEPARATE, ("M1_02", "M2_02"))}, "ok", "use", False),
+     False, True),
+    ({"reading": ("M2_02", 0.97, 0.01)}, "uncertain", "ask_operator", True, False),
+    ({"size": _size(SizeOutcome.CONTRADICTS, ("M2_02",))}, "uncertain", "ask_operator", True, False),
+    ({"size": _size(SizeOutcome.UNMEASURED, ())}, "uncertain", "ask_operator", True, False),
+    ({"size": _size(SizeOutcome.CANNOT_SEPARATE, ("M1_02", "M2_02"))}, "ok", "use", False, True),
 ])
-def test_closeup_rules(kwargs, verdict, action, unsure):
+def test_closeup_rules(kwargs, verdict, action, unsure, agree):
     result = _judge(**kwargs)
     assert (result.verdict, result.action, result.unsure) == (verdict, action, unsure)
-    assert result.checks_agree is not unsure
+    assert result.checks_agree is agree
+
+
+def test_explicit_defect_still_rejects_with_foundationpose_warnings():
+    result = _judge(reading=("M1_02", 0.97, 0.995), fit=0.3, side="side")
+
+    assert (result.verdict, result.action, result.unsure, result.checks_agree) == (
+        "print_defect", "reject", False, False)
+    assert "FoundationPose advisory" in result.reason
 
 
 def test_a_base_of_the_same_mesh_is_the_expected_base():

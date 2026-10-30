@@ -98,6 +98,12 @@ class WrongPostPlaceTypePerception(ScriptedPerception):
 
 
 class WrongTransferTypePerception(ScriptedPerception):
+    def pre_pick(self, observation, part):
+        evidence = super().pre_pick(observation, part)
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="broken", action="reject")
+        return EvidencePair(evidence.detection, inspection, evidence.observed_at_s)
+
     def post_transfer(self, observation, part, target_zone):
         evidence = super().post_transfer(observation, part, target_zone)
         return EvidencePair(evidence.detection, evidence.inspection, evidence.observed_at_s)
@@ -345,7 +351,7 @@ def test_wrong_post_place_evidence_subtype_holds_without_attribute_error() -> No
 
 
 def test_wrong_transfer_evidence_after_release_preserves_reservation() -> None:
-    perception = WrongTransferTypePerception(_product_one_items(), {"p1-1"}, Counter(), set())
+    perception = WrongTransferTypePerception(_product_one_items(), set(), Counter(), set())
     controller = _controller(perception)
 
     _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)

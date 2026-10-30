@@ -185,6 +185,20 @@ def test_a_good_part_passes_the_controller_pre_pick_gate():
     assert port.closeup(item.instance_id).next_step is NextStep.USE
 
 
+def test_low_foundationpose_fit_is_a_warning_not_a_pre_pick_gate():
+    port, _, _, pose, _ = _world()
+    pose.fit = 0.3
+    item = _item(_scanned(port), "M1_02")
+
+    evidence = _valid(port.pre_pick(observation(12.0), item))
+    decision = _pre(evidence, item)
+
+    assert decision.outcome is VerificationOutcome.ACCEPT
+    assert decision.advisories == ("foundationpose_low_fit", "foundationpose_disagreement")
+    assert evidence.inspection["checks_agree"] is False
+    assert port.closeup(item.instance_id).next_step is NextStep.USE
+
+
 def test_a_cracked_part_is_rejected_to_a_spare():
     port, _, classifier, *_ = _world()
     classifier.reading = WristReading("M1_02", 0.97, 0.999)
@@ -226,8 +240,9 @@ def test_missing_depth_on_the_part_is_a_typed_error():
 
 
 # -- post_place -------------------------------------------------------------------------------------------------
-def _placed_world(part_z_offset: float = 0.0, tilt: float = 0.0, wrist_pose=POSE_MEASURED):
+def _placed_world(part_z_offset: float = 0.0, tilt: float = 0.0, wrist_pose=POSE_MEASURED, pose_fit: float = 0.9):
     port, geometry, _classifier, pose, _ = _world(wrist_pose=wrist_pose)
+    pose.fit = pose_fit
     snapshot = _scanned(port)
     seated = world_from_local(450.0, 100.0, BASE_POSE[2, 3] + 7.0 + part_z_offset, 0.0, tilt)
     pose.poses[("M1_02", "wrist")] = seated
@@ -249,6 +264,25 @@ def test_a_certified_seat_is_accepted():
     assert (evidence.seated, evidence.pose_agrees) == (True, True)
     assert _post(evidence, item).outcome is VerificationOutcome.ACCEPT
     assert port.placement(item.instance_id).seat_error_mm == pytest.approx(0.0, abs=1e-6)
+
+
+def test_low_foundationpose_fit_requests_operator_without_independent_seat_evidence():
+    _, item, evidence = _placed_world(pose_fit=0.3)
+
+    decision = _post(evidence, item)
+
+    assert evidence.inspection["action"] == "ask_operator"
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
+    assert decision.advisories == ("foundationpose_low_fit", "foundationpose_disagreement")
+
+
+def test_low_foundationpose_fit_never_turns_pose_error_into_automatic_recovery():
+    _, item, evidence = _placed_world(part_z_offset=1.0, pose_fit=0.3)
+
+    decision = _post(evidence, item)
+
+    assert evidence.inspection["action"] == "ask_operator"
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
 
 
 def test_a_part_riding_high_is_recovered():
@@ -294,6 +328,36 @@ def test_a_reject_transfer_is_verified_in_the_reject_zone():
     staged = port.post_transfer(observation(31.0, tcp=(620.0, -350.0, -250.0, -180.0, 0.0, 0.0)), item,
                                 InventoryZone.STAGED)
     assert staged.pose_agrees is False
+
+
+def test_low_foundationpose_fit_cannot_verify_a_recovery_zone():
+    port, geometry, _, pose, _ = _world()
+    item = _item(_scanned(port), "M1_02")
+    original_xy = port._xy[item.instance_id]
+    dropped = loose_pose("M1_02", 620.0, -350.0)
+    pose.fit = 0.3
+    pose.poses[("M1_02", "wrist")] = dropped
+    geometry.wrist_cloud = top_points("M1_02", dropped)
+
+    evidence = port.post_transfer(
+        observation(30.0, tcp=(620.0, -350.0, -250.0, -180.0, 0.0, 0.0)),
+        item,
+        InventoryZone.REJECT,
+    )
+    decision = verify_recovery_transfer(
+        item.object_id,
+        evidence.detection,
+        evidence.inspection,
+        expected_instance_id=item.instance_id,
+        thresholds=VERIFY,
+        pose_agrees=evidence.pose_agrees,
+        allow_rejected=True,
+    )
+
+    assert evidence.inspection["action"] == "ask_operator"
+    assert evidence.pose_agrees is False
+    assert decision.outcome is VerificationOutcome.HOLD_ANDON
+    assert port._xy[item.instance_id] == original_xy
 
 
 # -- collision_scene --------------------------------------------------------------------------------------------

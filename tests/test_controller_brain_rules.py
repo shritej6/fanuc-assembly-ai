@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from assembly.controller_ports import ControllerPortError, ObservedInventoryItem
+from assembly.controller_ports import ControllerPortError, EvidencePair, ObservedInventoryItem
 from assembly.inventory import InventoryZone, ObjectCondition
 from assembly.state_machine import PackMLState
 from robot.adapter import CellAdapter
@@ -51,6 +51,16 @@ class PersistentIntrusionPerception(ScriptedPerception):
     def collision_scene(self, observation, moving_instance_id, base_instance_id):
         scene = super().collision_scene(observation, moving_instance_id, base_instance_id)
         return replace(scene, intrusion_detected=True)
+
+
+class OneOperatorDecisionPerception(ScriptedPerception):
+    def pre_pick(self, observation, part):
+        evidence = super().pre_pick(observation, part)
+        if evidence.inspection["checks_agree"] is not False:
+            return evidence
+        inspection = dict(evidence.inspection)
+        inspection.update(verdict="uncertain", action="ask_operator", checks_agree=True)
+        return EvidencePair(evidence.detection, inspection, evidence.observed_at_s)
 
 
 class OneIntrusionPerception(ScriptedPerception):
@@ -201,7 +211,7 @@ class CountingScenarioPoses(CalibratedScenarioPoses):
 
 def test_uncertain_pick_holds_until_calibrated_alternate_view_motion_exists() -> None:
     observed = _observed_products((1,))
-    perception = ScriptedPerception(observed, set(), Counter(), {"p1-1"})
+    perception = OneOperatorDecisionPerception(observed, set(), Counter(), {"p1-1"})
     controller = _controller(perception)
     observation = _observation((1,))
 

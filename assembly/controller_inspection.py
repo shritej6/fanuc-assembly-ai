@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from assembly.calibrated_poses import CalibratedPoseError
 from assembly.catalog import CatalogError
 from assembly.controller_ports import (
     ControllerEvent,
@@ -30,6 +32,7 @@ from assembly.motion import (
 )
 from assembly.planner import PlanCandidate, PlannerError, PreparedPlanStep
 from assembly.verification import (
+    VerificationDecision,
     VerificationOutcome,
     VerificationReason,
     verify_pre_pick,
@@ -207,10 +210,16 @@ class InspectionControllerMixin:
             expected_instance_id=candidate.part.instance_id,
             thresholds=self._verification_thresholds,
         )
+        self._record_verification_advisories(candidate.part, decision)
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
-            self._hold(self._alternate_view_dependency(candidate.part.object_id))
+            self._hold(self._inspection_hold_reason(candidate.part.object_id, decision.reason))
             return False
-        grasp = self._foundationpose_grasp(candidate.part, evidence, observed_at)
+        grasp = self._foundationpose_grasp(
+            candidate.part,
+            evidence,
+            observed_at,
+            forced_condition=forced_condition,
+        )
         if decision.outcome is VerificationOutcome.REJECT_TO_SPARE or forced_condition is not None:
             target = self._recovery_targets.reject_target_for(candidate.part)
             prepared = self._planner.finalize_reject_candidate(candidate, grasp, target)
@@ -224,6 +233,27 @@ class InspectionControllerMixin:
             f"pre-pick checks disagree for {object_id}; alternate close-up requires "
             "published calibrated wrist-view targets and a safety-approved motion plan"
         )
+
+    @classmethod
+    def _inspection_hold_reason(cls, object_id: str, reason: VerificationReason) -> str:
+        if reason is VerificationReason.PATCHCORE_WARNING:
+            return (
+                f"PatchCore advisory warning for {object_id}; operator decision is required and "
+                "no reject motion was queued"
+            )
+        return cls._alternate_view_dependency(object_id)
+
+    def _record_verification_advisories(self, part: InventoryItem, decision: VerificationDecision) -> None:
+        product = int(part.object_id[1]) if part.object_id.startswith("M") else None
+        for advisory in decision.advisories:
+            self._events.append(
+                ControllerEvent(
+                    "warning",
+                    product,
+                    part.object_id,
+                    f"{advisory} for {part.instance_id}; advisory only",
+                )
+            )
 
     def _handle_reject_decision(
         self,
@@ -245,16 +275,59 @@ class InspectionControllerMixin:
         part: InventoryItem,
         evidence: EvidencePair,
         observed_at: float,
+        *,
+        forced_condition: ObjectCondition | None = None,
     ) -> OrientedPartPose:
+        fallback_allowed = not (
+            part.condition is ObjectCondition.FALLEN
+            or forced_condition is ObjectCondition.FALLEN
+            or evidence.inspection.get("verdict") == "flipped"
+        )
+        issue = self._foundationpose_issue(evidence)
+        if issue is not None:
+            return self._calibrated_grasp(part, observed_at, issue, fallback_allowed=fallback_allowed)
         try:
-            grasp = self._poses.grasp_from_foundationpose(
-                part,
-                evidence.detection,
-                observed_at_s=observed_at,
+            return self._poses.grasp_from_foundationpose(
+                part, evidence.detection, observed_at_s=observed_at
             )
-        except Exception as error:
-            raise PlannerError(f"FoundationPose grasp is unavailable: {error}") from error
-        return grasp
+        except CalibratedPoseError as error:
+            return self._calibrated_grasp(part, observed_at, str(error), fallback_allowed=fallback_allowed)
+
+    def _foundationpose_issue(self, evidence: EvidencePair) -> str | None:
+        detection = evidence.detection
+        if detection.get("pose_source") != "foundationpose" or not isinstance(detection.get("pose"), Mapping):
+            return "pose is unavailable"
+        fit = detection.get("pose_fit_score")
+        if not isinstance(fit, (int, float)) or fit < self._verification_thresholds.min_pose_fit_score:
+            return "pose fit is below its measured minimum"
+        if evidence.inspection.get("checks_agree") is not True:
+            return "identity checks disagree"
+        if detection.get("resting_side") != "upright":
+            return "reported orientation is non-upright"
+        return None
+
+    def _calibrated_grasp(
+        self,
+        part: InventoryItem,
+        observed_at: float,
+        issue: str,
+        *,
+        fallback_allowed: bool,
+    ) -> OrientedPartPose:
+        if not fallback_allowed:
+            raise PlannerError(f"FoundationPose grasp is unavailable: {issue}")
+        self._events.append(
+            ControllerEvent(
+                "warning",
+                int(part.object_id[1]),
+                part.object_id,
+                f"FoundationPose advisory unavailable for {part.instance_id}: {issue}; using calibrated grasp",
+            )
+        )
+        try:
+            return self._poses.grasp_for(part, observed_at_s=observed_at)
+        except CalibratedPoseError as error:
+            raise PlannerError(f"calibrated grasp fallback is unavailable: {error}") from error
 
     @staticmethod
     def _rejection_condition(reason: VerificationReason) -> ObjectCondition:
@@ -336,6 +409,7 @@ class InspectionControllerMixin:
             pose_agrees=(evidence.target_zone is InventoryZone.REJECT and evidence.pose_agrees),
             allow_rejected=True,
         )
+        self._record_verification_advisories(pending.prepared.part, decision)
         if decision.outcome is not VerificationOutcome.ACCEPT or current.gripper != 0.0:
             self._hold(f"reject transfer was not independently verified for {pending.prepared.part.instance_id!r}")
             return

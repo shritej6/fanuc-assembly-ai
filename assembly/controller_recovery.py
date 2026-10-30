@@ -110,8 +110,9 @@ class RecoveryControllerMixin:
             raise RuntimeError("insertion lift has no pending recovery")
         self._motion_queue.finish()
         evidence, decision = self._post_lift_evidence(pending, observation, observed_at)
+        self._record_verification_advisories(pending.prepared.part, decision)
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
-            self._hold(self._alternate_view_dependency(pending.prepared.part.object_id))
+            self._hold(self._inspection_hold_reason(pending.prepared.part.object_id, decision.reason))
             return False
         if pending.final_inspection and decision.outcome is VerificationOutcome.ACCEPT:
             self._hold(self._final_inspection_dependency(pending))
