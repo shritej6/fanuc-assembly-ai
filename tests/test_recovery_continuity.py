@@ -83,6 +83,8 @@ def _prepare(coordinator, inventory, catalog, poses, config, current):
         poses=poses,
         current=current,
         config=config,
+        max_position_error_mm=0.0,
+        max_orientation_error_deg=0.0,
         observed_at_s=5.0,
         grasp=grasp,
     )

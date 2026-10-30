@@ -68,6 +68,8 @@ class PlacementControllerMixin:
             prepared.target,
             gripper_roll_deg=prepared.record.gripper_roll_deg,
             config=self._motion_config,
+            max_position_error_mm=self._execution_tolerances.max_position_error_mm,
+            max_orientation_error_deg=self._execution_tolerances.max_orientation_error_deg,
         )
         self._pending_install = prepared
         self._prepared = None

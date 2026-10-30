@@ -147,6 +147,8 @@ class RecoveryCoordinator:
         poses: CalibratedPoseProvider,
         current: Waypoint,
         config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
         observed_at_s: float,
         grasp: OrientedPartPose | None = None,
     ) -> RecoveryStagePlan | None:
@@ -162,7 +164,18 @@ class RecoveryCoordinator:
         part = inventory.item(stage.instance_id)
         try:
             return self._compile_stage(
-                stage, part, failed, inventory, catalog, poses, current, config, observed_at_s, grasp
+                stage,
+                part,
+                failed,
+                inventory,
+                catalog,
+                poses,
+                current,
+                config,
+                max_position_error_mm,
+                max_orientation_error_deg,
+                observed_at_s,
+                grasp,
             )
         except RecoveryError:
             raise
@@ -201,6 +214,8 @@ class RecoveryCoordinator:
         poses: CalibratedPoseProvider,
         current: Waypoint,
         config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
         observed_at_s: float,
         grasp: OrientedPartPose | None,
     ) -> RecoveryStagePlan:
@@ -208,7 +223,16 @@ class RecoveryCoordinator:
         recipe_step = next(step for step in recipe.steps if step.object_id == part.object_id)
         base_pose = poses.base_for(inventory.active_reservation.base, observed_at_s=observed_at_s)
         if stage.kind is RecoveryStageKind.REJECT_FAILED:
-            return self._compile_reject_stage(stage, part, recipe_step, base_pose, current, config)
+            return self._compile_reject_stage(
+                stage,
+                part,
+                recipe_step,
+                base_pose,
+                current,
+                config,
+                max_position_error_mm,
+                max_orientation_error_deg,
+            )
         if grasp is None:
             raise RecoveryError("recovery re-pick requires a sourced FoundationPose grasp")
         return self._compile_pick_stage(
@@ -233,6 +257,8 @@ class RecoveryCoordinator:
         base_pose: OrientedPartPose,
         current: Waypoint,
         config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
     ) -> RecoveryStagePlan:
         target = self._targets.reject_target_for(part)
         chunks = compile_transfer_held(
@@ -240,6 +266,8 @@ class RecoveryCoordinator:
             target,
             gripper_roll_deg=recipe_step.gripper_roll_deg,
             config=config,
+            max_position_error_mm=max_position_error_mm,
+            max_orientation_error_deg=max_orientation_error_deg,
         )
         return RecoveryStagePlan(
             stage,

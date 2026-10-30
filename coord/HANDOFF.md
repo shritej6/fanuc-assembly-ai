@@ -2,6 +2,25 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T09 critical fingertip-release follow-up · CODEX
+
+- Recovered Claude's deleted `pr9_grasp.md` review from its session log and verified it against the pinned T29
+  artifact. PR #9 head already composes `tcp_local_mm` and applies the T29 roll once for pick/insert; the stale T30
+  worktree does not and must merge/rebase PR #9 before it can be considered for cell use.
+- Closed the remaining release boundary: `compile_release_retreat()` now refuses to open unless the held TCP agrees
+  with the sourced fingertip target within the caller's measured execution position/orientation tolerances. It no
+  longer accepts a camera canonical object origin as the release point. The M1_04 regression rejects the object
+  origin that is 27.9 mm below the T29 fingertip target and has a 90-degree yaw error.
+- Added an end-to-end T29 matrix over all 24 parts and fixture yaw 0/90/-135 degrees. It checks canonical
+  FoundationPose origin -> fingertip grasp -> CAD/T29 insertion -> roll-adjusted emitted waypoints -> verified
+  release, including the nonidentity rear-guard mesh transform and the Y-closing connector housings.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (586 passed); `git diff --check` (passed). Official default
+  mock completed 3 rollouts / 602 actions / 0 rejected and printed `Ready for the real robot`; opt-in T09 mock
+  completed 1 rollout / 201 actions / 0 rejected with its mock-only verdict. No contract or official client file
+  changed, and no real-cell command was issued.
+- Next: Claude re-reviews PR #9. T30 must consume this head and implement/prove raw FoundationPose STL-frame to
+  installed-local normalization before any explicit cell runtime can be enabled.
+
 ## 2026-10-29 · T09 · CODEX · guarded PackML assembly controller
 
 - Changed: products are parsed and bound from the first `obs["trial"]["instruction"]` of every reset; the constructor

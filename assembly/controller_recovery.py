@@ -182,6 +182,8 @@ class RecoveryControllerMixin:
                 poses=self._poses,
                 current=current,
                 config=self._motion_config,
+                max_position_error_mm=self._execution_tolerances.max_position_error_mm,
+                max_orientation_error_deg=self._execution_tolerances.max_orientation_error_deg,
                 observed_at_s=observed_at,
                 grasp=grasp,
             )
@@ -326,6 +328,8 @@ class RecoveryControllerMixin:
                 planned.target,
                 gripper_roll_deg=planned.gripper_roll_deg,
                 config=self._motion_config,
+                max_position_error_mm=self._execution_tolerances.max_position_error_mm,
+                max_orientation_error_deg=self._execution_tolerances.max_orientation_error_deg,
             )
         except MotionError as error:
             self._hold(str(error))
