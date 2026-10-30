@@ -90,7 +90,7 @@ launch() {
     # CACHE_TAG: our own Kit/shader cache dirs, apart from other agents' caches on shared hosts
     local cmd="cd ~/t12_data/repo_a7 && mkdir -p ~/t12_data/a7/gen/$run && { CACHE_TAG=${CACHE_TAG:-_a7} nohup python3 -m sim.assembly_lab.mimic.run_generation \
       --run $run --gpus ${gpus//,/ } --workers-per-gpu $wpg --groups $MIMIC_GROUPS --target ${TARGET:-50} \
-      --max-attempts ${MAXATT:-400} --seed $RANDOM --stagger-s ${STAGGER:-30} \
+      --max-attempts ${MAXATT:-400} --seed $RANDOM --stagger-s ${STAGGER:-30} --num-envs ${NUM_ENVS:-1} \
       > ~/t12_data/a7/gen/$run/launcher_\$(hostname)_${gpus//,/}.log 2>&1 < /dev/null & }"
     "${SSH[@]}" "$h" "$cmd"
     echo "[launch] $h gpus $gpus x $wpg workers: $MIMIC_GROUPS"

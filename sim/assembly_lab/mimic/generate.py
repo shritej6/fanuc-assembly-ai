@@ -19,8 +19,11 @@ every rejection with its reason goes to <out>.rejects.jsonl.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import copy
 import json
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -143,7 +146,7 @@ def check_rows(rows: np.ndarray, skill: str) -> None:
 
 
 class Generator:
-    def __init__(self, a, backend=None):
+    def __init__(self, a, backend=None, sources=None):
         from ..skills import record
         from ..skills.force_guard import load_limits
 
@@ -158,8 +161,8 @@ class Generator:
         held = [i > 0 and s.object_ref == "seat_frame" for i, s in enumerate(self.sk.subtasks)]
         self.held = held
         self.trim = free_space_starts(self.sk.subtasks)
-        self.segments, self.source_counts = load_sources(a.seeds, self.sk.signals, refs, held,
-                                                         cases=SOURCE_CASES[a.skill], max_seat_tries=1)
+        self.segments, self.source_counts = sources or load_sources(a.seeds, self.sk.signals, refs, held,
+                                                                    cases=SOURCE_CASES[a.skill], max_seat_tries=1)
         if not self.segments[0]:
             raise SystemExit(f"no usable source demo in {len(a.seeds)} seed files: {self.source_counts}")
         self.backend = backend or self._isaac_backend(a)
@@ -167,6 +170,7 @@ class Generator:
         self.gl = G.GateLimits()
         self.run_cfg = record.Run(self.limits, self.per_object, a.max_attempts, a.allow_touch_proxy,
                                   path=chunk_path(a.out, 0))
+        self.finish_lock = contextlib.nullcontext()  # batch.Hub.lock: meta lines in the recorder's export order
 
     def _isaac_backend(self, a):
         from ..skills.isaac_backend import IsaacBackend
@@ -426,11 +430,13 @@ class Generator:
 
     def _close_episode(self, rec, ok: bool, reason: str) -> None:
         if rec is None:
-            self.backend.finish(False)
+            with self.finish_lock:
+                self.backend.finish(False)
             return
         rec.meta = {**rec.meta, "generator": "mimicgen", "mimic_sources": json.dumps(self.ep.get("sources", [])),
                     "env_manifest_md5": env_manifest_md5()}
-        self.record._finish(self.backend, self.run_cfg, rec, ok, self.scenario, reason)
+        with self.finish_lock:
+            self.record._finish(self.backend, self.run_cfg, rec, ok, self.scenario, reason)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -462,13 +468,23 @@ def reason_key(reason: str) -> str:
 def run(a) -> dict:
     a.out = a.out.expanduser()
     a.out.parent.mkdir(parents=True, exist_ok=True)
+    if a.num_envs > 1:
+        return run_batched(a)
     gen = Generator(a)
+    try:
+        return loop(gen, a, a.out, rotate_every=a.rotate_every)
+    finally:
+        gen.backend.close(gen.run_cfg.path)
+
+
+def loop(gen: Generator, a, stats_out: Path, rotate_every: int = 0) -> dict:
+    """Attempts until the target, max attempts or a STOP file; <stats_out>.stats.json / .rejects.jsonl."""
     parts = gen.parts()
     stats = {"skill": a.skill, "product": a.product, "attempts": 0, "accepted": 0, "reset_invalid": 0,
-             "no_case": 0, "failed_gates": {}, "sources": gen.source_counts, "out": str(a.out)}
+             "no_case": 0, "failed_gates": {}, "sources": gen.source_counts, "out": str(stats_out)}
     t0, k = time.time(), 0
     try:
-        with open(f"{a.out}.rejects.jsonl", "a") as rej:
+        with open(f"{stats_out}.rejects.jsonl", "a") as rej:
             while stats["accepted"] < a.target and stats["attempts"] < a.max_attempts:
                 if stop_requested(a.out):
                     stats["stopped"] = "STOP file: ended between attempts"
@@ -477,27 +493,102 @@ def run(a) -> dict:
                 k += 1
                 t1 = time.time()
                 res = gen.attempt(part)
-                if res["status"] in ("no_case", "reset_invalid"):
-                    stats[res["status"]] += 1
-                    if stats[res["status"]] > 5 * a.max_attempts:
-                        stats["aborted"] = f"too many {res['status']}: {res['reason']}"
+                if not _count(stats, res, a.max_attempts):
+                    if "aborted" in stats:
                         break
                     continue
-                stats["attempts"] += 1
-                if res["status"] == "kept":
-                    stats["accepted"] += 1
-                else:
-                    key = reason_key(res["reason"])
-                    stats["failed_gates"][key] = stats["failed_gates"].get(key, 0) + 1
                 rej.write(json.dumps({"part": part, "s": round(time.time() - t1, 1), **res}, default=str) + "\n")
                 rej.flush()
-                _write_stats(a.out, stats, t0)
-                if a.rotate_every and stats["attempts"] % a.rotate_every == 0:
+                _write_stats(stats_out, stats, t0)
+                if rotate_every and stats["attempts"] % rotate_every == 0:
                     gen.rotate()
     finally:
-        _write_stats(a.out, stats, t0)
-        gen.backend.close(gen.run_cfg.path)
+        _write_stats(stats_out, stats, t0)
     return stats
+
+
+def _count(stats: dict, res: dict, max_attempts: int) -> bool:
+    """Add one attempt's outcome; False for a reset that never became an attempt (no case / invalid reset)."""
+    if res["status"] in ("no_case", "reset_invalid"):
+        stats[res["status"]] += 1
+        if stats[res["status"]] > 5 * max_attempts:
+            stats["aborted"] = f"too many {res['status']}: {res['reason']}"
+        return False
+    stats["attempts"] += 1
+    if res["status"] == "kept":
+        stats["accepted"] += 1
+    else:
+        key = reason_key(res["reason"])
+        stats["failed_gates"][key] = stats["failed_gates"].get(key, 0) + 1
+    return True
+
+
+def run_batched(a) -> dict:
+    """num_envs cells in one process (batch.py): one lane thread per cell, the env on this thread."""
+    from .batch import Hub, lane_backend
+
+    raw, owner = _batched_env(a)
+    hub = Hub(raw, a.num_envs)
+    gens, threads, out = [], [], {}
+    for k in range(a.num_envs):
+        ak = copy.copy(a)
+        ak.seed = a.seed * 1000 + k
+        gen = Generator(ak, lane_backend(hub, k, SCENARIO[a.skill], a.product, str(chunk_path(a.out, 0))),
+                        sources=(gens[0].segments, gens[0].source_counts) if gens else None)
+        gen.finish_lock = hub.lock
+        if gens:
+            gen.run_cfg = gens[0].run_cfg  # one recorder file for every cell
+        gens.append(gen)
+        threads.append(threading.Thread(target=_lane, args=(gen, ak, lane_out(a.out, k), out, k), daemon=True))
+    hub.on_reset_all = lambda: _rotate_shared(owner, gens[0].run_cfg, a.out)
+    for th in threads:
+        th.start()
+    try:
+        hub.serve()
+    finally:
+        for th in threads:
+            th.join(timeout=60)
+        owner.close(gens[0].run_cfg.path)
+    return {"lanes": out}
+
+
+def _lane(gen: Generator, a, stats_out: Path, out: dict, k: int) -> None:
+    try:
+        out[k] = loop(gen, a, stats_out)
+    finally:
+        gen.backend.close()  # retire this lane from the hub
+
+
+def lane_out(out: Path, k: int) -> Path:
+    """Stats / rejects of cell k of a batched worker: <stem>_e<k>.hdf5 (recorder chunks stay <stem>_c<n>.hdf5)."""
+    return out.with_name(f"{out.stem}_e{k:02d}{out.suffix}")
+
+
+def _rotate_shared(owner, run_cfg, out: Path) -> None:
+    """At a lockstep reset (no cell mid-episode): close + annotate the shared recorder file, record on in the next."""
+    if not run_cfg.metas:
+        return
+    k = int(run_cfg.path.stem.rsplit("_c", 1)[1]) + 1
+    nxt = chunk_path(out, k)
+    owner.rotate(str(nxt))
+    run_cfg.path, run_cfg.metas = nxt, []
+
+
+def _batched_env(a):
+    """agent 9's AssemblyCellEnv(num_envs=N) for this skill / product, and an IsaacBackend shell that owns its
+    recorder file (rotate / close + annotate)."""
+    from ..env.cell_env import AssemblyCellEnv, CellEnvCfg
+    from ..skills.backends import base_of, sheet_parts
+    from ..skills.frames import LocalFrameEnv
+    from ..skills.isaac_backend import SKILL_OF, IsaacBackend
+
+    scenario = SCENARIO[a.skill]
+    raw = AssemblyCellEnv(CellEnvCfg(device=a.device, pool=[base_of(a.product), *sheet_parts(a.product)],
+                                     cameras=tuple(a.cameras), skill=SKILL_OF[scenario],
+                                     record_to=str(chunk_path(a.out, 0)), num_envs=a.num_envs))
+    owner = IsaacBackend.__new__(IsaacBackend)
+    owner.raw, owner.env, owner.record_path = raw, LocalFrameEnv(raw), str(chunk_path(a.out, 0))
+    return raw, owner
 
 
 def _write_stats(out: Path, stats: dict, t0: float) -> None:
@@ -517,6 +608,7 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=200)
     ap.add_argument("--max-attempts", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--num-envs", type=int, default=1, help="cells stepped in lockstep in this process (batch.py)")
     ap.add_argument("--rotate-every", type=int, default=1, help="close the recorder file every N attempts (0: never)")
     ap.add_argument("--cameras", nargs="*", default=["table", "side", "wrist"], choices=("table", "side", "wrist"))
     ap.add_argument("--device", default="cuda:0", help="physics device: cuda:0, or cpu (one env: often faster)")

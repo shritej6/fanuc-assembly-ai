@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -58,13 +59,13 @@ def running_args() -> str:
 
 def closed_chunks(root: Path, args: str) -> list[str]:
     """Recorder chunks safe to read: all but the newest chunk of each worker whose container still runs."""
-    out = []
+    out: list[str] = []
     for stats in sorted(root.glob("*/p*/*.hdf5.stats.json")):
-        worker = Path(str(stats)[: -len(".stats.json")])
+        worker = Path(re.sub(r"_e\d+(\.hdf5)$", r"\1", str(stats)[: -len(".stats.json")]))  # batched cells share
         chunks = sorted(worker.parent.glob(f"{worker.stem}_c[0-9][0-9][0-9].hdf5"))
         if chunks and str(worker) in args:
             chunks = chunks[:-1]
-        out += [str(c) for c in chunks if Path(f"{c}.meta.jsonl").exists()]
+        out += [str(c) for c in chunks if Path(f"{c}.meta.jsonl").exists() and str(c) not in out]
     return out
 
 
@@ -119,6 +120,7 @@ def launch(a) -> list[subprocess.Popen]:
                "--skill", skill, "--product", product, "--seeds", *seed_files(a.seeds, skill, product),
                "--out", str(out), "--target", str(a.target), "--max-attempts", str(a.max_attempts),
                "--seed", str(a.seed + 1000 * gpu + 100 * w + i), "--cameras", *a.cameras,
+               "--num-envs", str(a.num_envs),
                *(["--allow-touch-proxy"] if a.allow_touch_proxy else [])]
         env = dict(os.environ, GPU=str(gpu), REPO=str(a.repo))
         log = open(f"{out}.log", "w")  # noqa: SIM115 - one file per worker, closed when this launcher exits
@@ -139,6 +141,7 @@ def main() -> None:
     ap.add_argument("--groups", nargs="+", default=["pick_insert:4"], help="skill:product, e.g. pick_insert:4")
     ap.add_argument("--gpus", type=int, nargs="+", default=[0])
     ap.add_argument("--workers-per-gpu", type=int, default=1)
+    ap.add_argument("--num-envs", type=int, default=1, help="cells per worker (generate.py --num-envs, batch.py)")
     ap.add_argument("--target", type=int, default=50, help="accepted demos per worker")
     ap.add_argument("--max-attempts", type=int, default=400, help="per worker")
     ap.add_argument("--seed", type=int, default=0)
