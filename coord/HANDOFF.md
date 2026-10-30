@@ -2,6 +2,31 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-29 · T14 PatchCore recovery · CODEX · REVIEW, installed-pose rear-guard evaluation data blocked
+
+- Measured failure on Rosie: M1_04 / M2_04 / M3_04 had 629 / 643 / 630 good O training crops and 102 / 85 / 87
+  held-out good O crops, but each had 0 matching-pose C/I `test_good` and 0 `test_bad`. The other 21 parts had at
+  least 34 good and 23 bad evaluation crops. T27 therefore remained `PARTIAL_DONE missing: t14`.
+- Root cause: these three rear guards stand about 34 mm high in their installed pose, but every old C/I stable pose
+  differs from that up face (most lie flat at 8 mm). `_REST.json` correctly marked them fallen, so the installed-pose
+  filter correctly excluded them. Removing that filter or lowering the 10-crop gate would measure pose shift rather
+  than installed-pose defect detection.
+- Changed: `perception/anomaly/train_patchcore.py` now checks both evaluation classes before constructing anomalib or
+  fitting a memory bank. Unsupported parts emit `insufficient_evaluation_support` with the required and observed
+  counts. The outer T27 gate still requires `measured`, so this remains fail closed.
+- Security gate is unchanged. The copied Rosie artifact audited 114 exact dependencies with 0 known vulnerabilities;
+  Torch 2.14.1+cu126 and anomalib 2.7.0 imported successfully. No real-cell image entered training or this analysis.
+- Verified locally: focused 7 tests and full 99 tests passed; `ruff check .`, targeted Ruff format, `uv lock --check`,
+  `uv pip check`, diff checks, protected-file checks, and the 40-line / 500-line limits passed.
+- Data needed before T14 can complete: render a synthetic evaluation-only wrist set for M1_04 / M2_04 / M3_04 in
+  `installed_rest`, with exact balanced `ok` and defect schedules and at least 10 accepted crops in each class per
+  part. Match O's wrist view (147-153 mm standoff, 0-3 deg tilt, 8 mm target offset), set `fallen_prob: 0`, cycle all
+  six existing CAD defect variants, and export it only to `test_good` / `test_bad`; O remains the only training set.
+  A one-chunk set can be rendered with `DATA_ROOT=... sdg/spark/render_chunk.sh S 0` (or Rosie
+  `ISAAC_SIF=... DATA_ROOT=... sdg/rosie/submit.sh S 0`) after the CLAUDE-owned T25 sampler adds the balanced set S.
+- Next: generate and QA that set, copy it with immutable provenance, rerun only T14 in the audited environment, and
+  require all 24 metrics files to say `measured`. Until then, do not claim a rear-guard AUROC/F1 or mark T14 done.
+
 ## 2026-10-28 · T13 + T14 READY · CLAUDE (for CODEX) · start training on the finished synthetic sets
 
 - User said go (2026-10-28 ~08:00): T13 and T14 are READY for Codex.
