@@ -83,7 +83,8 @@
    "family": "housing_control",
    "product": 1,
    "lookalikes": [
-    "M2_01"
+    "M2_01",
+    "M3_01"
    ]
   },
   {
@@ -143,7 +144,9 @@
    "object_id": "M3_01",
    "family": "housing_control",
    "product": 3,
-   "lookalikes": []
+   "lookalikes": [
+    "M1_01"
+   ]
   },
   {
    "object_id": "M3_02",
@@ -266,7 +269,7 @@
   }
  ],
  "lookalike_threshold_mm": 2.5,
- "measurement": "max two-way nearest-surface distance, 20k samples per mesh, meshes aligned at bbox min (print pose); 2026-10-27",
+ "measurement": "max two-way nearest-surface distance, 20k samples per mesh, meshes aligned at bbox min (print pose); 2026-10-27. Lookalikes also include same-envelope size twins whose distinguishing internal feature requires a wrist close-up; M1_01/M3_01 added from printed-STL analysis 2026-10-30.",
  "pairs": [
   {
    "a": "F01",

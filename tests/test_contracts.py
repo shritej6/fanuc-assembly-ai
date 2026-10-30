@@ -42,3 +42,13 @@ def test_lookalikes_are_symmetric() -> None:
     for oid, others in objs.items():
         for other in others:
             assert oid in objs[other], f"{oid} lists {other} but not the reverse"
+
+
+def test_same_size_control_housings_require_a_lookalike_check() -> None:
+    objects = {
+        item["object_id"]: set(item["lookalikes"])
+        for item in json.loads((CONTRACTS / "taxonomy.json").read_text())["objects"]
+    }
+
+    assert "M3_01" in objects["M1_01"]
+    assert "M1_01" in objects["M3_01"]
