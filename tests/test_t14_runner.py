@@ -122,8 +122,8 @@ def _runtime_provenance(root: Path, env_dir: Path) -> dict[str, str]:
     bootstrap_freeze = bootstrap / "requirements.freeze.txt"
     bootstrap_requirements = bootstrap / "requirements.audit.txt"
     bootstrap_audit = bootstrap / "pip-audit.json"
-    bootstrap_freeze.write_text("uv==0.13.6\n")
-    bootstrap_requirements.write_text("uv==0.13.6\n")
+    bootstrap_freeze.write_text("pip==26.2.2\nsetuptools==84.2.1\nuv==0.13.6\n")
+    bootstrap_requirements.write_text("pip==26.2.2\nsetuptools==84.2.1\nuv==0.13.6\n")
     bootstrap_audit.write_text("{}\n")
     return {
         "python": "3.11.18",

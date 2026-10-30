@@ -33,9 +33,10 @@ def _bootstrap_artifact(root: Path) -> dict[str, str]:
     uv.write_text("#!/bin/sh\necho 'uv 0.13.6'\n")
     uv.chmod(0o755)
     artifact = {"uv": "0.13.6", "uv_executable": str(uv), "uv_executable_sha256": _sha(uv)}
+    bootstrap_packages = "pip==26.2.2\nsetuptools==84.2.1\nuv==0.13.6\n"
     for field, content in (
-        ("bootstrap_freeze", "uv==0.13.6\n"),
-        ("bootstrap_audit_requirements", "uv==0.13.6\n"),
+        ("bootstrap_freeze", bootstrap_packages),
+        ("bootstrap_audit_requirements", bootstrap_packages),
         ("bootstrap_pip_audit", "{}\n"),
     ):
         path = root / field
@@ -106,15 +107,31 @@ def test_brev_environment_is_secure_pinned_and_l4_gated() -> None:
     assert "venv --managed-python --no-python-downloads --no-config --seed" in script
     assert "PIP_*|UV_*) unset" in script
     assert script.count("-m pip check") == 2 and script.count("pip freeze --all") == 2
-    assert script.count("--strict --no-deps --disable-pip") == 2
-    assert script.count("filelock==4.2.4") == 2
-    assert script.index('"$BOOTSTRAP_DIR/bin/pip-audit"') < script.index('"$BOOTSTRAP_DIR/bin/uv" python install')
     assert "get_device_capability() != (8, 9)" in script
     assert '"sm_89" not in torch.cuda.get_arch_list()' in script
     assert 'torch.cuda.get_device_name().strip() != "NVIDIA L4"' in script
     assert '"runtime_kind": "brev-vm"' in script
     assert '"runtime_sha256": sys.argv[7]' in script
     assert '"torch": version("torch")' in script
+
+
+def test_brev_bootstrap_is_minimal_and_audited_by_the_final_environment() -> None:
+    script = SETUP.read_text()
+    bootstrap_install = script[
+        script.index('"$BOOTSTRAP_DIR/bin/python" -m pip install') : script.index(
+            '"$BOOTSTRAP_DIR/bin/python" -m pip check'
+        )
+    ]
+    assert "pip==26.2.2 setuptools==84.2.1 uv==0.13.6" in bootstrap_install
+    assert "pip-audit" not in bootstrap_install and "filelock" not in bootstrap_install
+    assert script.count("-m pip check") == 2 and script.count("pip freeze --all") == 2
+    assert script.count("--strict --no-deps --disable-pip") == 2
+    assert script.count("filelock==4.2.4") == 1 and script.count("pip-audit==2.10.1") == 1
+    assert '"$BOOTSTRAP_DIR/bin/pip-audit"' not in script
+    assert script.count('"$ENV_DIR/bin/pip-audit"') == 2
+    bootstrap_audit = '--requirement "$BOOTSTRAP_DIR/requirements.audit.txt" --format=json --output "$BOOTSTRAP_AUDIT"'
+    final_audit = '--requirement "$ENV_DIR/requirements.audit.txt" --format=json --output "$AUDIT"'
+    assert script.index(bootstrap_audit) < script.index(final_audit) < script.index('"$ARTIFACT" "$AUDIT"')
     for field in (
         "python_executable_sha256",
         "uv_executable_sha256",

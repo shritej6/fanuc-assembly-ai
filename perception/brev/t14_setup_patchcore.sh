@@ -84,33 +84,10 @@ unset PYTHONPATH PYTHONHOME VIRTUAL_ENV
 
 python3 -m venv "$BOOTSTRAP_DIR"
 "$BOOTSTRAP_DIR/bin/python" -m pip install \
-    pip==26.2.2 setuptools==84.2.1 uv==0.13.6 pip-audit==2.10.1 filelock==4.2.4 \
+    pip==26.2.2 setuptools==84.2.1 uv==0.13.6 \
     --index-url https://pypi.org/simple
 "$BOOTSTRAP_DIR/bin/python" -m pip check
 "$BOOTSTRAP_DIR/bin/python" -m pip freeze --all > "$BOOTSTRAP_DIR/requirements.freeze.txt"
-"$BOOTSTRAP_DIR/bin/python" - \
-    "$BOOTSTRAP_DIR/requirements.freeze.txt" "$BOOTSTRAP_DIR/requirements.audit.txt" <<'PY'
-import sys
-from pathlib import Path
-
-from packaging.version import InvalidVersion, Version
-
-freeze, audit = map(Path, sys.argv[1:])
-normalized = []
-for line in freeze.read_text().splitlines():
-    if line.count("==") != 1:
-        raise RuntimeError(f"audit requires one exact version pin per line: {line!r}")
-    package, raw_version = line.split("==", 1)
-    try:
-        normalized.append(f"{package}=={Version(raw_version).public}")
-    except InvalidVersion as exc:
-        raise RuntimeError(f"invalid frozen version for {package}: {raw_version}") from exc
-temporary = audit.with_suffix(".tmp")
-temporary.write_text("\n".join(normalized) + "\n")
-temporary.replace(audit)
-PY
-"$BOOTSTRAP_DIR/bin/pip-audit" --strict --no-deps --disable-pip --progress-spinner=off \
-    --requirement "$BOOTSTRAP_DIR/requirements.audit.txt" --format=json --output "$BOOTSTRAP_AUDIT"
 test "$("$BOOTSTRAP_DIR/bin/python" -c 'from importlib.metadata import version; print(version("uv"))')" = "$UV_VERSION"
 [[ "$("$BOOTSTRAP_DIR/bin/uv" --version)" =~ ^uv[[:space:]]+${UV_VERSION}([[:space:]].*)?$ ]]
 
@@ -133,26 +110,33 @@ esac
 "$ENV_DIR/bin/python" -m pip check
 "$ENV_DIR/bin/python" -m pip freeze --all > "$ENV_DIR/requirements.freeze.txt"
 
-"$ENV_DIR/bin/python" - "$ENV_DIR/requirements.freeze.txt" "$ENV_DIR/requirements.audit.txt" <<'PY'
+"$ENV_DIR/bin/python" - \
+    "$BOOTSTRAP_DIR/requirements.freeze.txt" "$BOOTSTRAP_DIR/requirements.audit.txt" \
+    "$ENV_DIR/requirements.freeze.txt" "$ENV_DIR/requirements.audit.txt" <<'PY'
 import sys
 from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
-freeze, audit = map(Path, sys.argv[1:])
-normalized = []
-for line in freeze.read_text().splitlines():
-    if line.count("==") != 1:
-        raise RuntimeError(f"audit requires one exact version pin per line: {line!r}")
-    package, raw_version = line.split("==", 1)
-    try:
-        normalized.append(f"{package}=={Version(raw_version).public}")
-    except InvalidVersion as exc:
-        raise RuntimeError(f"invalid frozen version for {package}: {raw_version}") from exc
-temporary = audit.with_suffix(".tmp")
-temporary.write_text("\n".join(normalized) + "\n")
-temporary.replace(audit)
+paths = tuple(map(Path, sys.argv[1:]))
+if len(paths) != 4:
+    raise RuntimeError("expected bootstrap and final freeze/audit path pairs")
+for freeze, audit in zip(paths[::2], paths[1::2], strict=True):
+    normalized = []
+    for line in freeze.read_text().splitlines():
+        if line.count("==") != 1:
+            raise RuntimeError(f"audit requires one exact version pin per line: {line!r}")
+        package, raw_version = line.split("==", 1)
+        try:
+            normalized.append(f"{package}=={Version(raw_version).public}")
+        except InvalidVersion as exc:
+            raise RuntimeError(f"invalid frozen version for {package}: {raw_version}") from exc
+    temporary = audit.with_suffix(".tmp")
+    temporary.write_text("\n".join(normalized) + "\n")
+    temporary.replace(audit)
 PY
+"$ENV_DIR/bin/pip-audit" --strict --no-deps --disable-pip --progress-spinner=off \
+    --requirement "$BOOTSTRAP_DIR/requirements.audit.txt" --format=json --output "$BOOTSTRAP_AUDIT"
 "$ENV_DIR/bin/pip-audit" --strict --no-deps --disable-pip --progress-spinner=off \
     --requirement "$ENV_DIR/requirements.audit.txt" --format=json --output "$AUDIT"
 

@@ -29,7 +29,19 @@ def test_brev_environment_audits_its_exact_managed_python_bootstrap() -> None:
     script = BREV_SCRIPT.read_text()
 
     assert "uv==0.13.6" in script and "PYTHON_VERSION=3.11.18" in script
+    bootstrap_install = script[
+        script.index('"$BOOTSTRAP_DIR/bin/python" -m pip install') : script.index(
+            '"$BOOTSTRAP_DIR/bin/python" -m pip check'
+        )
+    ]
+    assert "pip==26.2.2 setuptools==84.2.1 uv==0.13.6" in bootstrap_install
+    assert "pip-audit" not in bootstrap_install and "filelock" not in bootstrap_install
     assert script.count("--strict --no-deps --disable-pip") == 2
+    assert '"$BOOTSTRAP_DIR/bin/pip-audit"' not in script
+    assert script.count('"$ENV_DIR/bin/pip-audit"') == 2
+    assert script.index('"$ENV_DIR/bin/python" - \\\n    "$BOOTSTRAP_DIR/requirements.freeze.txt"') < script.index(
+        '--requirement "$BOOTSTRAP_DIR/requirements.audit.txt"'
+    )
     assert '"python": platform.python_version()' in script
     assert '"uv": sys.argv[13]' in script
     for evidence in ("bootstrap_freeze", "bootstrap_audit_requirements", "bootstrap_pip_audit"):
