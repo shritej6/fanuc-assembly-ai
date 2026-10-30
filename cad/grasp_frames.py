@@ -10,14 +10,19 @@ to the printed FANUC_PRINT_FIRST/output/stl, checked 2026-10-29). Per object:
 - `T_local_from_stl`: STL mesh frame -> the part's installed local frame. Identity except the rear guards, whose STL
   is laid flat for printing (print_rotation, then re-centred in x, y and seated on z = 0). FoundationPose estimates
   the STL frame's pose, so a measured pose must be multiplied by the inverse of this before using the offsets.
-- `grips`: the CAD grip pads, in the installed local frame: closing axis, pad width, span, contact height, and the
-  fingertip point (TCP) to command. The TCP comes from the Team V printed fingers' validated grasp of that part
-  (cad/fingers/product_grasp_frames.json, 24/24 PASS in that project's CAD check): its contact centre, moved down by
-  the 1.85 mm from contact centre to fingertip. That contact centre must lie on the CAD pad, or nothing is written.
-- `roll_offset_deg`: add the part's measured yaw to get the TCP r (`w, p = -180, 0`). The twin's IK spreads the jaws
-  along rot(w, p, r) @ +y (sim/starter/ik.py, scene_config.FINGER_SPREAD_AXIS = +y): at w = -180, p = 0 that is
-  (sin r, -cos r, 0) in UF0, so jaws closing along the part's local X need r = yaw + 90 and along local Y need
-  r = yaw (both +-180 are the same grasp; pick the one nearest the current r).
+- `grips`: the CAD grip pads, in the installed local frame: closing axis, pad width, span, contact height, the pad
+  point and the TCP to command. Both come from the Team V printed fingers' validated grasp of that part
+  (cad/fingers/product_grasp_frames.json, 24/24 PASS in that project's CAD check):
+  - `pad_point_local_mm`: the fingers' contact centre moved down by the 1.85 mm from contact centre to fingertip.
+    It must lie on the CAD pad, or nothing is written. It is NOT the point to command.
+  - `tcp_local_mm`: {wrist turn: TCP}. The TCP (UTOOL, on the flange axis at the tip plane) is 1.8 mm from the pad
+    point along the gripper STEP X axis, which is (cos r, sin r) in UF0 at w, p = -180, 0, so the two turns r and
+    r + 180 put the TCP on opposite sides of the pad. Key k is the turn relative to the part: r = measured yaw + k.
+    Every Team V validated grasp is checked to satisfy this, or nothing is written.
+- `roll_offset_deg`: the turn that spreads the jaws along the closing axis (the other one is roll_offset + 180).
+  The twin's IK spreads the jaws along rot(w, p, r) @ +y (sim/starter/ik.py, scene_config.FINGER_SPREAD_AXIS = +y):
+  at w = -180, p = 0 that is (sin r, -cos r, 0) in UF0, so jaws closing along the part's local X need r = yaw + 90
+  and along local Y need r = yaw.
 Every pad must fit the Team V fingers on the SMC MHZL2-16D2 (rubber fingertip gap 4.5 mm closed, 16.5 mm open,
 cad/fingers/README.md): wider than the closed gap and narrower than the open gap, or nothing is written.
 """
@@ -42,6 +47,8 @@ CLOSED_GAP_MAX_MM = 4.5     # Team V fingers, rubber pads closed (cad/fingers/RE
 OPEN_GAP_MIN_MM = 16.5      # Team V fingers, rubber pads open (same source)
 TIP_BELOW_CONTACT_MM = 86.10 - 84.25   # tip plane minus contact centre, gripper STEP frame (same source)
 CONTACT_ON_PAD_MM = 0.5     # the fingers' contact centre may sit this far from the CAD pad centre across the pad
+TCP_FROM_CONTACT_MM = 1.8   # flange axis minus contact centre along gripper STEP X (contact at STEP X = -1.8)
+TCP_CHECK_TOL_MM = 0.01     # every validated Team V grasp must match that offset this closely
 ROLL_OFFSET_DEG = {"X": 90.0, "Y": 0.0}
 
 
@@ -78,7 +85,25 @@ def local_from_stl(part) -> np.ndarray:
 def _contact(fingers: dict, name: str) -> np.ndarray:
     if name not in fingers:
         raise GraspFrameError(f"{name}: no validated grasp in {FINGERS.name}")
-    return np.array([float(v) for v in fingers[name]["contact_centre_world"].strip("()").split(",")])
+    contact = np.array([float(v) for v in fingers[name]["contact_centre_world"].strip("()").split(",")])
+    frame = fingers[name]
+    step_x = np.asarray(frame["rotation_gripper_to_world"], dtype=float)[:, 0]
+    gap = np.asarray(frame["translation_mm"], dtype=float)[:2] - (contact[:2] + TCP_FROM_CONTACT_MM * step_x[:2])
+    if np.abs(gap).max() > TCP_CHECK_TOL_MM:
+        raise GraspFrameError(f"{name}: validated gripper origin is not {TCP_FROM_CONTACT_MM} mm from the contact "
+                              f"along STEP X (off by {gap.round(4).tolist()} mm)")
+    return contact
+
+
+def tcp_by_turn(pad_point: np.ndarray, roll_offset: float) -> dict[str, list[float]]:
+    """TCP in the part's local frame for each wrist turn k (r = yaw + k): the pad point + 1.8 mm * (cos k, sin k)."""
+    out = {}
+    for turn in (roll_offset, roll_offset + 180.0):
+        k = math.remainder(turn, 360.0) + 0.0     # (-180, 180], with +0.0 instead of -0.0
+        k = 180.0 if k == -180.0 else k
+        shift = TCP_FROM_CONTACT_MM * np.array([math.cos(math.radians(k)), math.sin(math.radians(k)), 0.0])
+        out[f"{k:g}"] = [round(float(v), 4) + 0.0 for v in pad_point + shift]
+    return out
 
 
 def grip_entry(name: str, grip, origin: tuple[float, float, float], contact: np.ndarray) -> dict:
@@ -91,10 +116,12 @@ def grip_entry(name: str, grip, origin: tuple[float, float, float], contact: np.
               and grip.z_top - grip.height <= contact[2] <= grip.z_top)
     if not on_pad:
         raise GraspFrameError(f"{name}: the fingers' contact {contact.tolist()} is not on the CAD grip pad")
-    tcp = contact - np.asarray(origin) - (0.0, 0.0, TIP_BELOW_CONTACT_MM)
+    pad_point = contact - np.asarray(origin) - (0.0, 0.0, TIP_BELOW_CONTACT_MM)
     return {"closing_axis": grip.axis, "pad_width_mm": round(width, 4),
             "pad_top_z_mm": round(grip.z_top - origin[2], 4), "contact_height_mm": round(grip.height, 4),
-            "tcp_local_mm": [round(float(v), 4) for v in tcp], "roll_offset_deg": ROLL_OFFSET_DEG[grip.axis]}
+            "pad_point_local_mm": [round(float(v), 4) for v in pad_point],
+            "tcp_local_mm": tcp_by_turn(pad_point, ROLL_OFFSET_DEG[grip.axis]),
+            "roll_offset_deg": ROLL_OFFSET_DEG[grip.axis]}
 
 
 def part_entry(part, base: str, fingers: dict) -> dict:
@@ -116,7 +143,8 @@ def frames() -> dict:
             objects[object_id(part.name)] = part_entry(part, base, fingers)
     return {"source": "cad/products build() (printed CAD) + cad/fingers (Team V fingers), cad/grasp_frames.py",
             "units": "mm, deg",
-            "tcp": "fingertip point, w, p = -180, 0; r = measured part yaw + roll_offset_deg",
+            "tcp": "UTOOL on the flange axis at the tip plane, w, p = -180, 0; r = measured part yaw + k, "
+                   "TCP = installed pose applied to grips[].tcp_local_mm[k] (k = roll_offset_deg or +180)",
             "gripper_gap_mm": {"closed_max": CLOSED_GAP_MAX_MM, "open_min": OPEN_GAP_MIN_MM},
             "objects": dict(sorted(objects.items()))}
 

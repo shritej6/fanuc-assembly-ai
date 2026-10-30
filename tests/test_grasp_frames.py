@@ -50,9 +50,35 @@ def test_contact_off_the_pad_is_refused():
         grasp_frames.grip_entry("off", _Grip, (0.0, 0.0, 0.0), np.array([1.0, 0.0, 8.0]))
 
 
-def test_tcp_is_the_contact_moved_down_to_the_fingertip():
+def test_pad_point_is_the_contact_moved_down_to_the_fingertip():
     entry = grasp_frames.grip_entry("ok", _Grip, (0.0, 2.0, 1.0), np.array([0.0, 3.0, 8.0]))
-    assert entry["tcp_local_mm"] == pytest.approx([0.0, 1.0, 7.0 - (86.10 - 84.25)])
+    assert entry["pad_point_local_mm"] == pytest.approx([0.0, 1.0, 7.0 - (86.10 - 84.25)])
+
+
+def test_tcp_is_1_8_mm_off_the_pad_and_flips_with_the_wrist_turn():
+    entry = grasp_frames.grip_entry("ok", _Grip, (0.0, 2.0, 1.0), np.array([0.0, 3.0, 8.0]))
+    z = 7.0 - (86.10 - 84.25)
+    assert entry["tcp_local_mm"] == {"90": pytest.approx([0.0, 2.8, z]), "-90": pytest.approx([0.0, -0.8, z])}
+
+
+def test_every_tcp_reproduces_the_team_v_validated_gripper_origin():
+    """At the validated turn, installed origin + tcp_local_mm[k] is Team V's gripper origin (flange axis), x and y."""
+    fingers = json.loads(grasp_frames.FINGERS.read_text())
+    for oid, obj in COMMITTED["objects"].items():
+        if not oid.startswith("M"):
+            continue
+        frame = fingers[obj["name"]]
+        step_x = np.array(frame["rotation_gripper_to_world"])[:, 0]
+        k = math.degrees(math.atan2(step_x[1], step_x[0]))
+        tcp = np.add(obj["installed_origin_mm"], obj["grips"][0]["tcp_local_mm"][f"{k:g}"])
+        assert tcp[:2] == pytest.approx(frame["translation_mm"][:2], abs=0.01), oid
+
+
+def test_gripper_origin_not_1_8_mm_from_the_contact_is_refused():
+    fingers = json.loads(grasp_frames.FINGERS.read_text())
+    frame = dict(fingers["M1_01_Housing"], translation_mm=[0.0, -21.06, 94.5])   # TCP on the contact: the old bug
+    with pytest.raises(grasp_frames.GraspFrameError, match="1.8 mm from the contact"):
+        grasp_frames._contact({"M1_01_Housing": frame}, "M1_01_Housing")
 
 
 def test_every_tcp_comes_from_a_team_v_finger_contact():
