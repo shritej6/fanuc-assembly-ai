@@ -19,8 +19,12 @@ need it.
 - intrusion → freeze, re-scan, re-plan
 
 Also, from the earlier review (PR #9):
-- Targets must use `tcp_local_mm`, not the part origin (it can be up to 27.9 mm too low for M1_04).
-- Roll = yaw + `roll_offset_deg` (+90 for X pads, +0 for Y pads). Source: `cad/grasp_frames.json`, T29 PR #15.
+- Targets must use the grasp TCP, not the part origin (the origin can be up to 27.9 mm too low for M1_04).
+- **Updated 2026-10-30 (PR #15 commit fac0590):** `tcp_local_mm` is now `{turn: TCP}`. Pick a wrist turn k
+  (`roll_offset_deg` or that + 180, whichever keeps J6 in range nearest the current r), command r = yaw + k and
+  TCP = installed pose applied to `tcp_local_mm[k]`. The TCP (UTOOL, flange axis) is 1.8 mm from the Team V pad centre
+  along (cos r, sin r), so the two turns differ by 3.6 mm. The old single point is `pad_point_local_mm` and must
+  NOT be commanded: in Isaac Sim it pressed the finger into M1_01 at one turn in 8/8 attempts.
 
 ## 2. PerceptionPort tolerances: measured, never defaults
 `ExecutionTolerances` / `PerceptionTolerances` must come from measured values:
