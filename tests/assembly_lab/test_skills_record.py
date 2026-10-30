@@ -388,6 +388,43 @@ def test_others_trace_is_empty_when_nothing_else_moves(limits):
     assert rec.others_trace == []
 
 
+def _seated_world(limits):
+    env, (pick, ins, pull, spot, _) = _world()
+    episodes.pick_insert(EpisodeRecorder(env, ForceGuard(limits), env.reset()), pick, ins)
+    return env, pull, spot
+
+
+def test_pull_slide_is_zero_when_the_part_follows_the_fingers(limits):
+    env, pull, spot = _seated_world(limits)
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.observe())
+    episodes.pull_out(rec, pull, spot)
+    assert rec.in_hand_drift_mm["pull"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_pull_slide_measures_a_part_held_back_by_the_fit(limits):
+    """Probe M1_03: the part slid ~2 mm down in the fingers during the pull, unseen by the post-pull drift reference."""
+    env, pull, spot = _seated_world(limits)
+    real_observe, state = env.observe, {"rec": None}
+
+    def held_back():
+        obs = real_observe()
+        rec = state["rec"]
+        if rec is not None and "grasped" in rec.marks and "pulled" not in rec.marks and len(rec.frames) > rec.marks["grasped"]:
+            poses = dict(obs["sim"]["object_poses"])
+            poses[pull.object_id] = list(np.asarray(poses[pull.object_id], dtype=float) + [0, 0, -2.0, 0, 0, 0])
+            obs["sim"] = {**obs["sim"], "object_poses": poses}
+        return obs
+
+    env.observe = held_back
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.observe())
+    state["rec"] = rec
+    try:
+        episodes.pull_out(rec, pull, spot)
+    except (EpisodeFailed, GateFailed):
+        pass
+    assert rec.in_hand_drift_mm["pull"] == pytest.approx(2.0, abs=1e-3)
+
+
 def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
     """run10: build p1 and wont_seat p1 started in the same second and both opened one HDF5 (h5py lock error)."""
     a = record.isaac_out_path(tmp_path, "build", 1, 7)

@@ -28,7 +28,7 @@ SOFT_STOP_FRAC = 0.6  # stop pressing at 60 % of a force limit; the guard discar
 TRACKING_MM = 0.1  # a kept demo needs the arm on its held commands (run9 <= 0.05 mm; 53b80ea drooped ~1 mm)
 MAX_JOINT_STEP_DEG = 20.0  # obs joints (deg) per 0.1 s row; check10 measured a 352 deg J6 spin over 4 rows
 OTHERS_TRACE_MM = 0.1  # log rows where a non-target object is this far from its start pose (dragged stack, nudges)
-OTHERS_TRACE_MAX = 300  # entries per episode
+OTHERS_TRACE_MAX = 900  # entries per episode (probe M1_03 logged 298 by its set-down: 3 parts x ~100 rows)
 SUBSTEP_LOG_MIN_N = 1.0  # keep the per-substep contact of insert rows loaded above this (T12_SUBSTEP_LOG=1)
 SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: aligned parts seat at ~0.5 N (agent 2)
 SEAT_PHASES = ("slide", "push", "touch_down")  # straight down onto the seat / table
@@ -355,7 +355,12 @@ class EpisodeRecorder:
         gates.grip_gates(self.gate_log, self.obs, plan.object_id, planned, plan.grasp_tcp[5])
         self.mark("grasped")
         before = self.obs
+        gripped = checks.in_hand(self.obs, plan.object_id)
         self.run(rest)
+        # the in-hand reference below is taken after the pull, so a slide in the fingers while the tight fit holds
+        # the part (probe M1_03: ~2 mm, then a 39.7 N set-down) must be measured here
+        slide = checks.in_hand(self.obs, plan.object_id)[:3, 3] - gripped[:3, 3]
+        self.in_hand_drift_mm["pull"] = round(float(np.linalg.norm(slide)), 4)
         ok, why = checks.grasp_ok(before, self.obs, plan.object_id)
         if not ok:
             raise EpisodeFailed(f"pull-out: {why}")
