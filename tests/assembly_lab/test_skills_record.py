@@ -359,3 +359,45 @@ def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
     c = record.isaac_out_path(tmp_path, "build", 1, 8)
     assert a.parent == b.parent == tmp_path / "pick_insert"
     assert len({a, b, c}) == 3 and a.name.startswith("product_1_")
+
+
+def test_press_steps_drop_to_fine_rows_after_first_seat_contact(limits):
+    """run10: 0.05 mm rows into a ~260 N/mm seat overshot to 6-11.6 N; after first contact rows are <= 0.02 mm."""
+    from sim.assembly_lab.skills.runner import FINE_PRESS_MM, SEAT_PHASES
+
+    env, (pick, ins, *_) = _world()
+    real_step = env.step_tcp
+    touch_z = ins.seated_tcp[2] + 0.5  # the part meets the seat 0.5 mm above the CAD seated height
+
+    def seat_contact(rows, dt):
+        obs = real_step(rows, dt)
+        if np.asarray(rows)[-1, 2] <= touch_z and np.asarray(rows)[-1, 6] > 0.5:
+            obs["sim"]["contact_peak"][ins.object_id]["normal_N"] = 1.0
+        return obs
+
+    env.step_tcp = seat_contact
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    seat = [f for f in rec.frames if f.seg.phase in SEAT_PHASES]
+    z = np.array([f.action[2] for f in seat])
+    first = int(np.argmax(z <= touch_z))
+    steps = np.abs(np.diff(z[first:]))
+    assert steps.size and steps.max() <= FINE_PRESS_MM + 1e-9
+    assert any("pressing at 0.02 mm/row" in e for e in rec.events)
+    assert z[-1] == pytest.approx(ins.seated_tcp[2] - 0.1)  # still ends on the planned push height
+
+
+def test_jaw_close_is_in_the_substep_trace(limits):
+    """run10 M2_01 hit 20.7 N during the grasp before any insert: the close rows must be traced per substep."""
+    env, (pick, ins, *_) = _world()
+    real_step = env.step_tcp
+
+    def with_substeps(rows, dt):
+        obs = real_step(rows, dt)
+        obs["sim"]["substep_contact"] = {pick.object_id: [[3.0, 0.5, 0.0]] * 4}
+        return obs
+
+    env.step_tcp = with_substeps
+    rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
+    episodes.pick_insert(rec, pick, ins)
+    assert any(t["phase"] == "close" for t in rec.substep_trace)

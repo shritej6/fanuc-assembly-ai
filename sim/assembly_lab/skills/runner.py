@@ -32,7 +32,11 @@ SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: alig
 SEAT_PHASES = ("slide", "push", "touch_down")  # straight down onto the seat / table
 SEAT_STOP_N = 2.0  # seat phases stop at this normal: check10 M1_01 seated at 1-4 N in one 0.05 mm row and hit
 #                   17 N in the next (about 260 N/mm), so a 6 N stop never fires between rows
+FIRST_SEAT_N = 0.5  # a seat-phase normal above this on a target is first contact with the seat or table
+FINE_PRESS_MM = 0.02  # after first seat contact, press in steps this small: ~260 N/mm overshoots ~5 N per row,
+#                       not the 6-11.6 N run10 measured with 0.05 mm rows (the 2 N stop still ends the press)
 CONTACT_PHASES = ("touch", "level", "twist", "slide", "push", "touch_down")
+SUBSTEP_PHASES = (*CONTACT_PHASES, "close")  # the jaw close too: run10 M2_01 hit 20.7 N there before any insert
 # rows where the held part is in the bore or seated, so the fingers may move on it by design (not slip)
 CONSTRAINED_PHASES = (*CONTACT_PHASES, "relieve", "retry_lift", "wiggle_out")
 MAX_LEVEL_CORRECTION_DEG = MAX_TOOL_TILT_DEG - INSERT_TILT_DEG  # leaves room for the 3 deg entry lean
@@ -148,7 +152,7 @@ class EpisodeRecorder:
         """T12_SUBSTEP_LOG=1: keep the per-substep contact of contact-phase rows loaded above SUBSTEP_LOG_MIN_N
         (logged before the guard check, so the row that trips the guard is in the trace too)."""
         sub_all = self.obs["sim"].get("substep_contact") or {}
-        if seg.phase not in CONTACT_PHASES or not sub_all:
+        if seg.phase not in SUBSTEP_PHASES or not sub_all:
             return
         for oid, sub in sub_all.items():
             if max(abs(s[0]) for s in sub) > SUBSTEP_LOG_MIN_N:
@@ -208,18 +212,37 @@ class EpisodeRecorder:
         soft_stop: in the insert contact phases, stop at the first step whose contact passes SOFT_STOP_FRAC of a limit
         (the rest of the attempt is skipped and the seated check decides what happens next).
         """
+        seated_touch = False  # each run is one insert try or set-down: fine pressing starts at its first seat contact
         for i, seg in enumerate(segments):
             self._open_subtask(seg)
-            for row in seg.rows:
-                self._step(row, seg)
-                self.pose, self.gripper = row[:6].copy(), float(row[6])
-                self._watch_insert(row, seg)
-                if soft_stop and seg.phase in CONTACT_PHASES and self._too_hard(seg.phase):
-                    self.events.append(f"soft stop in {seg.phase} at step {len(self.frames) - 1}")
-                    return []
+            for planned in seg.rows:
+                fine = seated_touch and seg.phase in SEAT_PHASES
+                for row in (self._fine_rows(planned) if fine else (planned,)):
+                    self._step(row, seg)
+                    self.pose, self.gripper = row[:6].copy(), float(row[6])
+                    self._watch_insert(row, seg)
+                    if soft_stop and seg.phase in CONTACT_PHASES and self._too_hard(seg.phase):
+                        self.events.append(f"soft stop in {seg.phase} at step {len(self.frames) - 1}")
+                        return []
+                    if not seated_touch and seg.phase in SEAT_PHASES and self._seat_touched():
+                        seated_touch = True
+                        self.events.append(f"seat contact in {seg.phase} at step {len(self.frames) - 1}: "
+                                           f"pressing at {FINE_PRESS_MM} mm/row")
             if stop_after is not None and seg.phase == stop_after:
                 return segments[i + 1:]
         return []
+
+    def _fine_rows(self, row: np.ndarray) -> list[np.ndarray]:
+        """Split one planned row into steps of at most FINE_PRESS_MM from the current pose (angles wrap)."""
+        d = np.asarray(row[:6], dtype=float) - self.pose
+        d[3:] = wrap_deg(d[3:])
+        n = max(1, int(np.ceil(np.linalg.norm(d[:3]) / FINE_PRESS_MM - 1e-9)))
+        return [np.concatenate([self.pose + d * (k / n), row[6:]]) for k in range(1, n)] + [row]
+
+    def _seat_touched(self) -> bool:
+        contact = self.obs["sim"].get("contact_peak", self.obs["sim"].get("contact", {}))
+        return any(abs(float(c.get("normal_N", 0.0))) > FIRST_SEAT_N for oid, c in contact.items()
+                   if oid in self.targets and oid not in self.guard.exempt)
 
     def _open_subtask(self, seg: Segment) -> None:
         if not self.subtasks or self.subtasks[-1].name != seg.subtask:
