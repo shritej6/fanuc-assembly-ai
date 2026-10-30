@@ -23,17 +23,18 @@ CellEnvCfg(disturbances=True) adds the eval hooks inject_foreign(x, y, yaw), blo
 force_release(), inject_intruder(x, y) / clear_intruder() (mimic_env.py).
 Policies never read `sim` (INTERFACES.md).
 
-Several cells in one process (CellEnvCfg(num_envs=N), lockstep): every cell resets together and steps together.
+Several cells in one process (CellEnvCfg(num_envs=N)); the full contract is BATCH_API.md:
 
-    obs = env.reset_many([layout_0, ..., layout_N-1], [frames_fn_0, ...])   # list of N obs, settled together
+    obs = env.reset_many([layout_0, ..., layout_N-1], [frames_fn_0, ...])   # all cells at once, settled together
+    env.begin_reset({k: (layout, frames_fn)})          # per-env reset: env k settles while the others keep stepping
     out = env.step_tcp_many({0: (rows, dt), 3: (rows, dt)})                # {env: obs} for the envs asked
-    env.end_episode(env_id, ok)                                             # recorder: mark + export that cell now
+    ready = env.ready_resets()                         # {k: reset obs} for envs whose reset finished
+    key = env.end_episode(k, ok, attrs)                # recorder: mark + export env k's episode now -> "demo_<n>"
 
 step_tcp_many plays every listed env's rows at once; an env that runs out of rows (or is not listed) holds its last
-TCP command until the longest list is done (those hold steps are recorded too: end_episode an env before its next
-step_tcp_many when its episode is over, and reset_many drops whatever it recorded after that). An IK failure in one
-env does not stop the others: that env holds and its obs carries "ik_error" (with one env, TcpError is raised as
-before).
+TCP command until the longest list is done. Hold steps are recorded into a live episode, so end_episode an env as
+soon as its episode is over; whatever it records after that is dropped at its next reset. An IK failure in one env
+does not stop the others: that env holds and its obs carries "ik_error" (with one env, TcpError is raised as before).
 """
 
 from __future__ import annotations
@@ -121,6 +122,7 @@ class AssemblyCellEnv:
         self.masses = {u: L.pla_mass_kg(REPO / self.solver.geometry[L.type_id(u)]["stl"])[0] for u in self.pool}
         self._obs = None
         self._ended: set[int] = set()     # envs whose recorder episode end_episode exported (later steps are idle)
+        self._ready: dict[int, dict] = {}  # per-env resets that finished: {env: reset obs}
         if self.cfg.disturbances:     # only then do the hooks exist (eval/run_eval.py checks hasattr)
             for name in ("inject_foreign", "block_holes", "force_release", "inject_intruder", "clear_intruder"):
                 setattr(self, name, getattr(self.env, name))
@@ -150,16 +152,69 @@ class AssemblyCellEnv:
         self.env._metrics.reset_chunk()
         return [self._observe(e) for e in range(self.cfg.num_envs)]
 
-    def end_episode(self, env_id: int, ok: bool) -> None:
-        """Mark env_id's recorder episode succeeded / failed and export it now (its cell idles until reset_many)."""
+    def begin_reset(self, resets: dict) -> None:
+        """{env: (layout, frames_fn)}: place those cells now; each settles during the following step_tcp_many calls
+        (holding home) while the other cells keep running, then shows up in ready_resets(). Its recorder episode
+        starts at the settled scene (the settle steps are not recorded)."""
+        busy = sorted(set(resets) & self.env.settling)
+        if busy:
+            raise ValueError(f"envs {busy} are already resetting")
+        for k, (lay, fn) in resets.items():
+            self.env.begin_reset(int(k), lay, fn)
+            self._ready.pop(int(k), None)
+            self._ended.discard(int(k))
+
+    def ready_resets(self) -> dict[int, dict]:
+        """{env: reset obs} of every per-env reset that finished since the last call (obs["sim"]["settled"] False if
+        the settle cap was hit, as with reset())."""
+        out, self._ready = self._ready, {}
+        return out
+
+    def reset_envs(self, resets: dict) -> dict[int, dict]:
+        """begin_reset + hold every cell until those envs are ready. Only for when no other cell is mid-episode
+        (the hold steps would be recorded into its demo); otherwise drive the resets with step_tcp_many."""
+        self.begin_reset(resets)
+        want, got = {int(k) for k in resets}, {}
+        while not want <= set(got):
+            self.step_tcp_many({})
+            got.update(self.ready_resets())
+        self._ready.update({k: v for k, v in got.items() if k not in want})
+        return {k: got[k] for k in want}
+
+    def end_episode(self, env_id: int, ok: bool, attrs: dict | None = None) -> str | None:
+        """Mark env_id's recorder episode succeeded / failed, export it now and write `attrs` on its demo group.
+        Returns the demo key written ("demo_<n>"), or None (no recorder, empty episode, or not exported by the
+        recorder's export mode)."""
         import torch
 
-        rm = self.env.recorder_manager
-        if rm is not None:
-            ids = torch.tensor([env_id], device=self.env.device)
-            rm.set_success_to_episodes(ids, torch.tensor([[bool(ok)]], dtype=torch.bool, device=self.env.device))
-            rm.export_episodes(ids)
         self._ended.add(int(env_id))
+        rm = self.env.recorder_manager
+        if rm is None:
+            return None
+        handler = rm._dataset_file_handler        # Isaac Lab has no public "last demo written"; the handler counts
+        before = handler.demo_count
+        ids = torch.tensor([env_id], device=self.env.device)
+        rm.set_success_to_episodes(ids, torch.tensor([[bool(ok)]], dtype=torch.bool, device=self.env.device))
+        rm.export_episodes(ids)
+        if handler.demo_count == before:
+            return None
+        key = f"demo_{before}"
+        for name, value in (attrs or {}).items():
+            handler._hdf5_data_group[key].attrs[name] = value
+        handler.flush()
+        return key
+
+    def rotate(self, next_path: str) -> str | None:
+        """Close the recorder file and record on into next_path; returns the closed path. Safe while episodes are
+        in progress: they live in memory until end_episode exports them (into whichever file is open then)."""
+        rm = self.env.recorder_manager
+        if rm is None:
+            return None
+        closed = rm._dataset_file_handler._hdf5_file_stream.filename
+        rm._dataset_file_handler.close()
+        rm._dataset_file_handler = rm.cfg.dataset_file_handler_class_type()
+        rm._dataset_file_handler.create(str(next_path), env_name=getattr(self.env.cfg, "env_name", None))
+        return closed
 
     def set_frames(self, frames_mm: dict) -> None:
         """Set / move the Mimic frames after reset (prefer reset(frames_fn=...): the recorder's initial state is
@@ -191,16 +246,24 @@ class AssemblyCellEnv:
         """{env_id: (rows, dt)} -> {env_id: obs}: every listed env plays its chunk; the others hold."""
         import torch
 
+        busy = sorted({int(e) for e in requests} & self.env.settling)
+        if busy:
+            raise ValueError(f"envs {busy} are resetting: wait for ready_resets()")
         plans = {int(e): self._env_steps(int(e), rows, dt) for e, (rows, dt) in requests.items()}
         ids = sorted(plans)
-        self.env._metrics.reset_chunk(ids)
+        if ids:
+            self.env._metrics.reset_chunk(ids)
         term = self.term
-        for k in range(max(len(p) for p in plans.values())):
+        for k in range(max([len(p) for p in plans.values()], default=1)):
             act = np.concatenate([term.tcp_cmd, term.grip_cmd[:, None]], axis=1)
             for e in ids:
                 if k < len(plans[e]) and e not in term.ik_errors:
                     act[e] = plans[e][k]
             self._obs, *_ = self.env.step(torch.tensor(act, dtype=torch.float32, device=self.env.device))
+        # resets complete only between calls, so a reset env records nothing until its lane sends its first chunk
+        for e in self.env.finish_resets():
+            self.env._metrics.reset_chunk([e])
+            self._ready[e] = self._observe(e)
         return {e: self._observe(e) for e in ids}
 
     def close(self) -> None:

@@ -42,6 +42,7 @@ class TcpAction(ActionTerm):
         self.ik_errors: dict[int, str] = {}
         self._path = np.zeros((n, 0, 6))
         self._moving = np.zeros(n, dtype=bool)      # env has a path this env step (False after reset until an action)
+        self.frozen = np.zeros(n, dtype=bool)       # env is settling after a per-env reset: hold q_cmd, no IK
         self._k = 0
 
     @property
@@ -68,7 +69,7 @@ class TcpAction(ActionTerm):
         n_ik = max(1, self._env.cfg.decimation // self.cfg.ik_every)
         self._path = np.array([tcp.interpolate(self.tcp_cmd[e], clipped[e, :6], n_ik) for e in range(len(rows))])
         self.tcp_cmd = clipped[:, :6].copy()
-        self._moving[:] = True
+        self._moving[:] = ~self.frozen
         self._k = 0
         self._env.begin_action_step()
 

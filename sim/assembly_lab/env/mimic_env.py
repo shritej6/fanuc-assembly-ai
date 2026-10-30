@@ -28,7 +28,7 @@ from isaaclab.envs import ManagerBasedRLEnvCfg, ManagerBasedRLMimicEnv
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
 from isaaclab.utils import configclass
 from scene import FRAMES, JAW_STIFF_X, make_scene_cfg, prim_name
-from settle import settle
+from settle import SettleTracker, settle
 from task import SKILL_SIGNALS, TaskState
 
 # reset settling (coordinator spec): at rest for hold_s, give up at cap_s
@@ -74,7 +74,10 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         self._wrist = None
         self._nominal = None
         self._restoring = False
+        self._tracker = None
+        self._settled_now: list = []
         super().__init__(cfg, render_mode, **kwargs)
+        self._tracker = SettleTracker(self, SETTLE)
         self._metrics = contact_metrics.ContactMetrics(self)
         self._wrist = self._wrist_mount()
 
@@ -294,6 +297,45 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
     def accumulate_contacts(self) -> None:
         if self._metrics is not None:
             self._metrics.accumulate()
+        if self._tracker is not None and self._tracker.active:
+            self._settled_now += self._tracker.tick()
+
+    # ------------------------------------------------------------------ per-env reset (others keep stepping)
+    def begin_reset(self, env_id: int, lay: dict, frames_fn=None) -> None:
+        """Place env `env_id`'s layout now; it holds home and settles during the next env steps (settle.SettleTracker)
+        while the other envs keep running. finish_resets() completes it once settled."""
+        self._place(lay, env_id)
+        self.eps[env_id].frames_fn = frames_fn
+        self.action_manager.get_term("tcp").frozen[env_id] = True
+        self._tracker.start(env_id, self.cfg.t12["settle_s"])
+
+    @property
+    def settling(self) -> set[int]:
+        return set(self._tracker.active) if self._tracker is not None else set()
+
+    def finish_resets(self) -> list[int]:
+        """Complete every env that settled (or hit the cap) during the last env step: frames, task, jitter, fresh
+        metrics and episode counter, and a fresh recorder episode whose initial state is this settled scene."""
+        done, self._settled_now = self._settled_now, []
+        ids = []
+        for e, ok, sim_s, detail in done:
+            ep = self.eps[e]
+            ep.settled, ep.settle_s, ep.settle_detail = ok, sim_s, detail
+            poses = self.object_poses_mm(e)
+            frames = ep.frames_fn(poses) if ep.frames_fn else _placeholder_frames(poses, self.pool)
+            ep.frames_fn = None
+            self.set_frames(frames, e)
+            self.action_manager.get_term("tcp").frozen[e] = False
+            ids.append(e)
+        if ids:
+            self.apply_jitter(ids)
+            self._metrics.reset_episode(ids)
+            self.episode_length_buf[ids] = 0
+            self._sig_key = None
+            if self.recorder_manager is not None:
+                self.recorder_manager.reset(env_ids=ids)          # drop the settle steps
+                self.recorder_manager.record_post_reset(ids)      # initial_state = the settled scene
+        return ids
 
     def step_peak_vector(self) -> torch.Tensor:
         if self._metrics is None:      # the observation manager probes term shapes before __init__ finishes

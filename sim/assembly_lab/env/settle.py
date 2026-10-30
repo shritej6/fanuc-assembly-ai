@@ -79,3 +79,72 @@ def settle(env, env_ids: list[int], spec: dict, min_s: float) -> dict[int, tuple
             out[e] = (False, cap * dt, _detail(lin[i], ang[i], dfo[i], best[e], fails[e], dt, env.pool, env.names,
                                                force_order))
     return out
+
+
+class SettleTracker:
+    """Settle some envs inside the normal env.step while the others keep running (per-env reset).
+
+    start(env_id) after the cell was placed; tick() once per physics step (TcpAction.apply_actions, i.e. after the
+    previous physics step); envs that settled or hit the cap come back from tick() as (env_id, settled, sim seconds,
+    detail). Same criteria and counting as settle(): the first tick after start is the placement itself and is skipped,
+    so sample k is the state after k physics steps. One GPU->CPU sync per physics step while any env settles."""
+
+    def __init__(self, env, spec: dict):
+        self.env, self.spec = env, spec
+        self.dt = env.physics_dt
+        self.w = max(1, round(spec["window_s"] / self.dt))
+        self.need, self.cap = max(1, round(spec["hold_s"] / self.dt)), round(spec["cap_s"] / self.dt)
+        self.active: dict[int, dict] = {}
+        self._buf_p = self._buf_q = self._prev_f = None
+        self._slot = 0
+
+    def start(self, env_id: int, min_s: float) -> None:
+        self.active[int(env_id)] = {"k": -1, "calm": 0, "best": 0, "min_s": min_s,
+                                    "fails": {"lin": 0, "ang": 0, "dforce": 0}}
+
+    def _read(self):
+        objs = [self.env.scene[n] for n in self.env.names]
+        p = torch.stack([o.data.root_link_pos_w.torch for o in objs], dim=1)          # (E, N, 3)
+        q = torch.stack([o.data.root_link_quat_w.torch for o in objs], dim=1)
+        f = self.env.scene["object_contact"].data.net_forces_w.torch.clone()           # (E, B, 3)
+        return p, q, f
+
+    def tick(self) -> list[tuple[int, bool, float, dict]]:
+        if not self.active:
+            return []
+        import isaaclab.utils.math as M
+
+        p, q, f = self._read()
+        if self._buf_p is None:
+            self._buf_p = p.unsqueeze(1).repeat(1, self.w + 1, 1, 1)
+            self._buf_q = q.unsqueeze(1).repeat(1, self.w + 1, 1, 1)
+            self._prev_f = f
+        self._slot = (self._slot + 1) % (self.w + 1)
+        self._buf_p[:, self._slot], self._buf_q[:, self._slot] = p, q
+        old = (self._slot + 1) % (self.w + 1)                    # the sample w physics steps ago
+        lin = (p - self._buf_p[:, old]).norm(dim=-1) / (self.w * self.dt)
+        ang = M.quat_error_magnitude(q, self._buf_q[:, old]) / (self.w * self.dt)
+        dfo = (f - self._prev_f).norm(dim=-1)
+        self._prev_f = f
+        ok = torch.stack([lin.max(dim=1).values < self.spec["lin_m_s"], ang.max(dim=1).values < self.spec["ang_rad_s"],
+                          dfo.max(dim=1).values < self.spec["dforce_n"]], dim=1).tolist()
+        done = []
+        for e, st in list(self.active.items()):
+            st["k"] += 1
+            k = st["k"]
+            if k <= self.w:                       # sample 0 is the placement; need w + 1 samples for one window
+                continue
+            good = dict(zip(("lin", "ang", "dforce"), ok[e]))
+            for key, g in good.items():
+                st["fails"][key] += 0 if g else 1
+            st["calm"] = st["calm"] + 1 if all(good.values()) else 0
+            st["best"] = max(st["best"], st["calm"])
+            if st["calm"] >= self.need and k * self.dt >= st["min_s"]:
+                done.append((e, True, k * self.dt, {}))
+            elif k >= self.cap:
+                done.append((e, False, k * self.dt, _detail(lin[e], ang[e], dfo[e], st["best"], st["fails"], self.dt,
+                                                           self.env.pool, self.env.names,
+                                                           list(self.env.scene["object_contact"].body_names))))
+        for e, *_ in done:
+            del self.active[e]
+        return done

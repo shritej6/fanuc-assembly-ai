@@ -8,7 +8,7 @@ cameras at 640x360), product 4's pool (base + 4 sheet parts, what one generation
 at home. Every physics step reads all three contact sensors and the per-contact buffers of every env, like
 contact_metrics.accumulate does; every env step renders and fetches the cameras, like the observation manager does.
 Not timed: the cell env's Python per step (IK, signals, gates), which batching does not multiply on the GPU side.
-Writes {num_envs, cameras, env_steps, wall_s, env_steps_per_s, ms_per_env_step, build_s}.
+Writes {num_envs, cameras, env_steps, wall_s, env_steps_per_s, ms_per_process_step, build_s, gpu_mem_used_mib}.
 """
 
 from __future__ import annotations
@@ -143,6 +143,19 @@ def build_cfg():
     return cfg
 
 
+def _gpu_mem_used_mib() -> int | None:
+    """Whole-GPU memory in use (nvidia-smi; this container sees only its own GPU), None if nvidia-smi is missing."""
+    import subprocess
+
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, check=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError) as err:
+        print(f"[batch_rate] nvidia-smi unavailable: {err}", flush=True)
+        return None
+    return int(out.split()[0])
+
+
 def main() -> None:
     t0 = time.time()
     env = ManagerBasedRLEnv(build_cfg())
@@ -157,10 +170,11 @@ def main() -> None:
         env.step(act)
     torch.cuda.synchronize()
     wall = time.time() - t1
+    vram_mib = _gpu_mem_used_mib()
     rep = {"num_envs": env.num_envs, "cameras": list(args.cameras), "physics_dt": env.physics_dt,
            "decimation": env.cfg.decimation, "env_steps": args.steps * env.num_envs, "wall_s": round(wall, 3),
            "env_steps_per_s": round(args.steps * env.num_envs / wall, 3),
-           "ms_per_process_step": round(1000 * wall / args.steps, 1), "build_s": round(build_s, 1),
+           "ms_per_process_step": round(1000 * wall / args.steps, 1), "build_s": round(build_s, 1), "gpu_mem_used_mib": vram_mib,
            "env_origins": env.scene.env_origins.cpu().tolist()[:4]}
     print(f"[batch_rate] {json.dumps(rep)}", flush=True)
     out = args.out.expanduser().resolve()
