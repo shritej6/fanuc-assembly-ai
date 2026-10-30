@@ -2,6 +2,133 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T34 perception coverage (PatchCore + FoundationPose, all 24 parts) · CLAUDE
+
+- **Ownership map.** CODEX (T14, not edited): `perception/anomaly/{dataset,patchcore_contract,rest_provenance,source_contract}.py`, its
+  `train_patchcore.py`, `perception/{brev,rosie}/t14_*`, `assembly/*`. CLAUDE (edited here, branched from T30 7017f4c):
+  `perception/anomaly/testbed.py`, the T27 `train_patchcore.py`, `perception/pose/*`, `perception/cell/*`, `perception/port/*`.
+  Both branches have a `perception/anomaly/train_patchcore.py`. They are different files, and a merge must keep Codex's.
+- **Why PatchCore coverage was unusable before (T27 run).** Rosie `~/fanuc-t27-results/fanuc-t27-runs/patchcore` measured 21 parts on C/I
+  close-ups (other heights and poses) with AUROC 0.49-0.86. At anomalib's threshold, 16-82 % of held-out good O crops
+  raised false alarms. The three rear guards had no installed-pose C/I crops at all. T27 also trained on fallen O
+  targets, because `testbed.bucket` did not check `rest` for O.
+- **Changed.**
+  - `perception/anomaly/coverage.py`: crops. Train on good installed O (`train` split). Hold out good O
+    (val/test split) plus every installed U and T target, good and defective, split 50/50 per scene into val/test.
+    U/T never train. `--mask` greys everything outside the target's instance mask.
+  - `perception/anomaly/coverage_eval.py`: anomalib PatchCore (wide_resnet50_2, layer2+3, coreset 0.1), fitted on
+    train only. Raw scores. The threshold is the lowest whose val good false-alarm rate is at most 2 %; test is read
+    once at 1/2/5 %.
+  - `perception/cell/models.py`: `PatchCoreBank` returns the same raw score and loads `runs/<part>/model.ckpt`.
+  - `perception/pose/validate_foundationpose.py`: `--data` takes several sets, plus `--per-part`, `--repeat`,
+    `--depth-noise-mm`, `--rest`, and `--upright-prior-deg` (drop start rotations that turn a standing part over;
+    uses the calibrated, unjittered camera). Poses are saved per row.
+  - `perception/pose/grasp_tolerance.py`: TCP-point error (`grasp_frames.json` `tcp_local_mm`, nearest turn) and
+    tilt of installed +Z, against the gate TCP ≤ 1.8 mm and tilt ≤ 3°. Also repeatability spread.
+- **Run.**
+  - PatchCore ran on fa-a6k-1 (2x A6000). The env passed strict pip-audit: torch 2.14.1+cu126, anomalib 2.7.0, 0 known
+    vulnerabilities.
+  - FoundationPose ran on Rosie dgx (V100) in a conda env pinned to the T27 image freeze. Changes from the freeze:
+    torch cu124 built for sm_70, open3d 0.19.0 (0.20 needs glibc 2.32), addict, pyquaternion.
+  - Weights: HF mirror `gpue/foundationpose-weights`. They loaded with `weights_only=True`, and their configs match
+    the T27 run. sha256: 7747005…, 81924d3….
+  - Geometry self-check: 4336/4336 table-camera origins project inside their boxes.
+  - `uv run pytest -q`: 973 passed, 2 skipped. `uvx ruff check .` is clean.
+  - Results are in `docs/results/t34/`. Per-crop scores are in `~/fanuc-t34/{pc_runs,sweep}` on Rosie. Synthetic data
+    only; no real-cell image was used.
+- **PatchCore result: masked crops (chosen on val), 24/24 measured.** The threshold was chosen on val and test was read
+  once. Base numbers in brackets are the unmasked crops the cell currently uses.
+  - Median test AUROC: 0.769 (0.686).
+  - Median test recall at the 5 % val budget: 0.318 (0.079), at a median test FPR of 0.061.
+  - Pooled recall at 5 % by type: cracked 0.950, snapped_tab 0.551, missing_feature 0.534, layer_split 0.206,
+    warp 0.179, scale_103 0.148, scale_97 0.110.
+  - Full tables: `docs/results/t34/patchcore_masked_metrics.json` and `patchcore_metrics.json` (unmasked).
+
+  | part | val AUROC (base) | test AUROC (base) | thr @2% (raw) | test FPR / recall @1% | @2% | @5% |
+  |---|---|---|---|---|---|---|
+  | M1_01 | 0.762 (0.642) | 0.768 (0.730) | 42.69 | 0.010 / 0.316 | 0.010 / 0.316 | 0.073 / 0.474 |
+  | M1_02 | 0.779 (0.742) | 0.779 (0.690) | 41.94 | 0.000 / 0.143 | 0.000 / 0.229 | 0.035 / 0.286 |
+  | M1_03 | 0.744 (0.713) | 0.700 (0.683) | 45.36 | 0.011 / 0.023 | 0.033 / 0.047 | 0.033 / 0.140 |
+  | M1_04 | 0.762 (0.677) | 0.783 (0.744) | 45.04 | 0.010 / 0.270 | 0.010 / 0.284 | 0.063 / 0.378 |
+  | M2_01 | 0.822 (0.686) | 0.844 (0.723) | 42.10 | 0.019 / 0.176 | 0.029 / 0.324 | 0.058 / 0.382 |
+  | M2_02 | 0.785 (0.732) | 0.794 (0.712) | 41.45 | 0.000 / 0.186 | 0.012 / 0.302 | 0.012 / 0.326 |
+  | M2_03 | 0.748 (0.660) | 0.780 (0.755) | 41.87 | 0.000 / 0.200 | 0.000 / 0.229 | 0.000 / 0.257 |
+  | M2_04 | 0.738 (0.714) | 0.713 (0.661) | 43.82 | 0.015 / 0.171 | 0.040 / 0.268 | 0.106 / 0.341 |
+  | M3_01 | 0.787 (0.614) | 0.817 (0.654) | 43.28 | 0.000 / 0.100 | 0.000 / 0.300 | 0.053 / 0.400 |
+  | M3_02 | 0.805 (0.746) | 0.665 (0.633) | 42.61 | 0.012 / 0.073 | 0.036 / 0.195 | 0.060 / 0.195 |
+  | M3_03 | 0.592 (0.650) | 0.672 (0.679) | 43.59 | 0.000 / 0.051 | 0.000 / 0.051 | 0.045 / 0.051 |
+  | M3_04 | 0.779 (0.751) | 0.725 (0.658) | 45.28 | 0.000 / 0.136 | 0.015 / 0.210 | 0.026 / 0.284 |
+  | M4_01 | 0.715 (0.604) | 0.808 (0.756) | 43.47 | 0.000 / 0.079 | 0.044 / 0.263 | 0.078 / 0.289 |
+  | M4_02 | 0.739 (0.715) | 0.730 (0.590) | 42.92 | 0.043 / 0.152 | 0.075 / 0.212 | 0.118 / 0.212 |
+  | M4_03 | 0.682 (0.655) | 0.765 (0.748) | 46.25 | 0.030 / 0.184 | 0.059 / 0.289 | 0.089 / 0.395 |
+  | M4_04 | 0.937 (0.916) | 0.927 (0.896) | 45.83 | 0.012 / 0.604 | 0.021 / 0.758 | 0.061 / 0.827 |
+  | M5_01 | 0.743 (0.636) | 0.783 (0.616) | 47.87 | 0.000 / 0.051 | 0.000 / 0.051 | 0.013 / 0.231 |
+  | M5_02 | 0.735 (0.613) | 0.670 (0.622) | 42.87 | 0.054 / 0.028 | 0.087 / 0.194 | 0.120 / 0.250 |
+  | M5_03 | 0.715 (0.713) | 0.773 (0.757) | 46.51 | 0.030 / 0.175 | 0.030 / 0.175 | 0.089 / 0.325 |
+  | M5_04 | 0.664 (0.639) | 0.715 (0.694) | 43.64 | 0.005 / 0.133 | 0.010 / 0.160 | 0.061 / 0.240 |
+  | M6_01 | 0.809 (0.794) | 0.770 (0.577) | 42.97 | 0.010 / 0.244 | 0.010 / 0.293 | 0.067 / 0.415 |
+  | M6_02 | 0.682 (0.618) | 0.752 (0.682) | 45.01 | 0.000 / 0.079 | 0.011 / 0.105 | 0.065 / 0.316 |
+  | M6_03 | 0.819 (0.659) | 0.742 (0.550) | 45.89 | 0.017 / 0.120 | 0.017 / 0.160 | 0.052 / 0.320 |
+  | M6_04 | 0.745 (0.640) | 0.779 (0.733) | 43.07 | 0.020 / 0.159 | 0.031 / 0.295 | 0.061 / 0.341 |
+
+- **Why PatchCore stays weak (measured).**
+  - Resolution: wrist crops are 63-148 px for 15-50 mm parts, about 4 px/mm at 150 mm and 1280x720. Defects are a few
+    pixels.
+  - Global shape: scale and warp change the whole shape, which a patch memory bank cannot see.
+  - Look shift: U's goods score above O's goods (AUROC 0.67 from look alone), and within U the unmasked defect AUROC
+    is only about 0.55-0.62.
+  - Masking removed most of the look shift.
+  - Halving the training set made M1_01 worse (val AUROC 0.611 vs 0.642). The layer1+2, 384 px and coreset-0.25
+    configs were not measured before the Brev deadline.
+- **FoundationPose result: table camera, sets N+S+R, 20 installed objects per part, upright prior 20°.** Gate:
+  TCP ≤ 1.8 mm and tilt ≤ 3°.
+  - Repeatability on identical input: TCP spread 0.000 mm and tilt ≤ 0.031° on all 24 parts. FoundationPose is
+    deterministic.
+  - With fresh 2 mm per-pixel depth noise (an assumed level, not a measured camera), TCP spread is 0.5-13 mm.
+  - M4_04, M5_04 and M6_04 appear only as fallen in N/S/R table scenes. They have no installed-pose measurement:
+    fallen ADD-S medians are 0.94 / 0.94 / 0.89 mm, and their rows are not in the table.
+
+  | part | n | ADD-S med mm | TCP err med / p95 / max mm | tilt med / max deg | in gate (prior 20°) | in gate (no prior) | tilt med no prior | 2 mm depth noise: in gate / TCP spread max mm |
+  |---|---|---|---|---|---|---|---|---|
+  | M1_01 | 20 | 1.07 | 1.40 / 1.64 / 1.78 | 1.4 / 2.3 | 1.00 | 0.90 | 1.2 | 1.00 / 1.04 |
+  | M1_02 | 20 | 1.16 | 2.74 / 4.15 / 4.59 | 16.2 / 25.5 | 0.00 | 0.00 | 149.2 | 0.00 / 4.70 |
+  | M1_03 | 20 | 1.01 | 2.70 / 3.79 / 3.87 | 10.6 / 18.1 | 0.00 | 0.00 | 34.9 | 0.00 / 7.78 |
+  | M1_04 | 20 | 0.97 | 1.33 / 1.82 / 2.02 | 2.7 / 5.9 | 0.55 | 0.22 | 4.8 | 0.33 / 12.79 |
+  | M2_01 | 20 | 1.05 | 1.16 / 1.72 / 2.03 | 1.8 / 3.0 | 0.95 | 0.79 | 1.9 | 1.00 / 0.89 |
+  | M2_02 | 20 | 1.18 | 3.21 / 5.54 / 6.03 | 17.1 / 26.1 | 0.00 | 0.00 | 151.5 | 0.00 / 5.70 |
+  | M2_03 | 20 | 1.00 | 2.28 / 5.42 / 5.83 | 9.3 / 29.1 | 0.05 | 0.06 | 49.1 | 0.00 / 7.25 |
+  | M2_04 | 20 | 0.99 | 1.21 / 1.59 / 1.85 | 1.8 / 7.9 | 0.60 | 0.44 | 3.1 | 0.67 / 8.34 |
+  | M3_01 | 20 | 1.03 | 1.08 / 1.58 / 1.62 | 1.8 / 2.9 | 1.00 | 1.00 | 1.8 | 1.00 / 0.75 |
+  | M3_02 | 20 | 1.33 | 2.69 / 6.28 / 9.60 | 16.1 / 31.6 | 0.00 | 0.00 | 161.8 | 0.00 / 5.23 |
+  | M3_03 | 20 | 1.08 | 2.23 / 5.78 / 6.88 | 7.9 / 12.9 | 0.00 | 0.00 | 9.8 | 0.00 / 2.56 |
+  | M3_04 | 20 | 1.07 | 1.49 / 2.03 / 2.03 | 1.8 / 6.2 | 0.55 | 0.47 | 2.8 | 0.67 / 10.41 |
+  | M4_01 | 20 | 1.11 | 1.58 / 1.96 / 2.29 | 1.7 / 3.2 | 0.65 | 0.62 | 1.6 | 1.00 / 0.89 |
+  | M4_02 | 20 | 1.06 | 1.92 / 2.43 / 2.66 | 7.1 / 9.6 | 0.05 | 0.00 | 9.9 | 0.00 / 3.11 |
+  | M4_03 | 20 | 0.98 | 1.71 / 2.17 / 2.34 | 1.5 / 2.9 | 0.65 | 0.70 | 1.4 | 0.00 / 1.65 |
+  | M5_01 | 20 | 1.13 | 1.65 / 1.95 / 2.01 | 1.7 / 3.5 | 0.50 | 0.39 | 1.9 | 1.00 / 1.12 |
+  | M5_02 | 20 | 0.93 | 1.58 / 2.07 / 2.77 | 6.1 / 11.7 | 0.05 | 0.00 | 7.1 | 0.00 / 3.29 |
+  | M5_03 | 20 | 0.97 | 1.74 / 2.13 / 2.15 | 1.6 / 3.1 | 0.55 | 0.50 | 1.4 | 0.33 / 0.76 |
+  | M6_01 | 20 | 1.05 | 1.45 / 1.63 / 1.79 | 1.2 / 3.4 | 0.95 | 0.95 | 1.1 | 0.33 / 0.93 |
+  | M6_02 | 20 | 1.01 | 1.47 / 2.60 / 2.78 | 4.9 / 11.6 | 0.10 | 0.15 | 5.6 | 0.00 / 1.16 |
+  | M6_03 | 20 | 0.93 | 1.62 / 1.91 / 2.25 | 0.9 / 2.7 | 0.85 | 0.65 | 1.0 | 1.00 / 0.54 |
+
+- **FoundationPose parts that fail and why.**
+  - Near-symmetric carriers and caps (M1_02, M2_02, M3_02, M1_03, M2_03, M3_03): FoundationPose estimates them upside
+    down or tilted (no-prior tilt median 10-162°), while ADD-S stays at 1.0-1.6 mm. The upright prior cuts the tilt to
+    8-17°, but none pass.
+  - Inserts and guides (M4_02, M5_02, M6_02): tilt 5-7°.
+  - The rest pass the gate on 50-100 % of objects. The TCP median of 1.1-1.7 mm sits at the table camera's
+    translation floor, so the 1.8 mm gate leaves no margin. Only M1_01 and M3_01 are inside it on every estimate.
+- **Next / blocked.**
+  - Grasp pose needs the wrist close-up FoundationPose (150 mm) or a CAD-feature yaw/tilt check for the carrier/cap
+    family. The table-camera pose is not enough.
+  - The cell must apply the upright prior. The port's FoundationPose backend has no prior today.
+  - Masked PatchCore needs a wrist mask in the cell: project the estimated CAD pose into the wrist image. Until then
+    the cell's unmasked crops match the weaker numbers.
+  - Saturday: measure real-cell good-part false alarms and FoundationPose TCP error on real captures (evaluation only).
+  - Codex PatchCore proposals are in `coord/CODEX_BRIEF.md` §6.
+  - Checkpoints (masked, model.ckpt per part) are in Rosie `~/fanuc-t34/a6k_results`.
+
 ## 2026-10-30 · T30 perception port · CLAUDE
 
 - **What changed.**

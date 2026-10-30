@@ -1,0 +1,18 @@
+{
+ "note": "val-only tuning sweep; configs other than mask stopped at the Brev deadline",
+ "results": {
+  "t50": {
+   "M1_01": {
+    "val": {
+     "bad": 41,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.011904761904761904,
+     "good": 84,
+     "tpr": 0.0
+    },
+    "val_auroc": 0.6112078977932637
+   }
+  }
+ }
+}
