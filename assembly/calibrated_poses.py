@@ -11,6 +11,7 @@ from numbers import Number
 from pathlib import Path
 
 from assembly.catalog import Catalog, ProductRecipe, RecipeStep, UnknownBaseError
+from assembly.grasp_source import PreferredGrasp
 from assembly.inventory import InventoryItem
 from assembly.motion import AbsolutePoseUF0, OrientedPartPose, RestingState
 
@@ -48,12 +49,11 @@ Matrix4 = tuple[tuple[float, float, float, float], ...]
 
 @dataclass(frozen=True, slots=True)
 class SourcedGraspFrame:
-    """One T29 mesh-to-part transform and fingertip point."""
+    """One T29 mesh transform and its authorized turn/TCP pair."""
 
     object_id: str
     local_from_stl: Matrix4
-    tcp_local_mm: tuple[float, float, float]
-    roll_offset_deg: float
+    preferred_grasp: PreferredGrasp
     source: str
 
 
@@ -140,12 +140,6 @@ def _finite(value: object, field: str) -> float:
     return number
 
 
-def _vector3(value: object, field: str) -> tuple[float, float, float]:
-    if not isinstance(value, list) or len(value) != 3:
-        raise CalibratedPoseError(f"{field} must contain three finite values")
-    return tuple(_finite(item, field) for item in value)  # type: ignore[return-value]
-
-
 def _matrix4(value: object, field: str) -> Matrix4:
     if not isinstance(value, list) or len(value) != 4:
         raise CalibratedPoseError(f"{field} must be a 4x4 rigid transform")
@@ -193,18 +187,10 @@ def _frames_from_document(catalog: Catalog, document: object) -> dict[str, Sourc
 def _frame_from_entry(step: RecipeStep, entry: object, source: str) -> SourcedGraspFrame:
     if not isinstance(entry, dict):
         raise CalibratedPoseError(f"pinned grasp entry for {step.object_id!r} is missing")
-    grips = entry.get("grips")
-    if not isinstance(grips, list) or len(grips) != 1 or not isinstance(grips[0], dict):
-        raise CalibratedPoseError(f"pinned grasp entry for {step.object_id!r} must contain one grip")
-    grip = grips[0]
-    roll = _finite(grip.get("roll_offset_deg"), f"{step.object_id}.roll_offset_deg")
-    if roll != step.gripper_roll_deg:
-        raise CalibratedPoseError(f"{step.object_id} grasp roll does not match the catalog")
     return SourcedGraspFrame(
         step.object_id,
         _matrix4(entry.get("T_local_from_stl"), f"{step.object_id}.T_local_from_stl"),
-        _vector3(grip.get("tcp_local_mm"), f"{step.object_id}.tcp_local_mm"),
-        roll,
+        step.preferred_grasp,
         source,
     )
 
@@ -362,7 +348,7 @@ class MeasuredRecipePoses:
         frame = self._grasp_frames.frame_for(part.object_id)
         approved = self._approved(part.object_id)
         world_from_local = _pose_matrix(AbsolutePoseUF0(x, y, z, 0.0, 0.0, yaw, "UF0", "calibrated"))
-        tcp_x, tcp_y, tcp_z = _transform_point(world_from_local, frame.tcp_local_mm)
+        tcp_x, tcp_y, tcp_z = _transform_point(world_from_local, frame.preferred_grasp.tcp_local_mm)
         tcp = AbsolutePoseUF0(tcp_x, tcp_y, tcp_z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
         return OrientedPartPose(tcp, RestingState.INSTALLED, approved.up_face)
 
@@ -442,7 +428,7 @@ class MeasuredRecipePoses:
         frame: SourcedGraspFrame,
     ) -> OrientedPartPose:
         world_from_local = MeasuredRecipePoses._world_from_local(base, step, approved, frame)
-        x, y, z = _transform_point(world_from_local, frame.tcp_local_mm)
+        x, y, z = _transform_point(world_from_local, frame.preferred_grasp.tcp_local_mm)
         yaw = _yaw_from_matrix(world_from_local)
         tcp = AbsolutePoseUF0(x, y, z, approved.w_deg, approved.p_deg, yaw, "UF0", "calibrated")
         return OrientedPartPose(tcp, RestingState.INSTALLED, approved.up_face)

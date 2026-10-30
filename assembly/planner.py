@@ -117,6 +117,13 @@ class PreparedPlanStep:
     target: OrientedPartPose
     verification_target: OrientedPartPose | None
 
+    def __post_init__(self) -> None:
+        expected_object = self.recipe_step.object_id
+        if self.record.object_id != expected_object or self.part.object_id != expected_object:
+            raise PlannerStateError("prepared plan identities must match the recipe object")
+        if self.record.gripper_roll_deg != self.recipe_step.preferred_grasp.turn_deg:
+            raise PlannerStateError("prepared plan must use the authorized grasp turn/TCP pair")
+
 
 @dataclass(frozen=True, slots=True)
 class PlanCandidate:
@@ -248,7 +255,7 @@ def _finalize(candidate: PlanCandidate, grasp_result: object) -> PreparedPlanSte
         object_id=candidate.part.object_id,
         grasp=_contract_pose(grasp),
         target=_contract_pose(target),
-        gripper_roll_deg=candidate.recipe_step.gripper_roll_deg,
+        gripper_roll_deg=candidate.recipe_step.preferred_grasp.turn_deg,
         attempt=candidate.attempt,
     )
     return PreparedPlanStep(
@@ -275,7 +282,7 @@ def _finalize_reject(candidate: PlanCandidate, grasp_result: object, target_resu
         object_id=candidate.part.object_id,
         grasp=_contract_pose(grasp),
         target=_contract_pose(target),
-        gripper_roll_deg=candidate.recipe_step.gripper_roll_deg,
+        gripper_roll_deg=candidate.recipe_step.preferred_grasp.turn_deg,
         attempt=candidate.attempt,
         op="move_to_reject",
     )

@@ -94,6 +94,26 @@ def _yaw_error(actual: float, expected: float) -> float:
     return abs((actual - expected + 180.0) % 360.0 - 180.0)
 
 
+@pytest.mark.parametrize(
+    ("product_id", "step_number", "expected_tcp", "superseded_pad_point"),
+    [
+        (1, 1, (0.0, -19.26, 8.4), (0.0, -21.06, 8.4)),
+        (1, 4, (0.0, 1.8, 27.9), (0.0, 0.0, 27.9)),
+    ],
+)
+def test_t29_preferred_turn_uses_flange_axis_tcp_not_pad_point(
+    product_id: int,
+    step_number: int,
+    expected_tcp: tuple[float, float, float],
+    superseded_pad_point: tuple[float, float, float],
+) -> None:
+    step = CATALOG.product(product_id).steps[step_number - 1]
+
+    assert step.preferred_grasp.turn_deg == 90.0
+    assert step.preferred_grasp.tcp_local_mm == expected_tcp
+    assert step.preferred_grasp.tcp_local_mm != superseded_pad_point
+
+
 def _assert_t29_target(
     product_id: int,
     step_number: int,
@@ -105,7 +125,11 @@ def _assert_t29_target(
     base = _item("base", f"F0{product_id}", product_id)
     target = provider.target_for(product, base, step, observed_at_s=10.0)
     grip = entry["grips"][0]
-    installed_tcp = [left + right for left, right in zip(entry["installed_origin_mm"], grip["tcp_local_mm"])]
+    turn_key = f"{step.preferred_grasp.turn_deg:g}"
+    assert tuple(grip["tcp_local_mm"][turn_key]) == step.preferred_grasp.tcp_local_mm
+    installed_tcp = [
+        left + right for left, right in zip(entry["installed_origin_mm"], step.preferred_grasp.tcp_local_mm)
+    ]
     expected = _world_point((400.0, 100.0, -320.0), installed_tcp, base_yaw)
     assert target.tcp.x == pytest.approx(expected[0], abs=CAD_TRANSLATION_TOLERANCE_MM)
     assert target.tcp.y == pytest.approx(expected[1], abs=CAD_TRANSLATION_TOLERANCE_MM)
@@ -135,13 +159,15 @@ def _compile_t29_motion(
         Waypoint(200.0, 0.0, -180.0, -180.0, 0.0, 0.0, 0.0),
         grasp,
         target,
-        gripper_roll_deg=step.gripper_roll_deg,
+        gripper_roll_deg=step.preferred_grasp.turn_deg,
         config=_config(),
     )
     grip_endpoint = _endpoint(chunks, MotionPhase.GRIP)
     insert_endpoint = _endpoint(chunks, MotionPhase.VERTICAL_INSERT)
-    assert grip_endpoint.xyz == pytest.approx(_world_point(pick_origin, grip["tcp_local_mm"], pick_yaw))
-    assert _yaw_error(grip_endpoint.r, pick_yaw + grip["roll_offset_deg"]) < 1e-9
+    assert grip_endpoint.xyz == pytest.approx(
+        _world_point(pick_origin, list(step.preferred_grasp.tcp_local_mm), pick_yaw)
+    )
+    assert _yaw_error(grip_endpoint.r, pick_yaw + step.preferred_grasp.turn_deg) < 1e-9
     return grip_endpoint, insert_endpoint
 
 
@@ -154,12 +180,12 @@ def test_all_t29_fingertip_targets_and_rolls_reach_emitted_waypoints(
     step, grip, provider, target = _assert_t29_target(product_id, step_number, base_yaw)
     _, insert_endpoint = _compile_t29_motion(product_id, base_yaw, step, grip, provider, target)
     assert insert_endpoint.xyz == pytest.approx((target.tcp.x, target.tcp.y, target.tcp.z))
-    assert _yaw_error(insert_endpoint.r, base_yaw + grip["roll_offset_deg"]) < 1e-9
+    assert _yaw_error(insert_endpoint.r, base_yaw + step.preferred_grasp.turn_deg) < 1e-9
 
     release = compile_release_retreat(
         insert_endpoint,
         target,
-        gripper_roll_deg=step.gripper_roll_deg,
+        gripper_roll_deg=step.preferred_grasp.turn_deg,
         config=_config(),
         max_position_error_mm=0.0,
         max_orientation_error_deg=0.0,

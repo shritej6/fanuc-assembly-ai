@@ -89,6 +89,16 @@ def test_next_step_is_contract_valid_and_keeps_enriched_calibrated_poses() -> No
     assert (verification_tcp.x, verification_tcp.y, verification_tcp.z) == (400.0, 40.0, -299.0)
 
 
+def test_prepared_step_rejects_a_turn_not_paired_with_its_grasp_tcp() -> None:
+    from assembly.planner import PlannerStateError, RecipePlanner
+
+    prepared = RecipePlanner(load_catalog(), CalibratedPoses()).next_step(_inventory(), observed_at_s=10.0)
+    assert prepared is not None
+
+    with pytest.raises(PlannerStateError, match="authorized grasp turn"):
+        replace(prepared, record=replace(prepared.record, gripper_roll_deg=180.0))
+
+
 def test_next_step_follows_recipe_order_and_finishes_after_all_four_parts() -> None:
     from assembly.planner import RecipePlanner
 

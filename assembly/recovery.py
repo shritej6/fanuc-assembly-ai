@@ -264,7 +264,7 @@ class RecoveryCoordinator:
         chunks = compile_transfer_held(
             current,
             target,
-            gripper_roll_deg=recipe_step.gripper_roll_deg,
+            gripper_roll_deg=recipe_step.preferred_grasp.turn_deg,
             config=config,
             max_position_error_mm=max_position_error_mm,
             max_orientation_error_deg=max_orientation_error_deg,
@@ -277,7 +277,7 @@ class RecoveryCoordinator:
             target,
             None,
             base_pose,
-            recipe_step.gripper_roll_deg,
+            recipe_step.preferred_grasp.turn_deg,
             False,
         )
 
@@ -306,7 +306,7 @@ class RecoveryCoordinator:
             current,
             grasp,
             target,
-            gripper_roll_deg=recipe_step.gripper_roll_deg,
+            gripper_roll_deg=recipe_step.preferred_grasp.turn_deg,
             config=config,
         )
         return RecoveryStagePlan(
@@ -317,7 +317,7 @@ class RecoveryCoordinator:
             target,
             verification_target,
             base_pose,
-            recipe_step.gripper_roll_deg,
+            recipe_step.preferred_grasp.turn_deg,
             True,
         )
 

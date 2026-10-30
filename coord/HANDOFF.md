@@ -2,6 +2,20 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T09 atomic T29 turn/TCP consumption · CODEX
+
+- Merged T04 `efd698a` and replaced T09's independent scalar-TCP parser with the typed
+  `RecipeStep.preferred_grasp`. Pick, insert, reject, release, retry, and staged recovery now carry the same atomic
+  source turn/TCP pair; the algebraic alternate turn is not CELL-authorized.
+- `PreparedPlanStep` rejects identity mismatches and any plan record whose turn differs from the authorized pair.
+  The raw T29 snapshot remains hash-verified, while motion code receives only the catalog-authorized pairing.
+- Updated the 24-part x 3-yaw motion matrix for the turn-indexed flange-axis TCP. Exact M1_01 and non-identity M1_04
+  regressions prove the former pad point is never commanded and the 1.8 mm lateral flange offset is preserved.
+- Full gate: `uv run pytest -q` = 630 passed; `uv run ruff check .`, `git diff --check`, and the protected official
+  `robot/cell/cell_client.py` check passed. No real-cell command was issued.
+- PR #9 remains blocked for CELL on PR #15 physical/provenance evidence and the reviewed GR00T semantic executor,
+  live perception, collision, measured-limit, view-motion, and release-authorization dependencies.
+
 ## 2026-10-30 · T04 T29 turn/TCP atomic pin · CODEX
 
 - Repinned the immutable T29 grasp snapshot to `fac05905338b82a90744e934268f4a30bf412fc7` with SHA-256
