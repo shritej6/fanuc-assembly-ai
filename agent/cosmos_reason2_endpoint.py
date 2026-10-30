@@ -66,7 +66,9 @@ class CaptureImageSource(Protocol):
 class EndpointConfig:
     base_url: str = "http://127.0.0.1:8000/v1"
     timeout_s: float = 120.0
-    max_tokens: int = 4096
+    # Measured on the Spark (2026-10-30, 39 set D answers): reasoning <= ~500 tokens, <= 39 s; one crop looped to
+    # 4096 tokens in 299 s. 1024 tokens (~75 s at ~14 tok/s) bounds that case; a cut-off answer is unavailable (Hold).
+    max_tokens: int = 1024
     temperature: float = 0.0
     attempts: int = 3
     backoff_s: float = 1.0
@@ -137,6 +139,8 @@ class CosmosReason2Endpoint:
                     "Cosmos Reason 2 transport failed",
                     extra={"request_id": request_id, "attempt": attempt, "error": type(error).__name__},
                 )
+                if _timed_out(error):
+                    raise CosmosReasonUnavailable("Cosmos Reason 2 answer timed out") from error
                 if attempt == self._config.attempts:
                     raise CosmosReasonUnavailable("Cosmos Reason 2 endpoint unreachable") from error
                 self._sleep(self._config.backoff_s * 2 ** (attempt - 1))
@@ -245,6 +249,11 @@ def _image_mime(image: bytes) -> str:
     if image.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
     raise CosmosReasonUnavailable("captured image must be JPEG or PNG")
+
+
+def _timed_out(error: BaseException) -> bool:
+    # A timed-out generation would only repeat (seed 0, temperature 0): hold at once instead of waiting 3x.
+    return isinstance(error, TimeoutError) or isinstance(getattr(error, "reason", None), TimeoutError)
 
 
 def _http_post(url: str, payload: bytes, timeout_s: float) -> bytes:

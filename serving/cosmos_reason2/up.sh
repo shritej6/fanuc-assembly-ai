@@ -25,7 +25,7 @@ case "$MODE" in
 esac
 
 box_line() { brev ls 2> /dev/null | awk -v b="$HOST" '$1 == b'; }
-close_tunnel() { pkill -f "ssh -fN -L $PORT:127.0.0.1:$PORT $HOST" || true; }
+close_tunnel() { pkill -f "ssh -fN -L $PORT:127.0.0.1:$PORT .*$HOST\$" || true; }
 
 if [[ "${1:-}" == "down" ]]; then
   close_tunnel

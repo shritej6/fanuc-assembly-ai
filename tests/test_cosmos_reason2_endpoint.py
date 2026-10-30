@@ -154,10 +154,17 @@ def test_missing_capture_and_unknown_format_are_unavailable() -> None:
 
 
 def test_transport_failures_retry_three_times_then_hold() -> None:
-    transport = Transport(OSError("refused"), TimeoutError(), OSError("HTTP 503"))
+    transport = Transport(OSError("refused"), ConnectionResetError(), OSError("HTTP 503"))
     with pytest.raises(CosmosReasonUnavailable, match="unreachable"):
         _endpoint(transport).check(_request())
     assert len(transport.calls) == 3
+
+
+def test_a_timed_out_answer_holds_at_once_without_repeating_the_generation() -> None:
+    transport = Transport(TimeoutError("read timed out"))
+    with pytest.raises(CosmosReasonUnavailable, match="timed out"):
+        _endpoint(transport).check(_request())
+    assert len(transport.calls) == 1
 
 
 def test_transient_failure_then_success_returns_the_verdict() -> None:

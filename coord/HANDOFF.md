@@ -2,7 +2,7 @@
 
 Newest first. One entry per finished task.
 
-## 2026-10-30 · T35 Cosmos Reason 2 8B endpoint · CLAUDE · port, Spark/Brev bring-up, health check; 8B run waits on licence
+## 2026-10-30 · T35 Cosmos Reason 2 8B endpoint · CLAUDE · live on the DGX Spark, measured; 8B misses every defect in sim
 
 - Mismatch: the user moved the build check to Cosmos Reason 2 **8B** on 2026-10-28, but T21 (branched before that)
   accepts only `model_id == "Cosmos-Reason2-2B"` as production evidence (`agent/cosmos_reason.py:241`,
@@ -14,7 +14,7 @@ Newest first. One entry per finished task.
   revision `a9fae2cf…`, vLLM OpenAI API, NVIDIA's `<think>` reasoning prompt, final answer
   `{"verdict": pass|fail, "reason"}`; SHA-256 re-check of the capture, 3 tries with backoff on transport errors;
   wrong model, truncated, unparseable or extra-field answers → `CosmosReasonUnavailable` → Hold/Andon).
-  `serving/cosmos_reason2/serve.sh` (`MODE=spark`: NGC `nvcr.io/nvidia/vllm:26.09-py3@sha256:55774733…` (vLLM
+  `serving/cosmos_reason2/serve.sh` (no reasoning parser, see below; `MODE=spark`: NGC `nvcr.io/nvidia/vllm:26.09-py3@sha256:55774733…` (vLLM
   0.29, arm64), 0.25 of unified memory, all files in `~/fanuc-t35`; `MODE=brev`: `vllm/vllm-openai:v0.11.2@sha256:
   2c908d5a…`; bf16, `--max-model-len 16384`, 127.0.0.1 only), `up.sh` (laptop one command: token file-to-file →
   serve → ssh tunnel → health; `down` stops it, and on Brev deletes the box), `health.py` (right model + weights,
@@ -26,11 +26,31 @@ Newest first. One entry per finished task.
 - Plumbing check on the Spark with **Cosmos-Reason2-2B (NOT the 8B evidence)**, 40 rendered set D crops (10 per
   seated/high/tilted/wrong part): 37/40 parsed, p50 1.14 s, p95 4.56 s; vLLM: 4.82 GiB weights, 6.23 GiB KV
   cache in a 14.6 GiB budget. 2B verdicts were 11/40 right (it passes nearly everything): not usable as a gate.
-- Run: `uv run pytest -q` → all pass + 1 xfailed; `uvx ruff check .` clean. Saturday:
-  `MODE=spark bash serving/cosmos_reason2/up.sh` (Brev fallback: `bash serving/cosmos_reason2/up.sh`).
-- BLOCKED for the 8B numbers: the HF account's token gets 403 on `nvidia/Cosmos-Reason2-8B` (licence not accepted on
-  huggingface.co); `brev create` returns "Bad Request" for every type (org-level). Next: once the licence is accepted,
-  `MODE=spark bash serving/cosmos_reason2/up.sh`, then the bench, then record the 8B p50/p95, memory and parse rate.
+- **8B measured on the Spark** (official weights `a9fae2cf…`, NGC vLLM 26.09, 0.25 of unified memory, 2026-10-30
+  ~14:35 CT; 40 rendered set D crops, 10 per state, sim only):
+  - Parse rate: 39/40 parsed; every answer opened `<think>`. The one miss looped in its reasoning until the token cap
+    (`finish_reason: length`), so it was reported unavailable and the gate holds (Andon). With the old 4096-token cap
+    it ran 299 s per try and got retried 3x, so the port now caps at 1024 tokens (answers needed <= ~500) and
+    holds on a timeout without retrying.
+  - Latency per check: p50 16.1 s, p95 24.7 s, max 73.9 s (the capped loop). Parsed answers alone: p50 15.9 s,
+    max 38.8 s. Decode speed is ~14 tok/s.
+  - Memory: 27.1 GiB (27,777 MiB) for the vLLM EngineCore (nvidia-smi), made up of 16.65 GiB weights + 8.99 GiB KV cache
+    (16k context) + 2.34 GiB peak activation + 0.8 GiB CUDA graphs, out of a 30.4 GiB budget.
+  - Verdicts: 9/40 correct. seated 9 pass / 1 fail; high 10/10 pass, tilted 9/9 pass, wrong part 10/10 pass. **On
+    these crops the 8B caught 0 of 29 defective builds.** It cannot be the gate's discriminating check as is: a DONE
+    would rest on the recipe check alone. The 2B plumbing run was the same (it passed nearly everything).
+- Bring-up (measured): `MODE=spark bash serving/cosmos_reason2/up.sh` → HEALTHY in 294 s warm (weights cached in
+  `~/fanuc-t35/hf`, 21 GB). `MODE=spark bash serving/cosmos_reason2/up.sh down` stops the container and closes the
+  tunnel (verified; the other user's GPU process was untouched). The endpoint is currently DOWN to free shared memory.
+- Run: `uv run pytest -q` → 662 passed, 1 xfailed; `uvx ruff check .` clean. Brev fallback:
+  `bash serving/cosmos_reason2/up.sh` (still failing with "Bad Request" at the org level; not run end to end).
+- Data: `eval/results/cosmos_reason2_8b_setD_2026-10-30.json` (every answer, latency and verdict).
+- Next (the user decides):
+  1. Codex pins 8B (`coord/CODEX_BRIEF.md`).
+  2. Decide whether a pass-biased Cosmos is acceptable as the second opinion. Options: wrist close-ups at the
+     150 mm identity height instead of table crops, the planned 2-angle check, a stricter prompt, or treating a
+     Cosmos pass as advisory only.
+  3. Evaluate on real-cell images, for evaluation only.
 
 ## 2026-10-29 · T21 latest-head correction · CODEX · trusted prompt and build evidence
 
