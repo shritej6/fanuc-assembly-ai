@@ -52,6 +52,16 @@ def isaac_out_path(out: Path, scenario: str, product: int, seed: int) -> Path:
     return out / SEED_DIR[scenario] / f"product_{product}_{scenario}_{stamp}_s{seed}.hdf5"
 
 
+def select_parts(parts: list[str], only: list[str] | None) -> list[str]:
+    """`parts` in sheet order, or just `only` (each must be one of them: a typo must not record nothing)."""
+    if only is None:
+        return list(parts)
+    unknown = [p for p in only if p not in parts]
+    if unknown:
+        raise ValueError(f"--parts {unknown} are not among {list(parts)}")
+    return [p for p in parts if p in only]
+
+
 def part_path(path: Path, part: str) -> Path:
     """One part's recorder file next to the job's base name (scenario + seed + part: unique per job and part)."""
     return path.with_name(f"{path.stem}_{part}{path.suffix}")
@@ -108,13 +118,13 @@ def per_object_limits() -> dict:
 
 def record(backend, scenario: str, products: list[int], target: int, out: Path, seed: int, max_attempts: int,
            limits_path: Path | None = None, allow_touch_proxy: bool = False, measure_only: bool = False,
-           path: Path | None = None) -> dict:
+           path: Path | None = None, parts: list[str] | None = None) -> dict:
     limits = load_limits(limits_path) if limits_path else load_limits()
     run = Run(limits, per_object_limits(), max_attempts, allow_touch_proxy, measure_only)
     rng = np.random.default_rng(seed)
     summary = {}
     for product in products:
-        for i, part in enumerate(backend.parts(product)):
+        for i, part in enumerate(select_parts(backend.parts(product), parts)):
             if not hasattr(backend, "rotate"):  # kinematic: hdf5_io appends every part to one file
                 run.path = path or out / SEED_DIR[scenario] / f"product_{product}.hdf5"
             else:  # isaac: one closed file per part, the recorder moves on to the next part's file
@@ -303,6 +313,8 @@ def _args(argv):
     ap.add_argument("--backend", choices=("isaac", "kinematic"), required=True)
     ap.add_argument("--scenario", choices=tuple(SEED_DIR), default="build")
     ap.add_argument("--products", type=int, nargs="+", default=[1])
+    ap.add_argument("--parts", nargs="+", default=None,
+                    help="record only these parts of the product (short jobs that hand over cleanly); default all")
     ap.add_argument("--target", type=int, default=10, help="clean demos to keep per part")
     ap.add_argument("--max-attempts", type=int, default=40)
     ap.add_argument("--seed", type=int, default=0)
@@ -338,12 +350,12 @@ def main(argv=None) -> int:
 
         path = isaac_out_path(a.out, a.scenario, a.products[0], a.seed)
         path.parent.mkdir(parents=True, exist_ok=True)
-        first = part_path(path, sheet_parts(a.products[0])[0])
+        first = part_path(path, select_parts(sheet_parts(a.products[0]), a.parts)[0])
         backend = IsaacBackend(a.scenario, a.products[0], str(first), a.device, tuple(a.cameras))
     products = [p for p in a.products if p in backend.products]
     try:
         record(backend, a.scenario, products, a.target, a.out, a.seed, a.max_attempts, a.limits,
-               a.allow_touch_proxy, a.measure_only, path)
+               a.allow_touch_proxy, a.measure_only, path, a.parts)
     except LimitsError as e:
         ap.error(str(e))
     except Exception:

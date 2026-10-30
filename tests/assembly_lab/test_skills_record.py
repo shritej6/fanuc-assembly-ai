@@ -438,3 +438,22 @@ def test_isaac_runs_close_one_file_per_part(tmp_path, monkeypatch):
     assert [n for *_, n in seen] == [0, 0, 0]  # metadata restarts with each file (demo_0 is the file's first)
     for p in paths:
         assert p.with_name(p.stem + "_stats.json").exists()
+
+
+def test_parts_option_records_only_the_named_parts_in_sheet_order():
+    """Short per-part jobs for hand-over boxes; a part not in the product is an error, not an empty job."""
+    sheet = ["M1_01", "M1_02", "M1_03", "M1_04"]
+    assert record.select_parts(sheet, None) == sheet
+    assert record.select_parts(sheet, ["M1_03", "M1_01"]) == ["M1_01", "M1_03"]
+    with pytest.raises(ValueError, match="M2_01"):
+        record.select_parts(sheet, ["M2_01"])
+
+
+def test_record_with_parts_runs_only_those(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(record, "_record_part",
+                        lambda b, sc, pr, part, *a: seen.append(part) or {"attempts": 0, "kept_or_would_keep": 0})
+    lim = tmp_path / "limits.yaml"
+    lim.write_text(LIMITS)
+    record.record(record.KinematicBackend(), "build", [1], 1, tmp_path, 0, 1, lim, parts=["M1_02"])
+    assert seen == ["M1_02"]
