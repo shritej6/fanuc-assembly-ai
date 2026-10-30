@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -227,11 +228,15 @@ def set_jaw_force(stage, max_force_n: float) -> None:
 
 # ---------------------------------------------------------------- objects
 def write_object_usd(out: Path, stl: Path, contact: dict) -> float:
-    """One rigid body (defaultPrim /Object) with an SDF collider and the black PLA look. Returns the mass (kg)."""
+    """One rigid body (defaultPrim /Object) with an SDF collider and the black PLA look. Returns the mass (kg).
+
+    Written to a private temp file and renamed into place: parallel workers that find the same cache entry missing
+    otherwise read each other's half-written USD (measured: 'Invalid prim null prim' in add_object)."""
     tris = read_binary_stl(stl)
     mass, com_mm = pla_mass_kg(stl)
     out.parent.mkdir(parents=True, exist_ok=True)
-    stage = Usd.Stage.CreateNew(str(out))
+    tmp = out.with_name(f".{out.stem}.{uuid.uuid4().hex}.tmp{out.suffix}")    # pids repeat across containers
+    stage = Usd.Stage.CreateNew(str(tmp))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     root = UsdGeom.Xform.Define(stage, "/Object").GetPrim()
@@ -266,6 +271,7 @@ def write_object_usd(out: Path, stl: Path, contact: dict) -> float:
     if stl.name.startswith("F"):
         add_stop_boxes(stage, tris, contact)
     stage.GetRootLayer().Save()
+    os.replace(tmp, out)
     return mass
 
 

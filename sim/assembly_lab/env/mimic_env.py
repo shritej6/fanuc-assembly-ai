@@ -21,7 +21,7 @@ from extras import CellExtrasMixin, _axis_angle
 from isaaclab.envs import ManagerBasedRLEnvCfg, ManagerBasedRLMimicEnv
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
 from isaaclab.utils import configclass
-from scene import FRAMES, JAW_STIFF_X, make_scene_cfg, prim_name
+from scene import FRAMES, make_scene_cfg, prim_name
 from task import SKILL_SIGNALS, TaskState
 
 # reset settling (coordinator spec): at rest for hold_s, give up at cap_s
@@ -409,7 +409,7 @@ def make_env_cfg(skill: str, pool: list[str], contact: dict, *, cameras=("table"
     @configclass
     class ActionsCfg:
         tcp = actions.TcpActionCfg(home_rad=tuple(home_rad), jaw_travel_m=C.JAW_OPEN - C.JAW_CLOSED,
-                                   jaw_lead_m=jaw_force_n / (JAW_STIFF_X * C.JAW_DRIVE_STIFF))
+                                   jaw_force_n=jaw_force_n)
 
     @configclass
     class ObservationsCfg:

@@ -41,10 +41,12 @@ CAMERA_PATHS = {"table": "/World/TableCam", "side": "/World/SideCam", "wrist": "
 ARM_STIFFNESS = 2.0e5     # N m / rad
 ARM_DAMPING = 2.0e3       # N m s / rad
 ARM_EFFORT = 1.0e4        # N m (no saturation: the real arm is position controlled)
-# Jaw drives (tcp_track_check.py): 10 x the starter stiffness keeps the software sync lead (force / stiffness) at
-# 0.085 mm for 34 N, and a 2 x force cap leaves the drive headroom to hold the pinch while it corrects asymmetry.
-JAW_STIFF_X = 10.0        # x scene_config.JAW_DRIVE_STIFF
-JAW_EFFORT_X = 2.0        # x the per-finger force
+# Jaw drives: the squeeze is a constant feed-forward force (actions.TcpAction); these position drives only centre the
+# jaw pair on its mean closing depth (rack and pinion). Their implicit stiffness absorbs part of the feed-forward force
+# while the contact is solved (grasp_diag.py, M1_02 at 34 N: 10 x -> 27.4 N on the part, 1 x -> 33.3 N but 0.03 mm
+# centring slip); 3 x: 32-34 N on the part and 4.5 N lateral / (2 x stiffness) = 0.019 mm off-centre.
+JAW_STIFF_X = 3.0         # x scene_config.JAW_DRIVE_STIFF
+JAW_EFFORT_X = 2.0        # centring drive force cap, x the per-finger force
 
 
 def prim_name(uid: str) -> str:

@@ -44,7 +44,12 @@ DEFAULT_CONTACT = {
 # Env-level settings on top of physics/contact.yaml, each with the measurement behind it (demo_check.py, M4_01 CAD
 # grasp, 34 N jaws): 32 position iterations let the pads sink ~0.9 mm per side into the 7 mm grip faces (jaw gap
 # 5.2 mm) and the part pitched 6-11 deg in the grip on lift; 128 gave gap 6.3 mm and 0.003 deg pitch.
-ENV_OVERRIDES = {"solver_position_iterations": 128}
+# max_depenetration_velocity: contact.yaml's 0.05 m/s caps how fast PhysX pushes a part back out of a finger, so the
+# 34 N pads sank 0.25-0.4 mm into a held part and, with the old jaw drive, ratcheted 1-1.8 mm in onto the jaw stop
+# (grasp_diag.py M1_02: pinch collapsed to 3-10 N, 1.8-2.4 mm slip in carry). 5.0 m/s is what Isaac Lab's own SDF
+# peg-in-hole tasks use for their parts (isaaclab_tasks direct/factory/factory_tasks_cfg.py, direct/automate); with it
+# the pads stop within 0.05 mm of the CAD contact.
+ENV_OVERRIDES = {"solver_position_iterations": 128, "max_depenetration_velocity": 5.0}
 
 
 def load_contact(path: Path, overrides: dict) -> tuple[dict, str]:
