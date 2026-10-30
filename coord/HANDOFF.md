@@ -2,6 +2,47 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T30 perception port · CLAUDE
+
+- **What changed.**
+  - Merged `origin/feature/T09-state-machine` (2204663) into this branch. Codex's `assembly/*` files are unchanged.
+  - Added `perception/port/`: `CellPerceptionPort` implements the T09 `PerceptionPort` (`scan`, `pre_pick`,
+    `post_place`, `post_transfer`, `collision_scene`). Every failure is a typed `PerceptionPortError` (a
+    `ControllerPortError`).
+  - Detection and sizing:
+    - class-agnostic duplicate suppression with a top-1 label;
+    - FoundationPose STL → installed-local normalisation (`world_from_stl @ inv(T_local_from_stl)`);
+    - the look-alike size gate against the pinned T12 `objects.yaml` @74d749a (sha256-checked), using footprint,
+      height, CAD top cues, size twins (M1_01/M3_01, M1_02/M2_03) and all 30 objects, so a piece that fits nothing is
+      reported as foreign.
+  - The user's careful defect band (reject ≥ 0.994, second look 0.5–0.994) maps to `print_defect`/reject.
+  - Unsure → typed `CloseupReport`: second look with a `ViewRequest` (150 mm, 30° oblique, LOOKALIKES side), then
+    Andon with both pictures.
+  - Post-place seat (±0.3 mm) and tilt (1°) are certified only with a MEASURED bound, refuted when clearly off, and
+    otherwise sent to the operator.
+  - `precision_gate_tolerances()` returns the INTERFACES gates.
+  - `contracts/`, `assembly/` and `robot/cell/cell_client.py` are unchanged. Contract proposals are in
+    `perception/port/README.md`.
+- **Measured on real captures `r20261029-995508`** (evaluation only):
+  - Suppression cut T31 table+side duplicates from 125 to 36 against the agent visual count (412 objects) and lost
+    no object.
+  - Wrist depth noise at 364 mm is 7.64 mm std per pixel (80 patches). Scaled to 150 mm that is 1.3 mm
+    (PRELIMINARY), so depth alone cannot separate the 1 mm M1_02/M2_02 difference.
+- **Run.**
+  - `uv run pytest -q`: 958 passed, 1 skipped. Of those, 71 are the new `tests/test_port_*.py`, all on fakes with no
+    GPU.
+  - `uv run ruff check .`: clean.
+- **Not done.**
+  - No real-weight smoke: Rosie was unreachable from the Mac (DNS for dh-mgmt2 failed).
+  - No controller-in-the-loop run with real images.
+- **Next / blocked.**
+  - A FoundationPose `PoseEstimator` service (T28/main).
+  - Measured `CloseupThresholds` (T27/T28).
+  - Merge T27 `d869bad` for the defect-head loader.
+  - A measured FoundationPose repeatability to certify the 0.3 mm seat (first real-cell minutes).
+  - An arm-corridor radius or a robot-link model for intrusion (Codex).
+  - Controller motion for the second look and an Andon hook that reads `port.closeup()` (Codex).
+
 ## 2026-10-30 · T09 robot-brain case-rule hardening · CODEX
 
 - Implemented bounded case handling from `docs/ROBOT_BRAIN.md` section 3 without adding unsourced motion targets:
