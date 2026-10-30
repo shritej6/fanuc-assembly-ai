@@ -1,8 +1,8 @@
 #!/bin/bash
 # Build and prove the pinned PatchCore environment on one Rosie V100.
 # Submit from a persistent log directory:
-#   RUN_ROOT=$HOME/fanuc-t14 SOURCE_COMMIT=$(git rev-parse HEAD) \
-#     sbatch --export=ALL,RUN_ROOT,SOURCE_COMMIT perception/rosie/t14_patchcore_env_smoke.sbatch
+#   RUN_ROOT=$HOME/fanuc-t14 CODE_ROOT=$HOME/fanuc-t14-code-<commit> SOURCE_COMMIT=$(git rev-parse HEAD) \
+#     sbatch --export=ALL,RUN_ROOT,CODE_ROOT,SOURCE_COMMIT "$CODE_ROOT/perception/rosie/t14_patchcore_env_smoke.sbatch"
 #SBATCH --job-name=fa-t14-pc-env
 #SBATCH --partition=dgx
 #SBATCH --gres=gpu:v100:1
@@ -13,6 +13,7 @@
 set -euo pipefail
 
 : "${RUN_ROOT:?set RUN_ROOT to the isolated T14 runtime directory}"
+: "${CODE_ROOT:?set CODE_ROOT to the exact clean T14 Git snapshot}"
 : "${SOURCE_COMMIT:?set SOURCE_COMMIT to the tested source revision}"
 SINGULARITY=/usr/local/singularity-3.10.0/bin/singularity
 SIF=/data/containers/msoe-pytorch-23.05-py3.sif
@@ -27,6 +28,8 @@ echo "node=$(hostname) job=$SLURM_JOB_ID"
 nvidia-smi --query-gpu=name,driver_version,memory.total,compute_cap --format=csv,noheader
 test -x "$SINGULARITY"
 test -f "$SIF"
+test "$(git -C "$CODE_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"
+test -z "$(git -C "$CODE_ROOT" status --porcelain --untracked-files=all)"
 SIF_SHA256=$(sha256sum "$SIF" | awk '{print $1}')
 NODE_NAME=$(hostname)
 test ! -e "$ENV_DIR"
@@ -50,10 +53,13 @@ SIF_SHA256=$9
 
 python -m venv "$ENV_DIR"
 "$ENV_DIR/bin/python" -m pip install \
-    torch==2.10.0 torchvision==0.25.0 \
+    pip==26.2.2 setuptools==84.2.1 \
+    --index-url https://pypi.org/simple
+"$ENV_DIR/bin/python" -m pip install \
+    torch==2.14.1 torchvision==0.29.1 \
     --index-url https://download.pytorch.org/whl/cu126
 "$ENV_DIR/bin/python" -m pip install \
-    anomalib==2.7.0 pip-audit==2.10.1 \
+    anomalib==2.7.0 pillow==13.0.0 filelock==4.2.4 pip-audit==2.10.1 \
     --index-url https://pypi.org/simple
 "$ENV_DIR/bin/python" -m pip check
 "$ENV_DIR/bin/python" -m pip freeze --all > "$ENV_DIR/requirements.freeze.txt"
@@ -86,7 +92,7 @@ PY
     --format=json --output "$AUDIT"
 "$ENV_DIR/bin/python" - \
     "$ARTIFACT" "$AUDIT" "$ENV_DIR/requirements.freeze.txt" \
-    "$ENV_DIR/requirements.audit.txt" \
+    "$ENV_DIR/requirements.audit.txt" "$ENV_DIR" \
     "$JOB_ID" "$NODE_NAME" "$SOURCE_COMMIT" "$SIF" "$SIF_SHA256" <<'PY'
 import hashlib
 import json
@@ -115,21 +121,28 @@ artifact = Path(sys.argv[1])
 audit = Path(sys.argv[2])
 freeze = Path(sys.argv[3])
 audit_requirements = Path(sys.argv[4])
+env_dir = Path(sys.argv[5]).resolve()
 payload = {
     "anomalib": version("anomalib"),
-    "torch": torch.__version__,
+    "torch": version("torch"),
     "torchvision": version("torchvision"),
+    "pillow": version("pillow"),
+    "filelock": version("filelock"),
+    "pip": version("pip"),
+    "setuptools": version("setuptools"),
+    "pip_audit": version("pip-audit"),
     "cuda_runtime": torch.version.cuda,
     "gpu": torch.cuda.get_device_name(),
     "capability": list(torch.cuda.get_device_capability()),
     "architectures": torch.cuda.get_arch_list(),
     "cuda_probe_checksum": checksum,
     "model": type(model).__name__,
-    "slurm_job_id": sys.argv[5],
-    "hostname": sys.argv[6],
-    "source_commit": sys.argv[7],
-    "singularity_image": sys.argv[8],
-    "singularity_sha256": sys.argv[9],
+    "env_dir": str(env_dir),
+    "runner_id": sys.argv[6],
+    "hostname": sys.argv[7],
+    "source_commit": sys.argv[8],
+    "singularity_image": sys.argv[9],
+    "runtime_sha256": sys.argv[10],
     "freeze_sha256": hashlib.sha256(freeze.read_bytes()).hexdigest(),
     "audit_requirements_sha256": hashlib.sha256(audit_requirements.read_bytes()).hexdigest(),
     "pip_audit_sha256": hashlib.sha256(audit.read_bytes()).hexdigest(),
@@ -143,7 +156,8 @@ CONTAINER
 
 test -s "$ARTIFACT"
 test -s "$AUDIT"
-touch "$ENV_DIR/.complete"
+sha256sum "$ARTIFACT" | awk '{print $1}' > "$ENV_DIR/.complete.tmp"
+mv "$ENV_DIR/.complete.tmp" "$ENV_DIR/.complete"
 printf '%s\n' "$ENV_DIR" > "$APPROVED"
 echo "T14 PatchCore environment smoke artifact: $ARTIFACT"
 echo "T14 approved PatchCore environment: $ENV_DIR"
