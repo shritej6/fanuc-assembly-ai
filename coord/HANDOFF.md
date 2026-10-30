@@ -23,9 +23,17 @@ Newest first. One entry per finished task.
   - Probe, 3 cameras: N = 64 runs 41.9 env-steps/s at 15.6 GB.
   - Env 0 at N = 16 vs N = 1: TCP within 0.003 mm, part within 0.11 mm, signals equal; not bit-identical (contact
     noise from world position).
+- 15:40 A/B on fa-g6, full stack, 3 cameras, each run alone:
+  - 1 x N = 32: 9.57 env-steps/s, 11.2 GB, about 608 s end to end for 32 lanes.
+  - 2 x N = 32 on one GPU: 1164 s for 64 lanes, about 1.04 x, 22.2 GB. A second process buys nothing.
+  - 1 x N = 64: 14.02 env-steps/s, 64/64 gates. Its per-env-reset rerun env 9 fails final_xy again with the
+    identical 0.3326 mm, so the failure is deterministic and state-dependent, not noise; the generator's gates would
+    reject such a demo.
+  - All gates passed in every other run.
+  - Logs: `fa-g6_ne_data/` in this worktree (untracked; fa-g6 deleted at 16:30).
 - Next:
-  - The full stack is Python-bound (about 60 ms per env per step). Try 2 processes of N = 32 per 48 GB GPU, then
-    vectorise IK and metrics.
+  - The full stack is Python-bound (about 60 ms per env per step) and a second process per GPU does not help, so
+    vectorise the per-env IK and metrics loops. Prefer N = 64 per process.
   - Re-check N = 64 per-env reset.
   - If agent 8's constant-force jaw (feature/T12-grip-constforce) returns, a batched port of it exists (agent 9
     scratchpad `merge_ref/`).
