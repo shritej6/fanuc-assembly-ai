@@ -61,6 +61,25 @@ cell. Recorded states use `scene.get_state(is_relative=True)`. To replay a demo 
 | 8 | 7.378 | 5.826 |
 | 16 | 14.766 | 11.657 |
 
-A process step takes about 1.08 s without cameras and 1.37 s with them, at every N. These numbers leave out the
-cell env's Python (IK, metrics, signals) and the generator's gates; `batch_check.py` measures the full stack. VRAM
-per env and the rates at N = 32 and 64 come from `batch_rate.py`, which records `gpu_mem_used_mib`.
+With 3 cameras at larger N (same probe): N = 32 gives 22.30 env-steps/s and N = 64 gives 41.87, with 11.0 GB and 15.6 GB of
+GPU memory in use (7.6 GB at N = 16). A process step takes about 1.08 s without cameras and 1.37 s with them up to
+N = 16, and 1.53 s at N = 64. These numbers leave out the cell env's Python (IK, metrics, signals) and the
+generator's gates.
+
+## Full stack (batch_check.py, fa-g6, F04 + M4_01, scripted episode in every cell, 80 process steps)
+
+| run | env-steps/s | gates (lockstep / per-env-reset rerun) |
+|---|---|---|
+| pick_insert N = 1 | 0.259 | 1/1 |
+| pick_insert N = 16 | 6.98 | 16/16, 8/8 |
+| pick_insert N = 16, layouts differ per env | 6.91 | 16/16, 8/8 |
+| pick_insert N = 16, 3 cameras | 5.69 | 16/16, 8/8 |
+| pull_out N = 16 | (two copies of the script ran at once: rate not quoted) | 16/16, 8/8 |
+
+Env 0 at N = 16 vs N = 1 is not bit-identical, because the contact solve differs with each cell's world position (at
+N = 16 the cells form 4 identical groups that follow the grid's symmetry). The differences per phase:
+
+| skill | TCP | part pose | latched signals | other |
+|---|---|---|---|---|
+| pick_insert | within 0.0005 mm | within 0.022 mm | equal | jaw within 1.4 N |
+| pull_out | within 0.003 mm | within 0.11 mm | equal | peak axial 2.11 vs 3.23 N, all far under physics/limits.yaml |
