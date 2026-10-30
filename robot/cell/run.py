@@ -95,7 +95,11 @@ def verdict(mock, checked: Checked) -> int:
     if n_act == 0:
         print("✗ Not ready: no action reached the cell. Does act() return a target?")
         return 1
-    print("✓ Ready for the real robot")
+    if getattr(checked.policy, "mock_only", False):
+        print("✓ T09 local-mock orchestration completed")
+        print("  Mock-only perception and calibration were used; this is not real-robot readiness.")
+    else:
+        print("✓ Ready for the real robot")
     took = "" if act_s is None else (" · act() takes " + ("under 1 ms" if act_s < 0.001 else f"{act_s * 1000:.0f} ms"
                                                           if act_s < 1 else f"{act_s:.1f} s (fine: the arm waits for it)"))
     print(f"  {len(mock.rollouts)} rollouts · {n_act} actions · 0 rejected{took}")
@@ -230,7 +234,7 @@ def main() -> None:
         url, mock = start_mock(args.trials, args.trial_s, args.instruction)
         logging.getLogger().setLevel(logging.ERROR)  # the summary below says what matters
         print(f"Checking your policy on a local mock of the cell ({args.trials} rollouts, no robot) ...")
-        checked = Checked(Policy(args.checkpoint))
+        checked = Checked(Policy(args.checkpoint, runtime="mock"))
         try:
             run_all(CellClient(url, "mock", args.ca), checked)
         except Exception:  # noqa: BLE001  (reported by verdict)
@@ -247,7 +251,7 @@ def main() -> None:
         logging.info("request %s approved: run %s", st["request_id"], st["run_id"])
         if st.get("view_key"):
             logging.info(results_link(st))
-    run_all(CellClient(url, token, args.ca), Policy(args.checkpoint))
+    run_all(CellClient(url, token, args.ca), Policy(args.checkpoint, runtime="cell"))
 
 
 if __name__ == "__main__":

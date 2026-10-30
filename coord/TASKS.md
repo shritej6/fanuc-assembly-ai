@@ -13,7 +13,7 @@ An agent may only start a task that is READY and owned by it.
 | T06 | CAD defect variants (snapped tab, missing pin/lock, 97/103 % scale, warp, layer split) as STL/USD | CLAUDE | BACKLOG | feature/T06-defect-variants | T03 | Tue |
 | T07 | USD assets of all 30 objects + black PLA material; Isaac scene with work area, spare store, reject zone | CLAUDE | BACKLOG | feature/T07-usd-scene | T01 | Tue |
 | T08 | Replicator generator + label QA; pilot 1.5k images on Rosie T4 (measure s/img) | CLAUDE | BACKLOG | feature/T08-sdg-pilot | T06, T07 | Tue |
-| T09 | Recipe state machine (PackML states), inventory, recovery, Andon; two-independent-check gates | CODEX | BACKLOG | feature/T09-state-machine | T04, T05 | Tue |
+| T09 | Cell controller: PackML recipe state machine, inventory, recovery/Andon, motion compiler, safety supervisor, camera-verification gates | CODEX | REVIEW | feature/T09-state-machine | T04, T05 | Tue |
 | T10 | Full synthetic sets A–D on Rosie T4 (chunks of 500, re-runnable) | CLAUDE | BACKLOG | feature/T10-sdg-full | T08 | Wed |
 | T11 | Cosmos Transfer pilot (50 images, measure time + credits) | CLAUDE | BACKLOG | feature/T11-cosmos | T08 | Wed |
 | T12 | Isaac Lab Mimic demos for GR00T (after the scripted baseline works in sim) | CLAUDE | BACKLOG | feature/T12-mimic | T09 | Wed |
