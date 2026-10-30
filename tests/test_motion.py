@@ -14,6 +14,7 @@ from assembly.motion import (
     InspectionStopConfig,
     MotionConfig,
     MotionConfigError,
+    MotionInputError,
     MotionPhase,
     OrientedPartPose,
     RestingState,
@@ -358,6 +359,8 @@ def test_verified_insert_releases_then_retreats() -> None:
         target,
         gripper_roll_deg=0.0,
         config=_config(),
+        max_position_error_mm=0.0,
+        max_orientation_error_deg=0.0,
     )
 
     assert [chunk.phase for chunk in chunks] == [MotionPhase.RELEASE, MotionPhase.RETREAT]
@@ -372,6 +375,8 @@ def test_release_preserves_measured_roll_pitch_within_verified_endpoint() -> Non
         target,
         gripper_roll_deg=0.0,
         config=_config(),
+        max_position_error_mm=0.0,
+        max_orientation_error_deg=0.5,
     )
 
     points = [point for chunk in chunks for point in chunk.waypoints]
@@ -380,15 +385,32 @@ def test_release_preserves_measured_roll_pitch_within_verified_endpoint() -> Non
 
 def test_release_does_not_translate_before_opening_gripper() -> None:
     current = Waypoint(300.0, 20.0, -280.0, -180.0, 0.0, 40.0, 1.0)
-    chunks = compile_release_retreat(
-        current,
-        _pose(400.0, 20.0, -280.0, 40.0),
-        gripper_roll_deg=0.0,
-        config=replace(_config(), max_linear_step_mm=10.0),
-    )
 
-    assert chunks[0].waypoints[-1].xyz == current.xyz
-    assert chunks[0].waypoints[-1].gripper == 0.0
+    with pytest.raises(MotionInputError, match="verified fingertip TCP"):
+        compile_release_retreat(
+            current,
+            _pose(400.0, 20.0, -280.0, 40.0),
+            gripper_roll_deg=0.0,
+            config=replace(_config(), max_linear_step_mm=10.0),
+            max_position_error_mm=0.0,
+            max_orientation_error_deg=0.0,
+        )
+
+
+def test_release_rejects_canonical_object_origin_instead_of_t29_tcp() -> None:
+    """A camera object origin must never be mistaken for the held fingertip TCP."""
+    target = _pose(382.5, 100.0, -288.1, 90.0)
+    object_origin = Waypoint(382.5, 100.0, -316.0, -180.0, 0.0, 90.0, 1.0)
+
+    with pytest.raises(MotionInputError, match="verified fingertip TCP"):
+        compile_release_retreat(
+            object_origin,
+            target,
+            gripper_roll_deg=90.0,
+            config=_config(),
+            max_position_error_mm=0.0,
+            max_orientation_error_deg=0.0,
+        )
 
 
 def test_release_preserves_equivalent_wrapped_yaw_without_full_turn() -> None:
@@ -397,6 +419,8 @@ def test_release_preserves_equivalent_wrapped_yaw_without_full_turn() -> None:
         _pose(340.0, 20.0, -280.0, -170.0),
         gripper_roll_deg=0.0,
         config=_config(),
+        max_position_error_mm=0.0,
+        max_orientation_error_deg=0.0,
     )
 
     assert {point.r for chunk in chunks for point in chunk.waypoints} == {190.0}
@@ -409,6 +433,8 @@ def test_held_reject_transfer_releases_only_at_calibrated_target() -> None:
         target,
         gripper_roll_deg=0.0,
         config=_config(),
+        max_position_error_mm=0.0,
+        max_orientation_error_deg=0.0,
     )
 
     assert chunks[-2].phase is MotionPhase.RELEASE

@@ -213,7 +213,7 @@ def test_supervisor_delegates_every_tcp_row_to_t05_guard(bad: Waypoint, error: t
 @pytest.mark.parametrize(
     ("waypoint", "message"),
     [
-        (Waypoint(220.0, 0.0, -250.0, -170.0, 0.0, 0.0, 0.0), "orientation"),
+        (Waypoint(220.0, 0.0, -250.0, -170.0, 0.0, 0.0, 0.0), "fingers-down"),
         (Waypoint(220.0, 0.0, -250.0, -180.0, 2.0, 0.0, 0.0), "orientation"),
         (_waypoint(220.0, 0.0, -331.0), "table clearance"),
     ],

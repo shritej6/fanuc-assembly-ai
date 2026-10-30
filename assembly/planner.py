@@ -59,6 +59,15 @@ class CalibratedPoseProvider(Protocol):
         observed_at_s: float,
     ) -> OrientedPartPose: ...
 
+    def verification_target_for(
+        self,
+        product: ProductRecipe,
+        base: InventoryItem,
+        step: RecipeStep,
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ContractPoseUF0:
@@ -106,6 +115,7 @@ class PreparedPlanStep:
     base_pose: OrientedPartPose
     grasp: OrientedPartPose
     target: OrientedPartPose
+    verification_target: OrientedPartPose | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +128,7 @@ class PlanCandidate:
     part: InventoryItem
     base_pose: OrientedPartPose
     target: OrientedPartPose
+    verification_target: OrientedPartPose | None
     attempt: int
     observed_at_s: float
 
@@ -197,13 +208,30 @@ def _candidate(
     try:
         base_result = poses.base_for(base, observed_at_s=observed_at_s)
         target_result = poses.target_for(product, base, recipe_step, observed_at_s=observed_at_s)
+        verification_result = poses.verification_target_for(
+            product,
+            base,
+            recipe_step,
+            observed_at_s=observed_at_s,
+        )
     except PlannerError:
         raise
     except Exception as error:
         raise PlannerPoseError(f"calibrated pose snapshot is unavailable: {error}") from error
     base_pose = _validate_pose("base", base_result)
     target = _validate_pose("target", target_result)
-    return PlanCandidate(product, recipe_step, base, part, base_pose, target, attempt, observed_at_s)
+    verification_target = _validate_pose("verification target", verification_result)
+    return PlanCandidate(
+        product,
+        recipe_step,
+        base,
+        part,
+        base_pose,
+        target,
+        verification_target,
+        attempt,
+        observed_at_s,
+    )
 
 
 def _finalize(candidate: PlanCandidate, grasp_result: object) -> PreparedPlanStep:
@@ -231,6 +259,7 @@ def _finalize(candidate: PlanCandidate, grasp_result: object) -> PreparedPlanSte
         candidate.base_pose,
         grasp,
         target,
+        candidate.verification_target,
     )
 
 
@@ -258,6 +287,7 @@ def _finalize_reject(candidate: PlanCandidate, grasp_result: object, target_resu
         candidate.base_pose,
         grasp,
         target,
+        None,
     )
 
 

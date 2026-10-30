@@ -48,6 +48,7 @@ class RecoveryStagePlan:
     chunks: tuple[MotionChunk, ...]
     grasp: OrientedPartPose | None
     target: OrientedPartPose
+    verification_target: OrientedPartPose | None
     base_pose: OrientedPartPose
     gripper_roll_deg: float
     release_after_verification: bool
@@ -64,6 +65,13 @@ class RecoveryTargetProvider(Protocol):
     """Cell-calibrated staging and reject targets; no defaults are safe."""
 
     def staging_target_for(
+        self,
+        product: int,
+        part: InventoryItem,
+        slot: int,
+    ) -> OrientedPartPose: ...
+
+    def staging_verification_target_for(
         self,
         product: int,
         part: InventoryItem,
@@ -139,6 +147,8 @@ class RecoveryCoordinator:
         poses: CalibratedPoseProvider,
         current: Waypoint,
         config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
         observed_at_s: float,
         grasp: OrientedPartPose | None = None,
     ) -> RecoveryStagePlan | None:
@@ -154,7 +164,18 @@ class RecoveryCoordinator:
         part = inventory.item(stage.instance_id)
         try:
             return self._compile_stage(
-                stage, part, failed, inventory, catalog, poses, current, config, observed_at_s, grasp
+                stage,
+                part,
+                failed,
+                inventory,
+                catalog,
+                poses,
+                current,
+                config,
+                max_position_error_mm,
+                max_orientation_error_deg,
+                observed_at_s,
+                grasp,
             )
         except RecoveryError:
             raise
@@ -193,6 +214,8 @@ class RecoveryCoordinator:
         poses: CalibratedPoseProvider,
         current: Waypoint,
         config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
         observed_at_s: float,
         grasp: OrientedPartPose | None,
     ) -> RecoveryStagePlan:
@@ -200,17 +223,85 @@ class RecoveryCoordinator:
         recipe_step = next(step for step in recipe.steps if step.object_id == part.object_id)
         base_pose = poses.base_for(inventory.active_reservation.base, observed_at_s=observed_at_s)
         if stage.kind is RecoveryStageKind.REJECT_FAILED:
-            target = self._targets.reject_target_for(part)
-            chunks = compile_transfer_held(
+            return self._compile_reject_stage(
+                stage,
+                part,
+                recipe_step,
+                base_pose,
                 current,
-                target,
-                gripper_roll_deg=recipe_step.gripper_roll_deg,
-                config=config,
+                config,
+                max_position_error_mm,
+                max_orientation_error_deg,
             )
-            return RecoveryStagePlan(stage, part, chunks, None, target, base_pose, recipe_step.gripper_roll_deg, False)
         if grasp is None:
             raise RecoveryError("recovery re-pick requires a sourced FoundationPose grasp")
-        target = self._stage_target(stage, part, recipe, recipe_step, inventory, poses, observed_at_s)
+        return self._compile_pick_stage(
+            stage,
+            part,
+            recipe,
+            recipe_step,
+            inventory,
+            poses,
+            base_pose,
+            current,
+            config,
+            observed_at_s,
+            grasp,
+        )
+
+    def _compile_reject_stage(
+        self,
+        stage: RecoveryStage,
+        part: InventoryItem,
+        recipe_step: RecipeStep,
+        base_pose: OrientedPartPose,
+        current: Waypoint,
+        config: MotionConfig,
+        max_position_error_mm: float,
+        max_orientation_error_deg: float,
+    ) -> RecoveryStagePlan:
+        target = self._targets.reject_target_for(part)
+        chunks = compile_transfer_held(
+            current,
+            target,
+            gripper_roll_deg=recipe_step.gripper_roll_deg,
+            config=config,
+            max_position_error_mm=max_position_error_mm,
+            max_orientation_error_deg=max_orientation_error_deg,
+        )
+        return RecoveryStagePlan(
+            stage,
+            part,
+            chunks,
+            None,
+            target,
+            None,
+            base_pose,
+            recipe_step.gripper_roll_deg,
+            False,
+        )
+
+    def _compile_pick_stage(
+        self,
+        stage: RecoveryStage,
+        part: InventoryItem,
+        recipe: ProductRecipe,
+        recipe_step: RecipeStep,
+        inventory: Inventory,
+        poses: CalibratedPoseProvider,
+        base_pose: OrientedPartPose,
+        current: Waypoint,
+        config: MotionConfig, observed_at_s: float, grasp: OrientedPartPose,
+    ) -> RecoveryStagePlan:
+        target, verification_target = self._stage_targets(
+            stage,
+            part,
+            recipe,
+            recipe_step,
+            inventory,
+            poses,
+            observed_at_s,
+        )
         chunks = compile_pick_to_insert(
             current,
             grasp,
@@ -218,9 +309,19 @@ class RecoveryCoordinator:
             gripper_roll_deg=recipe_step.gripper_roll_deg,
             config=config,
         )
-        return RecoveryStagePlan(stage, part, chunks, grasp, target, base_pose, recipe_step.gripper_roll_deg, True)
+        return RecoveryStagePlan(
+            stage,
+            part,
+            chunks,
+            grasp,
+            target,
+            verification_target,
+            base_pose,
+            recipe_step.gripper_roll_deg,
+            True,
+        )
 
-    def _stage_target(
+    def _stage_targets(
         self,
         stage: RecoveryStage,
         part: InventoryItem,
@@ -229,18 +330,30 @@ class RecoveryCoordinator:
         inventory: Inventory,
         poses: CalibratedPoseProvider,
         observed_at_s: float,
-    ) -> OrientedPartPose:
+    ) -> tuple[OrientedPartPose, OrientedPartPose]:
         if stage.staging_slot is None:
             raise RecoveryError("staged recovery stage has no calibrated slot")
         staging = self._targets.staging_target_for(recipe.product, part, stage.staging_slot)
         if stage.kind is RecoveryStageKind.STAGE_INSTALLED:
-            return staging
-        return poses.target_for(
+            verification = self._targets.staging_verification_target_for(
+                recipe.product,
+                part,
+                stage.staging_slot,
+            )
+            return staging, verification
+        target = poses.target_for(
             recipe,
             inventory.active_reservation.base,
             recipe_step,
             observed_at_s=observed_at_s,
         )
+        verification = poses.verification_target_for(
+            recipe,
+            inventory.active_reservation.base,
+            recipe_step,
+            observed_at_s=observed_at_s,
+        )
+        return target, verification
 
 
 def compile_retry_recovery(

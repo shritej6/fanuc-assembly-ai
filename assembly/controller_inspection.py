@@ -11,8 +11,6 @@ from assembly.controller_ports import (
     EvidencePair,
     RecoveryTransferEvidence,
     call_port,
-    oriented_pose_values,
-    pose_agrees,
     require_fresh,
 )
 from assembly.inventory import (
@@ -28,6 +26,7 @@ from assembly.motion import (
     compile_inspection_stop,
     compile_pick_to_insert,
     compile_pick_to_reject,
+    compile_transfer_held,
 )
 from assembly.planner import PlanCandidate, PlannerError, PreparedPlanStep
 from assembly.verification import (
@@ -60,14 +59,13 @@ class InspectionControllerMixin:
             candidate = self._planner.next_candidate(
                 self.inventory,
                 observed_at_s=observed_at,
-                attempt=self._failed_attempts + 1,
+                attempt=1,
             )
         except PlannerError as error:
             self._abort(str(error))
             return False
         if candidate is None:
-            self._finish_product()
-            return False
+            return self._verify_finished_product(observation, observed_at)
         return self._queue_inspection(candidate, None, observation, current, observed_at)
 
     def _queue_inspection(
@@ -155,7 +153,7 @@ class InspectionControllerMixin:
         base = self._reference_base()
         base_pose = self._poses.base_for(base, observed_at_s=observed_at)
         target = self._recovery_targets.reject_target_for(part)
-        return PlanCandidate(product, recipe_step, base, part, base_pose, target, 1, observed_at)
+        return PlanCandidate(product, recipe_step, base, part, base_pose, target, None, 1, observed_at)
 
     def _reference_base(self) -> InventoryItem:
         if self.inventory.active_product is not None:
@@ -210,7 +208,7 @@ class InspectionControllerMixin:
             thresholds=self._verification_thresholds,
         )
         if decision.outcome is VerificationOutcome.HOLD_ANDON:
-            self._hold(f"pre-pick checks disagree for {candidate.part.object_id}")
+            self._hold(self._alternate_view_dependency(candidate.part.object_id))
             return False
         grasp = self._foundationpose_grasp(candidate.part, evidence, observed_at)
         if decision.outcome is VerificationOutcome.REJECT_TO_SPARE or forced_condition is not None:
@@ -219,6 +217,13 @@ class InspectionControllerMixin:
             return self._handle_reject_decision(prepared, forced_condition, decision, observation, current, observed_at)
         prepared = self._planner.finalize_candidate(candidate, grasp)
         return self._queue_prepared(prepared, observation, current, observed_at)
+
+    @staticmethod
+    def _alternate_view_dependency(object_id: str) -> str:
+        return (
+            f"pre-pick checks disagree for {object_id}; alternate close-up requires "
+            "published calibrated wrist-view targets and a safety-approved motion plan"
+        )
 
     def _handle_reject_decision(
         self,
@@ -279,6 +284,32 @@ class InspectionControllerMixin:
             self._pending_reject = None
         return queued
 
+    def _queue_held_rejected(
+        self,
+        prepared: PreparedPlanStep,
+        condition: ObjectCondition,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> bool:
+        try:
+            plan = compile_transfer_held(
+                current,
+                prepared.target,
+                gripper_roll_deg=prepared.record.gripper_roll_deg,
+                config=self._motion_config,
+                max_position_error_mm=self._execution_tolerances.max_position_error_mm,
+                max_orientation_error_deg=self._execution_tolerances.max_orientation_error_deg,
+            )
+        except MotionError as error:
+            self._hold(str(error))
+            return False
+        self._pending_reject = PendingReject(prepared, prepared.target, condition)
+        queued = self._queue_reject_plan(plan, prepared, observation, current, observed_at)
+        if not queued:
+            self._pending_reject = None
+        return queued
+
     def _queue_reject_plan(self, plan, prepared, observation, current, observed_at) -> bool:
         return self._set_guarded_motion(
             plan,
@@ -296,17 +327,13 @@ class InspectionControllerMixin:
         if pending is None:
             raise RuntimeError("reject transfer has no pending item")
         evidence = self._reject_transfer_evidence(pending, observation, observed_at)
-        expected = oriented_pose_values(pending.target)
-        agrees = evidence.pose_agrees and pose_agrees(
-            evidence.detection.get("pose"), expected, self._perception_tolerances
-        )
         decision = verify_recovery_transfer(
             pending.prepared.part.object_id,
             evidence.detection,
             evidence.inspection,
             expected_instance_id=pending.prepared.part.instance_id,
             thresholds=self._verification_thresholds,
-            pose_agrees=agrees,
+            pose_agrees=(evidence.target_zone is InventoryZone.REJECT and evidence.pose_agrees),
             allow_rejected=True,
         )
         if decision.outcome is not VerificationOutcome.ACCEPT or current.gripper != 0.0:
@@ -331,6 +358,7 @@ class InspectionControllerMixin:
         was_reserved = part.zone is InventoryZone.RESERVED
         self._motion_queue.finish()
         self.inventory.reject(part.instance_id, condition=pending.condition)
+        self._insertion_retries_by_instance.pop(part.instance_id, None)
         self._pending_reject = None
         self._held_instance_id = None
         self._events.append(

@@ -2,6 +2,67 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T09 robot-brain case-rule hardening · CODEX
+
+- Implemented bounded case handling from `docs/ROBOT_BRAIN.md` section 3 without adding unsourced motion targets:
+  missing products are deferred while another requested product can run; a spare is not consumed before that work;
+  Dropped parts use a fresh post-drop scan: upright re-plans, fallen/defective rejects then uses a spare, and unobserved
+  Holds. Work-area intrusion clears the stale queue, requires a fresh scan, performs only a safe state-specific
+  replan, and Holds during pending install or staged recovery states.
+- Added a separate typed `FinalProductVerifier` trust boundary. Product completion requires fresh, complete evidence
+  bound to the exact product, base, and four installed instance IDs; two distinct view IDs; the same exact four
+  identities in both views; two Boolean results; identity agreement; and reviewed physical-motion provenance. The
+  deterministic mock implementation is explicitly `mock_only` and requires an opt-in flag, so it restores three-product
+  mock completion without authorizing cell motion. Construction rejects every callback-only production verifier before
+  the first action: T30 must first supply controller-owned, safety-approved physical view motions with independently
+  verified endpoints; synchronous camera calls and self-reported capture metadata are not proof. Verified final failure
+  also Holds until a reviewed installed-part
+  grasp/staging sequence supports reverse removal. Unsure pre-pick remains blocked on calibrated alternate-view motion.
+  Crowded relocation remains blocked on typed blocker identity plus a calibrated remembered empty staging target.
+- Won't-seat recovery now executes the
+  user-approved 3.0 mm lift from `docs/ROBOT_BRAIN.md@2a751da` section 3, then carries the still-held part through the
+  configured safe transit to the measured set-O inspection stop at UF0 z -168 mm before re-running `pre_pick` plus
+  FoundationPose. It recomputes the candidate/base/target and performs one guarded reinsert. A second failure lifts and
+  re-inspects the held part: a typed defect goes physically to REJECT before spare lookup/Andon; a good part Holds until
+  T30 publishes a typed calibrated hole-clearance verdict. No generic safe-Z lift or cached target substitutes for the
+  measured retry. Operator acknowledge/resume now also refuses every unresolved physical pending state, including a
+  release or +3 mm recovery lift interrupted by intrusion; a fresh scan cannot silently commit or reinsert it.
+- Observed gripper state is now accepted only when it is exactly the official-client value 0 or 1. Fractional or
+  out-of-range feedback fails closed before perception, planning, or motion instead of being interpreted as detached.
+- Removed the now-unreachable staged-rebuild hooks from `AssemblyController` instead of retaining dead production
+  branches. The independently tested recovery planner/library remains intact; wiring reverse removal back into the
+  controller still requires the typed offending-instance, hole verdict, installed grasp, and staging dependencies
+  listed above.
+- T12 contact-force dependency remains open: the real arm has no force sensor, so real-cell insertion is blocked until
+  T12 supplies reviewed, measured per-part limits and the production seated-height/final-approach guards. Preliminary
+  physics values are not promoted to controller limits. No contract or `robot/cell/cell_client.py` file changed, and
+  no real-cell command was issued.
+- Run: focused completion/controller/brain-rule/runtime/T29 suite `130 passed`; full `uv run pytest -q` `620 passed`; full
+  Ruff and `git diff --check` passed; contracts and `robot/cell/cell_client.py` are unchanged from the task base. The
+  official default mock passed 3 rollouts / 602 actions / 0 rejected and printed `Ready for the real robot`; the opt-in
+  T09 mock passed 1 rollout / 200 actions / 0 rejected and completed all three requested products while explicitly
+  reporting mock-only orchestration, not real-robot readiness. Next: Claude reviews this branch head;
+  T28/T30/T12 publish the typed motion/perception/force dependencies above before the final gate can be enabled.
+
+## 2026-10-29 · T09 critical fingertip-release follow-up · CODEX
+
+- Recovered Claude's deleted `pr9_grasp.md` review from its session log and verified it against the pinned T29
+  artifact. PR #9 head already composes `tcp_local_mm` and applies the T29 roll once for pick/insert; the stale T30
+  worktree does not and must merge/rebase PR #9 before it can be considered for cell use.
+- Closed the remaining release boundary: `compile_release_retreat()` now refuses to open unless the held TCP agrees
+  with the sourced fingertip target within the caller's measured execution position/orientation tolerances. It no
+  longer accepts a camera canonical object origin as the release point. The M1_04 regression rejects the object
+  origin that is 27.9 mm below the T29 fingertip target and has a 90-degree yaw error.
+- Added an end-to-end T29 matrix over all 24 parts and fixture yaw 0/90/-135 degrees. It checks canonical
+  FoundationPose origin -> fingertip grasp -> CAD/T29 insertion -> roll-adjusted emitted waypoints -> verified
+  release, including the nonidentity rear-guard mesh transform and the Y-closing connector housings.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (586 passed); `git diff --check` (passed). Official default
+  mock completed 3 rollouts / 602 actions / 0 rejected and printed `Ready for the real robot`; opt-in T09 mock
+  completed 1 rollout / 201 actions / 0 rejected with its mock-only verdict. No contract or official client file
+  changed, and no real-cell command was issued.
+- Next: Claude re-reviews PR #9. T30 must consume this head and implement/prove raw FoundationPose STL-frame to
+  installed-local normalization before any explicit cell runtime can be enabled.
+
 ## 2026-10-29 · T27 test-bed training · CLAUDE (user override of T13 ownership, for CODEX review)
 
 - User: train only on the new test-bed sets, and Claude makes the change now (Codex reviews; DECISIONS 2026-10-28).
@@ -127,16 +188,37 @@ Newest first. One entry per finished task.
 - Runtime boundary: `AssemblyController` requires caller-sourced `InspectionStopConfig` and `StartupHoldConfig`; the
   latter is validated against the official action contract and prevents malformed first observations from escaping
   `act()`. `reset()` clears prompt ownership, `requested_products` exposes the parsed tuple, and
-  `acknowledge_resume()` requires a fresh scan before leaving Held. T29 object-to-TCP offsets stay inside the pose
-  provider and are not compared incorrectly with the FoundationPose object origin.
-- Run: `uv run ruff check .` (passed); `uv run pytest -q` (443 passed); `git diff --check` (clean);
-  `git diff --exit-code origin/main -- robot/cell/cell_client.py` and the same check for `contracts/` (clean).
-  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 601 actions, 0 rejected and
+  `acknowledge_resume()` requires a fresh scan before leaving Held. The latest T04/T05 review fixes are integrated:
+  every emitted joint/TCP action uses the live official guard, and the catalog pins T29's Team V printed-finger
+  source at `20c6f9b` / SHA-256 `99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1`.
+- Pose conversion: the provider composes measured UF0 base pose × CAD STL installation transform × inverse T29
+  mesh-to-installed-local transform. It now carries two distinct internal frames: the canonical object origin used for
+  camera verification and the T29 fingertip TCP used for motion. Reject verification uses calibrated zone occupancy,
+  not equality to the pre-release TCP; staging/rebuild carry an explicit object verification target. A recorded
+  `FoundationPoseFrameBoundary("installed_local", source)` is mandatory, so raw STL-frame output cannot silently enter
+  the yaw-only path. Identity/source/finite checks fail closed, and fallen parts Hold when the shared contract cannot
+  supply a sourced full-6D grasp.
+- Run: `uv run ruff check .` (passed); `uv run pytest -q` (513 passed); `git diff --check` (clean);
+  `git diff --exit-code origin/main -- robot/cell/cell_client.py` (clean). The integrated T04 catalog-schema change
+  still requires Claude's latest-head contract review on PR #5; no additional T09 contract change was made.
+  `cd robot/cell && uv run --locked run.py --mock` → 3 rollouts, 602 actions, 0 rejected and
   `✓ Ready for the real robot`; adding `--checkpoint t09-mock --trials 1 --trial-s 20` → 1 rollout,
-  201 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
-- Next: Claude re-reviews PR #9. Agent 4 must supply the sourced startup hold, T28 recovery/staging targets, T29
-  FoundationPose object-to-TCP transform, and production full-IK/collision providers; do not select `t09-mock` on the
-  real cell. Agent 2's reviewed catalog/adapter commits remain a separate root integration step.
+  200 actions, 0 rejected, with the explicit mock-only/not-real-robot-ready verdict.
+- Next: Claude re-reviews PR #9 at the integrated head. The cell-runtime branch must rebase here and remain disabled
+  until T28/T30 live perception, reviewed recovery targets, and a sourced ER-4iA robot-link collision provider exist;
+  do not select `t09-mock` on the real cell.
+
+## 2026-10-29 · T05 review fixes · CODEX
+
+- Added a fail-closed joint guard for the official J1-J6 limits and gripper range; TCP actions now additionally require
+  the measured fingers-down set-O envelope (`w` within 3 degrees of +/-180, `p` within 3 degrees, free bounded yaw).
+- `CellAdapter` resolves `DT` on every action call, so the guard validates the same live value the client transmits.
+  `Policy` supplies that live value without changing the default joint-hold runtime.
+- Regression coverage includes malformed, NaN/Inf, epsilon-outside and NumPy float32/float64 chunks plus end-to-end
+  policy rejection. `robot/cell/cell_client.py` remains unchanged.
+- Verified: `uv run ruff check .` clean; `uv run pytest -q` 102 passed; official `uv run run.py --mock` completed
+  3 rollouts / 600 actions / 0 rejected and printed `Ready for the real robot`.
+- Next: Claude reviews PR #4; merge this commit into T09 before enabling the explicit cell runtime.
 
 ## 2026-10-27 · T05 · CODEX · adapter layer and UF0 safety guard
 
@@ -159,6 +241,38 @@ Newest first. One entry per finished task.
   position, including when `tcp_pose` is `None`; no TCP home target is invented.
 - Next: independent review, then open the T05 PR for Claude review and user merge. T09 can consume these adapters
   after T04 and T05 merge; no contract or `robot/cell/cell_client.py` changes are required.
+
+## 2026-10-29 · T04 pinned-source and rotation hardening · CODEX
+
+- Replaced the duplicated transform oracle with byte-identical, SHA-256-pinned snapshots of
+  `sdg/data/object_geometry.json` at `5a24e10` and T29 `cad/grasp_frames.json` at `20c6f9b`.
+- Repinned T29 after it adopted the Team V printed fingers: the source digest is
+  `99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1`, and the snapshot records
+  the validated 4.5–16.5 mm rubber-pad gap plus the updated contact-derived TCP offsets for all 24 parts.
+- Sourced all 24 gripper rolls from the single T29 grasp for each part: commanded TCP r is measured part yaw plus
+  `roll_offset_deg`; X-closing grips use 90 degrees and Y-closing grips use 0 degrees. Multiple grips now fail closed.
+- Installed rotations must be finite 3x3 proper rotations: orthonormal rows and determinant +1 within `1e-6`, the
+  source generator's six-decimal serialization precision. Schema-valid but unsafe matrices fail semantic validation.
+- The catalog schema now rejects unknown top-level, product, and step keys. Source hashes and catalog/source values
+  are rechecked at load time, and source dates are explicitly labeled as Git commit timestamps. All six provenance
+  fields for both sources are compared with immutable trusted records; typed catalog objects return those records.
+- Regression evidence: NaN, Inf, singular, non-orthogonal, reflection, hash mismatch, zero/multi-grip ambiguity, roll
+  mismatch, all 12 source-provenance mutations, Team V finger provenance, and unknown-key cases fail closed.
+  `uv run ruff check .` passed; full `uv run pytest -q` passed 69 tests.
+- Integration note: T09 must use `RecipeStep.gripper_roll_deg` only as a T29 offset added to measured part yaw and
+  apply `installed_rotation_matrix` with `insert_offset_mm`; it must not preserve the superseded provisional values.
+
+## 2026-10-29 · T04 CAD transform review fixes · CODEX
+
+- Replaced bounding-box proxy offsets with the CAD `build()` installed transforms for all 24 parts, including the
+  +90-degree-X guard rotations and `[0, 21.5, 21]` mm guard translations.
+- Added `installed_rotation_matrix`, immutable source provenance, frame semantics and bounded provisional gripper
+  rolls to the catalog contract. Unknown step keys now fail closed.
+- The committed reference table is a verified exact extraction of `sdg/data/object_geometry.json` generated by
+  `sdg/tools/object_geometry.py` at commit `5a24e10d5ac7c9a6b15e9779385138678244819d`; 24/24 transforms matched.
+- Verified: `uv run ruff check .` clean and `uv run pytest -q` 44 passed. Contract changes require Claude review on
+  PR #5 before merge.
+- Next: merge PR #5's commit into T09 and update its pose consumer to apply translation and rotation together.
 
 ## 2026-10-27 · T04 · CODEX · product catalog and recipe graph
 

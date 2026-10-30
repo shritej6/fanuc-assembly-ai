@@ -11,6 +11,7 @@ from robot.adapter import (
     MockAdapter,
     RobotAdapter,
     SimAdapter,
+    guard_joint_action,
     guard_tcp_action,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "MockAdapter",
     "RobotAdapter",
     "SimAdapter",
+    "guard_joint_action",
     "guard_tcp_action",
 ]

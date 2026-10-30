@@ -2,18 +2,23 @@
 
 from collections import Counter
 
+import pytest
+
 from robot.adapter import CellAdapter
 from tests.test_controller import ScriptedPerception, _controller, _observation, _observed_three_products
 
 
-def test_connector_step_applies_catalog_gripper_roll() -> None:
+@pytest.mark.parametrize(("product", "expected_yaw"), [(1, 100.0), (4, 10.0)])
+def test_first_step_applies_pinned_catalog_gripper_roll(product: int, expected_yaw: float) -> None:
     observed = tuple(
-        item for item in _observed_three_products() if item.object_id.startswith("M4") or item.object_id == "F04"
+        item
+        for item in _observed_three_products()
+        if item.object_id.startswith(f"M{product}") or item.object_id == f"F0{product}"
     )
     perception = ScriptedPerception(observed, set(), Counter(), set())
     controller = _controller(perception)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation((4,))
+    observation = _observation((product,))
 
     inspect = adapter.act(observation)
     inspect_rows = inspect if isinstance(inspect[0], list) else [inspect]
@@ -23,7 +28,7 @@ def test_connector_step_applies_catalog_gripper_roll() -> None:
     first = adapter.act(observation)
     rows = first if isinstance(first[0], list) else [first]
 
-    assert rows[-1][5] == 100.0
+    assert rows[-1][5] == expected_yaw
 
 
 def test_collision_scene_is_refreshed_for_every_emitted_chunk() -> None:

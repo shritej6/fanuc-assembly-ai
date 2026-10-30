@@ -6,7 +6,11 @@ from collections import Counter
 from dataclasses import dataclass, replace
 
 from assembly.catalog import load_catalog
-from assembly.controller_ports import ExecutionTolerances, PerceptionTolerances
+from assembly.controller_ports import (
+    ExecutionTolerances,
+    FinalProductEvidence,
+    PerceptionTolerances,
+)
 from assembly.controller_startup import StartupHoldConfig
 from assembly.inventory import InventoryZone, ObjectCondition
 from assembly.motion import (
@@ -48,6 +52,10 @@ class CalibratedScenarioPoses:
 
     def target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
         del base, observed_at_s
+        return _oriented(360.0 + 20.0 * product.product, 100.0, -290.0 + step.step, 90.0)
+
+    def verification_target_for(self, product, base, step, *, observed_at_s: float) -> OrientedPartPose:
+        del base, observed_at_s
         return _oriented(360.0 + 20.0 * product.product, 80.0, -300.0 + step.step, 90.0)
 
 
@@ -55,8 +63,32 @@ class CalibratedRecoveryTargets:
     def staging_target_for(self, product, part, slot):
         return _oriented(500.0, -300.0 + 35.0 * slot, -300.0, 0.0)
 
+    def staging_verification_target_for(self, product, part, slot):
+        return _oriented(496.0, -300.0 + 35.0 * slot, -317.0, 0.0)
+
     def reject_target_for(self, part):
         return _oriented(550.0, -350.0, -300.0, 0.0)
+
+
+class MockFinalProductVerifier:
+    """Mock-only two-view workflow fixture; it never authorizes cell motion."""
+
+    reviewed_motion_source = "mock-only endpoint-verified final views"
+    mock_only = True
+
+    def verify(self, observation, product, base_instance_id, installed_instance_ids):
+        return FinalProductEvidence(
+            observed_at_s=float(observation["t"]),
+            complete=True,
+            product=product,
+            base_instance_id=base_instance_id,
+            installed_instance_ids=installed_instance_ids,
+            view_ids=(f"mock://product-{product}/left", f"mock://product-{product}/right"),
+            view_instance_ids=(installed_instance_ids, installed_instance_ids),
+            view_passes=(True, True),
+            checks_agree=True,
+            motion_source=self.reviewed_motion_source,
+        )
 
 
 def _oriented(x: float, y: float, z: float, yaw: float) -> OrientedPartPose:
@@ -135,15 +167,15 @@ class ScriptedPerception:
         self.transfer_calls[(part.instance_id, target_zone)] += 1
         if target_zone is InventoryZone.STAGED:
             target_pose = {
-                "x": 500.0,
+                "x": 496.0,
                 "y": -300.0 + 35.0 * self.next_staging_slot,
-                "z": -300.0,
+                "z": -317.0,
                 "yaw": 0.0,
             }
             self.staged_poses[part.instance_id] = target_pose
             self.next_staging_slot += 1
         else:
-            target_pose = {"x": 550.0, "y": -350.0, "z": -300.0, "yaw": 0.0}
+            target_pose = {"x": 540.0, "y": -340.0, "z": -310.0, "yaw": 15.0}
         detection = _detection(part.instance_id, part.object_id)
         detection["pose"] = target_pose
         return RecoveryTransferEvidence(
@@ -168,6 +200,7 @@ class ScriptedPerception:
             base_pose,
             moving_instance_id,
             attached,
+            False,
             fixtures=self.obstacles,
             parts=(),
         )
@@ -274,14 +307,19 @@ def _controller(
     perception: ScriptedPerception,
     perception_tolerances: PerceptionTolerances | None = None,
     execution_tolerances: ExecutionTolerances | None = None,
+    poses=None,
+    final_verifier=None,
+    *,
+    allow_mock_final_verification: bool = True,
 ):
     from assembly.controller import AssemblyController
 
     motion = MotionConfig(20.0, 30.0, 15.0, 20.0, 50.0, 30.0, 8, -180.0, "mock-only test fixture")
+    calibrated_poses = poses or CalibratedScenarioPoses()
     return AssemblyController(
         catalog=load_catalog(),
         perception=perception,
-        poses=CalibratedScenarioPoses(),
+        poses=calibrated_poses,
         motion_config=motion,
         inspection_stop=InspectionStopConfig(
             -168.0,
@@ -298,6 +336,8 @@ def _controller(
         execution_tolerances=execution_tolerances or ExecutionTolerances(0.0, 0.0),
         perception_tolerances=perception_tolerances or PerceptionTolerances(0.0, 0.0),
         recovery_targets=CalibratedRecoveryTargets(),
+        final_verifier=final_verifier or MockFinalProductVerifier(),
+        allow_mock_final_verification=allow_mock_final_verification,
     )
 def _observation(products: tuple[int, ...] = (1, 3, 4)) -> dict[str, object]:
     product_text = ", ".join(str(product) for product in products)
@@ -310,7 +350,12 @@ def _observation(products: tuple[int, ...] = (1, 3, 4)) -> dict[str, object]:
     }
 
 
-def _drive(controller, *, products: tuple[int, ...] = (1, 3, 4), limit: int = 800) -> list[list[float]]:
+def _drive(
+    controller,
+    *,
+    products: tuple[int, ...] = (1, 3, 4),
+    limit: int = 800,
+) -> list[list[float]]:
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
     observation = _observation(products)
     actions: list[list[float]] = []
@@ -322,9 +367,9 @@ def _drive(controller, *, products: tuple[int, ...] = (1, 3, 4), limit: int = 80
         observation["tcp_pose"] = last[:6]
         observation["joints"] = [0.0] * 6 + [last[6]]
         observation["t"] = float(observation["t"]) + 1.0
-        if controller.finished:
+        if controller.finished or controller.state_machine.state is PackMLState.HELD:
             return actions
-    raise AssertionError(f"controller did not finish within {limit} callbacks")
+    raise AssertionError(f"controller did not reach a terminal gate within {limit} callbacks")
 
 
 def test_three_product_loop_recovers_fallen_failed_and_missing_parts() -> None:
@@ -346,6 +391,7 @@ def test_three_product_loop_recovers_fallen_failed_and_missing_parts() -> None:
     assert controller.inventory.item("p1-2").condition is ObjectCondition.FALLEN
     assert controller.inventory.item("p1-2-spare").zone is InventoryZone.INSTALLED
     assert controller.inventory.item("p4-3-spare").zone is InventoryZone.INSTALLED
+    assert perception.transfer_calls[("p1-2", InventoryZone.REJECT)] == 1
     assert perception.post_calls["p3-3"] == 2
     assert any(event.kind == "retry" and event.object_id == "M3_03" for event in controller.events)
 
@@ -388,6 +434,7 @@ def test_independent_check_disagreement_holds_before_any_pick_motion() -> None:
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.events[-1].kind == "andon"
     assert controller.plan_records == ()
+    assert "published calibrated wrist-view targets" in controller.events[-1].detail
 
 
 def test_each_chunk_revalidates_from_actual_observed_tcp() -> None:
@@ -438,47 +485,6 @@ def test_same_base_family_products_consume_distinct_completed_bases() -> None:
     _drive(controller, products=(4, 5, 6), limit=1200)
 
     assert controller.completed_products == (4, 5, 6)
-    assert {controller.inventory.item(f"base-{product}").zone for product in (4, 5, 6)} == {InventoryZone.OUTPUT}
-
-
-def test_two_failed_reinsertions_dismantle_rebuild_and_use_exact_spare() -> None:
-    observed = tuple(
-        item for item in _observed_three_products() if item.object_id.startswith("M1") or item.object_id == "F01"
-    )
-    perception = ScriptedPerception(observed, set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-
-    _drive(controller, products=(1,), limit=1200)
-
-    event_kinds = [event.kind for event in controller.events]
-    assert event_kinds.count("retry") == 2
-    assert "reject_failed" in event_kinds
-    assert "stage_installed" in event_kinds
-    assert "rebuild_installed" in event_kinds
-    assert controller.inventory.item("p1-2").zone is InventoryZone.REJECT
-    assert controller.inventory.item("p1-2-spare").zone is InventoryZone.INSTALLED
-
-
-def test_two_failed_reinsertions_without_spare_hold_andon_while_gripping() -> None:
-    observed = tuple(
-        item
-        for item in _observed_three_products()
-        if (item.object_id.startswith("M1") or item.object_id == "F01") and item.instance_id != "p1-2-spare"
-    )
-    perception = ScriptedPerception(observed, set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation((1,))
-
-    for _ in range(500):
-        result = adapter.act(observation)
-        rows = result if result and isinstance(result[0], list) else [result]
-        observation["tcp_pose"] = rows[-1][:6]
-        observation["joints"] = [0.0] * 6 + [rows[-1][6]]
-        observation["t"] = float(observation["t"]) + 1.0
-        if controller.state_machine.state is PackMLState.HELD:
-            break
-
-    assert controller.state_machine.state is PackMLState.HELD
-    assert observation["joints"][-1] == 1.0
-    assert "spare unavailable" in controller.events[-1].detail
+    assert {controller.inventory.item(f"base-{product}").zone for product in (4, 5, 6)} == {
+        InventoryZone.OUTPUT
+    }

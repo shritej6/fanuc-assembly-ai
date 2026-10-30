@@ -49,7 +49,7 @@ class Policy:
         selected = controller or JointPositionHoldController()
         self.controller = selected
         self.ACTION = action_mode or type(self).ACTION
-        self.adapter = CellAdapter(selected, action_mode=self.ACTION, dt=self.DT)
+        self.adapter = CellAdapter(selected, action_mode=self.ACTION, dt=lambda: self.DT)
 
     @staticmethod
     def _mock_controller(

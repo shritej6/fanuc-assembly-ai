@@ -206,6 +206,34 @@ def _apply_gripper_roll(pose: AbsolutePoseUF0, gripper_roll_deg: float) -> Absol
     return replace(pose, r=pose.r + roll)
 
 
+def _validate_release_endpoint(
+    current: Waypoint,
+    expected: AbsolutePoseUF0,
+    *,
+    max_position_error_mm: float,
+    max_orientation_error_deg: float,
+) -> None:
+    position_limit = _finite(
+        max_position_error_mm,
+        field="max_position_error_mm",
+        error_type=MotionInputError,
+    )
+    orientation_limit = _finite(
+        max_orientation_error_deg,
+        field="max_orientation_error_deg",
+        error_type=MotionInputError,
+    )
+    if position_limit < 0.0 or orientation_limit < 0.0:
+        raise MotionInputError("release endpoint tolerances must be nonnegative")
+    position_error = math.dist(current.xyz, (expected.x, expected.y, expected.z))
+    angle_errors = (
+        abs((actual - target + 180.0) % 360.0 - 180.0)
+        for actual, target in zip((current.w, current.p, current.r), (expected.w, expected.p, expected.r))
+    )
+    if position_error > position_limit or max(angle_errors) > orientation_limit:
+        raise MotionInputError("release requires the verified fingertip TCP endpoint")
+
+
 def _short_yaw_poses(grasp: AbsolutePoseUF0, target: AbsolutePoseUF0) -> tuple[AbsolutePoseUF0, AbsolutePoseUF0]:
     grasp_r = (grasp.r + 180.0) % 360.0 - 180.0
     target_r = (target.r + 180.0) % 360.0 - 180.0
@@ -430,13 +458,21 @@ def compile_release_retreat(
     *,
     gripper_roll_deg: float,
     config: MotionConfig,
+    max_position_error_mm: float,
+    max_orientation_error_deg: float,
 ) -> tuple[MotionChunk, ...]:
     """Release a provisionally verified insertion and retreat vertically."""
     _validate_pose("target", target)
     _validate_config(config)
     if current.gripper != 1.0:
         raise MotionInputError("release requires a provisionally held part")
-    _apply_gripper_roll(target.tcp, gripper_roll_deg)
+    expected = _apply_gripper_roll(target.tcp, gripper_roll_deg)
+    _validate_release_endpoint(
+        current,
+        expected,
+        max_position_error_mm=max_position_error_mm,
+        max_orientation_error_deg=max_orientation_error_deg,
+    )
     start = AbsolutePoseUF0(current.x, current.y, current.z, current.w, current.p, current.r, "UF0", "calibrated")
     anchors = _anchors(start, start, config)
     phases = _phase_points(anchors, config)
@@ -483,6 +519,8 @@ def compile_transfer_held(
     *,
     gripper_roll_deg: float,
     config: MotionConfig,
+    max_position_error_mm: float,
+    max_orientation_error_deg: float,
 ) -> tuple[MotionChunk, ...]:
     """Move a still-held rejected part to a calibrated drop target."""
     reinsert = compile_reinsert(
@@ -496,5 +534,7 @@ def compile_transfer_held(
         target,
         gripper_roll_deg=gripper_roll_deg,
         config=config,
+        max_position_error_mm=max_position_error_mm,
+        max_orientation_error_deg=max_orientation_error_deg,
     )
     return (*reinsert, *release)

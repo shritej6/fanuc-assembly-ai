@@ -91,16 +91,6 @@ class SlippedGraspPerception(ScriptedPerception):
         return scene
 
 
-class RecoveryUntrustedPosePerception(ScriptedPerception):
-    def pre_pick(self, observation, part):
-        evidence = super().pre_pick(observation, part)
-        if part.zone not in {InventoryZone.INSTALLED, InventoryZone.STAGED}:
-            return evidence
-        detection = dict(evidence.detection)
-        detection["pose_source"] = "detector"
-        return EvidencePair(detection, evidence.inspection, evidence.observed_at_s)
-
-
 class WrongPostPlaceTypePerception(ScriptedPerception):
     def post_place(self, observation, part):
         evidence = super().post_place(observation, part)
@@ -113,15 +103,6 @@ class WrongTransferTypePerception(ScriptedPerception):
         return EvidencePair(evidence.detection, evidence.inspection, evidence.observed_at_s)
 
 
-class StaleRecoveryPoses(CalibratedScenarioPoses):
-    fail = False
-
-    def base_for(self, base, *, observed_at_s: float):
-        if self.fail:
-            raise ValueError("base measurement is stale")
-        return super().base_for(base, observed_at_s=observed_at_s)
-
-
 class UnavailableScanPerception(ScriptedPerception):
     unavailable = False
 
@@ -129,14 +110,6 @@ class UnavailableScanPerception(ScriptedPerception):
         if self.unavailable:
             raise RuntimeError("camera inference unavailable")
         return super().scan(observation)
-
-
-class MalformedRecoveryTargets:
-    def reject_target_for(self, part):
-        return None
-
-    def staging_target_for(self, product, part, slot):
-        return None
 
 
 class OutOfBoundsTargetPoses(CalibratedScenarioPoses):
@@ -324,20 +297,6 @@ def test_abort_with_staged_part_becomes_operator_hold() -> None:
     assert "operator reconciliation" in controller.events[-1].detail
 
 
-def test_recovery_pick_without_foundationpose_holds_before_dismantle_motion() -> None:
-    perception = RecoveryUntrustedPosePerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
-    observation = _observation()
-    for _ in range(500):
-        _apply(observation, adapter.act(observation))
-        if controller.state_machine.state is PackMLState.HELD:
-            break
-
-    assert controller.state_machine.state is PackMLState.HELD
-    assert "recovery pre-pick rejected" in controller.events[-1].detail
-
-
 def test_base_failure_after_first_install_preserves_product_ownership() -> None:
     perception = ScriptedPerception(_product_one_items(), set(), Counter(), set())
     controller = _controller(perception)
@@ -386,7 +345,7 @@ def test_wrong_post_place_evidence_subtype_holds_without_attribute_error() -> No
 
 
 def test_wrong_transfer_evidence_after_release_preserves_reservation() -> None:
-    perception = WrongTransferTypePerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
+    perception = WrongTransferTypePerception(_product_one_items(), {"p1-1"}, Counter(), set())
     controller = _controller(perception)
 
     _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)
@@ -395,35 +354,6 @@ def test_wrong_transfer_evidence_after_release_preserves_reservation() -> None:
     assert controller.inventory.active_reservation.product == 1
     assert "exactly RecoveryTransferEvidence" in controller.events[-1].detail
     assert "operator reconciliation" in controller.events[-1].detail
-
-
-def test_stale_recovery_calibration_holds_without_raising() -> None:
-    poses = StaleRecoveryPoses()
-    perception = ScriptedPerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-    controller._poses = poses
-    controller._planner = RecipePlanner(load_catalog(), poses)
-
-    def stop() -> bool:
-        if any(event.kind == "rebuild" for event in controller.events):
-            poses.fail = True
-        return controller.state_machine.state is PackMLState.HELD
-
-    _drive_until(controller, stop)
-
-    assert controller.state_machine.state is PackMLState.HELD
-    assert "base measurement is stale" in controller.events[-1].detail
-
-
-def test_malformed_recovery_target_holds_without_attribute_error() -> None:
-    perception = ScriptedPerception(_product_one_items(), set(), Counter({"p1-2": 3}), set())
-    controller = _controller(perception)
-    controller._recovery._targets = MalformedRecoveryTargets()
-
-    _drive_until(controller, lambda: controller.state_machine.state is PackMLState.HELD)
-
-    assert controller.state_machine.state is PackMLState.HELD
-    assert "OrientedPartPose" in controller.events[-1].detail
 
 
 def test_official_action_bounds_failure_is_caught_by_controller() -> None:

@@ -12,18 +12,19 @@ from dataclasses import dataclass
 
 from assembly.catalog import ProductRecipe, RecipeStep, load_catalog
 from assembly.controller import AssemblyController
-from assembly.controller_startup import StartupHoldConfig
 from assembly.controller_ports import (
     CollisionScene,
     ControllerEvent,
     EvidencePair,
     ExecutionTolerances,
+    FinalProductEvidence,
     InventorySnapshot,
     ObservedInventoryItem,
     PerceptionTolerances,
     PlacementEvidence,
     RecoveryTransferEvidence,
 )
+from assembly.controller_startup import StartupHoldConfig
 from assembly.instruction import parse_requested_products
 from assembly.inventory import InventoryItem, InventoryZone
 from assembly.motion import (
@@ -92,6 +93,16 @@ class MockCalibratedPoses:
         del base, observed_at_s
         return _oriented(360.0 + 20.0 * product.product, 80.0, -300.0 + step.step, 90.0)
 
+    def verification_target_for(
+        self,
+        product: ProductRecipe,
+        base: InventoryItem,
+        step: RecipeStep,
+        *,
+        observed_at_s: float,
+    ) -> OrientedPartPose:
+        return self.target_for(product, base, step, observed_at_s=observed_at_s)
+
 
 class MockRecoveryTargets:
     """Fixed recovery zones used only by the local mock fixture."""
@@ -100,9 +111,44 @@ class MockRecoveryTargets:
         del product, part
         return _oriented(500.0, -300.0 + 35.0 * slot, -300.0, 0.0)
 
+    def staging_verification_target_for(
+        self,
+        product: int,
+        part: InventoryItem,
+        slot: int,
+    ) -> OrientedPartPose:
+        return self.staging_target_for(product, part, slot)
+
     def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
         del part
         return _oriented(550.0, -350.0, -300.0, 0.0)
+
+
+class MockFinalProductVerifier:
+    """Deterministic two-view workflow available only to the local mock."""
+
+    reviewed_motion_source = "mock-only endpoint-verified final views"
+    mock_only = True
+
+    def verify(
+        self,
+        observation: Observation,
+        product: int,
+        base_instance_id: str,
+        installed_instance_ids: tuple[str, ...],
+    ) -> FinalProductEvidence:
+        return FinalProductEvidence(
+            observed_at_s=float(observation["t"]),
+            complete=True,
+            product=product,
+            base_instance_id=base_instance_id,
+            installed_instance_ids=installed_instance_ids,
+            view_ids=(f"mock://product-{product}/left", f"mock://product-{product}/right"),
+            view_instance_ids=(installed_instance_ids, installed_instance_ids),
+            view_passes=(True, True),
+            checks_agree=True,
+            motion_source=self.reviewed_motion_source,
+        )
 
 
 class MockBoxReachability:
@@ -289,6 +335,7 @@ class MockPerception:
             base_pose,
             moving_instance_id,
             attached,
+            False,
         )
 
 
@@ -344,6 +391,8 @@ def _build_controller(perception: MockPerception) -> AssemblyController:
         execution_tolerances=ExecutionTolerances(0.0, 0.0),
         perception_tolerances=PerceptionTolerances(0.0, 0.0),
         recovery_targets=MockRecoveryTargets(),
+        final_verifier=MockFinalProductVerifier(),
+        allow_mock_final_verification=True,
     )
 
 

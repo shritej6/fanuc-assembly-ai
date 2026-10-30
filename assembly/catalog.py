@@ -8,6 +8,7 @@ robot targets.
 import json
 from collections import Counter
 from dataclasses import dataclass
+from hashlib import sha256
 from itertools import pairwise
 from math import isfinite
 from pathlib import Path
@@ -30,6 +31,9 @@ DEFAULT_CATALOG_PATH = Path(__file__).with_name("catalog.yaml")
 CONTRACTS_PATH = ROOT / "contracts"
 CATALOG_SCHEMA_PATH = CONTRACTS_PATH / "catalog.schema.json"
 TAXONOMY_PATH = CONTRACTS_PATH / "taxonomy.json"
+CAD_TRANSLATION_TOLERANCE_MM = 0.05
+# object_geometry.py serializes installed transforms to six decimal places.
+ROTATION_MATRIX_TOLERANCE = 1e-6
 
 
 class CatalogError(Exception):
@@ -102,7 +106,44 @@ class RecipeStep:
     step: int
     object_id: str
     insert_offset_mm: tuple[float, float, float]
+    installed_rotation_matrix: tuple[tuple[float, float, float], ...]
     gripper_roll_deg: float
+
+
+@dataclass(frozen=True, slots=True)
+class GeometrySource:
+    file: str
+    generator: str
+    commit: str
+    commit_timestamp: str
+    snapshot: str
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class GraspSource:
+    file: str
+    generator: str
+    commit: str
+    commit_timestamp: str
+    snapshot: str
+    sha256: str
+
+
+TRUSTED_GEOMETRY_SOURCE = GeometrySource(
+    file="sdg/data/object_geometry.json", generator="sdg/tools/object_geometry.py",
+    commit="5a24e10d5ac7c9a6b15e9779385138678244819d", commit_timestamp="2026-10-27T22:11:27-05:00",
+    snapshot="assembly/sources/object_geometry.5a24e10.json",
+    sha256="488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325",
+)
+TRUSTED_GRASP_SOURCE = GraspSource(
+    file="cad/grasp_frames.json", generator="cad/grasp_frames.py",
+    commit="20c6f9bab0aa44b3bae4cd915a1c957705d74da4", commit_timestamp="2026-10-29T15:34:19-05:00",
+    snapshot="assembly/sources/grasp_frames.20c6f9b.json",
+    sha256="99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1",
+)
+OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GEOMETRY_SOURCE.snapshot
+GRASP_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GRASP_SOURCE.snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +172,8 @@ class RecipeGraph:
 class Catalog:
     products: tuple[ProductRecipe, ...]
     _base_types_by_object: tuple[tuple[str, BaseType], ...]
+    geometry_source: GeometrySource
+    grasp_source: GraspSource
 
     def product(self, product_id: int) -> ProductRecipe:
         for product in self.products:
@@ -261,7 +304,40 @@ def _valid_offset(offset: Any) -> bool:
     )
 
 
+def _valid_rotation_matrix(rotation: Any) -> bool:
+    if not (
+        isinstance(rotation, list)
+        and len(rotation) == 3
+        and all(isinstance(row, list) and len(row) == 3 for row in rotation)
+    ):
+        return False
+    if not all(isinstance(value, (int, float)) and isfinite(value) for row in rotation for value in row):
+        return False
+    rows = [[float(value) for value in row] for row in rotation]
+    for left_index, left in enumerate(rows):
+        for right_index, right in enumerate(rows):
+            expected = 1.0 if left_index == right_index else 0.0
+            if abs(sum(a * b for a, b in zip(left, right)) - expected) > ROTATION_MATRIX_TOLERANCE:
+                return False
+    determinant = (
+        rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+        - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+        + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
+    )
+    return abs(determinant - 1.0) <= ROTATION_MATRIX_TOLERANCE
+
+
 def _validate_step(product_id: int, step: dict[str, Any], part_owners: dict[str, int]) -> None:
+    expected_keys = {
+        "step",
+        "object_id",
+        "insert_offset_mm",
+        "installed_rotation_matrix",
+        "gripper_roll_deg",
+    }
+    unknown_keys = sorted(set(step) - expected_keys)
+    if unknown_keys:
+        raise CatalogSemanticError(f"Catalog step has unknown keys: {', '.join(unknown_keys)}")
     expected_id = f"M{product_id}_{step['step']:02d}"
     object_id = step["object_id"]
     if object_id != expected_id:
@@ -270,9 +346,14 @@ def _validate_step(product_id: int, step: dict[str, Any], part_owners: dict[str,
         raise CatalogSemanticError(f"{object_id} is not owned by product {product_id} in the taxonomy")
     if not _valid_offset(step.get("insert_offset_mm")):
         raise CatalogSemanticError(f"{object_id} insert_offset_mm must contain three finite numbers")
+    if not _valid_rotation_matrix(step.get("installed_rotation_matrix")):
+        raise CatalogSemanticError(
+            f"{object_id} installed_rotation_matrix must be a finite proper rotation "
+            f"within {ROTATION_MATRIX_TOLERANCE:g}"
+        )
     roll = step.get("gripper_roll_deg")
-    if not isinstance(roll, (int, float)) or not isfinite(roll):
-        raise CatalogSemanticError(f"{object_id} gripper_roll_deg must be finite")
+    if not isinstance(roll, (int, float)) or not isfinite(roll) or not -180 <= roll <= 180:
+        raise CatalogSemanticError(f"{object_id} gripper_roll_deg must be finite and within [-180, 180]")
 
 
 def _validate_product(
@@ -307,12 +388,92 @@ def _validate_semantics(data: dict[str, Any]) -> None:
     _validate_coverage(products, part_owners)
 
 
+def _validate_source_provenance(data: dict[str, Any]) -> None:
+    trusted_sources = {
+        "geometry_source": TRUSTED_GEOMETRY_SOURCE,
+        "grasp_source": TRUSTED_GRASP_SOURCE,
+    }
+    for source_key, trusted in trusted_sources.items():
+        candidate = type(trusted)(**data[source_key])
+        if candidate != trusted:
+            raise CatalogSemanticError(f"{source_key} does not match trusted provenance")
+
+
+def _read_pinned_source(
+    provenance: GeometrySource | GraspSource,
+    path: Path,
+    label: str,
+) -> dict[str, Any]:
+    try:
+        contents = path.read_bytes()
+    except OSError as error:
+        raise CatalogResourceError(f"Cannot read {label} source {path}: {error}") from error
+    actual_sha256 = sha256(contents).hexdigest()
+    if actual_sha256 != provenance.sha256:
+        raise CatalogResourceError(f"{label} source sha256 does not match pinned provenance")
+    try:
+        parsed = json.loads(contents)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise CatalogResourceError(f"Cannot parse {label} source {path}: {error}") from error
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("objects"), dict):
+        raise CatalogResourceError(f"Malformed {label} source {path}: missing objects mapping")
+    return parsed
+
+
+def _catalog_steps(data: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    return tuple(step for product in data["products"] for step in product["steps"])
+
+
+def _validate_geometry_source(data: dict[str, Any]) -> None:
+    source = _read_pinned_source(TRUSTED_GEOMETRY_SOURCE, OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH, "geometry")
+    for step in _catalog_steps(data):
+        object_id = step["object_id"]
+        try:
+            transform = source["objects"][object_id]["installed_in_base_frame"]
+            expected_offset = [row[3] for row in transform[:3]]
+            expected_rotation = [row[:3] for row in transform[:3]]
+        except (KeyError, TypeError, IndexError) as error:
+            raise CatalogResourceError(f"Malformed geometry source entry for {object_id}") from error
+        offset_error = max(abs(a - b) for a, b in zip(step["insert_offset_mm"], expected_offset))
+        rotation_error = max(
+            abs(a - b)
+            for actual_row, expected_row in zip(step["installed_rotation_matrix"], expected_rotation)
+            for a, b in zip(actual_row, expected_row)
+        )
+        if offset_error > CAD_TRANSLATION_TOLERANCE_MM or rotation_error > ROTATION_MATRIX_TOLERANCE:
+            raise CatalogSemanticError(f"{object_id} installed transform does not match pinned CAD source")
+
+
+def _validate_grasp_source(data: dict[str, Any]) -> None:
+    source = _read_pinned_source(TRUSTED_GRASP_SOURCE, GRASP_SOURCE_SNAPSHOT_PATH, "grasp")
+    for step in _catalog_steps(data):
+        object_id = step["object_id"]
+        try:
+            grips = source["objects"][object_id]["grips"]
+        except (KeyError, TypeError) as error:
+            raise CatalogResourceError(f"Malformed grasp source entry for {object_id}") from error
+        if not isinstance(grips, list) or len(grips) != 1:
+            raise CatalogSemanticError(f"{object_id} must have exactly one grip in the pinned T29 source")
+        grip = grips[0]
+        try:
+            expected_for_axis = {"X": 90.0, "Y": 0.0}[grip["closing_axis"]]
+            source_roll = float(grip["roll_offset_deg"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise CatalogResourceError(f"Malformed grasp source entry for {object_id}") from error
+        if not isfinite(source_roll) or source_roll != expected_for_axis:
+            raise CatalogResourceError(f"T29 grasp source has invalid roll semantics for {object_id}")
+        if float(step["gripper_roll_deg"]) != source_roll:
+            raise CatalogSemanticError(f"{object_id} gripper_roll_deg does not match pinned T29 source")
+
+
 def _make_step(data: dict[str, Any]) -> RecipeStep:
     offset = tuple(float(value) for value in data["insert_offset_mm"])
+    rotation = tuple(tuple(float(value) for value in row) for row in data["installed_rotation_matrix"])
     return RecipeStep(
         step=int(data["step"]),
         object_id=str(data["object_id"]),
         insert_offset_mm=offset,
+        installed_rotation_matrix=rotation,
         gripper_roll_deg=float(data["gripper_roll_deg"]),
     )
 
@@ -332,5 +493,8 @@ def load_catalog(path: Path | str = DEFAULT_CATALOG_PATH) -> Catalog:
     data = _read_catalog_data(Path(path))
     _validate_schema(data)
     _validate_semantics(data)
+    _validate_source_provenance(data)
+    _validate_geometry_source(data)
+    _validate_grasp_source(data)
     products = tuple(_make_product(product) for product in data["products"])
-    return Catalog(products, _base_type_pairs())
+    return Catalog(products, _base_type_pairs(), TRUSTED_GEOMETRY_SOURCE, TRUSTED_GRASP_SOURCE)
