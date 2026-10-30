@@ -11,7 +11,8 @@ EpisodeRecorder, and keeps the episode only if it passes exactly the gates a scr
 gates, grasp/slip check, seat check, force guard on every step (per-object limits), seat gates, tracking <= 0.1 mm,
 others unmoved, robot touch only on the target, plus mimic/gates.py's every-step non-target check. The Isaac Lab
 recorder writes every attempt to --out (kept ones with success=True, annotated with agent 3's metadata at close), so
-generated files have the same layout as the source demos. Totals and the measured wall time go to <out>.stats.json;
+generated files have the same layout as the source demos. The recorder file is closed and annotated every
+--rotate-every attempts (<out stem>_c<k>.hdf5), so kept demos can be exported while the worker runs. Totals and the measured wall time go to <out>.stats.json;
 every rejection with its reason goes to <out>.rejects.jsonl.
 """
 
@@ -141,12 +142,21 @@ class Generator:
         self.backend = backend or self._isaac_backend(a)
         self.rng = np.random.default_rng(a.seed)
         self.gl = G.GateLimits()
-        self.run_cfg = record.Run(self.limits, self.per_object, a.max_attempts, a.allow_touch_proxy, path=a.out)
+        self.run_cfg = record.Run(self.limits, self.per_object, a.max_attempts, a.allow_touch_proxy,
+                                  path=chunk_path(a.out, 0))
 
     def _isaac_backend(self, a):
         from ..skills.isaac_backend import IsaacBackend
 
-        return IsaacBackend(self.scenario, a.product, str(a.out), a.device, tuple(a.cameras))
+        return IsaacBackend(self.scenario, a.product, str(chunk_path(a.out, 0)), a.device, tuple(a.cameras))
+
+    def rotate(self) -> None:
+        """Close and annotate the current recorder file and record on into the next chunk (agent 3's
+        IsaacBackend.rotate), so kept demos are exportable while the worker keeps generating."""
+        k = int(self.run_cfg.path.stem.rsplit("_c", 1)[1]) + 1
+        nxt = chunk_path(self.args.out, k)
+        self.backend.rotate(str(nxt))
+        self.run_cfg.path, self.run_cfg.metas = nxt, []
 
     def parts(self) -> list[str]:
         """Sheet parts that have a source segment for every subtask (a part's path never transfers to another
@@ -332,6 +342,11 @@ class Generator:
         self.record._finish(self.backend, self.run_cfg, rec, ok, self.scenario, reason)
 
 
+def chunk_path(out: Path, k: int) -> Path:
+    """Recorder file k of a worker: <stem>_c<k>.hdf5 next to <out> (stats and rejects stay at <out>)."""
+    return out.with_name(f"{out.stem}_c{k:03d}{out.suffix}")
+
+
 def reason_key(reason: str) -> str:
     """Stats bucket: the reason without numbers, vectors and step indices (the full text is in rejects.jsonl)."""
     key = re.sub(r"\[.*", "", reason.split(" at step")[0])
@@ -369,9 +384,11 @@ def run(a) -> dict:
                 rej.write(json.dumps({"part": part, "s": round(time.time() - t1, 1), **res}, default=str) + "\n")
                 rej.flush()
                 _write_stats(a.out, stats, t0)
+                if a.rotate_every and stats["attempts"] % a.rotate_every == 0:
+                    gen.rotate()
     finally:
         _write_stats(a.out, stats, t0)
-        gen.backend.close(a.out)
+        gen.backend.close(gen.run_cfg.path)
     return stats
 
 
@@ -392,6 +409,7 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=200)
     ap.add_argument("--max-attempts", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--rotate-every", type=int, default=4, help="close the recorder file every N attempts (0: never)")
     ap.add_argument("--cameras", nargs="*", default=["table", "side", "wrist"], choices=("table", "side", "wrist"))
     ap.add_argument("--device", default="cuda:0", help="physics device: cuda:0, or cpu (one env: often faster)")
     ap.add_argument("--limits", type=Path, default=None, help="override physics/limits.yaml")

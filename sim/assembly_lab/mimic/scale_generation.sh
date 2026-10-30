@@ -3,7 +3,7 @@
 # Every step is idempotent; workers run detached on the hosts (nohup), so the controller may sleep in between.
 #
 #   M=sim/assembly_lab/mimic/scale_generation.sh
-#   $M repo                           # repo_a7 = fa-sim:~/t12_data/repo_sync (agent 1's env) + this checkout's mimic/
+#   $M repo                           # repo_a7 = fa-sim:~/t12_data/repo_run10 (agent 3's skills + agent 1's env) + mimic/
 #   $M seeds                          # agent 3's closed seed files (+ drop tags) from fa-mimic -> every host
 #   MIMIC_GROUPS="pick_insert:4 pick_insert:6" TARGET=50 MAXATT=400 \
 #     $M launch r1 fa-sim:1,2,3:2 fa-mimic:0,1,2,3:2 fa-gen1:0,1,2,3:2 fa-a6k-1:0,1:2 fa-l40s-1:0:2
@@ -18,7 +18,7 @@ GATHER=${GATHER:-fa-mimic}
 SKILLS=${SKILLS:-"pick_insert"}
 SCR=${SCR:-${TMPDIR:-/tmp}/t12_a7}
 SRC_REPO_HOST=${SRC_REPO_HOST:-fa-sim}
-SRC_REPO=${SRC_REPO:-t12_data/repo_sync}
+SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skills + gates + env the seeds came from
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
 SSH=(ssh -o ControlPath=none -o ConnectTimeout=15 -n)
 RSYNC=(rsync -a -e "ssh -o ControlPath=none -o ConnectTimeout=15")

@@ -184,3 +184,10 @@ def test_stage_seeds_copies_only_closed_files_with_drop_lists(tmp_path):
                       "product_4_build_a_M4_01.hdf5.meta.jsonl"]
     assert json.loads((tmp_path / "out/pick_insert/product_4_build_a_M4_01.hdf5.drop.json").read_text()) == [1]
     assert counts == {"pick_insert:4:nominal": 1}
+
+
+def test_chunk_paths_keep_worker_stats_at_the_base_name(tmp_path):
+    out = tmp_path / "pick_insert/p4/host_g3_w0.hdf5"
+    assert GEN.chunk_path(out, 0).name == "host_g3_w0_c000.hdf5"
+    assert GEN.chunk_path(out, 12).name == "host_g3_w0_c012.hdf5"
+    assert GEN.chunk_path(out, 3).stem.rsplit("_c", 1)[1] == "003"

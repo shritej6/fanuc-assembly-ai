@@ -56,6 +56,15 @@ def seed_files(seeds: Path, skill: str, product: str) -> list[str]:
     return files
 
 
+def _has_seeds(seeds: Path, skill: str, product: str) -> bool:
+    try:
+        seed_files(seeds, skill, product)
+    except FileNotFoundError as e:
+        print(f"skipping {skill}:{product}: {e}", flush=True)
+        return False
+    return True
+
+
 def foreign_on_gpu(gpu: int, mine: str) -> list[str]:
     """Running isaaclab containers on this GPU whose command does not write under our output root."""
     names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True,
@@ -79,8 +88,11 @@ def launch(a) -> list[subprocess.Popen]:
         sys.exit(f"GPUs in use by containers that are not ours: { {g: v for g, v in busy.items() if v} }")
     slots = [(g, w) for w in range(a.workers_per_gpu) for g in a.gpus]
     procs = []
+    groups = [g for g in a.groups if _has_seeds(a.seeds, *g.split(":"))]
+    if not groups:
+        sys.exit(f"no seed demos for any of {a.groups} under {a.seeds}")
     for i, (gpu, w) in enumerate(slots):
-        skill, product = a.groups[i % len(a.groups)].split(":")
+        skill, product = groups[i % len(groups)].split(":")
         out = root / skill / f"p{product}" / f"{host}_g{gpu}_w{w}.hdf5"
         out.parent.mkdir(parents=True, exist_ok=True)
         cmd = [str(a.repo / "sim/assembly_lab/env/isaaclab_run.sh"), "-m", "sim.assembly_lab.mimic.generate",
