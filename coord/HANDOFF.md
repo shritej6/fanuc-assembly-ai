@@ -2,6 +2,32 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 14:50 · T12 grasp slip fix (agent 8, parked) · CLAUDE · `feature/T12-grip-constforce` (182032e)
+
+- Changed (side branch only, nothing new on `feature/T12-mimic`; 23ffe58 already encodes sync2's jaw knob defaults):
+  `sim/assembly_lab/env/actions.py` (constant 34 N feed-forward squeeze per jaw, drive only centres the pair),
+  `scene.py` (`JAW_STIFF_X = 3`), `mimic_env.py`, `assets.py` (atomic object-USD cache writes), new `grip_load.py`
+  (load / slip helpers) and `grasp_diag.py` (regression diagnostic with a `[verdict]` line), `tcp_track_check.py`.
+- Root cause of the sync2 carry slip: the stiff drive targeted mean + lead from the penetrated jaw position and ratcheted
+  the pads 1.2-1.8 mm onto the jaw stop, so the pinch fell to 3-10 N.
+- Measured, env A (182032e, contact.yaml depenetration 0.05 m/s): M1_02 lift / carry / back slip 0.001-0.002 mm,
+  0.00 deg; axial +-5 / 10 / 15 N at CoM 0.001-0.003 mm (sync2: 1.8 mm carry slip, falls out at 5 N); pull-out
+  M1_03 0.003 mm (sync2 2.15 mm). demo_check P4 SEATED -0.187 mm, P1 NOT SEATED 0.516 mm.
+- Why not published: demo_check's 0.25 mm-per-step overpress. Row 40 is 0 N at 0.02 mm; row 41 hits 52-62 N normal,
+  15-18 N lateral, 0.12-0.18 N m (P1 env A, P4 env C) and the part pivots in the fingers and rides up 0.4-0.5 mm.
+  sync2's slipping grip absorbed this (first touch 3.7-16 N). Depenetration 1.0 ejects the part at a 5 N axial push;
+  5.0 (+/- external forces every iteration) keeps axial hold but does not seat P4 (0.395 mm). The freeze stays on sync2.
+- Staged for agent 3 (first-touch-stop test, verdict ~18:30): `fa-mimic:~/t12_data/repo_envA` (also on fa-sim),
+  manifest `repo_envA.md5`, env_manifest_md5 14c92bdfd166002a712fab9f3dc2b3f8. Logs: `fa-sim:~/t12_data/a8_logs/`.
+- Run: `T12_POOL=F01,M1_01 GPU=<n> REPO=$PWD sim/assembly_lab/env/isaaclab_run.sh sim/assembly_lab/env/demo_check.py
+  --out <h5>`; `... grasp_diag.py --parts M1_02 --pull F01:M1_01+M1_02+M1_03`.
+- Saturday risk (pad-friction torque, PRELIMINARY): edge grips put the CoM 21.9 mm (M1_01) / 22.9 mm (M4_01) from the
+  pad line, so a 15 N insertion guard load is 0.33 N m about the closing axis; estimated real pad torsion capacity is
+  ~0.14 N m (mu ~ 1 ESTIMATE, not measured). Expect the part to pivot in the fingers before the force guard trips;
+  insert slowly near the seat and stop at first touch.
+- Next: agent 3's touch-stop verdict on env A (becomes the run-2 env only if every product seats); finer seat steps or
+  a substep-force stop; the 4.6 deg M1_02 rotation while M1_03 closes; edge-grip axial push.
+
 ## 2026-10-30 16:55 · T12 Mimic generation + LeRobot export (agent 7, running) · CLAUDE · on `feature/T12-mimic`
 
 - Changed: `sim/assembly_lab/mimic/` (`mimicgen.py` reads agent 3's recorder files, `generate.py` pick_insert +
