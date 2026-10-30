@@ -38,6 +38,25 @@ def test_ik_reaches_poses_within_tolerance():
         assert np.allclose(L.fanuc_rotation(*got[3:]), L.fanuc_rotation(*pose[3:]), atol=5e-3)
 
 
+
+def test_fallback_seed_keeps_j6_on_the_current_turn(monkeypatch):
+    # agent 3, check10: the current-joint seed failed at J6 near -180 deg, HOME (J6 = 0) converged and the wrist
+    # spun 352 deg to the far turn; the answer must stay the turn nearest the current joints
+    pose = [400, 0, -250, -180, 0, -1]             # J6 = +179 deg from the HOME seed
+    cur = tcp.solve(pose)
+    cur[5] = cur[5] - 2 * np.pi if cur[5] > 0 else cur[5]       # J6 on the negative turn, still within limits
+    real = tcp.ik.solve
+    calls = []
+
+    def first_seed_fails(seed, *a, **k):
+        calls.append(1)
+        q, ok = real(seed, *a, **k)
+        return q, ok and len(calls) > 1
+
+    monkeypatch.setattr(tcp.ik, "solve", first_seed_fails)
+    q = tcp.solve(pose, cur)
+    assert len(calls) > 1 and abs(q[5] - cur[5]) < np.radians(5)
+
 def test_workspace_box_is_enforced():
     with pytest.raises(tcp.TcpError):
         tcp.check_row([400, 0, -340, -180, 0, 0, 0])      # below the lowest allowed fingertip target

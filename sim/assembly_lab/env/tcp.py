@@ -77,7 +77,8 @@ def solve(tcp6, seed_rad: np.ndarray | None = None, tol_m: float = 5e-5) -> np.n
         if ok:
             pos_err, rot_err = _pose_error(q, target, rot)
             if pos_err < MAX_POS_ERR_M and rot_err < MAX_ROT_ERR_RAD:
-                return _unwrap_j6(q, s)
+                # unwrap against the CURRENT joints: a fallback seed (HOME J6 = 0) would pick the far turn
+                return _unwrap_j6(q, seeds[0])
     raise TcpError(f"no IK solution for TCP {list(tcp6)}")
 
 
