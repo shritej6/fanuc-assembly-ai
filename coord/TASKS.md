@@ -6,7 +6,7 @@ An agent may only start a task that is READY and owned by it.
 | ID | Task | Owner | Status | Branch | Depends on | Day |
 |---|---|---|---|---|---|---|
 | T01 | Repo scaffold, rules, coord files, contracts v1, vendored official client (`run.py --mock` passes) | CLAUDE | REVIEW | main (initial commit) | none | Mon |
-| T02 | Assembly instruction sheets for all 6 products (pictures from CAD, order 01→04, reverse to dismantle) | CLAUDE | READY | feature/T02-assembly-sheets | T01 | Mon |
+| T02 | Assembly instruction sheets for all 6 products (pictures from CAD, order 01→04, reverse to dismantle) | CLAUDE | REVIEW | feature/T02-assembly-sheets | T01 | Mon |
 | T03 | CAD risk ranking v0 (min wall, slender features, layer direction, insertion clearance) → spare/print list | CLAUDE | READY | feature/T03-cad-risk | T01 | Mon |
 | T04 | Product catalog + recipe graph from CAD (`assembly/catalog.yaml`, per `contracts/catalog.schema.json`) | CODEX | BACKLOG | feature/T04-catalog | T01 | Mon |
 | T05 | Adapter layer: `robot/adapter.py` (Sim / Mock / Cell), `policy.py` wiring, UF0 TCP-box guard | CODEX | REVIEW | feature/T05-adapters | T01 | Mon |
@@ -31,6 +31,7 @@ An agent may only start a task that is READY and owned by it.
 | T24 | Video script, 1-page summary, references, README | CLAUDE | BACKLOG | feature/T24-submission | all | Sat |
 | T26 | Team V error codes in the contracts (inspection `error_codes`, plan step `error_code`) | CLAUDE | REVIEW | feature/T26-error-codes | T01 | Wed |
 | T33 | Add the measured M1_01/M3_01 size-twin look-alike relationship to the taxonomy contract | CODEX | REVIEW | feature/T33-lookalike-contract | T29 | Thu |
+| T29 | Grasp + insert frames for all 30 objects from the printed CAD (grip pads, TCP point, roll offset, STL->installed frame), checked against the real gripper gap | CLAUDE | REVIEW | feature/T29-grasp-frames | T02 | Thu |
 
 ## User-only actions (physical / accounts)
 

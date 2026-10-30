@@ -48,6 +48,35 @@ Newest first. One entry per finished task.
 - Next: independent review, then open the T05 PR for Claude review and user merge. T09 can consume these adapters
   after T04 and T05 merge; no contract or `robot/cell/cell_client.py` changes are required.
 
+## 2026-10-29 · T29 · CLAUDE · grasp and insert frames from the printed CAD
+
+- Changed: `cad/grasp_frames.py` builds every product with `cad/products` (the printed CAD; `cad/stl` is
+  byte-identical to the printed STLs) and writes `cad/grasp_frames.json` for all 30 objects:
+  - `installed_origin_mm` (assembly frame, base origin = 0);
+  - `T_local_from_stl` (identity except the rear guards' print rotation);
+  - each grip pad's closing axis, width, span, contact height, the fingertip TCP point in the part's local frame;
+  - `roll_offset_deg` (TCP r = measured yaw + offset, from the twin IK's jaw spread axis).
+- Fingers: the TCP of every part comes from the Team V printed fingers' validated grasp (`cad/fingers/`, copied from
+  the MHZL2_16D2_FANUC_FINAL_FINGERS project: 24/24 PASS in its CAD check, PROVISIONAL until printed and tried):
+  the contact centre moved down 1.85 mm to the fingertip. The script refuses a contact that is not on the CAD pad.
+- Measured: every product part has one 7 mm grip pad, which fits the Team V fingers' rubber gap (4.5 mm closed,
+  16.5 mm open). Installed transforms agree with `sdg/data/object_geometry.json` (mesh registration) within 0.005 mm.
+- How to run: `uv run python cad/grasp_frames.py`; `uv run pytest tests/test_grasp_frames.py` (regenerates and
+  compares).
+- Next:
+  - Codex T09/T05 consumes this file for grasp and insert targets, instead of hand-copied numbers.
+  - FoundationPose poses are of the STL frame: multiply by `inverse(T_local_from_stl)` first.
+  - Physical gripper test on the cell is NOT PERFORMED (CAD summary).
+
+## 2026-10-27 · T02 · CLAUDE · assembly instruction sheets
+
+- Changed: `cad/products/` (product CAD source), `cad/assembly_sheets.py`, `docs/ASSEMBLY_INSTRUCTIONS/` (6 PNG + 1 PDF).
+- Run: `uv run python cad/assembly_sheets.py` (CadQuery + matplotlib are the locked `cad` dependency group, installed by
+  `uv sync`). Tests: `tests/test_assembly_sheets.py` (steps, look-alikes, 90° gripper rule, the 7 files).
+- Content per product: base, steps 01→04 (new part highlighted), exploded view, table with gripper roll (connector
+  housings: turn gripper 90°) and look-alikes from `contracts/taxonomy.json`. Dismantle = 04→01.
+- Next: T03 CAD risk ranking.
+
 ## 2026-10-27 · T01 · CLAUDE · repo scaffold
 
 - Changed: repo layout, `CLAUDE.md` / `AGENTS.md` rules, `coord/` (TASKS, DECISIONS, HANDOFF), `contracts/` v1 (9 schemas
