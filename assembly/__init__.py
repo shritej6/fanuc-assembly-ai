@@ -14,6 +14,7 @@ from assembly.catalog import (
     UnknownProductError,
     load_catalog,
 )
+from assembly.grasp_source import PreferredGrasp
 
 __all__ = [
     "Catalog",
@@ -22,6 +23,7 @@ __all__ = [
     "CatalogResourceError",
     "CatalogSchemaError",
     "CatalogSemanticError",
+    "PreferredGrasp",
     "ProductRecipe",
     "RecipeGraph",
     "RecipeStep",

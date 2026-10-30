@@ -2,6 +2,20 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T04 T29 turn/TCP atomic pin · CODEX
+
+- Repinned the immutable T29 grasp snapshot to `fac05905338b82a90744e934268f4a30bf412fc7` with SHA-256
+  `dbd00b5082042e8a326b380d237890449bfb2206243c1753b7ebe2d940435977`.
+- Rejected the superseded single-vector pad point and require the turn-indexed flange-axis TCP schema. Canonical keys,
+  strict numeric finite values, and exact source fields now fail closed on malformed data.
+- Added `PreferredGrasp(turn_deg, tcp_local_mm)` to every typed `RecipeStep`. This binds the source-tested wrist turn to
+  its matching TCP and intentionally withholds the algebraic 180-degree alternative from CELL authorization.
+- Regression coverage spans all 24 movable parts plus legacy vectors, missing/unknown turns, NaN, strings, and booleans.
+  Full gate: `uv run pytest -q` = 76 passed; `uv run ruff check .` and `git diff --check` passed. Independent Codex
+  re-review found no remaining code issue.
+- Merge remains blocked on PR #15's immutable CAD/finger/STL and physical-validation provenance. T09 must consume
+  `RecipeStep.preferred_grasp` atomically; it must not reopen the raw T29 JSON or authorize the alternate turn.
+
 ## 2026-10-29 · T04 pinned-source and rotation hardening · CODEX
 
 - Replaced the duplicated transform oracle with byte-identical, SHA-256-pinned snapshots of

@@ -23,9 +23,9 @@ from assembly.catalog import (
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "assembly" / "catalog.yaml"
 OBJECT_GEOMETRY_SOURCE_PATH = ROOT / "assembly" / "sources" / "object_geometry.5a24e10.json"
-GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.20c6f9b.json"
+GRASP_FRAMES_SOURCE_PATH = ROOT / "assembly" / "sources" / "grasp_frames.fac0590.json"
 OBJECT_GEOMETRY_SHA256 = "488b2325c2048741aef9538bb678a48d845e9b75cd9f2a7f7c73a5781ae84325"
-GRASP_FRAMES_SHA256 = "99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1"
+GRASP_FRAMES_SHA256 = "dbd00b5082042e8a326b380d237890449bfb2206243c1753b7ebe2d940435977"
 CONTRACTS = ROOT / "contracts"
 
 EXPECTED_PRODUCTS = [
@@ -152,9 +152,9 @@ def test_catalog_records_immutable_cad_geometry_provenance() -> None:
     assert catalog["grasp_source"] == {
         "file": "cad/grasp_frames.json",
         "generator": "cad/grasp_frames.py",
-        "commit": "20c6f9bab0aa44b3bae4cd915a1c957705d74da4",
-        "commit_timestamp": "2026-10-29T15:34:19-05:00",
-        "snapshot": "assembly/sources/grasp_frames.20c6f9b.json",
+        "commit": "fac05905338b82a90744e934268f4a30bf412fc7",
+        "commit_timestamp": "2026-10-30T02:53:51-05:00",
+        "snapshot": "assembly/sources/grasp_frames.fac0590.json",
         "sha256": GRASP_FRAMES_SHA256,
     }
 
@@ -184,6 +184,11 @@ def test_catalog_installation_transforms_match_cad_source_within_005_mm() -> Non
 
 def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
     source = _verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256)
+    typed_steps = {
+        step.object_id: step
+        for product in load_catalog().products
+        for step in product.steps
+    }
     actual = {
         step["object_id"]: step["gripper_roll_deg"]
         for product in _catalog_data()["products"]
@@ -197,6 +202,9 @@ def test_catalog_gripper_rolls_match_single_t29_grasp_frame() -> None:
         expected_roll = 90.0 if grips[0]["closing_axis"] == "X" else 0.0
         assert grips[0]["roll_offset_deg"] == expected_roll
         assert actual_roll == expected_roll
+        preferred_tcp = grips[0]["tcp_local_mm"][f"{expected_roll:g}"]
+        assert typed_steps[object_id].preferred_grasp.turn_deg == expected_roll
+        assert typed_steps[object_id].preferred_grasp.tcp_local_mm == tuple(preferred_tcp)
 
 
 def test_catalog_grasp_source_uses_team_v_printed_finger_contacts() -> None:
@@ -206,7 +214,26 @@ def test_catalog_grasp_source_uses_team_v_printed_finger_contacts() -> None:
         "cad/products build() (printed CAD) + cad/fingers (Team V fingers), cad/grasp_frames.py"
     )
     assert source["gripper_gap_mm"] == {"closed_max": 4.5, "open_min": 16.5}
-    assert source["objects"]["M1_04"]["grips"][0]["tcp_local_mm"] == [0.0, 0.0, 27.9]
+    assert source["objects"]["M1_04"]["grips"][0]["tcp_local_mm"]["90"] == [0.0, 1.8, 27.9]
+
+
+def test_catalog_rejects_legacy_pad_point_as_commandable_tcp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = deepcopy(_verified_json_source(GRASP_FRAMES_SOURCE_PATH, GRASP_FRAMES_SHA256))
+    source["objects"]["M1_01"]["grips"][0]["tcp_local_mm"] = [0.0, -21.06, 8.4]
+    source_path = tmp_path / "legacy-grasp-source.json"
+    source_sha256 = _write_json_source(source_path, source)
+    catalog_data = deepcopy(_catalog_data())
+    catalog_data["grasp_source"]["sha256"] = source_sha256
+    catalog_path = _write_catalog(tmp_path / "legacy-grasp-catalog.yaml", catalog_data)
+    trusted_source = catalog_module.GraspSource(**catalog_data["grasp_source"])
+    monkeypatch.setattr(catalog_module, "TRUSTED_GRASP_SOURCE", trusted_source)
+    monkeypatch.setattr(catalog_module, "GRASP_SOURCE_SNAPSHOT_PATH", source_path)
+
+    with pytest.raises(CatalogResourceError, match="turn-indexed tcp_local_mm"):
+        load_catalog(catalog_path)
 
 
 def test_load_catalog_rejects_source_digest_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

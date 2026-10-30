@@ -25,6 +25,8 @@ from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
 from yaml.resolver import BaseResolver
 
+from assembly.grasp_source import GraspSource, GraspSourceError, PreferredGrasp, preferred_grasp
+
 BaseType = Literal["A", "B", "C"]
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG_PATH = Path(__file__).with_name("catalog.yaml")
@@ -108,20 +110,11 @@ class RecipeStep:
     insert_offset_mm: tuple[float, float, float]
     installed_rotation_matrix: tuple[tuple[float, float, float], ...]
     gripper_roll_deg: float
+    preferred_grasp: PreferredGrasp
 
 
 @dataclass(frozen=True, slots=True)
 class GeometrySource:
-    file: str
-    generator: str
-    commit: str
-    commit_timestamp: str
-    snapshot: str
-    sha256: str
-
-
-@dataclass(frozen=True, slots=True)
-class GraspSource:
     file: str
     generator: str
     commit: str
@@ -138,9 +131,9 @@ TRUSTED_GEOMETRY_SOURCE = GeometrySource(
 )
 TRUSTED_GRASP_SOURCE = GraspSource(
     file="cad/grasp_frames.json", generator="cad/grasp_frames.py",
-    commit="20c6f9bab0aa44b3bae4cd915a1c957705d74da4", commit_timestamp="2026-10-29T15:34:19-05:00",
-    snapshot="assembly/sources/grasp_frames.20c6f9b.json",
-    sha256="99611a032fb74a02740df405f1ef2d2d73f54f17cfc5676899cf9244e6d629c1",
+    commit="fac05905338b82a90744e934268f4a30bf412fc7", commit_timestamp="2026-10-30T02:53:51-05:00",
+    snapshot="assembly/sources/grasp_frames.fac0590.json",
+    sha256="dbd00b5082042e8a326b380d237890449bfb2206243c1753b7ebe2d940435977",
 )
 OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GEOMETRY_SOURCE.snapshot
 GRASP_SOURCE_SNAPSHOT_PATH = ROOT / TRUSTED_GRASP_SOURCE.snapshot
@@ -444,8 +437,9 @@ def _validate_geometry_source(data: dict[str, Any]) -> None:
             raise CatalogSemanticError(f"{object_id} installed transform does not match pinned CAD source")
 
 
-def _validate_grasp_source(data: dict[str, Any]) -> None:
+def _validate_grasp_source(data: dict[str, Any]) -> dict[str, PreferredGrasp]:
     source = _read_pinned_source(TRUSTED_GRASP_SOURCE, GRASP_SOURCE_SNAPSHOT_PATH, "grasp")
+    authorized: dict[str, PreferredGrasp] = {}
     for step in _catalog_steps(data):
         object_id = step["object_id"]
         try:
@@ -454,19 +448,17 @@ def _validate_grasp_source(data: dict[str, Any]) -> None:
             raise CatalogResourceError(f"Malformed grasp source entry for {object_id}") from error
         if not isinstance(grips, list) or len(grips) != 1:
             raise CatalogSemanticError(f"{object_id} must have exactly one grip in the pinned T29 source")
-        grip = grips[0]
         try:
-            expected_for_axis = {"X": 90.0, "Y": 0.0}[grip["closing_axis"]]
-            source_roll = float(grip["roll_offset_deg"])
-        except (KeyError, TypeError, ValueError) as error:
-            raise CatalogResourceError(f"Malformed grasp source entry for {object_id}") from error
-        if not isfinite(source_roll) or source_roll != expected_for_axis:
-            raise CatalogResourceError(f"T29 grasp source has invalid roll semantics for {object_id}")
-        if float(step["gripper_roll_deg"]) != source_roll:
+            authorized_grasp = preferred_grasp(grips[0], object_id)
+        except GraspSourceError as error:
+            raise CatalogResourceError(str(error)) from error
+        if float(step["gripper_roll_deg"]) != authorized_grasp.turn_deg:
             raise CatalogSemanticError(f"{object_id} gripper_roll_deg does not match pinned T29 source")
+        authorized[object_id] = authorized_grasp
+    return authorized
 
 
-def _make_step(data: dict[str, Any]) -> RecipeStep:
+def _make_step(data: dict[str, Any], authorized: dict[str, PreferredGrasp]) -> RecipeStep:
     offset = tuple(float(value) for value in data["insert_offset_mm"])
     rotation = tuple(tuple(float(value) for value in row) for row in data["installed_rotation_matrix"])
     return RecipeStep(
@@ -475,15 +467,16 @@ def _make_step(data: dict[str, Any]) -> RecipeStep:
         insert_offset_mm=offset,
         installed_rotation_matrix=rotation,
         gripper_roll_deg=float(data["gripper_roll_deg"]),
+        preferred_grasp=authorized[str(data["object_id"])],
     )
 
 
-def _make_product(data: dict[str, Any]) -> ProductRecipe:
+def _make_product(data: dict[str, Any], authorized: dict[str, PreferredGrasp]) -> ProductRecipe:
     return ProductRecipe(
         product=int(data["product"]),
         name=str(data["name"]),
         base_type=data["base_type"],
-        steps=tuple(_make_step(step) for step in data["steps"]),
+        steps=tuple(_make_step(step, authorized) for step in data["steps"]),
     )
 
 
@@ -495,6 +488,6 @@ def load_catalog(path: Path | str = DEFAULT_CATALOG_PATH) -> Catalog:
     _validate_semantics(data)
     _validate_source_provenance(data)
     _validate_geometry_source(data)
-    _validate_grasp_source(data)
-    products = tuple(_make_product(product) for product in data["products"])
+    authorized = _validate_grasp_source(data)
+    products = tuple(_make_product(product, authorized) for product in data["products"])
     return Catalog(products, _base_type_pairs(), TRUSTED_GEOMETRY_SOURCE, TRUSTED_GRASP_SOURCE)
