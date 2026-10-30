@@ -84,7 +84,7 @@ unset PYTHONPATH PYTHONHOME VIRTUAL_ENV
 
 python3 -m venv "$BOOTSTRAP_DIR"
 "$BOOTSTRAP_DIR/bin/python" -m pip install \
-    pip==26.2.2 setuptools==84.2.1 uv==0.13.6 pip-audit==2.10.1 \
+    pip==26.2.2 setuptools==84.2.1 uv==0.13.6 pip-audit==2.10.1 filelock==4.2.4 \
     --index-url https://pypi.org/simple
 "$BOOTSTRAP_DIR/bin/python" -m pip check
 "$BOOTSTRAP_DIR/bin/python" -m pip freeze --all > "$BOOTSTRAP_DIR/requirements.freeze.txt"
