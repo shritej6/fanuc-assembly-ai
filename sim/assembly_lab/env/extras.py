@@ -78,7 +78,8 @@ class CellExtrasMixin:
         import isaaclab.utils.math as M
 
         world = torch.tensor(L.uf0_to_world_m(tf_mm, self._top()), dtype=torch.float32, device=self.device)
-        pose = torch.cat([world[:3, 3], M.quat_from_matrix(world[:3, :3])]).unsqueeze(0)
+        pos = world[:3, 3] + self.scene.env_origins[0]
+        pose = torch.cat([pos, M.quat_from_matrix(world[:3, :3])]).unsqueeze(0)
         obj = self._extra(name)
         obj.write_root_pose_to_sim_index(root_pose=pose)
         obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros((1, 6), device=self.device))

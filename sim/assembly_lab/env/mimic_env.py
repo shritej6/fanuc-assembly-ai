@@ -68,9 +68,16 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
 
         return C.TABLE_TOP_Z
 
-    def _pose_rows(self, names: list[str]) -> np.ndarray:
-        rows = torch.stack([self.scene[n].data.root_link_pose_w.torch[0] for n in names])     # (K, 7) xyz + quat xyzw
-        return rows.detach().cpu().double().numpy()
+    def _origin_m(self, env_id: int = 0) -> np.ndarray:
+        """World position of env `env_id`'s cell origin (m); (0, 0, 0) with one env."""
+        return self.scene.env_origins[env_id].detach().cpu().double().numpy()
+
+    def _pose_rows(self, names: list[str], env_id: int = 0) -> np.ndarray:
+        """(K, 7) env-local xyz + quat xyzw of the named rigid objects in env `env_id`."""
+        rows = torch.stack([self.scene[n].data.root_link_pose_w.torch[env_id] for n in names])
+        rows = rows.detach().cpu().double().numpy()
+        rows[:, :3] -= self._origin_m(env_id)
+        return rows
 
     def _rows_to_mm(self, rows: np.ndarray) -> list[np.ndarray]:
         out = []
@@ -115,9 +122,11 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
 
     # ------------------------------------------------------------------ layout / frames
     def _write_poses(self, names: list[str], tfs_mm: list[np.ndarray]) -> None:
+        origin = self._origin_m(0)
         for n, tf in zip(names, tfs_mm):
             w = L.uf0_to_world_m(tf, self._top())
-            pose = torch.tensor([[*w[:3, 3], *L.quat_xyzw(w[:3, :3])]], dtype=torch.float32, device=self.device)
+            pose = torch.tensor([[*(w[:3, 3] + origin), *L.quat_xyzw(w[:3, :3])]], dtype=torch.float32,
+                                device=self.device)
             obj = self.scene[n]
             obj.write_root_pose_to_sim_index(root_pose=pose)
             if n not in FRAMES:                       # frame markers are kinematic
@@ -150,9 +159,9 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
         if "wrist" not in self.scene.sensors:
             return None
         from pxr import UsdGeom
-        from scene import CAMERA_PATHS
+        from scene import CAMERA_PATHS, env_path
 
-        prim = self.scene.stage.GetPrimAtPath(CAMERA_PATHS["wrist"])
+        prim = self.scene.stage.GetPrimAtPath(env_path(CAMERA_PATHS["wrist"], 0))   # every env's mount is the same
         local = np.array(UsdGeom.Xformable(prim).GetLocalTransformation(), dtype=float).T   # column-vector form
         body = list(self.scene["robot"].body_names).index(prim.GetParent().GetName())
         return body, torch.tensor(local, dtype=torch.float32, device=self.device)
@@ -386,7 +395,7 @@ def make_env_cfg(skill: str, pool: list[str], contact: dict, *, cameras=("table"
                  image_size=(640, 360), depth=(), step_dt: float = 0.1, episode_s: float = 60.0,
                  jaw_force_n: float, home_rad: np.ndarray, settle_s: float = 0.3, drop_mm: float = 0.2,
                  sampler: str | None = None, device: str = "cuda:0", seed: int = 0,
-                 jitter: dict | None = None, extras: bool = False) -> CellMimicEnvCfg:
+                 jitter: dict | None = None, extras: bool = False, num_envs: int = 1) -> CellMimicEnvCfg:
     import actions
     import isaaclab.sim as sim_utils
     import scene_config as C
@@ -404,7 +413,7 @@ def make_env_cfg(skill: str, pool: list[str], contact: dict, *, cameras=("table"
                          friction_offset_threshold=contact["friction_offset_threshold"],
                          friction_correlation_distance=contact["friction_correlation_distance"]))
     cfg.scene = make_scene_cfg(pool, contact, jaw_force_n, home_rad, tuple(cameras), tuple(image_size), tuple(depth),
-                               extras=extras)
+                               extras=extras, num_envs=num_envs)
 
     @configclass
     class ActionsCfg:
