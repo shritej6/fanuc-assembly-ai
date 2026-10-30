@@ -4,7 +4,8 @@ Every skill builds its motion through `Motion`, which enforces, for every row it
 - the workspace box (PLAN 3.1),
 - the seated-height floor (never below `floor_z`, which skills set to seated TCP z - 1 mm),
 - the slow last 5 mm above the active contact height,
-- per-row step limits, so the speed is the same in every demo (one fixed dt for GR00T).
+- per-row step limits, so the speed is the same in every demo (one fixed dt for GR00T),
+- the tool never more than 6 deg from straight down (the real-arm guard rejects more).
 """
 
 from __future__ import annotations
@@ -13,10 +14,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .geometry import interpolate, rotation_distance_deg
+from .geometry import interpolate, rotation_distance_deg, tilt_deg
 from .plan import SLOW_ZONE_MM
 
-DT_S = 0.2  # one control step; act_tcp allows 0.1-1.0 s
+DT_S = 0.1  # one control step = one Isaac Lab env step (env step_dt 0.1 s), so Mimic replays rows 1:1
 WORKSPACE = ((150.0, 650.0), (-450.0, 450.0), (-334.0, 300.0))
 OPEN, CLOSED = 0.0, 1.0
 
@@ -27,10 +28,13 @@ class Speed:
     deg: float  # max rotation per row
 
 
-FREE = Speed(10.0, 6.0)  # 50 mm/s in clear space
-APPROACH = Speed(2.0, 2.0)  # 10 mm/s near parts
-SLOW = Speed(0.5, 0.5)  # 2.5 mm/s in the last 5 mm and in contact
-GRIP_SETTLE_ROWS = 4  # 0.8 s for the fingers to open / close
+FREE = Speed(10.0, 6.0)  # 100 mm/s in clear space
+APPROACH = Speed(2.0, 2.0)  # 20 mm/s near parts (the last 5 mm is always SLOW)
+SLOW = Speed(0.25, 0.25)  # 2.5 mm/s in the last 5 mm and in contact
+GRIP_SETTLE_ROWS = 8  # 0.8 s for the fingers to open / close
+ENTER_ROWS = 15  # 1.5 s to reach the first in-box target from the home pose
+WORKSPACE_MARGIN_MM = 5.0
+MAX_TOOL_TILT_DEG = 6.0  # |tool axis - straight down|: the real-arm guard rejects rows beyond this
 
 
 class MotionError(ValueError):
@@ -67,6 +71,8 @@ class Motion:
                 raise MotionError(f"{self.skill}: {name}={v:.2f} mm outside the workspace [{lo}, {hi}]")
         if row[2] < self.floor_z - 1e-6:
             raise MotionError(f"{self.skill}: z={row[2]:.2f} below the floor {self.floor_z:.2f}")
+        if tilt_deg(row[:6]) > MAX_TOOL_TILT_DEG + 1e-6:
+            raise MotionError(f"{self.skill}: tool {tilt_deg(row[:6]):.2f} deg from straight down > {MAX_TOOL_TILT_DEG}")
 
     def _limit(self, z: float, speed: Speed) -> Speed:
         if self.contact_z is not None and z <= self.contact_z + SLOW_ZONE_MM + 1e-6:
@@ -93,6 +99,13 @@ class Motion:
             rows.append(prev)
         return rows
 
+    def enter(self) -> None:
+        """From a start pose outside the workspace box (the cell's home is at x ~ 87 mm) or with the tool more than
+        6 deg off straight down: one in-box, tool-down target, held while the arm gets there. act_tcp rows outside the box are refused by the real cell, so no row ever leaves it."""
+        inside = start_pose(self.pose)
+        if not np.allclose(inside, self.pose):
+            self._emit("enter", [inside] * ENTER_ROWS, self.gripper)
+
     def move(self, phase: str, goal, speed: Speed = FREE) -> None:
         goal = np.asarray(goal, dtype=float)
         poses = self._path(goal, speed)
@@ -115,6 +128,23 @@ class Motion:
             self.segments[-1].rows = np.vstack([self.segments[-1].rows, rows])
         else:
             self.segments.append(Segment(self.skill, phase, self.subtask, self.object_ref, rows, self.learn))
+
+
+def in_workspace(pose, margin: float = WORKSPACE_MARGIN_MM) -> np.ndarray:
+    """The pose with x, y, z clamped `margin` inside the workspace box."""
+    out = np.asarray(pose, dtype=float).copy()
+    for k, (lo, hi) in enumerate(WORKSPACE):
+        out[k] = min(max(out[k], lo + margin), hi - margin)
+    return out
+
+
+def start_pose(pose) -> np.ndarray:
+    """The first pose every episode goes to and returns to: the start pose clamped inside the box, with the tool
+    straightened to point down (roll kept) when it is more than 6 deg off (the cell's home is 50 deg off)."""
+    out = in_workspace(pose)
+    if tilt_deg(out) > MAX_TOOL_TILT_DEG:
+        out[3], out[4] = 180.0, 0.0
+    return out
 
 
 def above(pose, z: float) -> np.ndarray:

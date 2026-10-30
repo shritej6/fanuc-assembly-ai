@@ -26,6 +26,34 @@ def test_final_pose_gates(delta, failed):
     assert G.finish(rep).failed == failed
 
 
+LOCK_SEATED = np.array([400.0, 0.0, -300.0, 90.0, 0.0, 0.0])  # a *_04 lock: local z lies flat when installed
+
+
+def _turned(pose, axis, deg):
+    from sim.assembly_lab.skills.geometry import matrix_to_pose, pose_to_matrix
+
+    m = pose_to_matrix(pose)
+    k = np.asarray(axis, float)
+    kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    th = np.radians(deg)
+    m[:3, :3] = (np.eye(3) + np.sin(th) * kx + (1 - np.cos(th)) * kx @ kx) @ m[:3, :3]
+    return np.asarray(matrix_to_pose(m))
+
+
+def test_lock_yaw_does_not_leak_into_tilt():
+    rep = G.GateReport(ok=False)
+    G.gate_final_pose(rep, _turned(LOCK_SEATED, (0, 0, 1), 30.0), LOCK_SEATED, LIM, tilt_only=True)
+    assert rep.values["final_tilt_deg"] == pytest.approx(0.0, abs=1e-6)
+    assert G.finish(rep).failed == []
+
+
+def test_lock_tilted_1p5_deg_fails():
+    rep = G.GateReport(ok=False)
+    G.gate_final_pose(rep, _turned(LOCK_SEATED, (1, 0, 0), 1.5), LOCK_SEATED, LIM)
+    assert rep.values["final_tilt_deg"] == pytest.approx(1.5, abs=1e-3)
+    assert "final_tilt_deg" in G.finish(rep).failed
+
+
 def test_force_other_objects_and_touch_gates():
     rep = G.GateReport(ok=False)
     G.gate_forces(rep, np.array([[1.0, 1.0, 0.01], [14.0, 4.6, 0.05]]), ForceLimits(15, 4.5, 0.1, "PRELIMINARY", "t"))
@@ -111,3 +139,19 @@ def test_generator_dry_run_on_agent3_kinematic_seeds(tmp_path):
         assert demo.attrs["KINEMATIC_DRY_RUN"] and demo.attrs["generator"] == "mimicgen"
         assert {"grasped", "seated"} <= set(demo["obs/datagen_info/subtask_term_signals"].keys())
         assert json.loads(demo.attrs["gates"])["seat_xy_mm"]["pass"]
+
+
+def test_generate_seat_gates_use_the_parts_own_up(monkeypatch):
+    """mimic/generate.py passes installed_up(part): with a part whose installed-up is world +x, a 30 deg turn about
+    world z is a 30 deg tilt (it would read 0 with an assumed +z)."""
+    from types import SimpleNamespace
+
+    from sim.assembly_lab.mimic import generate
+    from sim.assembly_lab.skills import frames, gates
+
+    monkeypatch.setattr(frames, "installed_up", lambda oid: (1.0, 0.0, 0.0))
+    plan = SimpleNamespace(seated_object_pose=LOCK_SEATED, yaw_tol_deg=None)
+    log = gates.GateLog()
+    with pytest.raises(gates.GateFailed, match="seat_tilt_deg"):
+        generate.seat_gates(log, _turned(LOCK_SEATED, (0, 0, 1), 30.0), plan, "M5_04")
+    assert log.values["seat_tilt_deg"]["value"] == pytest.approx(30.0, abs=1e-3)

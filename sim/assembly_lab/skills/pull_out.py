@@ -43,6 +43,7 @@ def pull_out(plan: PullOutPlan, start, gripper: float = OPEN, holding: bool = Fa
     m = Motion(np.asarray(start, dtype=float), gripper, "pull_out", subtask_name(plan), plan.object_id, learn=learn)
     g = plan.grasp_tcp
     if not holding:
+        m.enter()
         carry(m, [], above(g, plan.clear_z_mm))
         if m.gripper != OPEN:
             m.grip("open", OPEN)

@@ -12,9 +12,8 @@ import math
 import numpy as np
 
 from . import checks, dry_run, frames
-from .frames import LocalFrameEnv, scene_from_obs
 from .geometry import matrix_to_pose, pose_to_matrix
-from .plan import FreePlacePlan, InsertPlan, PickPlan, PullOutPlan
+from .plan import FreePlacePlan, InsertPlan, PickPlan
 
 WORK_X, WORK_Y = (220.0, 470.0), (-270.0, 270.0)  # sdg/configs/cell_layout.yaml work_area
 BASE_GAP_MM, PART_GAP_MM = 25.0, 8.0
@@ -129,81 +128,6 @@ class KinematicBackend:
         return self._plans[0], self._plans[3]
 
 
-class IsaacBackend:
-    """Agent 1's env (wrapped into CAD local frames) + agent 2's planner on the measured scene."""
-
-    name = "isaac"
-    products = (1, 2, 3, 4, 5, 6)
-
-    def __init__(self, device: str = "cuda:0", products=(1, 2, 3, 4, 5, 6), cameras: tuple[str, ...] = ()):
-        """Spawns only the listed products' objects. Seed demos need no images by default: Mimic's annotate /
-        generate replays them in the env and renders the cameras itself."""
-        from ..env.cell_env import AssemblyCellEnv, CellEnvCfg
-        from ..objects import planner
-
-        self.planner = planner
-        pool = [oid for p in products for oid in (base_of(p), *sheet_parts(p))]
-        self.env = LocalFrameEnv(AssemblyCellEnv(CellEnvCfg(device=device, pool=pool, cameras=tuple(cameras))))
-        self.layout: dict = {}
-        self.installed: dict[str, str] = {}
-
-    def reset(self, rng: np.random.Generator, product: int, case: str, installed=None, target: str | None = None) -> dict:
-        ids = [base_of(product), *sheet_parts(product)]
-        self.installed = dict(installed or {})
-        self.layout = sample_layout(rng, ids, self.installed)
-        if case == "crowded" and target is not None:
-            crowd(rng, self.layout, target)
-        if case == "dropped" and target is not None:
-            drop_near_base(rng, self.layout, target, base_of(product))
-        return self.env.reset(self.layout)
-
-    def parts(self, product: int) -> list[str]:
-        return sheet_parts(product)
-
-    def _ctx(self, obs: dict) -> dict:
-        tcp = checks.tcp_pose(obs)
-        return {"current_r": float(tcp[5]), "current_xy": (float(tcp[0]), float(tcp[1]))}
-
-    def _scene(self, obs: dict) -> dict:
-        return scene_from_obs(obs, self.installed)
-
-    def pick_insert(self, obs, part, base):
-        scene = self._scene(obs)
-        g = _feasible(self.planner.plan_pick(scene, part, **self._ctx(obs)))
-        p = _feasible(self.planner.plan_place(scene, part, base, flip=g.flip, **self._ctx(obs)))
-        if p.flip != g.flip:
-            raise NoCase(f"{part}: the place needs the other wrist turn (re-grip), not a single pick-insert")
-        return to_pick(g), to_insert(p, part, base)
-
-    def pull_out(self, obs, part, rng) -> tuple[PullOutPlan, FreePlacePlan]:
-        g = _feasible(self.planner.plan_pull_out(self._scene(obs), part, **self._ctx(obs)))
-        eng = float(frames.catalog()[frames.type_id(part)]["insertion"]["engagement_mm"])
-        pull = PullOutPlan(part, np.asarray(g.tcp, float), float(g.grip["pad_width_mm"]), eng, float(g.transit_z))
-        x, y = free_spot(rng, obs)
-        rest = table_rest(part, x, y, float(rng.uniform(-180, 180)))
-        return pull, spot_plan(obs, part, pull.grasp_tcp, rest, "test_bed", pull.clear_z_mm)
-
-    def crowded(self, obs, part, rng) -> tuple[PickPlan, FreePlacePlan]:
-        """The planner's blocker of `part` goes to an empty remembered test-bed spot (move the blocker first)."""
-        scene = self._scene(obs)
-        blockers = list(self.planner.blockers(scene, part, current_r=self._ctx(obs)["current_r"]))
-        movable = [b for b in blockers if frames.catalog().get(frames.type_id(b), {}).get("sheet_order", 0) > 0]
-        if not blockers or len(movable) != len(blockers):
-            raise NoCase(f"{part} is not crowded by a movable part in this layout ({blockers})")
-        pick = to_pick(_feasible(self.planner.plan_pick(scene, movable[0], **self._ctx(obs))))
-        x, y = free_spot(rng, obs)
-        rest = table_rest(movable[0], x, y, float(rng.uniform(-180, 180)))
-        return pick, spot_plan(obs, movable[0], pick.grasp_tcp, rest, "test_bed", pick.lift_z_mm)
-
-    def defect(self, obs, part, rng) -> tuple[PickPlan, FreePlacePlan]:
-        from ..env.layout import LayoutSolver
-
-        pick = to_pick(_feasible(self.planner.plan_pick(self._scene(obs), part, **self._ctx(obs))))
-        x, y = LayoutSolver().defect_xy(int(rng.integers(0, 6)))
-        rest = table_rest(part, x, y, float(checks.object_pose(obs, part)[5]))
-        return pick, spot_plan(obs, part, pick.grasp_tcp, rest, "defect", pick.lift_z_mm)
-
-
 def _feasible(plan):
     if not plan.feasible:
         raise NoCase(f"planner refused {plan.key}: {plan.reason}")
@@ -227,8 +151,9 @@ def to_insert(p, part: str, base: str) -> InsertPlan:
     return InsertPlan(part, base, tcp, np.array([x, y, z, 0.0, 0.0, yaw]), float(p.contact_z - tcp[2]),
                       float(p.path[0][2]), chamfer_mm=max(0.0, float(ins["xy_capture_mm"]) - clearance),
                       clearance_mm=clearance, lead_dir_deg=float(yaw),
-                      hang_mm=float(grip["tcp_local_mm"][2] - entry["bbox_mm"]["min"][2]),
-                      yaw_tol_deg=ins.get("yaw_tol_deg"))
+                      hang_mm=float(grip["pad_point_local_mm"][2] - entry["bbox_mm"]["min"][2]),
+                      yaw_tol_deg=ins.get("yaw_tol_deg"),
+                      half_extent_mm=0.5 * max(entry["bbox_mm"]["size"][:2]))
 
 
 def drop_near_base(rng: np.random.Generator, layout: dict, target: str, base: str) -> None:
@@ -244,3 +169,4 @@ def drop_near_base(rng: np.random.Generator, layout: dict, target: str, base: st
             t["x"], t["y"] = x, y
             return
     raise NoCase("no free spot near the base for the dropped part")
+

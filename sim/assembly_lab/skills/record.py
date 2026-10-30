@@ -23,17 +23,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 import time
+import traceback
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-from . import episodes, hdf5_io
-from .backends import IsaacBackend, KinematicBackend, NoCase, base_of
+from . import episodes, frames, hdf5_io
+from .backends import KinematicBackend, NoCase, base_of
 from .force_guard import ForceGuard, LimitsError, load_limits
 from .gates import GateFailed
-from .runner import EpisodeFailed, EpisodeRecorder
+from .runner import EpisodeFailed, EpisodeRecorder, ResetInvalid
 
 DEMO_ROOT = Path.home() / "t12_data" / "demos"
 SEED_DIR = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert",
@@ -71,25 +74,48 @@ def _installed_before(backend, product: int, part: str) -> dict[str, str]:
     return {p: base_of(product) for p in parts[:parts.index(part)]}
 
 
+@dataclass
+class Run:
+    """Settings shared by every attempt of one recording run."""
+
+    limits: object
+    per_object: dict
+    max_attempts: int
+    allow_touch_proxy: bool = False
+    measure_only: bool = False
+    path: Path | None = None  # the HDF5 this run writes (kinematic: hdf5_io; isaac: the Isaac Lab recorder's file)
+    metas: list = field(default_factory=list)  # one per recorder episode, in order (isaac)
+
+
+def per_object_limits() -> dict:
+    """objects.yaml max_force per object id (agent 2; e.g. M5_04 / M6_04 axial 2.5 N, SIM_MEASURED)."""
+    return {oid: {k: v for k, v in (e.get("max_force") or {}).items() if k in ("axial_N", "lateral_N", "torque_Nm")}
+            for oid, e in frames.catalog().items()}
+
+
 def record(backend, scenario: str, products: list[int], target: int, out: Path, seed: int, max_attempts: int,
-           limits_path: Path | None = None, allow_touch_proxy: bool = False) -> dict:
+           limits_path: Path | None = None, allow_touch_proxy: bool = False, measure_only: bool = False,
+           path: Path | None = None) -> dict:
     limits = load_limits(limits_path) if limits_path else load_limits()
+    run = Run(limits, per_object_limits(), max_attempts, allow_touch_proxy, measure_only)
     rng = np.random.default_rng(seed)
     summary = {}
     for product in products:
+        run.path = path or out / SEED_DIR[scenario] / f"product_{product}.hdf5"
         for part in backend.parts(product):
-            path = out / SEED_DIR[scenario] / f"product_{product}.hdf5"
-            stats = _record_part(backend, scenario, product, part, target, path, rng, limits, max_attempts,
-                                 allow_touch_proxy)
+            stats = _record_part(backend, scenario, product, part, target, rng, run)
             summary[f"{product}:{part}"] = stats
-            _write_stats(path, part, scenario, stats)
+            _write_stats(run.path, part, scenario, stats)
             print(json.dumps({"product": product, "part": part,
-                              **{k: v for k, v in stats.items() if k not in ("runs", "limits", "gate_max")}}))
+                              **{k: v for k, v in stats.items() if k not in ("runs", "limits", "gate_max")}},
+                             default=_jsonable), flush=True)
     return summary
 
 
-def _record_part(backend, scenario, product, part, target, path, rng, limits, max_attempts, allow_touch_proxy) -> dict:
-    saved, attempts, skipped, reasons, runs = 0, 0, 0, Counter(), []
+def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dict:
+    limits, max_attempts = run.limits, run.max_attempts
+    saved, attempts, skipped, invalid, reasons, runs = 0, 0, 0, 0, Counter(), []
+    invalid_run, aborted = 0, None
     while saved < target and attempts < max_attempts:
         attempts += 1
         installed = _installed_before(backend, product, part)
@@ -97,9 +123,27 @@ def _record_part(backend, scenario, product, part, target, path, rng, limits, ma
             installed[part] = base_of(product)
         obs = _reset(backend, rng, product, scenario, installed, part)
         t0 = time.time()
-        rec = EpisodeRecorder(backend.env, ForceGuard(limits), obs, allow_touch_proxy=allow_touch_proxy)
+        rec = None
         try:
+            rec = EpisodeRecorder(backend.env, ForceGuard(limits, per_object=run.per_object), obs,
+                                  allow_touch_proxy=run.allow_touch_proxy, measure_only=run.measure_only)
             _episode(backend, rec, rng, scenario, product, part, obs)
+        except ResetInvalid as e:
+            attempts -= 1
+            invalid += 1
+            runs.append({"ok": False, "status": "reset_invalid", "reason": str(e),
+                         "steps": len(rec.frames) if rec else 0,
+                         "pre_touch_peaks": rec.guard.pre_touch_peaks if rec else {}, "s": round(time.time() - t0, 1)})
+            if rec is not None:
+                _finish(backend, run, rec, False, scenario, f"reset_invalid: {e}")
+            elif backend.name == "isaac":
+                backend.finish(False)
+            invalid_run += 1
+            if invalid_run > MAX_INVALID_IN_A_ROW:
+                aborted = f"{invalid_run} invalid resets in a row ({e})"
+                print(f"[record] {scenario} {part}: stopping this part: {aborted}", flush=True)
+                break
+            continue
         except NoCase as e:
             attempts -= 1
             skipped += 1
@@ -107,21 +151,82 @@ def _record_part(backend, scenario, product, part, target, path, rng, limits, ma
                 raise RuntimeError(f"{scenario} for {part}: the layouts never produced the case ({e})") from e
             continue
         except (EpisodeFailed, GateFailed) as e:
+            invalid_run = 0
             reasons[str(e).split(":")[0]] += 1
-            runs.append({"ok": False, "reason": str(e), "gates": rec.gate_log.values, "peaks": rec.guard.episode_peaks(),
-                         "events": rec.events, "s": round(time.time() - t0, 1)})
+            runs.append({"ok": False, "status": "robot_failed", "reason": str(e), "steps": len(rec.frames),
+                         "gates": rec.gate_log.values, "peaks": rec.guard.episode_peaks(),
+                         "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events,
+                         "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections, "settled": rec.settled,
+                         "s": round(time.time() - t0, 1)})
+            _finish(backend, run, rec, False, scenario, str(e))
             continue
-        attrs = {"backend": backend.name, "scenario": scenario, "seed": int(rng.integers(1 << 31)),
-                 "limits_status": limits.status, "gates": rec.gate_log.values, "touch_gate": rec.gate_log.touch_method}
-        if backend.name == "kinematic":
-            attrs["KINEMATIC_DRY_RUN"] = True
-        key = hdf5_io.append_demo(path, rec, attrs, f"T12-{backend.name}")
+        invalid_run = 0
+        key = _finish(backend, run, rec, True, scenario, "ok")
         saved += 1
-        runs.append({"ok": True, "demo": key, "steps": len(rec.frames), "peaks": rec.guard.episode_peaks(),
-                     "gates": rec.gate_log.values, "events": rec.events, "s": round(time.time() - t0, 1)})
-    return {"attempts": attempts, "saved": saved, "success_rate": saved / attempts if attempts else None,
+        runs.append({"ok": True, "status": "kept" if not run.measure_only else "would_keep", "demo": key,
+                     "steps": len(rec.frames), "peaks": rec.guard.episode_peaks(), "gates": rec.gate_log.values,
+                     "pre_touch_peaks": rec.guard.pre_touch_peaks, "events": rec.events, "settled": rec.settled,
+                     "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections,
+                     "s": round(time.time() - t0, 1)})
+    return {"attempts": attempts, "kept_or_would_keep": saved, "robot_failed": attempts - saved,
+            "reset_invalid": invalid, "planner_skipped": skipped,
+            "success_rate": saved / attempts if attempts else None,
             "discarded": dict(reasons), "peak_max": _peak_max(runs), "gate_max": _gate_max(runs),
+            "seat": _seat_summary(runs), "level": _level_summary(runs), "aborted": aborted,
             "limits": limits.__dict__, "runs": runs}
+
+
+def _level_summary(runs: list[dict]) -> dict:
+    """Distribution of the measured in-hand tilt and of the TCP level correction applied, per insert try."""
+    out = {}
+    for name in ("in_hand_tilt_deg", "level_deg"):
+        for k in (1, 2):
+            vals = sorted(c[name] for r in runs for c in r.get("level_corrections", []) if c["try"] == k)
+            if vals:
+                out[f"{name}_try{k}"] = {"n": len(vals), "min": vals[0], "median": vals[len(vals) // 2],
+                                         "max": vals[-1]}
+    return out
+
+
+def _seat_summary(runs: list[dict]) -> dict:
+    """Measured seat numbers of every attempt that reached the seat check (kept or not)."""
+    out = {}
+    for name in ("seat_xy_mm", "seat_yaw_deg", "seat_z_mm", "seat_tilt_deg"):
+        vals = [r["gates"][name]["value"] for r in runs if name in r.get("gates", {})]
+        if vals:
+            out[name] = {"n": len(vals), "min": min(vals), "max": max(vals), "mean": sum(vals) / len(vals)}
+    return out
+
+
+def _touch_gate(rec: EpisodeRecorder, run: Run) -> str:
+    method = rec.gate_log.touch_method
+    if method != "robot_touch":
+        return "missing" if run.measure_only else method
+    return "robot_touch_unverified" if run.measure_only else "robot_touch"
+
+
+def _finish(backend, run: Run, rec: EpisodeRecorder, ok: bool, scenario: str, reason: str) -> str | None:
+    """Kinematic: append kept episodes with hdf5_io. Isaac: mark the recorder episode and log its metadata (in order,
+    kept or not: every non-empty attempt is one recorder episode)."""
+    attrs = {"backend": backend.name, "scenario": scenario, "limits_status": run.limits.status,
+             "gates": rec.gate_log.values, "touch_gate": _touch_gate(rec, run), "measure_only": run.measure_only,
+             "kept": bool(ok and not run.measure_only), "reason": reason}
+    if backend.name == "kinematic":
+        if not ok:
+            return None
+        return hdf5_io.append_demo(run.path, rec, attrs | {"KINEMATIC_DRY_RUN": True}, "T12-kinematic")
+    backend.finish(ok and not run.measure_only)
+    if not rec.frames:
+        return None
+    meta = attrs | {k: v for k, v in rec.meta.items()} | {
+        "steps": len(rec.frames), "instruction": rec.instructions[0] if rec.instructions else "",
+        "marks": rec.marks, "events": rec.events, "peaks": rec.guard.episode_peaks(),
+        "train_mask": [bool(f.seg.learn) for f in rec.frames], "would_keep": bool(ok),
+        "seat_tries": rec.seat_tries, "level_corrections": rec.level_corrections}
+    run.metas.append(meta)
+    with open(str(run.path) + ".meta.jsonl", "a") as f:
+        f.write(json.dumps(meta, default=_jsonable) + "\n")
+    return f"demo_{len(run.metas) - 1}"
 
 
 def _gate_max(runs: list[dict]) -> dict[str, dict]:
@@ -137,7 +242,7 @@ def _gate_max(runs: list[dict]) -> dict[str, dict]:
 
 
 def _reset(backend, rng, product, scenario, installed, target):
-    if isinstance(backend, IsaacBackend):
+    if backend.name == "isaac":
         return backend.reset(rng, product, scenario, installed, target)
     return backend.reset(rng, product, scenario)
 
@@ -155,40 +260,78 @@ def _write_stats(path: Path, part: str, scenario: str, stats: dict) -> None:
     old = json.loads(f.read_text()) if f.exists() else {}
     old.setdefault(scenario, {})[part] = stats
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(old, indent=1))
+    f.write_text(json.dumps(old, indent=1, default=_jsonable))
 
 
-def main(argv=None) -> int:
+def _jsonable(v):
+    """numpy / torch scalars (np.bool_, np.float32, 0-d tensors) as plain Python values."""
+    if hasattr(v, "item"):
+        return v.item()
+    if hasattr(v, "tolist"):
+        return v.tolist()
+    raise TypeError(f"{type(v).__name__} is not JSON serialisable")
+
+
+MAX_INVALID_IN_A_ROW = 30  # resets that never settle: the env is the problem, stop this part and report it
+
+MEASURE_ROOT = Path.home() / "t12_data" / "measure"
+
+
+def _args(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backend", choices=("isaac", "kinematic"), required=True)
     ap.add_argument("--scenario", choices=tuple(SEED_DIR), default="build")
-    ap.add_argument("--products", type=int, nargs="+", default=[1, 2, 3, 4, 5, 6])
+    ap.add_argument("--products", type=int, nargs="+", default=[1])
     ap.add_argument("--target", type=int, default=10, help="clean demos to keep per part")
     ap.add_argument("--max-attempts", type=int, default=40)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", type=Path, default=DEMO_ROOT)
+    ap.add_argument("--out", type=Path, default=None, help="default ~/t12_data/demos (~/t12_data/measure if "
+                                                          "--measure-only)")
     ap.add_argument("--limits", type=Path, default=None)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--cameras", nargs="*", default=[], choices=("table", "side", "wrist"),
                     help="render and store these cameras in the seed demos (default none)")
+    ap.add_argument("--measure-only", action="store_true",
+                    help="robot_touch not verified yet: log every gate (touch included) but keep nothing; writes "
+                         "under ~/t12_data/measure, episodes marked touch_gate=missing / robot_touch_unverified")
     ap.add_argument("--allow-touch-proxy", action="store_true",
-                    help="accept the gripper_obj proxy for the 'touched only the target' gate when the env has no "
-                         "sim.robot_touch (stamped on every demo as touch_gate)")
+                    help="accept the gripper_obj proxy for the 'touched only the target' gate (stamped on every demo)")
     a = ap.parse_args(argv)
+    a.out = a.out or (MEASURE_ROOT if a.measure_only else DEMO_ROOT)
+    if a.measure_only and a.out.resolve().is_relative_to(DEMO_ROOT.resolve()):
+        ap.error("measure-only runs never write under ~/t12_data/demos")
     if a.backend == "kinematic" and a.out.resolve().is_relative_to(DEMO_ROOT.resolve()):
         ap.error("the kinematic dry run never writes under ~/t12_data/demos")
+    if a.backend == "isaac" and len(a.products) != 1:
+        ap.error("the isaac backend records one product per process (one env, one recorder file)")
+    return ap, a
+
+
+def main(argv=None) -> int:
+    ap, a = _args(argv)
+    path = None
     if a.backend == "kinematic":
         backend = KinematicBackend()
     else:
-        backend = IsaacBackend(a.device, tuple(a.products), tuple(a.cameras))
+        from .isaac_backend import IsaacBackend
+
+        path = a.out / SEED_DIR[a.scenario] / f"product_{a.products[0]}_{time.strftime('%Y%m%d_%H%M%S')}.hdf5"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        backend = IsaacBackend(a.scenario, a.products[0], str(path), a.device, tuple(a.cameras))
     products = [p for p in a.products if p in backend.products]
     try:
-        record(backend, a.scenario, products, a.target, a.out, a.seed, a.max_attempts, a.limits, a.allow_touch_proxy)
+        record(backend, a.scenario, products, a.target, a.out, a.seed, a.max_attempts, a.limits,
+               a.allow_touch_proxy, a.measure_only, path)
     except LimitsError as e:
         ap.error(str(e))
+    except Exception:
+        traceback.print_exc()  # before the app shuts down: SimulationApp.close() ends the process
+        sys.stdout.flush()
+        sys.stderr.flush()
+        raise
     finally:
-        if getattr(backend.env, "close", None) and backend.name == "isaac":
-            backend.env.close()
+        if backend.name == "isaac":
+            backend.close(path)
     return 0
 
 

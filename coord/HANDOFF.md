@@ -2,6 +2,21 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 01:30 · T18 evaluator + real-arm guard (agent 6, in progress) · CLAUDE · not yet committed
+
+- Changed (untracked on `feature/T12-mimic`): `policy_learn/deploy/` (`guards.py`, `groot_policy.py` `GrootPolicy`,
+  `mock_check.py`, `WIRING.md` for Codex T05), `sim/assembly_lab/eval/` (22 scenarios / 110 unseen layouts, seeds from
+  910000; oracle director; KPIs on the INTERFACES precision gates; `run_remote.sh`), tests in `tests/policy_learn/` and
+  `tests/assembly_lab/test_eval_*.py` (69 pass, 1 skipped).
+- Run: `cd robot/cell && GROOT_POLICY=stub uv run python ../../policy_learn/deploy/mock_check.py` (measured: "✓ Ready for
+  the real robot", 601 actions, 0 rejected). Sim: `SKIP_READY=1 IMAGE=isaac-lab-base:3.0.0b2p1-sim6.0.0
+  sim/assembly_lab/eval/run_remote.sh scripted_v1 scripted` on fa-mimic GPU 3.
+- Guard speeds (150 mm/s free, 10 mm/s in the last 5 mm) are PRELIMINARY choices, not measured.
+- No sim KPI numbers yet. fa-mimic disk was full; containerd/docker moved to `/ephemeral` (bind mounts in fstab).
+- Open: env lacks `robot_touch`, `inject_foreign`, `block_holes`, `force_release`, `inject_intruder` (those scenarios
+  are skipped, never counted as passes); planner vs env origin differs 4 mm for M1/M2/M3_04; `*_04` tilt gate mixes
+  in yaw; `robot/cell` lacks pyzmq/msgpack (T05 adds, or `uv run --with`).
+
 ## 2026-10-28 23:25 · NEW-DATA-ONLY training (for CODEX) · CLAUDE · user decision, do this before the H100 run
 
 - User: train ONLY on the new test-bed sets N R O P Q (parts stand as in their product, any yaw; 0 wrong rest labels).

@@ -59,3 +59,4 @@ def test_scene_from_obs_marks_installed_and_fallen():
     assert by["M1_01"]["state"] == "on:F01"
     assert by["M1_02"]["state"] == "fallen"
     assert by["F01"]["state"] == "installed"
+

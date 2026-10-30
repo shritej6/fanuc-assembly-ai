@@ -14,11 +14,14 @@ import math
 import numpy as np
 
 from .geometry import tilted
-from .motion import APPROACH, CLOSED, OPEN, SLOW, Motion, Segment, above
+from .motion import APPROACH, CLOSED, OPEN, SLOW, Motion, Segment, Speed, above
 from .plan import INSERT_TILT_DEG, INSERT_TWIST_DEG, PUSH_MM, RETRY_LIFT_MM, SEAT_FLOOR_MM, InsertPlan
 from .pull_out import carry
 
-PUSH_HOLD_ROWS = 3
+PUSH_HOLD_ROWS = 6
+SEAT_APPROACH_MM = 1.0  # the last 1 mm to the seat and the push go at PRESS speed
+PRESS = Speed(0.05, 0.05)  # 0.5 mm/s: run7 measured the seat force jump past 15 N within one 0.25 mm row (15.3, 15.8 N
+#                            from below the 9 N soft stop), so each row now adds at most a fifth of that
 ENTRY_TOP_MM = 3.0  # start the tilted descent this far above first chamfer contact
 
 
@@ -42,21 +45,42 @@ def entry_shift(plan: InsertPlan) -> float:
 
 
 def _entry_heights(plan: InsertPlan) -> dict[str, float]:
-    """Monotone TCP heights for the entry phases, never below the seated height before the push."""
+    """Monotone TCP heights for the entry phases, never below the seated height before the push.
+
+    The part is LEVEL before it enters the bore (agent 2 measured that a held tilt does not level by itself and that a
+    tilted part jams a 0.5 mm clearance fit): the lead edge touches mid-chamfer, the part levels inside the chamfer
+    (at the bore mouth when there is no lead-in), twists there, and only then goes straight down to the seat.
+    """
     zs, e, c = plan.seated_tcp[2], plan.engage_mm, plan.chamfer_mm
-    touch = zs + max(e - 0.5 * c, 0.0)
-    level = min(zs + 0.5 * e, touch)
-    return {"top": zs + e + ENTRY_TOP_MM, "touch": touch, "level": level,
-            "twist1": min(zs + 0.35 * e, level), "twist2": min(zs + 0.15 * e, level), "push": zs - PUSH_MM}
+    drop = plan.half_extent_mm * math.sin(math.radians(INSERT_TILT_DEG))  # lead edge below the bottom centre
+    level = zs + max(e - 0.5 * c, 0.0)
+    touch = level + drop
+    return {"top": max(zs + e + ENTRY_TOP_MM, touch + ENTRY_TOP_MM), "touch": touch, "level": level,
+            "push": zs - PUSH_MM}
 
 
 def _target(plan: InsertPlan, offset) -> np.ndarray:
-    """Seated TCP corrected by the runner's measured offset (dx, dy mm, dyaw deg)."""
+    """Seated TCP corrected by the runner's measured offset (dx, dy mm, dyaw deg[, w, p deg that level the held
+    part])."""
     t = plan.seated_tcp.copy()
     t[0] += offset[0]
     t[1] += offset[1]
     t[5] += offset[2]
+    if len(offset) > 3:
+        t[3], t[4] = offset[3], offset[4]
     return t
+
+
+def twisted_about(pose, pivot_xy, deg: float) -> np.ndarray:
+    """The TCP turned by `deg` about the vertical line through `pivot_xy` (the part's own insert axis), so the twist
+    turns the part in place. Turning about the TCP instead swings a part gripped on an edge pad sideways: run3
+    measured M1_01 (pad 21 mm off centre) left 0.3-0.5 mm off after the +-2 deg twist, beyond its 0.5 mm clearance,
+    and it then jammed tilted 1.5-2 deg."""
+    out = tilted(pose, 0.0, 0.0, deg)
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    d = np.asarray(pose[:2], dtype=float) - np.asarray(pivot_xy, dtype=float)
+    out[0], out[1] = pivot_xy[0] + c * d[0] - s * d[1], pivot_xy[1] + s * d[0] + c * d[1]
+    return out
 
 
 def _entry(m: Motion, plan: InsertPlan, offset) -> None:
@@ -69,10 +93,13 @@ def _entry(m: Motion, plan: InsertPlan, offset) -> None:
     m.move("tilt", lean, APPROACH)
     m.move("touch", above(lean, h["touch"]), SLOW)
     m.move("level", above(tgt, h["level"]), SLOW)
-    m.move("twist", tilted(above(tgt, h["twist1"]), lead, 0.0, +INSERT_TWIST_DEG), SLOW)
-    m.move("twist", tilted(above(tgt, h["twist2"]), lead, 0.0, -INSERT_TWIST_DEG), SLOW)
-    m.move("twist", above(tgt, plan.seated_tcp[2]), SLOW)
-    m.move("push", above(tgt, h["push"]), SLOW)
+    pivot = plan.seated_object_pose[:2]
+    m.move("twist", twisted_about(above(tgt, h["level"]), pivot, +INSERT_TWIST_DEG), SLOW)
+    m.move("twist", twisted_about(above(tgt, h["level"]), pivot, -INSERT_TWIST_DEG), SLOW)
+    m.move("twist", above(tgt, h["level"]), SLOW)
+    m.move("slide", above(tgt, plan.seated_tcp[2] + SEAT_APPROACH_MM), SLOW)
+    m.move("slide", above(tgt, plan.seated_tcp[2]), PRESS)
+    m.move("push", above(tgt, h["push"]), PRESS)
     m.hold("push", PUSH_HOLD_ROWS)
 
 
@@ -91,6 +118,16 @@ def retry_lift(plan: InsertPlan, start, gripper: float, learn: bool = True) -> l
     """Not seated: lift 3 mm straight up so the runner can re-measure."""
     m = _motion(plan, start, gripper, learn)
     m.move("retry_lift", above(m.pose, m.pose[2] + RETRY_LIFT_MM), SLOW)
+    return m.segments
+
+
+def retry_clear(plan: InsertPlan, start, gripper: float, learn: bool = True) -> list[Segment]:
+    """After the 3 mm lift: up to the entry top so the part hangs free in the fingers (no base contact) before the
+    runner re-measures how it is held."""
+    m = _motion(plan, start, gripper, learn)
+    top = _entry_heights(plan)["top"]
+    if m.pose[2] < top:
+        m.move("retry_clear", above(m.pose, top), SLOW)
     return m.segments
 
 

@@ -171,3 +171,33 @@ def append_demo(path: Path, rec: EpisodeRecorder, attrs: dict, env_name: str) ->
         data.attrs["total_demos"] = k + 1
         data.attrs["total"] = int(data.attrs.get("total", 0)) + len(rec.frames)
     return key
+
+
+def annotate_recorder_file(path: Path) -> dict:
+    """Add agent 3's per-episode metadata (<path>.meta.jsonl, in episode order) to the Isaac Lab recorder's HDF5:
+    attrs (kept, would_keep, gates, instruction, plan ids, peaks, touch_gate) and, when the step counts agree,
+    obs/plan_ids, obs/plan_target, obs/train_mask. A count mismatch is reported, never papered over."""
+    meta_path = Path(str(path) + ".meta.jsonl")
+    metas = [json.loads(line) for line in meta_path.read_text().splitlines()] if meta_path.exists() else []
+    report = {"episodes": 0, "metas": len(metas), "step_mismatch": []}
+    with h5py.File(path, "a") as f:
+        all_keys = sorted(f["data"].keys(), key=lambda k: int(k.split("_")[-1]))
+        keys = [k for k in all_keys if "actions" in f["data"][k]]  # resets that never ran a step export empty
+        report["episodes"], report["empty_episodes"] = len(keys), len(all_keys) - len(keys)
+        for key, meta in zip(keys, metas):
+            grp = f["data"][key]
+            n = int(grp["actions"].shape[0])
+            for k, v in meta.items():
+                if k == "train_mask":
+                    continue
+                grp.attrs[k] = v if isinstance(v, (int, float, str, bool)) else json.dumps(v)
+            if n != meta["steps"]:
+                report["step_mismatch"].append({"demo": key, "recorder": n, "agent3": meta["steps"]})
+                continue
+            if "plan_ids" in meta:
+                grp.create_dataset("obs/plan_ids", data=np.tile(np.float32(meta["plan_ids"]), (n, 1)))
+                grp.create_dataset("obs/plan_target", data=np.tile(np.float32(meta["plan_target"]), (n, 1)))
+            grp.create_dataset("obs/train_mask", data=np.array(meta["train_mask"], dtype=bool))
+    if report["episodes"] != report["metas"]:
+        report["count_mismatch"] = True
+    return report

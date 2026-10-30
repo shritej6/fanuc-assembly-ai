@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 import pytest
 
-from sim.assembly_lab.skills import dry_run, episodes, gates, record
+from sim.assembly_lab.skills import checks, dry_run, episodes, frames, gates, record
 from sim.assembly_lab.skills.force_guard import ForceGuard, LimitsError, load_limits
 from sim.assembly_lab.skills.runner import EpisodeFailed, EpisodeRecorder
 
@@ -62,7 +62,7 @@ def test_pick_insert_episode_signals_and_gates(limits):
 
 def test_force_over_limit_discards(limits, tmp_path):
     p = tmp_path / "tight.yaml"
-    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 2.0"))
+    p.write_text(LIMITS.replace("axial_N: 15.0", "axial_N: 1.0"))  # one 0.05 mm row on the 10 N/mm spring jumps past it
     env, (pick, ins, *_) = _world()
     rec = EpisodeRecorder(env, ForceGuard(load_limits(p)), env.reset())
     with pytest.raises(EpisodeFailed, match="force guard"):
@@ -87,6 +87,42 @@ def test_seat_gate_rejects_0p4mm():
     log = gates.GateLog()
     with pytest.raises(gates.GateFailed, match="seat_yaw_deg"):
         gates.seat_gates(log, [0, 0, 0, 0, 0, 1.2], [0, 0, 0, 0, 0, 0])
+
+
+# A *_04 lock seated with its local z lying flat (local z along world -y): yaw must not leak into tilt.
+LOCK_SEATED = [400.0, 0.0, -300.0, 90.0, 0.0, 0.0]
+
+
+def _turned(pose, axis, deg):
+    from sim.assembly_lab.skills.geometry import matrix_to_pose, pose_to_matrix
+
+    m = pose_to_matrix(pose)
+    k = np.asarray(axis, float)
+    kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    th = np.radians(deg)
+    m[:3, :3] = (np.eye(3) + np.sin(th) * kx + (1 - np.cos(th)) * kx @ kx) @ m[:3, :3]
+    return list(matrix_to_pose(m))
+
+
+@pytest.mark.parametrize("part", ["M4_04", "M5_04", "M6_04"])
+def test_lock_tilt_ignores_yaw(part):
+    up = frames.installed_up(part)
+    assert up == pytest.approx((0.0, 0.0, 1.0))
+    yawed = _turned(LOCK_SEATED, (0, 0, 1), 30.0)
+    assert gates.axis_tilt_deg(yawed, LOCK_SEATED, up) == pytest.approx(0.0, abs=1e-6)
+    assert gates.yaw_err_deg(yawed, LOCK_SEATED) == pytest.approx(30.0, abs=1e-6)
+    assert checks.seat_error(yawed, LOCK_SEATED, up)["tilt"] == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.parametrize("axis", [(1, 0, 0), (0, 1, 0)])
+def test_lock_tilted_1p5_deg_fails(axis):
+    up = frames.installed_up("M5_04")
+    tilted = _turned(LOCK_SEATED, axis, 1.5)
+    log = gates.GateLog()
+    with pytest.raises(gates.GateFailed, match="seat_tilt_deg"):
+        gates.seat_gates(log, tilted, LOCK_SEATED, up=up)
+    assert log.values["seat_tilt_deg"]["value"] == pytest.approx(1.5, abs=1e-3)
+    assert not checks.seated_ok(tilted, LOCK_SEATED, up=up)[0]
 
 
 def test_other_moved_gate():
@@ -123,7 +159,7 @@ def test_record_writes_mimic_hdf5(tmp_path, scenario, seed_dir, signals):
     lim = tmp_path / "limits.yaml"
     lim.write_text(LIMITS)
     summary = record.record(record.KinematicBackend(), scenario, [1], 2, tmp_path, 0, 5, lim)
-    assert summary["1:M1_02"]["saved"] == 2
+    assert summary["1:M1_02"]["kept_or_would_keep"] == 2
     path = tmp_path / seed_dir / "product_1.hdf5"
     with h5py.File(path) as f:
         data = f["data"]
@@ -149,3 +185,47 @@ def test_record_writes_mimic_hdf5(tmp_path, scenario, seed_dir, signals):
 def test_kinematic_never_writes_real_demo_dir():
     with pytest.raises(SystemExit):
         record.main(["--backend", "kinematic", "--out", str(record.DEMO_ROOT / "x")])
+
+
+def test_pre_touch_contact_is_reset_invalid_not_ignored(limits):
+    g = ForceGuard(limits)
+    over = {"F01": {"normal_N": 3.0, "lateral_N": 9.0, "torque_Nm": 0.0}}
+    g.observe(0, {"sim": {"contact_peak": over, "robot_touch": {"F01": 0.0}}})
+    assert g.pre_touch_violations and not g.violations and not g.touched
+    assert g.pre_touch_peaks["F01"]["lateral_N"] == 9.0
+    g.observe(1, {"sim": {"contact_peak": over, "robot_touch": {"F01": 0.2}}})
+    assert g.touched and g.violations, "from first robot contact on the guard applies in full"
+
+
+def test_no_touch_data_counts_everything_as_robot_contact(limits):
+    g = ForceGuard(limits)
+    g.observe(0, {"sim": {"contact_peak": {"F01": {"normal_N": 0, "lateral_N": 9.0, "torque_Nm": 0}}}})
+    assert g.violations and not g.pre_touch_violations
+
+
+def test_per_object_limit_is_tighter(limits):
+    g = ForceGuard(limits, per_object={"M5_04": {"axial_N": 2.5}})
+    g.observe(0, {"sim": {"contact_peak": {"M5_04": {"normal_N": 3.0, "lateral_N": 0, "torque_Nm": 0}}}})
+    assert g.violations and g.violations[0].limit == 2.5
+
+
+def test_stats_json_accepts_numpy_scalars(tmp_path):
+    p = tmp_path / "product_1.hdf5"
+    record._write_stats(p, "M1_01", "build", {"ok": np.bool_(True), "x": np.float32(0.5), "n": np.int64(3)})
+    out = json.loads(p.with_name("product_1_stats.json").read_text())
+    assert out["build"]["M1_01"] == {"ok": True, "x": 0.5, "n": 3}
+
+
+def test_annotate_skips_empty_reset_episodes(tmp_path):
+    from sim.assembly_lab.skills import hdf5_io
+
+    p = tmp_path / "rec.hdf5"
+    with h5py.File(p, "w") as f:
+        f.create_group("data/demo_0/initial_state")          # a reset that never ran a step
+        f.create_dataset("data/demo_1/actions", data=np.zeros((3, 7)))
+    meta = {"steps": 3, "train_mask": [True] * 3, "would_keep": False, "reason": "x"}
+    Path(str(p) + ".meta.jsonl").write_text(json.dumps(meta) + "\n")
+    rep = hdf5_io.annotate_recorder_file(p)
+    assert rep["episodes"] == 1 and rep["empty_episodes"] == 1 and not rep["step_mismatch"]
+    with h5py.File(p) as f:
+        assert f["data/demo_1"].attrs["reason"] == "x" and f["data/demo_1/obs/train_mask"].shape == (3,)

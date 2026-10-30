@@ -31,15 +31,28 @@ class GateFailed(RuntimeError):
     """A precision gate failed."""
 
 
-def axis_tilt_deg(a, b) -> float:
-    za, zb = wpr_to_rot(*np.asarray(a, float)[3:6])[:, 2], wpr_to_rot(*np.asarray(b, float)[3:6])[:, 2]
-    return math.degrees(math.acos(max(-1.0, min(1.0, float(za @ zb)))))
+WORLD_UP = (0.0, 0.0, 1.0)
+
+
+def _world_delta(a, b) -> np.ndarray:
+    """Rotation taking pose b's orientation to pose a's, expressed in the world (UF0) frame."""
+    return wpr_to_rot(*np.asarray(a, float)[3:6]) @ wpr_to_rot(*np.asarray(b, float)[3:6]).T
+
+
+def axis_tilt_deg(a, b, up=WORLD_UP) -> float:
+    """How far pose a's installed-up direction leans from pose b's, independent of yaw and of the part's local axes.
+
+    `up` is the world direction that is up in the target pose b (objects.yaml: -insert_axis). Comparing local z
+    axes is wrong for parts whose local z lies flat when installed (the *_04 locks): a pure yaw turn would leak in.
+    """
+    u = np.asarray(up, float) / np.linalg.norm(up)
+    return math.degrees(math.acos(max(-1.0, min(1.0, float(u @ _world_delta(a, b) @ u)))))
 
 
 def yaw_err_deg(a, b) -> float:
-    """Heading difference of the local x axes in the xy plane (robust to w = ±180 representations)."""
-    xa, xb = wpr_to_rot(*np.asarray(a, float)[3:6])[:, 0], wpr_to_rot(*np.asarray(b, float)[3:6])[:, 0]
-    return abs(wrap_deg(math.degrees(math.atan2(xa[1], xa[0]) - math.atan2(xb[1], xb[0]))))
+    """Turn of pose a relative to pose b about world z (independent of which local axis lies where)."""
+    d = _world_delta(a, b)
+    return abs(wrap_deg(math.degrees(math.atan2(d[1, 0], d[0, 0]))))
 
 
 @dataclass
@@ -67,12 +80,12 @@ def seat_yaw_limit(part_yaw_tol_deg: float | None) -> float:
     return SEAT_YAW_DEG if part_yaw_tol_deg is None else min(SEAT_YAW_DEG, float(part_yaw_tol_deg))
 
 
-def seat_gates(log: GateLog, actual, cad, part_yaw_tol_deg: float | None = None) -> None:
+def seat_gates(log: GateLog, actual, cad, part_yaw_tol_deg: float | None = None, up=WORLD_UP) -> None:
     a, c = np.asarray(actual, float), np.asarray(cad, float)
     log.check("seat_xy_mm", math.hypot(a[0] - c[0], a[1] - c[1]), SEAT_XY_MM)
     log.check("seat_yaw_deg", yaw_err_deg(a, c), seat_yaw_limit(part_yaw_tol_deg))
     log.check("seat_z_mm", a[2] - c[2], SEAT_Z_MM)
-    log.check("seat_tilt_deg", axis_tilt_deg(a, c), SEAT_TILT_DEG)
+    log.check("seat_tilt_deg", axis_tilt_deg(a, c, up), SEAT_TILT_DEG)
     log.require(("seat_xy_mm", "seat_yaw_deg", "seat_z_mm", "seat_tilt_deg"))
 
 
@@ -142,11 +155,13 @@ class TouchMonitor:
         if held is not None and held not in targets:
             self.worst_n, self.who = max(self.worst_n, FINGER_TOUCH_N * 2), held
 
-    def finish(self, log: GateLog) -> None:
+    def finish(self, log: GateLog, require: bool = True) -> None:
+        """require=False (measure-only runs): the value is logged but the episode is not ended on it."""
         log.touch_method = self.method or "unmeasured"
         ok = self.worst_n <= FINGER_TOUCH_N and (self.method == "robot_touch" or self.allow_proxy)
         log.check("touch_non_target_N", self.worst_n, FINGER_TOUCH_N, ok=ok)
         log.values["touch_non_target_N"]["method"] = log.touch_method
         if self.who:
             log.values["touch_non_target_N"]["object"] = self.who
-        log.require(("touch_non_target_N",))
+        if require:
+            log.require(("touch_non_target_N",))

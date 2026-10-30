@@ -83,6 +83,7 @@ class InsertPlan:
     via: list[np.ndarray] = field(default_factory=list)  # planner's clear carry path to above the base
     hang_mm: float = 0.0  # TCP height above the part's lowest point (the tilt pivots about the TCP)
     yaw_tol_deg: float | None = None  # objects.yaml insertion.yaw_tol_deg (None: yaw-free fit)
+    half_extent_mm: float = 0.0  # half the part's largest footprint side: how far the tilt drops the lead edge
 
     @property
     def capture_mm(self) -> float:

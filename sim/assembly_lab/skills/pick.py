@@ -21,6 +21,7 @@ def subtask_name(plan: PickPlan) -> str:
 def pick(plan: PickPlan, start, gripper: float = OPEN, learn: bool = True) -> list[Segment]:
     m = Motion(np.asarray(start, dtype=float), gripper, "pick", subtask_name(plan), plan.object_id, learn=learn)
     g = plan.grasp_tcp
+    m.enter()
     m.move("approach", above(m.pose, max(m.pose[2], plan.approach_z_mm)), FREE)
     m.move("approach", above(g, plan.approach_z_mm), FREE)
     m.grip("open", OPEN)  # always: every demo shows the fingers opening above the pad

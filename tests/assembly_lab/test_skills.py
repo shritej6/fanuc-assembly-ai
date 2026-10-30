@@ -91,7 +91,7 @@ def test_insert_is_human_style_and_never_below_floor(plans):
     assert rows[:, 2].min() <= zs, "the light push must reach the seated height"
     assert (rows[:, 6] == 1).all(), "the part is held for the whole insert"
     order = [s.phase for s in segs]
-    for a, b in (("tilt", "touch"), ("touch", "level"), ("level", "twist"), ("twist", "push")):
+    for a, b in (("tilt", "touch"), ("touch", "level"), ("level", "twist"), ("twist", "slide"), ("slide", "push")):
         assert order.index(a) < order.index(b)
     touch = next(s for s in segs if s.phase == "touch").rows
     assert geometry.tilt_deg(touch[-1]) == pytest.approx(INSERT_TILT_DEG, abs=0.05)
@@ -157,3 +157,100 @@ def test_motion_refuses_floor_and_workspace():
         m.move("x", [400, 0, -312, -180, 0, 0])
     with pytest.raises(MotionError):
         m.move("x", [700, 0, -300, -180, 0, 0])
+
+
+def test_start_outside_box_enters_with_in_box_rows(plans):
+    home = np.array([87.0, 0.0, 200.0, -180.0, 0.0, 0.0])  # the cell's home TCP is outside the box
+    rows = rows_of(pick(plans[0], home))
+    _in_workspace(rows)
+    assert rows[0, 0] == pytest.approx(WORKSPACE[0][0] + 5.0)
+    tilted_home = np.array([87.0, 0.0, 200.0, 170.0, 30.0, 0.0])  # tool far from straight down at home
+    rows = rows_of(pick(plans[0], tilted_home))
+    assert max(geometry.tilt_deg(r) for r in rows) <= 6.0 + 1e-6
+
+
+def test_part_is_level_inside_the_bore(plans):
+    ins = plans[1]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    rows = rows_of(insert(ins, start, 1.0))
+    bore = rows[:, 2] < ins.seated_tcp[2] + ins.engage_mm - 0.5 * ins.chamfer_mm - 1e-6
+    assert bore.any()
+    assert max(geometry.tilt_deg(r) for r in rows[bore]) < 1e-6, "a tilted part jams a 0.5 mm clearance fit"
+    yaw = [abs(geometry.wrap_deg(r[5] - ins.seated_tcp[5])) for r in rows[bore]]
+    assert max(yaw) < 1e-6, "no twist inside the bore"
+
+
+def test_part_pivoted_in_the_fingers_is_levelled_before_the_bore(plans):
+    """The runner's w, p correction (part held 1.5 deg off) is held all the way down inside the bore."""
+    ins = plans[1]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    level = geometry.tilted(ins.seated_tcp, 0.0, 1.5)
+    rows = rows_of(insert(ins, start, 1.0, (0.0, 0.0, 0.0, level[3], level[4])))
+    bore = rows[:, 2] < ins.seated_tcp[2] + ins.engage_mm - 0.5 * ins.chamfer_mm - 1e-6
+    assert bore.any()
+    off = [geometry.rotation_distance_deg(np.r_[r[:3], level[3], level[4], ins.seated_tcp[5]], r[:6]) for r in rows[bore]]
+    assert max(off) < 1e-6
+
+
+def test_motion_refuses_tool_tilt_over_6_deg(plans):
+    ins = plans[1]
+    m = Motion(np.r_[ins.seated_tcp[:2], ins.approach_z_mm, ins.seated_tcp[3:]], 1.0, "t", "t", "world")
+    m.move("ok", geometry.tilted(m.pose, 0.0, 6.0), SLOW)
+    with pytest.raises(MotionError, match="from straight down"):
+        m.move("bad", geometry.tilted(m.pose, 0.0, 0.5), SLOW)
+
+
+def test_max_level_correction_keeps_every_insert_row_within_6_deg(plans):
+    from sim.assembly_lab.skills.runner import MAX_LEVEL_CORRECTION_DEG
+
+    assert MAX_LEVEL_CORRECTION_DEG == pytest.approx(3.0)
+    ins = plans[1]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    for lead in (0.0, 90.0, 180.0, 270.0):
+        level = geometry.tilted(ins.seated_tcp, lead, MAX_LEVEL_CORRECTION_DEG)
+        rows = rows_of(insert(ins, start, 1.0, (0.0, 0.0, 0.0, level[3], level[4])))
+        assert max(geometry.tilt_deg(r) for r in rows) <= 6.0 + 1e-6
+
+
+def test_retry_clears_the_bore_before_remeasuring(plans):
+    from sim.assembly_lab.skills.insert import _entry_heights, retry_clear
+
+    ins = plans[1]
+    pushed = np.r_[ins.seated_tcp[:3], ins.seated_tcp[3:]]
+    lifted = rows_of(retry_lift(ins, pushed, 1.0))[-1]
+    rows = rows_of(retry_clear(ins, lifted[:6], 1.0))
+    assert rows[-1, 2] == pytest.approx(_entry_heights(ins)["top"])
+
+
+def test_twist_turns_the_part_about_its_own_axis(plans):
+    """The +-2 deg twist pivots on the part's insert axis: the held part's origin stays put, also when it is gripped
+    on an edge pad 21 mm from its centre (M1_01-style)."""
+    from dataclasses import replace
+
+    ins = replace(plans[1], seated_object_pose=plans[1].seated_object_pose + np.array([0.0, 21.06, 0, 0, 0, 0]))
+    t_tcp_obj = np.linalg.inv(geometry.pose_to_matrix(ins.seated_tcp)) @ geometry.pose_to_matrix(ins.seated_object_pose)
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    segs = insert(ins, start, 1.0)
+    twist = np.vstack([s.rows for s in segs if s.phase == "twist"])
+    xy = np.array([(geometry.pose_to_matrix(r[:6]) @ t_tcp_obj)[:2, 3] for r in twist])
+    assert np.abs(xy - ins.seated_object_pose[:2]).max() < 0.02  # chord vs arc between rows; a TCP pivot gives 0.73
+    assert max(abs(geometry.wrap_deg(r[5] - ins.seated_tcp[5])) for r in twist) == pytest.approx(2.0, abs=0.01)
+
+
+def test_start_pose_points_the_tool_down_inside_the_box():
+    from sim.assembly_lab.skills.motion import start_pose
+
+    p = start_pose([87.0, 0.0, 200.0, 140.0, 0.0, 33.0])  # the Isaac home: x outside the box, tool 50 deg off down
+    assert p[0] == pytest.approx(WORKSPACE[0][0] + 5.0) and geometry.tilt_deg(p) == pytest.approx(0.0, abs=1e-9)
+    assert p[5] == pytest.approx(33.0)
+
+
+def test_last_mm_and_push_go_at_press_speed(plans):
+    from sim.assembly_lab.skills.insert import PRESS, SEAT_APPROACH_MM
+
+    ins = plans[1]
+    start = np.r_[ins.seated_tcp[:2] + 60, ins.approach_z_mm + 20, ins.seated_tcp[3:]]
+    rows = rows_of(insert(ins, start, 1.0))
+    near = np.flatnonzero(rows[:, 2] <= ins.seated_tcp[2] + SEAT_APPROACH_MM + 1e-6)
+    steps = np.linalg.norm(np.diff(rows[near[0]:], axis=0)[:, :3], axis=1)
+    assert steps.max() <= PRESS.mm + 1e-9

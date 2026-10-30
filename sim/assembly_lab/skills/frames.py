@@ -31,6 +31,16 @@ def catalog() -> dict:
     return yaml.safe_load(OBJECTS_YAML.read_text())["objects"]
 
 
+def installed_up(uid: str) -> tuple[float, float, float]:
+    """World direction that is up for this part when installed: -insert_axis from objects.yaml (world +z when the
+    part has no insert axis, e.g. a base)."""
+    axis = catalog()[type_id(uid)].get("insert_axis")
+    if not axis:
+        return (0.0, 0.0, 1.0)
+    u = -np.asarray(axis, dtype=float)
+    return tuple(float(v) for v in u / np.linalg.norm(u))
+
+
 @lru_cache(maxsize=64)
 def _stl_from_local(oid: str) -> tuple:
     t = np.array(catalog()[oid]["T_local_from_stl"], dtype=float)
@@ -59,6 +69,10 @@ class LocalFrameEnv:
 
     def reset(self, layout: dict) -> dict:
         return self._convert(self.env.reset(layout))
+
+    def reset_with(self, layout: dict, frames_fn) -> dict:
+        """Reset with the env's frames callback (plan on the settled layout, frames in the recorder's initial state)."""
+        return self._convert(self.env.reset(layout, frames_fn=frames_fn))
 
     def step_tcp(self, rows, dt: float) -> dict:
         return self._convert(self.env.step_tcp(rows, dt))

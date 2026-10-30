@@ -12,7 +12,7 @@ from .motion import APPROACH, OPEN, Motion, Segment, above
 from .plan import SEAT_FLOOR_MM, FreePlacePlan
 from .pull_out import carry
 
-RELEASE_SETTLE_ROWS = 4
+RELEASE_SETTLE_ROWS = 8
 WORLD = "world"  # Mimic object_ref for fixed cell spots (test bed, defect area): the robot frame
 
 

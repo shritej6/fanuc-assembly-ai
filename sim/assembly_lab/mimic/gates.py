@@ -40,7 +40,8 @@ def _rot(pose) -> np.ndarray:
 
 
 def pose_error(actual, expected) -> dict:
-    """xy (mm), dz (mm), tilt (deg between z axes), yaw (deg about z, wrapped)."""
+    """xy (mm), dz (mm), tilt (deg between z axes), yaw (deg about z, wrapped): for frame-to-frame offsets such as the
+    TCP in the object frame. Placed-part poses use placed_error."""
     a, e = np.asarray(actual, dtype=np.float64), np.asarray(expected, dtype=np.float64)
     ra, re = _rot(a), _rot(e)
     tilt = np.degrees(np.arccos(np.clip(ra[:, 2] @ re[:, 2], -1.0, 1.0)))
@@ -61,8 +62,28 @@ def _check(rep: GateReport, name: str, value: float, limit: float) -> None:
         rep.failed.append(name)
 
 
-def gate_final_pose(rep: GateReport, final_pose, expected_pose, lim: GateLimits, tilt_only: bool = False) -> None:
-    e = pose_error(final_pose, expected_pose)
+WORLD_UP = (0.0, 0.0, 1.0)
+
+
+def placed_error(actual, expected, up=WORLD_UP) -> dict:
+    """Pose error of a placed part, measured in the world so it does not depend on which local axis lies where.
+
+    tilt = angle between the installed-up direction (`up`: the world direction that is up in the expected pose,
+    objects.yaml -insert_axis) in the actual vs the expected pose; yaw = turn about world z. Comparing local z axes
+    lets a pure yaw leak into tilt for parts whose local z lies flat when installed (the *_04 locks).
+    """
+    a, e = np.asarray(actual, dtype=np.float64), np.asarray(expected, dtype=np.float64)
+    d = _rot(a) @ _rot(e).T
+    u = np.asarray(up, dtype=np.float64) / np.linalg.norm(up)
+    tilt = np.degrees(np.arccos(np.clip(u @ d @ u, -1.0, 1.0)))
+    yaw = np.degrees(np.arctan2(d[1, 0], d[0, 0]))
+    return {"xy": float(np.hypot(*(a[:2] - e[:2]))), "dz": float(a[2] - e[2]), "tilt": float(tilt),
+            "yaw": float(yaw)}
+
+
+def gate_final_pose(rep: GateReport, final_pose, expected_pose, lim: GateLimits, tilt_only: bool = False,
+                    up=WORLD_UP) -> None:
+    e = placed_error(final_pose, expected_pose, up)
     _check(rep, "final_tilt_deg", e["tilt"], lim.tilt_deg)
     if tilt_only:
         return

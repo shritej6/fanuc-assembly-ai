@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from sim.assembly_lab.objects import planner
 from sim.assembly_lab.objects.planner import (
     blockers,
     j6_estimate,
@@ -158,3 +159,72 @@ def test_j6_formula_matches_the_twin_forward_kinematics():
             (r - q1 - q6 - 180.0) % 360.0 == pytest.approx(360.0, abs=1e-6)
     # continuation: turning r by +90 at the same xy turns J6 by +90
     assert j6_estimate(270.0, 400.0, 0.0, (180.0, 400.0, 0.0, 0.0, 0.0)) == pytest.approx(90.0)
+
+
+def _alone(oid: str, yaw: float = 0.0):
+    from sim.assembly_lab.objects.scene import build_instances, solid_of
+
+    cat, maps = planner.load_catalog()
+    inst = build_instances({"objects": [{"key": oid, "id": oid, "x": 400.0, "y": 0.0, "yaw": yaw,
+                                         "state": "installed"}]}, cat)[oid]
+    grip = cat[oid]["grips"][0]
+    return solid_of(inst, cat, maps), inst.local_to_world(grip["pad_point_local_mm"]), grip["pad_width_mm"]
+
+
+def test_asymmetric_finger_reproduces_the_isaac_press():
+    """Isaac run3 commanded the TCP at the CAD contact centre. M1_01 at r - yaw = -90 pressed the finger onto the part
+    every time (8/8), +90 never did; M4_01 at r - yaw = 0 pressed it every time (5/5). With that TCP the finger model
+    says the same about the target's own body. (M4_01 at 180 also clips one small feature by up to 1.8 mm in the
+    model; Isaac showed no press there but 3 of its 5 torque spikes came right at the close, so it is not asserted
+    clear.)"""
+    own, contact, pad = _alone("M1_01")
+    assert planner.finger_hits([], contact, -90.0, pad, own) == ["M1_01"]
+    assert planner.finger_hits([], contact, 90.0, pad, own) == []
+    own, contact, pad = _alone("M4_01")
+    assert planner.finger_hits([], contact, 0.0, pad, own) == ["M4_01"]
+
+
+@pytest.mark.parametrize("oid, turns", [("M1_01", (-90.0, 90.0)), ("M4_01", (0.0, 180.0))])
+def test_corrected_tcp_puts_the_pad_on_the_contact_and_clears_both_turns(oid, turns):
+    """TCP = contact + 1.8 mm along v (STEP contact centre X = -1.8): pads on the CAD pad, both wrist turns clear,
+    and the plan's TCP is that point."""
+    own, contact, pad = _alone(oid)
+    for r in turns:
+        tcp = planner.tcp_for_contact(contact, r)
+        assert np.linalg.norm(tcp[:2] + planner.CONTACT_V_MM * planner.v_dir(r) - contact[:2]) < 1e-9
+        assert planner.finger_hits([], tcp, r, pad, own) == []
+    scene = {"objects": [{"key": oid, "id": oid, "x": 400.0, "y": 0.0, "yaw": 0.0, "state": "installed"}]}
+    for k in (0, 1):
+        g = planner.plan_pick(scene, oid, flip=k)
+        assert g.feasible
+        assert np.allclose(g.tcp[:3], planner.tcp_for_contact(contact, g.r_deg), atol=1e-3)
+
+
+def test_a_turned_closing_axis_hits_the_part_itself():
+    own, contact, pad = _alone("M1_01")
+    assert planner.finger_hits([], planner.tcp_for_contact(contact, 0.0), 0.0, pad, own) == ["M1_01"]
+
+
+def test_planner_tcp_is_the_grasp_frames_tcp_for_both_turns_on_every_part():
+    """cad/grasp_frames.json (T29) publishes the commanded TCP per wrist turn; the planner must command exactly it."""
+    import json
+
+    from sim.assembly_lab.objects.scene import build_instances
+
+    frames = json.loads((ROOT / "cad" / "grasp_frames.json").read_text())["objects"]
+    cat, _ = planner.load_catalog()
+    for oid, e in cat.items():
+        if e["sheet_order"] == 0:
+            continue
+        grip = frames[oid]["grips"][0]
+        assert e["grips"][0]["pad_point_local_mm"] == grip["pad_point_local_mm"]
+        for yaw in (0.0, 37.0):
+            scene = {"objects": [{"key": oid, "id": oid, "x": 400.0, "y": 0.0, "yaw": yaw, "state": "installed"}]}
+            inst = build_instances(scene, cat)[oid]
+            for k in (0, 1):
+                g = planner.plan_pick(scene, oid, flip=k)
+                assert g.feasible, (oid, yaw, k, g.reason)
+                turn = grip["roll_offset_deg"] + 180.0 * k
+                turn = turn - 360.0 if turn > 180.0 else turn      # keys are in (-180, 180]
+                want = inst.local_to_world(grip["tcp_local_mm"][f"{turn:g}"])
+                np.testing.assert_allclose(g.tcp[:3], want, atol=1e-3, err_msg=f"{oid} yaw {yaw} k {k}")

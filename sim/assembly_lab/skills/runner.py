@@ -12,22 +12,28 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import checks, gates
+from . import checks, frames, gates
 from .force_guard import ForceGuard
 from .geometry import matrix_to_pose, pose_to_matrix, wrap_deg
-from .insert import insert, release_and_retreat, retry_entry, retry_lift
-from .motion import DT_S, FREE, Motion, Segment
+from .insert import insert, release_and_retreat, retry_clear, retry_entry, retry_lift
+from .motion import DT_S, FREE, MAX_TOOL_TILT_DEG, Motion, Segment, start_pose
 from .pick import pick
 from .place_free import place_free
-from .plan import FreePlacePlan, InsertPlan, PickPlan, PullOutPlan
+from .plan import INSERT_TILT_DEG, FreePlacePlan, InsertPlan, PickPlan, PullOutPlan
 from .pull_out import pull_out
 
 SOFT_STOP_FRAC = 0.6  # stop pressing at 60 % of a force limit; the guard discards anything over 100 %
-CONTACT_PHASES = ("touch", "level", "twist", "push")
+CONTACT_PHASES = ("touch", "level", "twist", "slide", "push")
+MAX_LEVEL_CORRECTION_DEG = MAX_TOOL_TILT_DEG - INSERT_TILT_DEG  # leaves room for the 3 deg entry lean
 
 
 class EpisodeFailed(RuntimeError):
     """A success check or the force guard failed: the episode is discarded."""
+
+
+class ResetInvalid(RuntimeError):
+    """The scene was bad before the robot did anything (not settled, or over a force limit before first contact):
+    not kept and not counted as a robot failure (main, 2026-10-30)."""
 
 
 @dataclass
@@ -57,17 +63,24 @@ class EpisodeRecorder:
     instructions: list[str] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
     in_hand: dict[str, np.ndarray] = field(default_factory=dict)
+    seat_tries: list[dict] = field(default_factory=list)
+    level_corrections: list[dict] = field(default_factory=list)  # per insert try: in-hand tilt and the TCP fix
     marks: dict[str, int] = field(default_factory=dict)  # Mimic term signal -> first step after that subtask ended
     frame_defs: dict[str, tuple[str | None, np.ndarray]] = field(default_factory=dict)  # Mimic object_ref frames
     meta: dict = field(default_factory=dict)  # plan_ids, plan_target, skill, case, product
     allow_touch_proxy: bool = False
+    measure_only: bool = False  # log the touch gate without requiring it (robot_touch not verified yet)
     gate_log: gates.GateLog = field(default_factory=gates.GateLog)
     targets: set[str] = field(default_factory=set)  # objects this episode is allowed to touch and move
 
     def __post_init__(self):
         self.pose = checks.tcp_pose(self.obs)
         self.gripper = float(np.asarray(self.obs["joints"])[6] > 0.5)
-        self.home = self.pose.copy()
+        self.home = start_pose(self.pose)  # the scan pose every episode returns to, inside the box
+        settled = self.obs["sim"].get("settled")
+        self.settled = "unknown" if settled is None else bool(settled)
+        if settled is not None and not settled:
+            raise ResetInvalid("the scene did not settle after reset (obs sim.settled is False)")
         self.start_poses = dict(self.obs["sim"]["object_poses"])
         self.touch = gates.TouchMonitor(self.allow_touch_proxy)
 
@@ -94,15 +107,24 @@ class EpisodeRecorder:
         self.obs = self.env.step_tcp(row[None, :], DT_S)
         self.guard.observe(len(self.frames) - 1, self.obs)
         self.touch.observe(self.obs, self.targets)
+        if self.guard.pre_touch_violations:
+            v = self.guard.pre_touch_violations[0]
+            raise ResetInvalid(f"pre-touch contact: {v.object_id} {v.axis} {v.value:.2f} > {v.limit:.2f} at step {v.step}")
         if self.guard.violations:
             v = self.guard.violations[0]
             raise EpisodeFailed(f"force guard: {v.object_id} {v.axis} {v.value:.2f} > {v.limit:.2f} at step {v.step}")
 
     def _too_hard(self) -> bool:
         """Contact building up during an insert (part on the rim, not in the hole): stop pressing and re-check."""
-        n, lat, _ = self.guard.trace[-1]
-        lim = self.guard.limits
-        return n > SOFT_STOP_FRAC * lim.axial_N or lat > SOFT_STOP_FRAC * lim.lateral_N
+        contact = self.obs["sim"].get("contact_peak", self.obs["sim"].get("contact", {}))
+        for oid, c in contact.items():
+            if oid in self.guard.exempt:
+                continue
+            for key, lim_key in (("normal_N", "axial_N"), ("lateral_N", "lateral_N")):
+                lim = self.guard.limit(oid, lim_key)
+                if lim is not None and abs(float(c.get(key, 0.0))) > SOFT_STOP_FRAC * lim:
+                    return True
+        return False
 
     def run(self, segments: list[Segment], stop_after: str | None = None, soft_stop: bool = False) -> list[Segment]:
         """Execute segments in order; return the ones not run yet when `stop_after` phase completes.
@@ -149,15 +171,37 @@ class EpisodeRecorder:
         self.mark("grasped")
 
     def _offset(self, plan: InsertPlan, oid: str, extra=(0.0, 0.0, 0.0)) -> np.ndarray:
-        """TCP correction (dx, dy, dyaw) so the part as held lands on its CAD seated pose."""
+        """TCP correction (dx, dy, dyaw, w, p) so the part as held lands on its CAD seated pose: w, p level the part
+        itself (a part pivoted in the fingers is squared up before it enters the bore), dx, dy include the swing.
+        The level correction is capped so the tool stays within 6 deg of straight down with the 3 deg entry lean on
+        top; a part pivoted further than that is a failed grasp, not something to steer around."""
         t_tcp_obj = checks.in_hand(self.obs, oid)
         need = matrix_to_pose(pose_to_matrix(plan.seated_object_pose) @ np.linalg.inv(t_tcp_obj))
         d = need - plan.seated_tcp
-        return np.array([d[0] + extra[0], d[1] + extra[1], wrap_deg(d[5]) + extra[2]])
+        held = checks.object_pose(self.obs, oid)
+        level = gates.axis_tilt_deg(need, plan.seated_tcp)
+        entry = {"try": len(self.level_corrections) + 1,
+                 "in_hand_tilt_deg": round(gates.axis_tilt_deg(held, plan.seated_object_pose,
+                                                               frames.installed_up(oid)), 4),
+                 "dw_deg": round(float(wrap_deg(need[3] - plan.seated_tcp[3])), 4),
+                 "dp_deg": round(float(need[4] - plan.seated_tcp[4]), 4), "level_deg": round(level, 4),
+                 "dx_mm": round(float(d[0]), 4), "dy_mm": round(float(d[1]), 4),
+                 "dyaw_deg": round(float(wrap_deg(d[5])), 4)}
+        self.level_corrections.append(entry)
+        self.events.append(f"{oid} in hand before entry: tilt {entry['in_hand_tilt_deg']:.2f} deg, TCP level "
+                           f"correction {level:.2f} deg (w {entry['dw_deg']:+.2f} p {entry['dp_deg']:+.2f})")
+        if level > MAX_LEVEL_CORRECTION_DEG:
+            raise EpisodeFailed(f"{oid} pivoted {level:.2f} deg in the fingers: more than the "
+                                f"{MAX_LEVEL_CORRECTION_DEG:.1f} deg level correction the 6 deg tool limit allows")
+        return np.array([d[0] + extra[0], d[1] + extra[1], wrap_deg(d[5]) + extra[2], need[3], need[4]])
 
     def _seated(self, plan: InsertPlan) -> tuple[bool, dict]:
+        """Seat check while still holding (decides the retry); every try's measured error is kept in seat_tries."""
         tol = checks.SeatTolerance(yaw_deg=gates.seat_yaw_limit(plan.yaw_tol_deg))
-        return checks.seated_ok(checks.object_pose(self.obs, plan.object_id), plan.seated_object_pose, tol)
+        ok, err = checks.seated_ok(checks.object_pose(self.obs, plan.object_id), plan.seated_object_pose, tol,
+                                   frames.installed_up(plan.object_id))
+        self.seat_tries.append({"ok": ok, **{k: round(float(v), 4) for k, v in err.items()}})
+        return ok, err
 
     def do_insert(self, plan: InsertPlan, misalign=(0.0, 0.0, 0.0), pull_plan: PullOutPlan | None = None) -> str:
         """Returns "seated" or "needs_inspection" (pulled out after the retry failed)."""
@@ -168,6 +212,7 @@ class EpisodeRecorder:
         if not ok:
             self.events.append(f"{plan.object_id} not seated on try 1: {_fmt(err)}")
             self.run(retry_lift(plan, self.pose, self.gripper))
+            self.run(retry_clear(plan, self.pose, self.gripper))
             self.run(retry_entry(plan, self.pose, self.gripper, self._offset(plan, plan.object_id)), soft_stop=True)
             ok, err = self._seated(plan)
         if not ok:
@@ -179,7 +224,7 @@ class EpisodeRecorder:
         self.mark("seated")
         self.run(release_and_retreat(plan, self.pose))
         gates.seat_gates(self.gate_log, checks.object_pose(self.obs, plan.object_id), plan.seated_object_pose,
-                         plan.yaw_tol_deg)
+                         plan.yaw_tol_deg, frames.installed_up(plan.object_id))
         return "seated"
 
     def do_pull_out(self, plan: PullOutPlan) -> None:
@@ -225,7 +270,7 @@ class EpisodeRecorder:
     def finish_gates(self) -> None:
         """Episode-level gates: nothing else moved, and the robot touched only the target."""
         gates.others_moved(self.gate_log, self.start_poses, self.obs["sim"]["object_poses"], self.targets)
-        self.touch.finish(self.gate_log)
+        self.touch.finish(self.gate_log, require=not self.measure_only)
 
     def go_home(self) -> None:
         m = Motion(self.pose, self.gripper, "home", "home", "world")

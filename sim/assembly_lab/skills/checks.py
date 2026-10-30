@@ -11,8 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .gates import SEAT_TILT_DEG, SEAT_XY_MM, SEAT_YAW_DEG, SEAT_Z_MM, yaw_err_deg
-from .geometry import matrix_to_pose, pose_to_matrix, wpr_to_rot
+from .gates import SEAT_TILT_DEG, SEAT_XY_MM, SEAT_YAW_DEG, SEAT_Z_MM, WORLD_UP, axis_tilt_deg, yaw_err_deg
+from .geometry import matrix_to_pose, pose_to_matrix
 
 GRASP_FOLLOW_FRAC = 0.8  # the object must rise at least 80 % of the check lift
 GRASP_SLIP_XY_MM = 2.0  # and stay within 2 mm sideways of where it was relative to the fingers
@@ -62,22 +62,16 @@ def grasp_ok(before: dict, after: dict, oid: str) -> tuple[bool, str]:
     return True, "ok"
 
 
-def _axis_angle_deg(a, b) -> float:
-    """Angle between the two poses' local Z axes: how crooked, independent of yaw."""
-    za, zb = wpr_to_rot(*a[3:6])[:, 2], wpr_to_rot(*b[3:6])[:, 2]
-    return math.degrees(math.acos(max(-1.0, min(1.0, float(za @ zb)))))
-
-
-def seat_error(actual, seated) -> dict[str, float]:
+def seat_error(actual, seated, up=WORLD_UP) -> dict[str, float]:
     a, s = np.asarray(actual, dtype=float), np.asarray(seated, dtype=float)
     return {"dx": a[0] - s[0], "dy": a[1] - s[1], "dz": a[2] - s[2],
             "xy": float(np.hypot(a[0] - s[0], a[1] - s[1])),
-            "tilt": _axis_angle_deg(a, s),
+            "tilt": axis_tilt_deg(a, s, up),
             "yaw": yaw_err_deg(a, s)}
 
 
-def seated_ok(actual, seated, tol: SeatTolerance = SEAT_TOL) -> tuple[bool, dict[str, float]]:
-    e = seat_error(actual, seated)
+def seated_ok(actual, seated, tol: SeatTolerance = SEAT_TOL, up=WORLD_UP) -> tuple[bool, dict[str, float]]:
+    e = seat_error(actual, seated, up)
     ok = abs(e["dz"]) <= tol.z_mm and e["xy"] <= tol.xy_mm and e["tilt"] <= tol.tilt_deg and abs(e["yaw"]) <= tol.yaw_deg
     return ok, e
 

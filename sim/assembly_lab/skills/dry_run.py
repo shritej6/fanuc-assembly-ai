@@ -13,6 +13,7 @@ import math
 
 import numpy as np
 
+from . import frames
 from .geometry import matrix_to_pose, pose_to_matrix
 
 TABLE_Z = -335.0  # sdg/configs/cell_layout.yaml table_z
@@ -21,9 +22,12 @@ SPRING_N_PER_MM = 10.0
 HOME_TCP = [400.0, 0.0, 100.0, -180.0, 0.0, 0.0]
 
 
-def obj_to_tcp(tcp_local_mm, roll_offset_deg: float) -> np.ndarray:
-    """Object -> grip TCP: offset to the pad centre, fingers straight down, turned by the CAD roll offset."""
-    return pose_to_matrix([*tcp_local_mm, 180.0, 0.0, roll_offset_deg])
+def obj_to_tcp(oid: str, turn_deg: float | None = None) -> np.ndarray:
+    """Object -> commanded grip TCP (flange axis, 1.8 mm off the pad point; objects.yaml grips[0].tcp_local_mm per
+    wrist turn), fingers straight down, turned by the CAD roll offset (or its +180 twin)."""
+    grip = frames.catalog()[oid]["grips"][0]
+    turn = grip["roll_offset_deg"] if turn_deg is None else turn_deg
+    return pose_to_matrix([*grip["tcp_local_mm"][f"{turn:g}"], 180.0, 0.0, turn])
 
 
 class KinematicEnv:
@@ -91,7 +95,7 @@ class KinematicEnv:
 
 def demo_world(part_xy_yaw=(400.0, 150.0, 30.0), base_xy_yaw=(450.0, -60.0, 0.0)):
     """One base F01 and its first part M1_02 with the CAD numbers from cad/grasp_frames.json (dry run only)."""
-    t_tcp = obj_to_tcp([0.0, 0.0, 11.4], 90.0)  # M1_02 grip: tcp_local_mm, roll_offset_deg
+    t_tcp = obj_to_tcp("M1_02")
     px, py, pyaw = part_xy_yaw
     bx, by, byaw = base_xy_yaw
     base = np.array([bx, by, TABLE_Z, 0.0, 0.0, byaw])

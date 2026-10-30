@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 LIMITS_PATH = Path(__file__).resolve().parents[1] / "physics" / "limits.yaml"
+TOUCH_N = 0.05  # robot_touch above this is robot contact (gates.FINGER_TOUCH_N, the env's TOUCH_N)
 AXES = (("normal_N", "axial_N"), ("lateral_N", "lateral_N"), ("torque_Nm", "torque_Nm"), ("grip_N", "grip_N"))
 
 
@@ -62,17 +63,31 @@ class Violation:
 class ForceGuard:
     limits: Limits
     exempt: set[str] = field(default_factory=set)  # defect pieces after release into the defect area
+    per_object: dict[str, dict[str, float]] = field(default_factory=dict)  # objects.yaml max_force (tighter wins)
     peaks: dict[str, dict[str, float]] = field(default_factory=dict)
     violations: list[Violation] = field(default_factory=list)
     samples: int = 0
     trace: list[list[float]] = field(default_factory=list)  # per step [normal_N, lateral_N, torque_Nm], max over parts
+    touched: bool = False  # the robot has touched an object (robot_touch > TOUCH_N) at or before this step
+    pre_touch_peaks: dict[str, dict[str, float]] = field(default_factory=dict)
+    pre_touch_violations: list[Violation] = field(default_factory=list)  # a bad scene: the episode is reset_invalid
 
     def observe(self, step: int, obs: dict) -> None:
+        """Main's rule (2026-10-30): before the robot's first contact, peaks are logged as pre_touch_peaks and an
+        over-limit one makes the episode reset_invalid (bad scene, never a demo); from first contact on the guard
+        applies in full."""
         sim = obs.get("sim") or {}
         contact = sim.get("contact_peak", sim.get("contact"))
         if contact is None:
             raise LimitsError("observation has no sim contact forces; the guard cannot run blind")
+        touch = sim.get("robot_touch")
+        if touch is None or any(float(v) > TOUCH_N for v in touch.values()):
+            self.touched = True  # no touch data: everything counts as robot contact (the strict side)
         self.samples += 1
+        if not self.touched:
+            self._pre_touch(step, contact)
+            self.trace.append([0.0, 0.0, 0.0] if not contact else self._row(contact))
+            return
         row = [0.0, 0.0, 0.0]
         for oid, c in contact.items():
             if oid not in self.exempt:
@@ -84,10 +99,37 @@ class ForceGuard:
                     continue
                 val = abs(float(c[key]))
                 peak[key] = max(peak.get(key, 0.0), val)
-                lim = self.limits.get(lim_key)
+                lim = self.limit(oid, lim_key)
                 if lim is not None and val > lim and oid not in self.exempt:
                     self.violations.append(Violation(step, oid, key, val, lim))
         self.trace.append(row)
+
+    def _row(self, contact: dict) -> list[float]:
+        row = [0.0, 0.0, 0.0]
+        for oid, c in contact.items():
+            if oid not in self.exempt:
+                for i, key in enumerate(("normal_N", "lateral_N", "torque_Nm")):
+                    row[i] = max(row[i], abs(float(c.get(key, 0.0))))
+        return row
+
+    def _pre_touch(self, step: int, contact: dict) -> None:
+        for oid, c in contact.items():
+            peak = self.pre_touch_peaks.setdefault(oid, {})
+            for key, lim_key in AXES:
+                if key in c:
+                    val = abs(float(c[key]))
+                    peak[key] = max(peak.get(key, 0.0), val)
+                    lim = self.limit(oid, lim_key)
+                    if lim is not None and val > lim:
+                        self.pre_touch_violations.append(Violation(step, oid, key, val, lim))
+
+    def limit(self, oid: str, key: str) -> float | None:
+        """The global limit, or the object's own (objects.yaml max_force, e.g. M5_04 axial 2.5 N) when tighter."""
+        base = self.limits.get(key)
+        own = self.per_object.get(oid.split("#")[0], {}).get(key)
+        if own is None:
+            return base
+        return float(own) if base is None else min(base, float(own))
 
     @property
     def ok(self) -> bool:

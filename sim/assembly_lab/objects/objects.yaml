@@ -2929,10 +2929,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 16.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - -21.06
       - 8.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - -19.26
+        - 8.4
+        '-90':
+        - 0.0
+        - -22.86
+        - 8.4
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -3167,10 +3176,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 17.0
       contact_height_mm: 6.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: plug
@@ -3335,10 +3353,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 20.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 13.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 13.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 13.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -3462,10 +3489,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 34.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 27.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 27.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 27.9
       roll_offset_deg: 90.0
     pegs:
     - name: arm_left
@@ -3681,10 +3717,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 16.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - -21.06
       - 8.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - -19.26
+        - 8.4
+        '-90':
+        - 0.0
+        - -22.86
+        - 8.4
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -3919,10 +3964,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 16.0
       contact_height_mm: 5.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: plug
@@ -4087,10 +4141,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 18.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -4215,10 +4278,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 34.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 27.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 27.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 27.9
       roll_offset_deg: 90.0
     pegs:
     - name: arm_left
@@ -4442,10 +4514,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 16.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - -21.06
       - 8.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - -19.26
+        - 8.4
+        '-90':
+        - 0.0
+        - -22.86
+        - 8.4
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -4631,10 +4712,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 17.0
       contact_height_mm: 6.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: plug
@@ -4777,10 +4867,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 16.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 9.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 9.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 9.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -4904,10 +5003,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 34.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 27.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 27.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 27.9
       roll_offset_deg: 90.0
     pegs:
     - name: arm_left
@@ -5133,10 +5241,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 18.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 24.06
       - 0.0
       - 10.4
+      tcp_local_mm:
+        '0':
+        - 25.86
+        - 0.0
+        - 10.4
+        '180':
+        - 22.26
+        - 0.0
+        - 10.4
       roll_offset_deg: 0.0
     pegs:
     - name: guide_peg_left
@@ -5426,10 +5543,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 20.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 13.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 13.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 13.9
       roll_offset_deg: 90.0
     pegs:
     - name: insert_body
@@ -5555,10 +5681,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 13.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 18.01
       - 6.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 19.81
+        - 6.9
+        '-90':
+        - 0.0
+        - 16.21
+        - 6.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -5791,10 +5926,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 17.0
       contact_height_mm: 6.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: leg_left
@@ -6009,10 +6153,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 18.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 24.06
       - 0.0
       - 10.4
+      tcp_local_mm:
+        '0':
+        - 25.86
+        - 0.0
+        - 10.4
+        '180':
+        - 22.26
+        - 0.0
+        - 10.4
       roll_offset_deg: 0.0
     pegs:
     - name: guide_peg_left
@@ -6302,10 +6455,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 20.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 13.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 13.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 13.9
       roll_offset_deg: 90.0
     pegs:
     - name: insert_body
@@ -6430,10 +6592,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 13.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 18.01
       - 6.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 19.81
+        - 6.9
+        '-90':
+        - 0.0
+        - 16.21
+        - 6.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -6666,10 +6837,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 17.0
       contact_height_mm: 6.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: leg_left
@@ -6876,10 +7056,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 18.0
       contact_height_mm: 8.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 24.06
       - 0.0
       - 10.4
+      tcp_local_mm:
+        '0':
+        - 25.86
+        - 0.0
+        - 10.4
+        '180':
+        - 22.26
+        - 0.0
+        - 10.4
       roll_offset_deg: 0.0
     pegs:
     - name: guide_peg_left
@@ -7160,10 +7349,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 20.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 13.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 13.9
+        '-90':
+        - 0.0
+        - -1.8
+        - 13.9
       roll_offset_deg: 90.0
     pegs:
     - name: insert_body
@@ -7288,10 +7486,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 13.0
       contact_height_mm: 6.5
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 18.01
       - 6.9
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 19.81
+        - 6.9
+        '-90':
+        - 0.0
+        - 16.21
+        - 6.9
       roll_offset_deg: 90.0
     pegs: []
     holes:
@@ -7524,10 +7731,19 @@ objects:
       pad_width_mm: 7.0
       pad_top_z_mm: 17.0
       contact_height_mm: 6.0
-      tcp_local_mm:
+      pad_point_local_mm:
       - 0.0
       - 0.0
       - 11.4
+      tcp_local_mm:
+        '90':
+        - 0.0
+        - 1.8
+        - 11.4
+        '-90':
+        - 0.0
+        - -1.8
+        - 11.4
       roll_offset_deg: 90.0
     pegs:
     - name: leg_left

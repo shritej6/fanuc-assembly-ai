@@ -16,10 +16,17 @@ Rules (docs/ROBOT_BRAIN.md, coord/DECISIONS.md 2026-10-29):
 J6: limits +-360 deg (sim/starter/scene_config.py JOINT_LIMITS_DEG, "EXACT (er4ia_physics.usd)"). With fingers straight
 down and J4 = 0 the twin's chain (sim/starter/fk.py) gives r = J1 + J6 + 180 (mod 360), so J6 ~ r - J1 - 180,
 continued from the current J6. This is the twin's kinematics; the real controller chooses its own turn numbers.
-Finger envelope: Team V fingers (cad/fingers/README.md and the source project's README / finger_parameters.json):
-rubber gap 16.5 open, NBR pad 0.4 proud, 12 mm neck 8.4 wide x 5.35 thick at the tip, spine 12 wide x 7.8 thick
-above, 76 long. The spine's 1.8 mm offset from the contact centre is not modelled: its width is taken as +-7.8 mm
-about the contact centre (conservative, mirror-safe).
+Finger envelope: Team V fingers (cad/fingers/README.md, the STEP-frame STLs in sim/assembly_lab/env/assets/fingers):
+rubber gap 16.5 open, NBR pad 0.4 proud. The finger is NOT symmetric about the TCP. In the STEP frame (= TCP frame:
+x = v, y = closing, z = along the fingers) the TCP is on the flange axis (X = 0) and the pad / contact centre is at
+X = -1.8 mm; the tip 12 mm of the finger spans X -6.0 .. +2.4 (5.35 thick beyond the pad), the spine above it
+X -6.0 .. +6.0 (7.8 thick). Team V's validated grasp frames (cad/fingers/product_grasp_frames.json) put the gripper
+origin 1.8 mm along +X from the contact centre, and the env mounts the same STLs with TCP x = STEP X
+(env/assets.py install_teamv_fingers), so all three agree. Two consequences, both measured in Isaac on 2026-10-30
+(agent 3, run3): the commanded TCP is the CAD contact centre + 1.8 mm along v (else the pads land 1.8 mm off the
+pad), and the finger body reaches 6 mm on the -v side, so with an edge pad one wrist turn presses the finger onto the
+target part itself (M1_01 r - yaw = -90: 8/8 attempts, M4_01 r - yaw = 0: 5/5). finger_hits therefore checks the
+target's own body beyond the pad faces as well as every neighbour.
 """
 
 from __future__ import annotations
@@ -40,8 +47,9 @@ HEIGHTMAPS = HERE / "heightmaps.npz"
 
 OPEN_GAP_MM = 16.5
 PAD_PROUD_MM = 0.4
-NECK = {"len": 12.0, "thick": 5.35, "half_v": 4.2}
-SPINE = {"thick": 7.8, "half_v": 7.8}
+CONTACT_V_MM = -1.8          # pad (contact) centre along TCP x (v) from the TCP: STEP contact centre X = -1.8
+NECK = {"len": 12.0, "thick": 5.35, "v": (-6.0, 2.4)}    # tip 12 mm, v span about the TCP (STEP X)
+SPINE = {"thick": 7.8, "v": (-6.0, 6.0)}                 # above the neck
 FINGER_LEN_MM = 76.0
 XY_MARGIN_MM = 1.0           # pose error allowance around every finger face
 Z_MARGIN_MM = 0.5           # the validated M4_02 grasp has its fingertips 0.9 mm above the housing top
@@ -124,22 +132,42 @@ def _ref(current_r: float, current_xy: tuple[float, float], current_j6: float | 
 
 # --- clearance -------------------------------------------------------------------
 
-def finger_hits(solids: list[Solid], tcp: np.ndarray, r: float, pad_width: float) -> list[str]:
-    """Instances that any finger region touches between the open approach and closing on a pad of this width."""
+def v_dir(r: float) -> np.ndarray:
+    """TCP x axis (the finger's v direction, STEP X) in the world for fingers straight down at roll r."""
+    return np.array([math.cos(math.radians(r)), math.sin(math.radians(r))])
+
+
+def tcp_for_contact(contact, r: float) -> np.ndarray:
+    """Commanded TCP (flange axis, tip plane) that puts the pad centre on the CAD contact point at roll r."""
+    out = np.array(contact, dtype=float)
+    out[:2] -= CONTACT_V_MM * v_dir(r)
+    return out
+
+
+def finger_hits(solids: list[Solid], tcp: np.ndarray, r: float, pad_width: float, target: Solid | None = None) -> list[str]:
+    """Instances that any finger region touches between the open approach and closing on a pad of this width.
+    `tcp` is the commanded TCP (flange axis). The target's own body counts beyond its pad faces (cells farther than
+    half the pad width from the closing centre line, where the closing fingers travel) at grid resolution: the CAD
+    clearances there are 0.1-0.9 mm, so the 1 mm neighbour margin would refuse every validated grasp."""
     c_dir = np.array([math.sin(math.radians(r)), -math.cos(math.radians(r))])
-    v_dir = np.array([math.cos(math.radians(r)), math.sin(math.radians(r))])
+    v = v_dir(r)
     m = XY_MARGIN_MM + CELL_MM * 0.71
-    regions = [(pad_width / 2, OPEN_GAP_MM / 2 + PAD_PROUD_MM + NECK["thick"], NECK["half_v"], 0.0),
-               (pad_width / 2, OPEN_GAP_MM / 2 + PAD_PROUD_MM + SPINE["thick"], SPINE["half_v"], NECK["len"])]
+    regions = [(pad_width / 2, OPEN_GAP_MM / 2 + PAD_PROUD_MM + NECK["thick"], NECK["v"], 0.0),
+               (pad_width / 2, OPEN_GAP_MM / 2 + PAD_PROUD_MM + SPINE["thick"], SPINE["v"], NECK["len"])]
     hits = []
-    for s in solids:
+    for s, own in [(s, False) for s in solids] + ([(target, True)] if target is not None else []):
         dx, dy = s.x - tcp[0], s.y - tcp[1]
         dc = np.abs(dx * c_dir[0] + dy * c_dir[1])
-        dv = np.abs(dx * v_dir[0] + dy * v_dir[1])
+        dv = dx * v[0] + dy * v[1]
         below_top = s.bottom < tcp[2] + FINGER_LEN_MM
-        for c0, c1, hv, z0 in regions:
-            inside = (dc >= c0 - m) & (dc <= c1 + m) & (dv <= hv + m) & below_top
-            if np.any(inside & (s.top > tcp[2] + z0 - Z_MARGIN_MM)):
+        for c0, c1, (v0, v1), z0 in regions:
+            if own:  # cells clear of the gripped pad faces whose centre lies more than half a cell inside the finger
+                mv, mz = -CELL_MM / 2, 0.0   # (validated Team V grasps clear the part by 0.1-0.9 mm: no extra margin)
+                inside = (dc >= c0 + CELL_MM) & (dc <= c1) & (dv >= v0 - mv) & (dv <= v1 + mv) & below_top
+            else:
+                mz = Z_MARGIN_MM
+                inside = (dc >= c0 - m) & (dc <= c1 + m) & (dv >= v0 - m) & (dv <= v1 + m) & below_top
+            if np.any(inside & (s.top > tcp[2] + z0 - mz)):
                 hits.append(s.key)
                 break
     return hits
@@ -244,15 +272,18 @@ def plan_pick(scene: dict, key: str, current_r: float = 180.0, current_xy=(400.0
     if refused:
         return refused
     entry, grip = catalog[inst.oid], catalog[inst.oid]["grips"][0]
-    tcp = inst.local_to_world(grip["tcp_local_mm"])
+    contact = inst.local_to_world(grip["pad_point_local_mm"])
     others = [solid_of(i, catalog, maps) for k, i in instances.items() if k != key]
+    own = solid_of(inst, catalog, maps)
     cands = roll_candidates(inst.yaw, grip["roll_offset_deg"], current_r, flip)
-    k, r, j6, blocked = _choose(cands, tcp, _ref(current_r, current_xy, current_j6),
-                                lambda rr: finger_hits(others, tcp, rr, grip["pad_width_mm"]))
+    k, r, j6, blocked = _choose(cands, contact, _ref(current_r, current_xy, current_j6),
+                                lambda rr: finger_hits(others, tcp_for_contact(contact, rr), rr, grip["pad_width_mm"],
+                                                       own))
     if k < 0:
         return GraspPlan(False, "crowded: no wrist roll clears the fingers; move blockers() first", key, inst.oid,
                          blocked_by=blocked, grip=grip)
-    hang = grip["tcp_local_mm"][2] - entry["bbox_mm"]["min"][2]
+    tcp = tcp_for_contact(contact, r)
+    hang = grip["pad_point_local_mm"][2] - entry["bbox_mm"]["min"][2]
     transit = _transit_z(others + [solid_of(inst, catalog, maps)], hang)
     above = tcp + [0, 0, APPROACH_MM]
     path = [_row([tcp[0], tcp[1], max(transit, above[2])], r, 0), _row(above, r, 0), _row(tcp, r, 0),
@@ -293,7 +324,7 @@ def plan_place(scene: dict, key: str, base_key: str, flip: int | None = None, cu
     entry, grip = catalog[inst.oid], catalog[inst.oid]["grips"][0]
     origin = base.local_to_world(entry["installed_origin_mm"])
     seated = Instance(key, inst.oid, origin[0], origin[1], origin[2], base.yaw, f"on:{base_key}", base_key)
-    tcp = seated.local_to_world(grip["tcp_local_mm"])
+    contact = seated.local_to_world(grip["pad_point_local_mm"])
     others = [solid_of(i, catalog, maps) for k, i in instances.items() if k != key]
     held = solid_of(seated, catalog, maps)
     foreign = [s for s in others if s.key != base_key and instances[s.key].base != base_key]
@@ -302,14 +333,16 @@ def plan_place(scene: dict, key: str, base_key: str, flip: int | None = None, cu
         return PlacePlan(False, "the part's way down is blocked", key, inst.oid, base=base_key,
                          blocked_by={0: sweep, 1: sweep})
     cands = roll_candidates(base.yaw, grip["roll_offset_deg"], current_r, flip)
-    k, r, j6, blocked = _choose(cands, tcp, _ref(current_r, current_xy, current_j6),
-                                lambda rr: finger_hits(others, tcp, rr, grip["pad_width_mm"]))
+    k, r, j6, blocked = _choose(cands, contact, _ref(current_r, current_xy, current_j6),
+                                lambda rr: finger_hits(others, tcp_for_contact(contact, rr), rr, grip["pad_width_mm"],
+                                                       held))
     if k < 0:
         return PlacePlan(False, "no wrist roll clears the fingers at the seated pose", key, inst.oid, base=base_key,
                          blocked_by=blocked)
+    tcp = tcp_for_contact(contact, r)
     ins = entry["insertion"]
     contact, seat_z = tcp[2] + ins["engagement_mm"], tcp[2]
-    hang = grip["tcp_local_mm"][2] - entry["bbox_mm"]["min"][2]
+    hang = grip["pad_point_local_mm"][2] - entry["bbox_mm"]["min"][2]
     transit = max(_transit_z(others, hang), contact + HOVER_MM + APPROACH_MM)
     xy = [tcp[0], tcp[1]]
     path = [_row(xy + [transit], r, 1), _row(xy + [contact + HOVER_MM], r, 1), _row(xy + [contact], r, 1),

@@ -33,6 +33,14 @@ TAPER_MM = 20.0  # action noise fades to zero within this distance of the subtas
 ENV_NAME = "T12-AssemblyCell-Mimic"
 
 
+def seat_gates(log, final, plan, oid: str) -> None:
+    """Agent 3's seat gates with the part's own installed-up direction (objects.yaml -insert_axis), never an assumed
+    world +z, so a part with another insert axis is measured about its own axis."""
+    from ..skills import frames, gates
+
+    gates.seat_gates(log, final, plan.seated_object_pose, plan.yaw_tol_deg, up=frames.installed_up(oid))
+
+
 def taper_noise(rows: np.ndarray, frame: np.ndarray, pos_mm: float, rot_deg: float, rng) -> np.ndarray:
     d = np.linalg.norm(rows[:, :3] - frame[:3, 3], axis=1)
     scale = np.clip(d / TAPER_MM, 0.0, 1.0)
@@ -171,7 +179,7 @@ class Generator:
         rec.close()
         final = checks.object_pose(rec.obs, oid)
         if self.skill == "pick_insert":
-            g.seat_gates(rec.gate_log, final, second.seated_object_pose, second.yaw_tol_deg)
+            seat_gates(rec.gate_log, final, second, oid)
         elif self.skill == "pull_out":
             g.spot_gates(rec.gate_log, final, checks.expected_object(second.spot_tcp, rec.in_hand[oid]))
         else:
