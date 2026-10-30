@@ -34,8 +34,8 @@ seeds() {
   "${RSYNC[@]}" "${GATHER}:t12_data/a7/seed_stage/" "$SCR/seeds_all/"
   for h in $HOSTS; do
     [[ "$h" == "$GATHER" ]] && { "${SSH[@]}" "$h" 'mkdir -p ~/t12_data/a7 && rsync -a ~/t12_data/a7/seed_stage/ ~/t12_data/a7/seeds/'; continue; }
-    "${SSH[@]}" "$h" 'mkdir -p ~/t12_data/a7/seeds'
-    "${RSYNC[@]}" "$SCR/seeds_all/" "${h}:t12_data/a7/seeds/"
+    COPYFILE_DISABLE=1 tar -C "$SCR/seeds_all" -cf - . | \
+      ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'mkdir -p ~/t12_data/a7/seeds && tar -C ~/t12_data/a7/seeds -xf -'
   done
 }
 
@@ -61,11 +61,24 @@ if bad:
 (root / "ENV_MANIFEST_MD5").write_text(want + "\n")
 print(f"[repo] env verified against manifest {want}")
 PY
-  "${RSYNC[@]}" "$HERE/sim/assembly_lab/mimic/" "$SCR/repo_a7/sim/assembly_lab/mimic/" --exclude __pycache__
-  for h in $HOSTS; do
-    "${RSYNC[@]}" --delete --exclude __pycache__ "$SCR/repo_a7/" "${h}:t12_data/repo_a7/"
-    echo "[repo] $h ok"
-  done
+  rm -rf "$SCR/repo_a7/sim/assembly_lab/mimic"
+  mkdir -p "$SCR/repo_a7/sim/assembly_lab/mimic"
+  COPYFILE_DISABLE=1 tar -C "$HERE/sim/assembly_lab/mimic" --exclude __pycache__ -cf - . | tar -C "$SCR/repo_a7/sim/assembly_lab/mimic" -xf -
+  for h in $HOSTS; do push_repo "$h"; done
+}
+
+push_repo() {
+  # tar over ssh, then md5-check every file on the host: macOS openrsync was seen to skip changed files silently.
+  # Files are overwritten in place (running workers keep the directory they mounted).
+  local h=$1
+  (cd "$SCR/repo_a7" && find . -type f ! -path '*/__pycache__/*' -print0 | xargs -0 md5 -r) > "$SCR/repo_a7.md5"
+  COPYFILE_DISABLE=1 tar -C "$SCR/repo_a7" --exclude __pycache__ -cf - . | \
+    ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'mkdir -p ~/t12_data/repo_a7 && tar -C ~/t12_data/repo_a7 -xf -'
+  local bad
+  bad=$(ssh -o ControlPath=none -o ConnectTimeout=15 "$h" 'cd ~/t12_data/repo_a7 && md5sum -c - 2>/dev/null | grep -vc ": OK$"' \
+    < "$SCR/repo_a7.md5" || true)
+  [[ "$bad" == "0" ]] || { echo "[repo] $h: $bad files differ after the copy" >&2; return 1; }
+  echo "[repo] $h ok (all files md5-verified)"
 }
 
 launch() {
@@ -114,7 +127,8 @@ export_run() {
   done
   "${SSH[@]}" "$GATHER" "set -e; cd ~/t12_data/repo_a7; srcs=''; for d in ~/t12_data/lerobot/${run}_*; do \
       [ -f \$d/meta/info.json ] || continue; $TOOLS python -m sim.assembly_lab.mimic.validate_lerobot \$d --video-every 10; \
-      srcs=\"\$srcs --src \$d\"; done; rm -rf ~/t12_data/prepare_check/$run; \
+      srcs=\"\$srcs --src \$d\"; done; [ -n \"\$srcs\" ] || { echo no exports yet; exit 0; }; \
+      rm -rf ~/t12_data/prepare_check/$run; \
       $TOOLS python -m policy_learn.groot.prepare_dataset \$srcs --out ~/t12_data/prepare_check/$run; \
       echo READY: ~/t12_data/lerobot/${run}_*"
 }
@@ -122,6 +136,7 @@ export_run() {
 case "${1:-}" in
   seeds) seeds ;;
   repo) repo ;;
+  push) shift; for h in "$@"; do push_repo "$h"; done ;;
   launch) shift; launch "$@" ;;
   status) status "$2" ;;
   export) export_run "$2" ;;
