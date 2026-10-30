@@ -32,8 +32,9 @@ from .mimicgen import add_noise as _add_noise
 from .spec import load_spec
 
 TAPER_MM = 20.0  # action noise fades to zero within this distance of the subtask's contact row (precise at contact)
-SCENARIO = {"pick_insert": "build", "pull_out": "fix_above"}  # skill -> the scenario agent 3's backend plans for
-SOURCE_CASES = {"pick_insert": ("nominal",), "pull_out": ("fix_above",)}  # staged recovery cases are never sources
+SCENARIO = {"pick_insert": "build", "pull_out": "fix_above", "defect_drop": "defect"}  # skill -> agent 3's scenario
+SOURCE_CASES = {"pick_insert": ("nominal",), "pull_out": ("fix_above",),
+                "defect_drop": ("defect",)}  # staged recovery cases are never sources
 CORRIDOR_MM = 15.0
 RETREAT_XY_MM = 1.0
 
@@ -251,6 +252,7 @@ class Generator:
         """Same header as agent 3's episodes.<skill>: meta, instruction, Mimic frames, allowed targets."""
         from ..skills import checks, episodes
         from ..skills.geometry import pose_to_matrix
+        from ..skills.runner import EpisodeFailed
 
         first, second = plans
         oid = first.object_id
@@ -260,8 +262,11 @@ class Generator:
             episodes._begin(rec, self.skill, oid, second.base_id, first.grip_index, "nominal",
                             start + [first.grasp_tcp[5], base[0], base[1], base[5]])
             rec.define_frame("seat_frame", second.base_id, second.seated_tcp)
-        else:  # pull_out: set down on a remembered test-bed spot
-            yaw = episodes._spot_yaw(rec, oid, first.grasp_tcp[5], second)
+        else:  # pull_out: set down on a remembered test-bed spot; defect_drop: drop over the defect area
+            want = "defect" if self.skill == "defect_drop" else "test_bed"
+            if second.kind != want:
+                raise EpisodeFailed(f"{self.skill} needs a {want} plan, got {second.kind}")
+            yaw = 0.0 if want == "defect" else episodes._spot_yaw(rec, oid, first.grasp_tcp[5], second)
             episodes._begin(rec, self.skill, oid, None, first.grip_index, SCENARIO[self.skill],
                             start + [first.grasp_tcp[5], second.spot_tcp[0], second.spot_tcp[1], yaw])
             rec.define_frame("spot_frame", None, second.spot_tcp)
@@ -320,7 +325,7 @@ class Generator:
         if sub.term_signal == "seated":
             return self._insert(rec, i, sub, plans)
         segs, src = self.subtask_rows(rec, i, sub, plans)
-        if sub.term_signal == "grasped" and self.skill == "pick_insert":
+        if sub.term_signal == "grasped" and self.skill != "pull_out":  # a pick from the table
             self._grasp(rec, segs, plans)
         elif sub.term_signal == "grasped":  # pull_out: grip read on the installed part once closed, before the pull
             from dataclasses import replace
@@ -353,12 +358,18 @@ class Generator:
     def _end_gates(self, rec, plans) -> None:
         """The skill's final placement gates, read after the release (as agent 3's episodes do)."""
         from ..skills import checks, frames, gates
+        from ..skills.runner import EpisodeFailed
 
         first, second = plans
         actual = checks.object_pose(rec.obs, first.object_id)
         if self.skill == "pick_insert":
             gates.seat_gates(rec.gate_log, actual, second.seated_object_pose, second.yaw_tol_deg,
                              frames.installed_up(first.object_id))
+        elif self.skill == "defect_drop":  # agent 3's runner: the dropped part is exempt from the guard, then the area
+            rec.guard.exempt.add(first.object_id)
+            ok, why = checks.in_defect_area(actual, second.spot_tcp)
+            if not ok:
+                raise EpisodeFailed(f"defect_drop {first.object_id}: {why}")
         else:
             gates.spot_gates(rec.gate_log, actual, self.ep["expected"])
 

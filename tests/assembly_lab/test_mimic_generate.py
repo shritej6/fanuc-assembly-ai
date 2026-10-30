@@ -206,7 +206,8 @@ def test_pull_out_trims_only_free_space_subtasks():
     spec = load_spec()
     assert free_space_starts(spec.skills["pull_out"].subtasks) == [True, False, True, False]
     assert free_space_starts(spec.skills["pick_insert"].subtasks) == [True, True, False]
-    assert SCENARIO["pull_out"] == "fix_above"
+    assert SCENARIO["pull_out"] == "fix_above" and SCENARIO["defect_drop"] == "defect"
+    assert free_space_starts(spec.skills["defect_drop"].subtasks) == [True, True, False]
 
     plans = (SimpleNamespace(grasp_tcp=[0, 0, 0, 180, 0, 33.0]), SimpleNamespace(spot_tcp=[0, 0, 0, 180, 0, -90.0]))
     assert plan_roll(plans, "grasp_frame") == 33.0 and plan_roll(plans, "spot_frame") == -90.0
