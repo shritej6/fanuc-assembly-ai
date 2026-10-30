@@ -15,6 +15,7 @@ from assembly.controller_ports import (
     require_complete,
     require_fresh,
 )
+from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionChunk, MotionPhase, Waypoint
 from assembly.motion_intent import MotionIntent, SemanticSkill, semantic_instruction
 from assembly.safety import MotionOwner, SafetySupervisor, SafetyViolation
@@ -23,6 +24,16 @@ from policy_learn.deploy.guards import ContactTarget, GuardResult, UnsafeHoldErr
 
 class CellExecutionError(RuntimeError):
     """A learned motion cannot be proven safe for the current observation."""
+
+
+_T18_EXECUTABLE_SKILLS = frozenset(
+    {
+        SemanticSkill.PICK_INSERT_HOLD,
+        SemanticSkill.RELEASE_RETREAT,
+        SemanticSkill.PULL_OUT,
+        SemanticSkill.DEFECT_DROP,
+    }
+)
 
 
 class GuardedPolicy(Protocol):
@@ -35,6 +46,12 @@ class GuardedPolicy(Protocol):
     def authorize_release(self) -> None: ...
 
     def act(self, observation: dict) -> np.ndarray: ...
+
+    def guard_fixed_inspection(
+        self,
+        observation: dict,
+        move: FixedInspectionMove,
+    ) -> np.ndarray: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +162,8 @@ class T09GrootExecutor:
         observation: dict,
         scene: CollisionScene | None,
     ) -> GrootExecutionResult:
+        if intent.skill not in _T18_EXECUTABLE_SKILLS:
+            raise CellExecutionError(f"{intent.skill.value} is absent from the T18 dataset")
         current = _observed_waypoint(observation)
         if self._require_scene_safety:
             if scene is None:
@@ -175,6 +194,30 @@ class T09GrootExecutor:
             assert scene is not None
             self._validate_motion(intent, current, target, phase, scene)
         return GrootExecutionResult(target.as_action(), phase, False, False, result.reasons)
+
+    def inspect(self, move: FixedInspectionMove, *, observation: dict) -> GrootExecutionResult:
+        """Execute a reviewed non-learned camera pose through the policy guard."""
+        current = _observed_waypoint(observation)
+        expected = Waypoint(*move.endpoint_tcp, current.gripper)
+        if endpoint_reached(current, expected, self._tolerances):
+            return GrootExecutionResult(current.as_action(), MotionPhase.INSPECT, True, False, ())
+        rows = np.asarray(
+            self._policy.guard_fixed_inspection(observation, move),
+            dtype=float,
+        )
+        result = self._policy.last_guard_result
+        if result is None or rows.shape != (1, 7):
+            raise CellExecutionError("fixed inspection guard did not expose one execution row")
+        target = _waypoint(rows[0])
+        if target.gripper != current.gripper:
+            raise CellExecutionError("fixed inspection may not change the gripper")
+        return GrootExecutionResult(
+            target.as_action(),
+            MotionPhase.INSPECT,
+            False,
+            result.held,
+            result.reasons,
+        )
 
     def _validate_release_fence(
         self,

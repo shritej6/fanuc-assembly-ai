@@ -21,6 +21,7 @@ from typing import ClassVar, Protocol
 
 import numpy as np
 
+from assembly.fixed_inspection import FixedInspectionMove, next_inspection_leg
 from policy_learn.deploy.attestation import (
     AttestationError,
     DeploymentAttestation,
@@ -185,6 +186,23 @@ def nearest_turns(chunk, tcp_pose) -> np.ndarray:
     return arr
 
 
+def _incremental_fixed_pose(
+    current: np.ndarray,
+    target: tuple[float, ...],
+    limits: GuardLimits,
+) -> np.ndarray:
+    target_array = nearest_turns(np.asarray([(*target, 0.0)]), current)[0, :6]
+    delta = target_array - current
+    floor_zone = limits.z_mm[0] + limits.slow_zone_mm
+    slow = current[2] <= floor_zone or target_array[2] <= floor_zone
+    linear_step = (limits.slow_speed_mm_s if slow else limits.max_speed_mm_s) * DT_S
+    angular_step = (limits.slow_rot_deg_s if slow else limits.max_rot_deg_s) * DT_S
+    linear_ratio = float(np.linalg.norm(delta[:3])) / linear_step
+    angular_ratio = float(np.abs(delta[3:6]).max()) / angular_step
+    ratio = max(linear_ratio, angular_ratio, 1.0)
+    return current + delta / ratio
+
+
 class GrootPolicy:
     """The official policy interface. Class attributes are read by robot/cell/run.py and cell_client.run_trial."""
 
@@ -339,6 +357,24 @@ class GrootPolicy:
         if refusal is not None:
             return self._record(refusal)
         return self._record(self.guard.guard(chunk, tcp, gripper, self.DT))
+
+    def guard_fixed_inspection(self, obs: dict, move: FixedInspectionMove) -> np.ndarray:
+        """Guard one reviewed camera pose without invoking the learned model."""
+        self.steps += 1
+        _, gripper, tcp = self._observed_state(obs)
+        if tcp is None:
+            raise CellPolicySafetyError("fixed inspection requires an observed tcp_pose")
+        self.guard.set_target(None)
+        final_row = np.asarray([(*move.endpoint_tcp, gripper)], dtype=float)
+        reasons = self.guard.static_reasons(final_row, self.DT)
+        if reasons:
+            result = GuardResult(hold_row(tcp, gripper, self.guard.limits), False, True, reasons)
+            return self._record(result)
+        current_tcp = tuple(float(value) for value in tcp)
+        leg_target = next_inspection_leg(current_tcp, move)
+        step = _incremental_fixed_pose(tcp, leg_target, self.guard.limits)
+        row = np.concatenate([step, [gripper]])[None, :]
+        return self._record(self.guard.guard(row, tcp, gripper, self.DT))
 
     def _record(self, res: GuardResult) -> np.ndarray:
         self.last_guard_result = res

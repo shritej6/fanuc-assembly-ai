@@ -9,6 +9,7 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerEvent
 from assembly.execution import ExecutionError
+from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
 from assembly.planner import PreparedPlanStep
@@ -88,7 +89,11 @@ class GrootAssemblyController(AssemblyController):
         self._track_emitted_phase(instance_id)
         return action
 
-    def _intent_from_state(self, current: Waypoint, observed_at: float) -> MotionIntent:
+    def _intent_from_state(
+        self,
+        current: Waypoint,
+        observed_at: float,
+    ) -> MotionIntent | FixedInspectionMove:
         if self._pending_pre_pick is not None:
             return self._inspection_intent(current, observed_at)
         if self._pending_install is not None:
@@ -101,18 +106,31 @@ class GrootAssemblyController(AssemblyController):
             return self._pick_insert_intent(self._prepared)
         raise RuntimeError("T09 has no semantic state for the requested CELL motion")
 
-    def _inspection_intent(self, current: Waypoint, observed_at: float) -> MotionIntent:
+    def _inspection_intent(
+        self,
+        current: Waypoint,
+        observed_at: float,
+    ) -> FixedInspectionMove:
+        del observed_at
         pending = self._pending_pre_pick
         if pending is None:
             raise RuntimeError("inspection intent has no pending part")
-        grasp = self._poses.grasp_for(pending.part, observed_at_s=observed_at)
-        prepared = self._planner.finalize_candidate(pending, grasp)
-        coarse = self._coarse_xy_by_instance[prepared.part.instance_id]
+        coarse = self._coarse_xy_by_instance[pending.part.instance_id]
         endpoint = (
             coarse[0], coarse[1], self._inspection_stop.tcp_z_mm,
             self._inspection_stop.tool_w_deg, self._inspection_stop.tool_p_deg, current.r,
         )
-        return self._intent(prepared, SemanticSkill.INSPECT_VIEW, endpoint, current.gripper, "nominal")
+        return FixedInspectionMove(
+            instance_id=pending.part.instance_id,
+            base_instance_id=pending.base.instance_id,
+            endpoint_tcp=endpoint,
+            safe_z_mm=self._motion_config.safe_z_mm,
+            source=(
+                f"{self._inspection_stop.source}; safe Z from "
+                f"{self._motion_config.safe_z_source}; observed inventory slot XY "
+                f"for {pending.part.instance_id}"
+            ),
+        )
 
     def _release_intent(self, prepared: PreparedPlanStep) -> MotionIntent:
         release = self._command_tcp(prepared.target, prepared)
@@ -223,7 +241,16 @@ class GrootAssemblyController(AssemblyController):
 
     def _track_emitted_phase(self, instance_id: str) -> None:
         super()._track_emitted_phase(instance_id)
-        if self._motion_queue.last_emitted_phase is MotionPhase.VERTICAL_INSERT:
+        phase = self._motion_queue.last_emitted_phase
+        if phase is MotionPhase.INSPECT:
+            detail = (
+                f"{self._motion_queue.last_authority_label}: "
+                f"{self._motion_queue.last_authority_source}"
+            )
+            self._events.append(
+                ControllerEvent("inspection_motion", self.state_machine.current_product, None, detail)
+            )
+        elif phase is MotionPhase.VERTICAL_INSERT:
             self._events.append(
                 ControllerEvent("groot", self.state_machine.current_product, None, "guarded semantic row")
             )

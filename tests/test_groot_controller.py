@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 import pytest
 
 from assembly.catalog import load_catalog
+from assembly.fixed_inspection import FixedInspectionMove
 from assembly.groot_controller import GrootAssemblyController
 from assembly.inventory import Inventory
 from assembly.motion import AbsolutePoseUF0, MotionChunk, MotionPhase, OrientedPartPose, RestingState, Waypoint
@@ -73,6 +74,7 @@ class _Executor:
     def __post_init__(self) -> None:
         self.resets = 0
         self.intents: list[MotionIntent] = []
+        self.inspections: list[FixedInspectionMove] = []
 
     def reset(self) -> None:
         self.resets += 1
@@ -81,6 +83,13 @@ class _Executor:
         del observation
         assert scene is None
         self.intents.append(intent)
+        if self.result is None:
+            raise AssertionError("executor should not run while only queueing")
+        return self.result
+
+    def inspect(self, move, *, observation):
+        del observation
+        self.inspections.append(move)
         if self.result is None:
             raise AssertionError("executor should not run while only queueing")
         return self.result
@@ -135,8 +144,10 @@ def test_scripted_motion_coordinates_never_enter_the_cell_semantic_queue() -> No
     _queue_rear_guard_inspection(controller, (MotionChunk(MotionPhase.APPROACH, (absurd,)),))
 
     intent = controller._motion_queue._intent
-    assert isinstance(intent, MotionIntent)
+    assert isinstance(intent, FixedInspectionMove)
     assert intent.endpoint_tcp[:3] == (250.0, -100.0, -168.0)
+    assert intent.label == "non_learned_inspection"
+    assert "measured CSI wrist inspection stop" in intent.source
     assert 999.0 not in intent.endpoint_tcp
     assert executor.intents == []
 
@@ -161,3 +172,26 @@ def test_guard_trip_enters_packml_held_with_andon_reason() -> None:
     assert controller.state_machine.state is PackMLState.HELD
     assert "GR00T guard trip: outside workspace" in controller.state_machine.current_record.reason
     assert controller.events[-1].kind == "andon"
+
+
+def test_guarded_camera_move_is_operator_visible_as_non_learned() -> None:
+    action = [250.0, -100.0, -168.0, -180.0, 0.0, 15.0, 0.0]
+    executor = _Executor(
+        GrootExecutionResult(action, MotionPhase.INSPECT, False, False, ())
+    )
+    controller = _controller(executor)
+    _queue_rear_guard_inspection(controller, ())
+    current = Waypoint(400.0, 0.0, -200.0, -180.0, 0.0, 15.0, 0.0)
+
+    emitted = controller._emit_guarded_action(
+        {"t": 10.0, "tcp_pose": current.as_action()[:6], "joints": [0.0] * 7},
+        current,
+        10.0,
+        "part-4",
+    )
+
+    assert emitted == action
+    assert executor.intents == []
+    assert executor.inspections[0].label == "non_learned_inspection"
+    assert controller.events[-1].kind == "inspection_motion"
+    assert "non_learned_inspection" in controller.events[-1].detail

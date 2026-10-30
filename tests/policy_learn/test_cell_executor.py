@@ -176,6 +176,32 @@ def test_scene_safety_remains_fail_closed_by_default() -> None:
         )
 
 
+@pytest.mark.parametrize("skill", [SemanticSkill.INSPECT_VIEW, SemanticSkill.PLACE_FREE])
+def test_untrained_semantic_skills_are_rejected_before_policy_inference(skill: SemanticSkill) -> None:
+    policy = _Policy((301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0))
+    executor = T09GrootExecutor(
+        policy=policy,
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+
+    changes = {"skill": skill}
+    if skill is SemanticSkill.PLACE_FREE:
+        changes.update(
+            final_gripper=0.0,
+            release_tcp=(300.0, 0.0, -200.0, -180.0, 0.0, 0.0),
+            release_authorized=True,
+            contact=None,
+        )
+
+    with pytest.raises(CellExecutionError, match="absent from the T18 dataset"):
+        executor.act(_intent(**changes), observation=_observation(), scene=None)
+
+    assert policy.act_calls == 0
+    assert policy.task is None
+
+
 def test_release_authority_is_forwarded_only_for_verified_release_intent() -> None:
     policy = _Policy((300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0))
     release = _intent(

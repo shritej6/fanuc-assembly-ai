@@ -302,6 +302,20 @@ class ChunkGuard:
                 return GuardResult(hold, False, True, tuple(speed_reasons + [f"after clamp: {r}" for r in after]))
         return GuardResult(chunk, not speed_reasons, False, tuple(speed_reasons))
 
+    def static_reasons(self, rows, dt: float) -> tuple[str, ...]:
+        """Check a final target without treating its distance as one control step."""
+        reasons = _check_shape(rows, dt)
+        if reasons:
+            return tuple(reasons)
+        chunk = np.array(rows, dtype=float, copy=True).reshape(-1, ROW_LEN)
+        hard = (
+            self._check_box(chunk)
+            + self._check_orientation(chunk)
+            + self._check_floor(chunk)
+            + self._snap_gripper(chunk)
+        )
+        return tuple(hard)
+
     def _check_box(self, chunk: np.ndarray) -> list[str]:
         out = []
         for k, (lo, hi) in enumerate((self.limits.x_mm, self.limits.y_mm, self.limits.z_mm)):

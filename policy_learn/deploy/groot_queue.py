@@ -1,9 +1,10 @@
-"""One-intent CELL queue whose only executable rows come from GR00T."""
+"""CELL queue for GR00T part motion and explicitly non-learned camera poses."""
 
 from __future__ import annotations
 
 from assembly.controller_ports import ExecutionTolerances, endpoint_reached
 from assembly.execution import ExecutionError
+from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionPhase, Waypoint
 from assembly.motion_intent import MotionIntent
 from policy_learn.deploy.cell_executor import T09GrootExecutor
@@ -15,11 +16,13 @@ class GrootGuardTrip(ExecutionError):
 
 
 class GrootMotionQueue:
-    """Preserve T09 queue lifecycle without accepting scripted MotionChunk data."""
+    """Preserve T09 lifecycle without accepting generic scripted MotionChunk data."""
 
     def __init__(self, executor: T09GrootExecutor, tolerances: ExecutionTolerances) -> None:
         self._executor = executor
         self._tolerances = tolerances
+        self._last_authority_label: str | None = None
+        self._last_authority_source: str | None = None
         self.clear()
 
     @property
@@ -42,16 +45,27 @@ class GrootMotionQueue:
     def last_emitted_phase(self) -> MotionPhase | None:
         return self._last_emitted_phase
 
+    @property
+    def last_authority_label(self) -> str | None:
+        return self._last_authority_label
+
+    @property
+    def last_authority_source(self) -> str | None:
+        return self._last_authority_source
+
     def clear(self) -> None:
-        self._intent: MotionIntent | None = None
+        self._intent: MotionIntent | FixedInspectionMove | None = None
         self._expected_endpoint: Waypoint | None = None
         self._last_emitted_phase: MotionPhase | None = None
 
-    def queue(self, intent: MotionIntent) -> None:
+    def queue(self, intent: MotionIntent | FixedInspectionMove) -> None:
         if self.active or self._expected_endpoint is not None:
-            raise ExecutionError("GR00T queue already owns an unfinished semantic intent")
-        if not isinstance(intent, MotionIntent):
-            raise ExecutionError("GR00T queue accepts MotionIntent only")
+            raise ExecutionError("CELL queue already owns an unfinished motion intent")
+        if not isinstance(intent, (MotionIntent, FixedInspectionMove)):
+            raise ExecutionError(
+                "CELL queue accepts MotionIntent only for semantic motion; "
+                "fixed inspection requires FixedInspectionMove"
+            )
         self._intent = intent
 
     def confirm_previous_endpoint(self, current: Waypoint) -> None:
@@ -70,9 +84,16 @@ class GrootMotionQueue:
     ) -> Action:
         del current, observed_at_s
         if self._intent is None:
-            raise ExecutionError("GR00T semantic queue is empty")
+            raise ExecutionError("CELL motion queue is empty")
         try:
-            result = self._executor.act(self._intent, observation=observation, scene=None)
+            if isinstance(self._intent, FixedInspectionMove):
+                self._last_authority_label = self._intent.label
+                self._last_authority_source = self._intent.source
+                result = self._executor.inspect(self._intent, observation=observation)
+            else:
+                self._last_authority_label = "groot"
+                self._last_authority_source = None
+                result = self._executor.act(self._intent, observation=observation, scene=None)
         except (OSError, RuntimeError, ValueError) as error:
             self.clear()
             detail = str(error).strip() or type(error).__name__
@@ -90,5 +111,5 @@ class GrootMotionQueue:
 
     def finish(self) -> None:
         if self.active or self._expected_endpoint is not None:
-            raise ExecutionError("GR00T queue cannot finish before its semantic endpoint")
+            raise ExecutionError("CELL queue cannot finish before its guarded endpoint")
         self.clear()
