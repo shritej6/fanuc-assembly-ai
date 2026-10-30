@@ -184,8 +184,11 @@ drain() {
     local n_src n_dst
     n_src=$("${SSH[@]}" "$h" "find ~/t12_data/a7/gen/$run -name '*.hdf5' | wc -l")
     n_dst=$("${SSH[@]}" "$GATHER" "find ~/t12_data/a7/raw/$h/$run -name '*.hdf5' | wc -l")
-    if [[ "$n_src" == "$n_dst" ]] && "${SSH[@]}" "$GATHER" "ls -d ~/t12_data/lerobot/${run}_*_$h" > /dev/null 2>&1; then
-      echo "SAFE TO DELETE: $h ($n_dst raw files archived on $GATHER)"
+    local kept
+    kept=$("${SSH[@]}" "$h" "cat ~/t12_data/a7/gen/$run/*/p*/*.meta.jsonl 2>/dev/null | wc -l")
+    if [[ "$n_src" == "$n_dst" ]] && { [[ "$kept" == 0 ]] || \
+        "${SSH[@]}" "$GATHER" "ls -d ~/t12_data/lerobot/${run}_*_$h" > /dev/null 2>&1; }; then
+      echo "SAFE TO DELETE: $h ($kept kept demos exported, $n_dst raw files archived on $GATHER)"
     else
       echo "[drain] $h NOT safe: raw $n_src vs $n_dst, or no export on $GATHER"
     fi
