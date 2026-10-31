@@ -108,8 +108,8 @@ class DirectGrootRuntime(GrootPolicy):
 
     def __init__(self, checkpoint: str | None = None, model: ChunkModel | None = None,
                  limits: GuardLimits | None = None, placement: str | None = None, budgets: Budgets | None = None,
-                 clock: Callable[[], float] = time.monotonic):
-        super().__init__(checkpoint, model=model, limits=limits)
+                 clock: Callable[[], float] = time.monotonic, exec_horizon: int | None = None):
+        super().__init__(checkpoint, model=model, limits=limits, exec_horizon=exec_horizon)  # None: $GROOT_EXEC_HORIZON
         self.placement = placement or os.environ.get("DIRECT_PLACEMENT")
         self.rollouts = load_placement(self.placement)
         self.forced = _forced_rollout(len(self.rollouts))

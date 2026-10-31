@@ -281,6 +281,35 @@ def test_a_chunk_that_closes_on_the_pad_then_lifts_is_a_grasp():
     assert ended(pol) is None and pol.progress.phase == "insert"
 
 
+def test_exec_horizon_cuts_the_chunk_and_a_close_inside_it_is_still_a_grasp():
+    """GROOT_EXEC_HORIZON=3: only rows 0-2 of the 7-row chunk go out (open, close, lift 2 mm), and the close inside
+    them is still found as the grasp."""
+    g = None
+
+    class CloseThenLift(Echo):
+        def predict(self, model_obs):
+            if g is None:
+                return super().predict(model_obs)
+            self.calls += 1
+            lift = [[g[0], g[1], g[2] + dz, *g[3:6], 1.0] for dz in (2.0, 4.0, 6.0, 26.0, 46.0)]
+            return np.array([[*g[:6], 0.0], [*g[:6], 1.0], *lift])
+
+    pol, _ = runtime(CloseThenLift(), exec_horizon=3)
+    assert pol.exec_horizon == 3
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    rows = pol.act(obs(g))
+    assert len(rows) == 3 and rows[-1, 2] == g[2] + 2.0 and rows[-1, 6] == 1.0
+    pol.act(obs(list(rows[-1, :6]), grip=1.0))
+    assert ended(pol) is None and pol.progress.phase == "insert"
+
+
+def test_exec_horizon_from_the_environment_caps_every_chunk(monkeypatch):
+    monkeypatch.setenv("GROOT_EXEC_HORIZON", "8")
+    pol, _ = runtime(Fixed([[*HOME_TCP[:2], HOME_TCP[2] - 1.0 * (k + 1), *HOME_TCP[3:], 0.0] for k in range(16)]))
+    assert pol.exec_horizon == 8 and len(pol.act(obs(HOME_TCP))) == 8
+
+
 def test_a_chunk_that_opens_on_the_seat_then_rises_finishes_the_step():
     s = None
 
