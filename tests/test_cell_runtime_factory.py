@@ -6,6 +6,7 @@ import pytest
 
 import assembly.cell_runtime as runtime
 from assembly.groot_controller import GrootAssemblyController
+from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
 
 class _FakeGrootPolicy:
@@ -18,6 +19,20 @@ class _FakeGrootPolicy:
 
     def reset(self) -> None:
         self.resets += 1
+
+
+class _ScriptedController:
+    def reset(self) -> None:
+        pass
+
+    def act(self, observation):
+        del observation
+        return [400.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
+
+
+class _OtherExecutor:
+    def reset(self) -> None:
+        pass
 
 
 def test_runtime_risks_name_every_explicit_sunday_deferral() -> None:
@@ -56,6 +71,55 @@ def test_mock_factory_is_proof_only(monkeypatch: pytest.MonkeyPatch) -> None:
         runtime.create_cell_policy(checkpoint="groot://127.0.0.1:5555")
 
 
+def test_real_transport_rejects_software_proof_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(runtime.CELL_FACTORY_ENV, runtime.MOCK_PROOF_FACTORY)
+    monkeypatch.setenv(runtime.SOFTWARE_PROOF_ENV, "1")
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="real CELL transport"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
+def test_factory_rejects_generic_scripted_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_factory",
+        lambda transport: (lambda executor: _ScriptedController()),
+    )
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="GrootAssemblyController"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
+def test_factory_rejects_groot_controller_bound_to_another_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_factory",
+        lambda transport: (lambda executor: build_groot_mock_controller(_OtherExecutor())),
+    )
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="exact guarded executor"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
 def test_groot_url_arms_t09_semantic_controller_for_explicit_proof(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -63,7 +127,10 @@ def test_groot_url_arms_t09_semantic_controller_for_explicit_proof(
     monkeypatch.setenv(runtime.SOFTWARE_PROOF_ENV, "1")
     monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
 
-    controller = runtime.create_cell_policy(checkpoint="groot://127.0.0.1:5555")
+    controller = runtime.create_cell_policy(
+        checkpoint="groot://127.0.0.1:5555",
+        transport=runtime.CellTransport.OFFICIAL_MOCK,
+    )
 
     assert isinstance(controller, GrootAssemblyController)
     policy = controller._groot_executor._policy

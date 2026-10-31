@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from assembly.cell_runtime import CellTransport
 from robot import guard_tcp_action
 
 CELL_DIR = Path(__file__).resolve().parents[1] / "robot" / "cell"
@@ -124,7 +125,10 @@ def test_default_policy_uses_explicit_tcp_hold_in_mock_runtime(policy_type) -> N
     assert policy.ACTION == "tcp"
 
 
-def test_cell_runtime_uses_strict_factory_without_controller_fallback(policy_type, monkeypatch) -> None:
+def test_cell_runtime_passes_explicit_transport_without_controller_fallback(
+    policy_type,
+    monkeypatch,
+) -> None:
     class CellController:
         def reset(self) -> None:
             pass
@@ -133,10 +137,10 @@ def test_cell_runtime_uses_strict_factory_without_controller_fallback(policy_typ
             del observation
             return [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
 
-    calls: list[str | None] = []
+    calls: list[tuple[str | None, CellTransport]] = []
 
-    def create_cell_policy(*, checkpoint: str | None):
-        calls.append(checkpoint)
+    def create_cell_policy(*, checkpoint: str | None, transport: CellTransport):
+        calls.append((checkpoint, transport))
         return CellController()
 
     runtime_module = types.ModuleType("assembly.cell_runtime")
@@ -144,10 +148,19 @@ def test_cell_runtime_uses_strict_factory_without_controller_fallback(policy_typ
     monkeypatch.setitem(sys.modules, "assembly.cell_runtime", runtime_module)
 
     policy = policy_type("checkpoint-path", runtime="cell")
+    proof = policy_type(
+        "checkpoint-path",
+        runtime="cell",
+        cell_transport=CellTransport.OFFICIAL_MOCK,
+    )
 
-    assert calls == ["checkpoint-path"]
+    assert calls == [
+        ("checkpoint-path", CellTransport.REAL),
+        ("checkpoint-path", CellTransport.OFFICIAL_MOCK),
+    ]
     assert policy.ACTION == "tcp"
     assert policy.act(_observation()) == [400.0, 0.0, -17.0, -180.0, 0.0, 0.0, 0.0]
+    assert proof.ACTION == "tcp"
 
 
 def test_cell_runtime_rejects_injected_controller_bypass(policy_type) -> None:
