@@ -212,6 +212,14 @@ def test_truncated_prefix_still_passes_every_check():
     assert res.rows[0, 0] - HOME[0] == pytest.approx(lim.max_speed_mm_s * DT)
 
 
+def test_a_hold_reports_why_row_0_itself_was_refused():
+    rows = path(HOME, [HOME[0] + 10.0] + HOME[1:], 2, grip=1.0)  # closes while moving at row 0
+    rows[1, 2] = -335.0
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and "outside workspace" in res.reasons[0]
+    assert any(r.startswith("no valid prefix:") and "while moving" in r for r in res.reasons)
+
+
 def test_malformed_chunk_is_held_whole_even_with_a_valid_prefix():
     rows = path(HOME, HOME, 3)
     rows[2, 0] = np.nan

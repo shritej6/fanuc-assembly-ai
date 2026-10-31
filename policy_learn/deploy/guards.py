@@ -140,7 +140,10 @@ class ChunkGuard:
             if not pre.held:
                 note = f"chunk truncated at row {k} of {len(raw)}: sent rows 0-{k - 1}, then the arm stops"
                 return GuardResult(pre.rows, False, False, (*res.reasons, note, *pre.reasons), truncated_at=k)
-        return res
+        if len(raw) == 1:
+            return res
+        first = self._guard_chunk(raw[:1].copy(), current_pose, current_gripper, dt)  # why no prefix: row 0's own refusal
+        return GuardResult(res.rows, False, True, (*res.reasons, *(f"no valid prefix: {r}" for r in first.reasons)))
 
     def _guard_chunk(self, chunk: np.ndarray, current_pose, current_gripper: float, dt: float) -> GuardResult:
         """All checks on one well-formed chunk (modified in place by the clamps); refused -> one hold row."""
