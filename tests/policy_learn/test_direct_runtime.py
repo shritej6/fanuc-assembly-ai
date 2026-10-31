@@ -84,7 +84,7 @@ def test_every_rollout_plans_in_prompt_then_sheet_order():
     for r in ROLLOUTS:
         steps = plan_rollout(r)
         assert [s.object_id for s in steps] == [f"M{p}_0{k}" for p in r.products for k in range(1, 5)]
-        assert r.products[0] == 5  # agent A's 14:00 order: product 5 first in every rollout
+        assert r.products == (5,) and len(steps) == 4  # agent A's 434f488: product 5 alone, like the training scenes
 
 
 def test_rollout_1_first_step_is_product_5_part_1():
@@ -100,16 +100,28 @@ def test_instruction_is_the_training_format():
     step = pol.progress.step
     want = instruction(encode_plan_ids("pick_insert", "M5_01", "F05", 0, "nominal"), list(step.plan_target))
     assert pol.instruction == want
-    assert want == "pick M5_01 at (332, -47, 30) gripping Y at roll 210, insert on F05 at (420, 0, 45)"
+    assert want == "pick M5_01 at (354, 195, -30) gripping Y at roll 150, insert on F05 at (275, -123, -34)"
 
 
-def test_rollout_is_matched_by_prompt_or_forced(monkeypatch):
+def test_identical_prompts_fall_back_to_the_trial_index_then_resets(monkeypatch):
+    """434f488: all 3 rollouts have the same prompt and layout. The cell's trial index picks the rollout; without
+    one, the count of resets does. Any choice is the same layout, so none of them holds."""
+    assert len({r.prompt for r in ROLLOUTS}) == 1 and len({tuple(r.objects.items()) for r in ROLLOUTS}) == 1
     pol, _ = runtime()
-    pol.act(obs(HOME_TCP, prompt=ROLLOUTS[1].prompt, index=0))
-    assert pol.progress.rollout.index == 1
+    pol.act(obs(HOME_TCP, index=1))
+    assert pol.progress.rollout.index == 1 and ended(pol) is None
+    o = obs(HOME_TCP)
+    del o["trial"]["index"]
+    pol.reset()                                              # second reset: rollout 2 by count
+    pol.act(o)
+    assert pol.progress.rollout.index == 1 and ended(pol) is None
+    pol.act(obs(HOME_TCP, index=7))                          # an index past the file still gets the one layout
+    pol.reset()
+    pol.act(obs(HOME_TCP, index=7))
+    assert pol.progress.rollout.index == 0 and ended(pol) is None
     monkeypatch.setenv("DIRECT_ROLLOUT", "3")
     pol, _ = runtime()                                       # read and validated at construction
-    pol.act(obs(HOME_TCP, prompt=PROMPT_1))
+    pol.act(obs(HOME_TCP, index=0))
     assert pol.progress.rollout.index == 2
 
 
@@ -220,13 +232,15 @@ def test_full_product_5_with_a_scripted_groot_in_process():
     pol, _ = runtime(fake)
     fake.runtime = pol
     cell = TinyCell(PROMPT_1)
-    while pol.progress.index < 4 and not ended(pol):
+    while not ended(pol):
         cell.play(pol.act(cell.obs()))
     done = [e["part"] for e in pol.events if e["type"] == "step_done"]
-    assert done == ["M5_01", "M5_02", "M5_03", "M5_04"] and ended(pol) is None
-    assert pol.progress.step.object_id == "M1_01"
+    assert done == ["M5_01", "M5_02", "M5_03", "M5_04"] and ended(pol) == "done"
     assert [e for e in pol.guard_log if e["held"]] == []     # the nominal path never needed a hold
-    assert len(set(fake.instructions)) == 5                  # one training-format instruction per step
+    assert len(set(fake.instructions)) == 4                  # one training-format instruction per step
+    calls = len(fake.instructions)
+    np.testing.assert_allclose(pol.act(cell.obs()), [[*cell.tcp, cell.grip]])  # done: hold, the model is not asked
+    assert len(fake.instructions) == calls
 
 
 def test_full_product_5_through_run_py_mock(tmp_path):
@@ -425,5 +439,12 @@ def test_every_rollout_is_planned_at_construction_and_a_refusal_only_holds(monke
     monkeypatch.setattr(dr, "plan_rollout", plan)
     pol, _ = runtime()
     assert calls == [0, 1, 2]
-    pol.act(obs(HOME_TCP, prompt=ROLLOUTS[1].prompt))
+    pol.act(obs(HOME_TCP, index=1))
     assert "plan refused" in ended(pol) and calls == [0, 1, 2]  # nothing is planned inside the trial loop
+
+
+def test_trial_start_event_keeps_the_trial_counter_and_names_the_placement_rollout():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP, index=2))
+    start = next(e for e in pol.events if e["type"] == "trial_start")
+    assert start["rollout"] == 0 and start["placement_rollout"] == 3

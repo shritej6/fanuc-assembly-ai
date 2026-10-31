@@ -156,7 +156,7 @@ class DirectGrootRuntime(GrootPolicy):
         if closed:
             return self._end("gripper closed at start: the cell must home with the gripper open")
         pr.steps = plan
-        self._event("trial_start", rollout=pr.rollout.index + 1, products=list(pr.rollout.products),
+        self._event("trial_start", placement_rollout=pr.rollout.index + 1, products=list(pr.rollout.products),
                     steps=len(pr.steps))
         self._start_step(tcp)
 
