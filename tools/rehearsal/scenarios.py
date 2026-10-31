@@ -55,6 +55,7 @@ class Outcome:
     process_exit: str | None = None
     trial_rows: list[int] = field(default_factory=list)
     rejections: int = 0
+    installs: int = 0
     get_actions: int = 0
     elapsed_s: float = 0.0
     error: str | None = None
@@ -113,16 +114,21 @@ def _held_reason(policy: Any) -> str | None:
     return None
 
 
+def _installs(policy: Any) -> int:
+    return sum(event.kind == "installed" for event in policy.controller.events)
+
+
 def _installed(policy: Any) -> bool:
-    return any(event.kind == "installed" for event in policy.controller.events)
+    return _installs(policy) > 0
 
 
 class _Monitor(threading.Thread):
     """Watch the controller; end the trial on completion, Held, or the wall-clock budget."""
 
-    def __init__(self, cell: LaggyMock, policy: Any, outcome: Outcome, budget_s: float) -> None:
+    def __init__(self, cell: LaggyMock, policy: Any, outcome: Outcome, budget_s: float, installs: int = 1) -> None:
         super().__init__(daemon=True)
         self.cell, self.policy, self.outcome, self.budget_s = cell, policy, outcome, budget_s
+        self.installs = installs
         self.stop = threading.Event()
 
     def run(self) -> None:
@@ -152,7 +158,8 @@ class _Monitor(threading.Thread):
             self.outcome.held_reason = reason
             self.outcome.held_after_rows = self.cell.stats["actions"]
             self.outcome.held_after_s = round(time.monotonic() - started, 2)
-        if _installed(self.policy):
+        self.outcome.installs = _installs(self.policy)
+        if self.outcome.installs >= self.installs:
             self.outcome.completed = True
         if self.cell.log.dropped_at is not None and self.outcome.drop_detected_after_s is None:
             return self.outcome.completed  # keep watching a dropped part until detection or the budget
@@ -179,7 +186,7 @@ def _low_row_verdict(groot: ScriptedGroot, cell: LaggyMock, guard_log: list[dict
 
 def run_scenario(name: str, *, faults: CellFaults | None = None, inject_low_row: bool = False,
                  groot_url: str | None = None, n_trials: int = 1, budget_s: float = 75.0,
-                 tau_s: float = 0.15, noise_mm: float = 0.05) -> Outcome:
+                 tau_s: float = 0.15, noise_mm: float = 0.05, installs: int = 1) -> Outcome:
     """Run one rehearsal scenario end to end and return its measured outcome."""
     from cell_client import CellClient, run_all
     from policy import Policy
@@ -201,7 +208,7 @@ def run_scenario(name: str, *, faults: CellFaults | None = None, inject_low_row:
             guard = policy.controller.groot_executor._policy.guard
             groot.guard_target = lambda: guard.target
         _arm_when_ready(mock)
-        monitors = _MonitorChain(mock, policy, outcome, budget_s, n_trials)
+        monitors = _MonitorChain(mock, policy, outcome, budget_s, n_trials, installs)
         monitors.start()
         try:
             run_cell_trials(CellClient(server.url, "mock"), policy, run_all_fn=run_all)
@@ -238,9 +245,10 @@ def _arm_when_ready(mock: LaggyMock) -> None:
 class _MonitorChain(threading.Thread):
     """One monitor per trial, started when that trial starts running."""
 
-    def __init__(self, cell: LaggyMock, policy: Any, outcome: Outcome, budget_s: float, n_trials: int) -> None:
+    def __init__(self, cell: LaggyMock, policy: Any, outcome: Outcome, budget_s: float, n_trials: int,
+                 installs: int = 1) -> None:
         super().__init__(daemon=True)
-        self.args, self.n_trials = (cell, policy, outcome, budget_s), n_trials
+        self.args, self.n_trials = (cell, policy, outcome, budget_s, installs), n_trials
 
     def run(self) -> None:
         cell = self.args[0]

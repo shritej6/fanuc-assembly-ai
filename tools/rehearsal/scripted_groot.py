@@ -92,8 +92,9 @@ def bounded_step(current: np.ndarray, goal: np.ndarray, target: Any) -> np.ndarr
 def next_row(current: np.ndarray, gripper: float, grasp: np.ndarray, insert: np.ndarray,
              target: Any) -> tuple[np.ndarray, float]:
     """Semantic pick-insert: reach grasp, close, carry to insert, open, retreat 10 mm."""
+    # 0.3 mm windows: a measured TCP carries lag and +-0.05 mm noise, so "at the insert" can read slightly below it.
     over_insert = (float(np.linalg.norm(current[:2] - insert[:2])) <= 0.3
-                   and 0.0 <= current[2] - insert[2] <= 10.5)
+                   and -0.3 <= current[2] - insert[2] <= 10.5)
     if gripper == 0.0 and over_insert:
         retreat = insert.copy()
         retreat[2] += 10.0
