@@ -2,24 +2,31 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import pytest
 
 from assembly.catalog import load_catalog
+from assembly.controller_recovery import PendingInsertionLift
 from assembly.fixed_inspection import FixedInspectionMove
 from assembly.groot_controller import GrootAssemblyController
-from assembly.inventory import Inventory
+from assembly.inventory import Inventory, InventoryItem, InventoryZone, ObjectCondition
 from assembly.motion import AbsolutePoseUF0, MotionChunk, MotionPhase, OrientedPartPose, RestingState, Waypoint
-from assembly.motion_intent import MotionIntent
-from assembly.planner import PlanCandidate, PreparedPlanStep, RecipePlanner
+from assembly.motion_intent import MotionIntent, semantic_instruction
+from assembly.planner import ContractPoseUF0, PlanCandidate, PlanStepRecord, PreparedPlanStep, RecipePlanner
 from assembly.state_machine import PackMLState
+from assembly.verification import VerificationReason
 from policy_learn.deploy.cell_executor import GrootExecutionResult
 from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
 OBJECT_ORIGIN = (300.0, -50.0, -300.0)
 OBJECT_YAW_DEG = 37.0
+T18_GOLDENS = json.loads(
+    (Path(__file__).parent / "fixtures" / "t18_instruction_goldens.json").read_text()
+)
 
 
 def _pose(x: float, y: float, z: float, yaw: float) -> OrientedPartPose:
@@ -65,6 +72,63 @@ def _reviewed_rear_guard_grasp(candidate: PlanCandidate) -> OrientedPartPose:
     x = OBJECT_ORIGIN[0] + math.cos(yaw) * local_x - math.sin(yaw) * local_y
     y = OBJECT_ORIGIN[1] + math.sin(yaw) * local_x + math.cos(yaw) * local_y
     return _pose(x, y, OBJECT_ORIGIN[2] + local_z, OBJECT_YAW_DEG)
+
+
+def _grasp_from_object(step, object_pose) -> OrientedPartPose:
+    x, y, yaw_deg = (float(value) for value in object_pose)
+    local_x, local_y, local_z = step.preferred_grasp.tcp_local_mm
+    yaw = math.radians(yaw_deg)
+    tcp_x = x + math.cos(yaw) * local_x - math.sin(yaw) * local_y
+    tcp_y = y + math.sin(yaw) * local_x + math.cos(yaw) * local_y
+    return _pose(tcp_x, tcp_y, -300.0 + local_z, yaw_deg)
+
+
+def _record_pose(pose: OrientedPartPose) -> ContractPoseUF0:
+    return ContractPoseUF0(pose.tcp.x, pose.tcp.y, pose.tcp.z, pose.tcp.r)
+
+
+def _prepared_from_golden(row: dict) -> PreparedPlanStep:
+    product_id = int(row["object_id"][1])
+    product = load_catalog().product(product_id)
+    step = next(item for item in product.steps if item.object_id == row["object_id"])
+    base_id = row["base_id"] or f"F{product_id:02d}"
+    base = InventoryItem("golden-base", base_id, InventoryZone.RESERVED, ObjectCondition.VERIFIED, product_id)
+    part = InventoryItem("golden-part", row["object_id"], InventoryZone.RESERVED, ObjectCondition.VERIFIED, product_id)
+    grasp = _grasp_from_object(step, row["object_pose"])
+    goal_x, goal_y, goal_yaw = (float(value) for value in row["goal_pose"])
+    base_pose = _pose(goal_x, goal_y, -320.0, goal_yaw)
+    if row["skill"] == "pull_out":
+        target = _grasp_from_object(step, row["object_pose"])
+    else:
+        target = _pose(goal_x + 11.0, goal_y - 7.0, -290.0, goal_yaw + 73.0)
+    record = PlanStepRecord(
+        "golden-step", product_id, part.instance_id, part.object_id,
+        _record_pose(grasp), _record_pose(target), step.preferred_grasp.turn_deg, 1,
+    )
+    return PreparedPlanStep(record, step, base, part, base_pose, grasp, target, None)
+
+
+class _GoldenRecoveryTargets:
+    def __init__(self, row: dict) -> None:
+        self._goal = tuple(float(value) for value in row["goal_pose"])
+
+    def pull_out_target_for(self, product: int, part: InventoryItem) -> OrientedPartPose:
+        assert product == int(part.object_id[1])
+        return _pose(self._goal[0], self._goal[1], -300.0, self._goal[2])
+
+
+def _intent_from_golden(controller: GrootAssemblyController, row: dict) -> MotionIntent:
+    prepared = _prepared_from_golden(row)
+    if row["skill"] == "pick_insert":
+        return controller._pick_insert_intent(prepared)
+    if row["skill"] == "defect_drop":
+        return controller._defect_intent(prepared)
+    controller._recovery_targets = _GoldenRecoveryTargets(row)
+    controller._pending_insertion_lift = PendingInsertionLift(
+        prepared, False, VerificationReason.NOT_SEATED
+    )
+    grasp = GrootAssemblyController._command_tcp(prepared.target, prepared)
+    return controller._pull_out_intent(Waypoint(*grasp, 1.0))
 
 
 @dataclass
@@ -134,6 +198,26 @@ def test_rear_guard_t29_inverse_recovers_origin_and_90_degree_wrist_turn() -> No
     assert grasp_tcp[:3] == pytest.approx((grasp.tcp.x, grasp.tcp.y, grasp.tcp.z), abs=1e-6)
     assert wrist_roll == pytest.approx(OBJECT_YAW_DEG + 90.0)
     assert grasp_tcp[5] == pytest.approx(wrist_roll)
+
+
+@pytest.mark.parametrize(
+    "row",
+    T18_GOLDENS,
+    ids=lambda row: f"{row['skill']}-{row['object_id']}-{row['task_index']}",
+)
+def test_controller_instruction_matches_recorded_t18_task_byte_for_byte(row: dict) -> None:
+    intent = _intent_from_golden(_controller(_Executor()), row)
+
+    assert semantic_instruction(intent) == row["expected"]
+    assert intent.object_pose == pytest.approx(row["object_pose"])
+    assert intent.goal_pose == pytest.approx(row["goal_pose"])
+    assert intent.case == row["case"]
+    assert intent.object_pose[2] != intent.wrist_roll_deg
+    if row["skill"] == "pull_out":
+        assert intent.release_authorized is True
+        assert intent.release_tcp is not None
+        assert intent.endpoint_tcp[2] > intent.release_tcp[2]
+        assert intent.final_gripper == 0.0
 
 
 def test_scripted_motion_coordinates_never_enter_the_cell_semantic_queue() -> None:
