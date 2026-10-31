@@ -35,6 +35,7 @@ from assembly.motion import (
     RestingState,
     Waypoint,
 )
+from assembly.recovery import PullOutTarget
 from assembly.safety import AABBCollisionChecker, ReachabilityCapabilities, SafetyConfig, SafetySupervisor
 from assembly.verification import VerificationThresholds
 from robot.adapter import TCP_LIMITS, Action, Observation
@@ -106,6 +107,14 @@ class MockCalibratedPoses:
 
 class MockRecoveryTargets:
     """Fixed recovery zones used only by the local mock fixture."""
+
+    def pull_out_target_for(self, product: int, part: InventoryItem) -> PullOutTarget:
+        del product, part
+        return PullOutTarget(
+            _oriented(500.0, -300.0, -300.0, 0.0),
+            -180.0,
+            "mock-only deterministic test-bed clearance plane",
+        )
 
     def staging_target_for(self, product: int, part: InventoryItem, slot: int) -> OrientedPartPose:
         del product, part

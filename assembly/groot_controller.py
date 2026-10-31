@@ -13,11 +13,10 @@ from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
 from assembly.planner import PreparedPlanStep
+from assembly.recovery import PullOutTarget
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_queue import GrootGuardTrip, GrootMotionQueue
 from robot.adapter import Action, Observation
-
-_RETRY_LIFT_MM = 3.0  # docs/ROBOT_BRAIN.md@2a751da, section 3, "Won't seat".
 
 
 class GrootAssemblyController(AssemblyController):
@@ -137,23 +136,33 @@ class GrootAssemblyController(AssemblyController):
         endpoint = (*release[:2], release[2] + self._motion_config.retreat_mm, *release[3:])
         return self._intent(
             prepared, SemanticSkill.RELEASE_RETREAT, endpoint, 0.0, "nominal",
+            goal_pose=self._base_goal(prepared),
             release_tcp=release, release_authorized=True,
         )
 
     def _pull_out_intent(self, current: Waypoint) -> MotionIntent:
+        del current
         pending = self._pending_insertion_lift
         if pending is None:
             raise RuntimeError("pull-out intent has no pending insertion")
         prepared = pending.prepared
-        endpoint = (current.x, current.y, current.z + _RETRY_LIFT_MM, current.w, current.p, current.r)
+        target = self._pull_out_target(prepared)
+        release = self._command_tcp(target.pose, prepared)
+        endpoint = (*release[:2], target.clear_z_mm, *release[3:])
         return self._intent(
-            prepared, SemanticSkill.PULL_OUT, endpoint, 1.0, "wont_seat", grasp=prepared.target,
+            prepared, SemanticSkill.PULL_OUT, endpoint, 0.0, "fix_above",
+            goal_pose=(target.pose.tcp.x, target.pose.tcp.y, target.pose.tcp.r),
+            grasp=prepared.target,
+            release_tcp=release,
+            release_authorized=True,
+            pose_source_suffix=f"pull-out target: {target.source}",
         )
 
     def _defect_intent(self, prepared: PreparedPlanStep) -> MotionIntent:
         endpoint = self._command_tcp(prepared.target, prepared)
         return self._intent(
             prepared, SemanticSkill.DEFECT_DROP, endpoint, 0.0, "defect",
+            goal_pose=(prepared.target.tcp.x, prepared.target.tcp.y, 0.0),
             release_tcp=endpoint, release_authorized=True,
         )
 
@@ -166,7 +175,8 @@ class GrootAssemblyController(AssemblyController):
             "T09 execution tolerance around calibrated insertion TCP",
         )
         return self._intent(
-            prepared, SemanticSkill.PICK_INSERT_HOLD, endpoint, 1.0, "nominal", contact=contact,
+            prepared, SemanticSkill.PICK_INSERT_HOLD, endpoint, 1.0, "nominal",
+            goal_pose=self._base_goal(prepared), contact=contact,
         )
 
     def _intent(
@@ -177,14 +187,18 @@ class GrootAssemblyController(AssemblyController):
         final_gripper: float,
         case: str,
         *,
+        goal_pose: tuple[float, float, float],
         grasp: OrientedPartPose | None = None,
         contact: ContactEnvelope | None = None,
         release_tcp: tuple[float, float, float, float, float, float] | None = None,
         release_authorized: bool = False,
+        pose_source_suffix: str | None = None,
     ) -> MotionIntent:
         active_grasp = grasp or prepared.grasp
         object_pose, origin_z, grasp_tcp, wrist_roll = self._grasp_fields(active_grasp, prepared)
-        goal = prepared.verification_target or prepared.target
+        pose_source = f"{active_grasp.tcp.source} + T29 preferred grasp"
+        if pose_source_suffix is not None:
+            pose_source = f"{pose_source}; {pose_source_suffix}"
         return MotionIntent(
             skill=skill,
             instance_id=prepared.part.instance_id,
@@ -196,12 +210,12 @@ class GrootAssemblyController(AssemblyController):
             object_pose=object_pose,
             object_origin_z_mm=origin_z,
             wrist_roll_deg=wrist_roll,
-            goal_pose=(goal.tcp.x, goal.tcp.y, goal.tcp.r),
+            goal_pose=goal_pose,
             grasp_tcp=grasp_tcp,
             release_tcp=release_tcp,
             endpoint_tcp=endpoint,
             final_gripper=final_gripper,
-            pose_source=f"{active_grasp.tcp.source} + T29 preferred grasp",
+            pose_source=pose_source,
             grasp_source_sha256=TRUSTED_GRASP_SOURCE.sha256,
             contact=contact,
             release_authorized=release_authorized,
@@ -224,9 +238,23 @@ class GrootAssemblyController(AssemblyController):
         origin_x = grasp.tcp.x - math.cos(angle) * local_x + math.sin(angle) * local_y
         origin_y = grasp.tcp.y - math.sin(angle) * local_x - math.cos(angle) * local_y
         origin_z = grasp.tcp.z - local_z
-        wrist_roll = yaw + preferred.turn_deg
+        wrist_roll = (yaw + preferred.turn_deg) % 360.0
         command = (grasp.tcp.x, grasp.tcp.y, grasp.tcp.z, -180.0, 0.0, wrist_roll)
         return (origin_x, origin_y, yaw), origin_z, command, wrist_roll
+
+    @staticmethod
+    def _base_goal(prepared: PreparedPlanStep) -> tuple[float, float, float]:
+        base = prepared.base_pose.tcp
+        return (base.x, base.y, base.r)
+
+    def _pull_out_target(self, prepared: PreparedPlanStep) -> PullOutTarget:
+        provider = getattr(self._recovery_targets, "pull_out_target_for", None)
+        if not callable(provider):
+            raise MotionIntentError("pull-out requires a calibrated empty test-bed target")
+        target = provider(prepared.record.product, prepared.part)
+        if not isinstance(target, PullOutTarget):
+            raise MotionIntentError("pull-out target must include a calibrated pose and clear Z")
+        return target
 
     @staticmethod
     def _command_tcp(pose: OrientedPartPose, prepared: PreparedPlanStep) -> tuple[float, ...]:
@@ -236,8 +264,24 @@ class GrootAssemblyController(AssemblyController):
             pose.tcp.z,
             -180.0,
             0.0,
-            pose.tcp.r + prepared.recipe_step.preferred_grasp.turn_deg,
+            (pose.tcp.r + prepared.recipe_step.preferred_grasp.turn_deg) % 360.0,
         )
+
+    def _prepare_after_insertion_lift(
+        self,
+        observation: Observation,
+        current: Waypoint,
+        observed_at: float,
+    ) -> bool:
+        if current.gripper == 1.0:
+            return super()._prepare_after_insertion_lift(observation, current, observed_at)
+        self._motion_queue.finish()
+        self._pending_insertion_lift = None
+        self._part_held = False
+        self._held_instance_id = None
+        self._release_dispatched = True
+        self._hold("GR00T pull-out set-down requires fresh operator reconciliation before retry")
+        return False
 
     def _track_emitted_phase(self, instance_id: str) -> None:
         super()._track_emitted_phase(instance_id)

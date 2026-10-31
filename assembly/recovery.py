@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from numbers import Number
 from typing import Protocol
 
 from assembly.catalog import Catalog, ProductRecipe, RecipeStep
@@ -24,6 +26,27 @@ from assembly.verification import RecoveryDecision, RecoveryOperation
 
 class RecoveryError(RuntimeError):
     """Recovery cannot be planned without calibrated physical state."""
+
+
+@dataclass(frozen=True, slots=True)
+class PullOutTarget:
+    """Calibrated set-down pose and absolute retreat plane for learned pull-out."""
+
+    pose: OrientedPartPose
+    clear_z_mm: float
+    source: str
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.clear_z_mm, bool)
+            or not isinstance(self.clear_z_mm, Number)
+            or not math.isfinite(float(self.clear_z_mm))
+        ):
+            raise RecoveryError("pull-out clear_z_mm must be finite")
+        if self.clear_z_mm <= self.pose.tcp.z:
+            raise RecoveryError("pull-out clear_z_mm must be above the set-down pose")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise RecoveryError("pull-out target requires a recorded source")
 
 
 class RecoveryStageKind(StrEnum):
@@ -75,6 +98,12 @@ class _RecoveryCompileContext:
 
 class RecoveryTargetProvider(Protocol):
     """Cell-calibrated staging and reject targets; no defaults are safe."""
+
+    def pull_out_target_for(
+        self,
+        product: int,
+        part: InventoryItem,
+    ) -> PullOutTarget: ...
 
     def staging_target_for(
         self,

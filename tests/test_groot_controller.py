@@ -17,6 +17,7 @@ from assembly.inventory import Inventory, InventoryItem, InventoryZone, ObjectCo
 from assembly.motion import AbsolutePoseUF0, MotionChunk, MotionPhase, OrientedPartPose, RestingState, Waypoint
 from assembly.motion_intent import MotionIntent, semantic_instruction
 from assembly.planner import ContractPoseUF0, PlanCandidate, PlanStepRecord, PreparedPlanStep, RecipePlanner
+from assembly.recovery import PullOutTarget
 from assembly.state_machine import PackMLState
 from assembly.verification import VerificationReason
 from policy_learn.deploy.cell_executor import GrootExecutionResult
@@ -99,6 +100,8 @@ def _prepared_from_golden(row: dict) -> PreparedPlanStep:
     base_pose = _pose(goal_x, goal_y, -320.0, goal_yaw)
     if row["skill"] == "pull_out":
         target = _grasp_from_object(step, row["object_pose"])
+    elif row["skill"] == "defect_drop":
+        target = _pose(goal_x, goal_y, -290.0, 73.0)
     else:
         target = _pose(goal_x + 11.0, goal_y - 7.0, -290.0, goal_yaw + 73.0)
     record = PlanStepRecord(
@@ -112,9 +115,13 @@ class _GoldenRecoveryTargets:
     def __init__(self, row: dict) -> None:
         self._goal = tuple(float(value) for value in row["goal_pose"])
 
-    def pull_out_target_for(self, product: int, part: InventoryItem) -> OrientedPartPose:
+    def pull_out_target_for(self, product: int, part: InventoryItem) -> PullOutTarget:
         assert product == int(part.object_id[1])
-        return _pose(self._goal[0], self._goal[1], -300.0, self._goal[2])
+        return PullOutTarget(
+            _pose(self._goal[0], self._goal[1], -300.0, self._goal[2]),
+            -180.0,
+            "recorded T18 test-bed clearance fixture",
+        )
 
 
 def _intent_from_golden(controller: GrootAssemblyController, row: dict) -> MotionIntent:
@@ -216,8 +223,60 @@ def test_controller_instruction_matches_recorded_t18_task_byte_for_byte(row: dic
     if row["skill"] == "pull_out":
         assert intent.release_authorized is True
         assert intent.release_tcp is not None
-        assert intent.endpoint_tcp[2] > intent.release_tcp[2]
+        assert intent.endpoint_tcp[2] == -180.0
         assert intent.final_gripper == 0.0
+
+
+def test_pull_out_without_calibrated_target_fails_closed() -> None:
+    row = next(item for item in T18_GOLDENS if item["skill"] == "pull_out")
+    prepared = _prepared_from_golden(row)
+    executor = _Executor()
+    controller = _controller(executor)
+    controller._recovery_targets = object()
+    controller._pending_insertion_lift = PendingInsertionLift(
+        prepared, False, VerificationReason.NOT_SEATED
+    )
+    current = Waypoint(*GrootAssemblyController._command_tcp(prepared.target, prepared), 1.0)
+
+    queued = controller._set_guarded_motion(
+        (), {}, current, 10.0, prepared.part.instance_id, prepared.part.object_id,
+        prepared.base.instance_id, prepared.base_pose,
+    )
+
+    assert queued is False
+    assert controller.state_machine.state is PackMLState.HELD
+    assert "calibrated empty test-bed target" in controller.state_machine.current_record.reason
+    assert executor.intents == []
+
+
+def test_completed_open_pull_out_clears_stale_held_identity_and_requires_reconciliation() -> None:
+    row = next(item for item in T18_GOLDENS if item["skill"] == "pull_out")
+    prepared = _prepared_from_golden(row)
+    controller = _controller(_Executor())
+    controller._recovery_targets = _GoldenRecoveryTargets(row)
+    controller._pending_insertion_lift = PendingInsertionLift(
+        prepared, False, VerificationReason.NOT_SEATED
+    )
+    controller._part_held = True
+    controller._held_instance_id = prepared.part.instance_id
+    controller.state_machine.start(prepared.record.product)
+    controller.state_machine.transition(PackMLState.EXECUTE)
+    intent = controller._pull_out_intent(
+        Waypoint(*GrootAssemblyController._command_tcp(prepared.target, prepared), 1.0)
+    )
+    endpoint = Waypoint(*intent.endpoint_tcp, 0.0)
+
+    proceed = controller._prepare_after_insertion_lift({}, endpoint, 10.0)
+
+    assert proceed is False
+    assert controller._pending_insertion_lift is None
+    assert controller._part_held is False
+    assert controller._held_instance_id is None
+    assert controller._release_dispatched is True
+    assert controller.state_machine.state is PackMLState.HELD
+    assert controller.state_machine.current_record.reason == (
+        "GR00T pull-out set-down requires fresh operator reconciliation before retry"
+    )
 
 
 def test_scripted_motion_coordinates_never_enter_the_cell_semantic_queue() -> None:
