@@ -35,6 +35,8 @@ GATE_STEPS="${GATE_STEPS:-50}"
 MAX_TRAIN_HOURS="${MAX_TRAIN_HOURS:-3.0}"
 STATE_DROPOUT="${STATE_DROPOUT:-0.2}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+OVERSAMPLE="${OVERSAMPLE:-}"       # e.g. v2_=3, see train_paths
+VAL_FRACTION="${VAL_FRACTION:-0.02}" # held-out share per source (v1 used 0.04)
 SYNC_SECONDS="${SYNC_SECONDS:-600}"
 EVAL_GPU="${EVAL_GPU:-}"
 HF_SYNC_REPO="${HF_SYNC_REPO:-}"
@@ -96,7 +98,7 @@ stage_prepare() {
   local srcs=() d
   for d in "$SRC_ROOT"/*/; do [[ -f "$d/meta/info.json" ]] && srcs+=(--src "${d%/}"); done
   (( ${#srcs[@]} )) || { mark "prepare no LeRobot dataset under $SRC_ROOT"; return 1; }
-  (cd "$REPO" && "$PY" -m policy_learn.groot.prepare_dataset "${srcs[@]}" --out "$DATA" > "$RUNS/prepare.log")
+  (cd "$REPO" && "$PY" -m policy_learn.groot.prepare_dataset "${srcs[@]}" --out "$DATA" --val-fraction "$VAL_FRACTION" > "$RUNS/prepare.log")
   for d in "$DATA"/train/*/ "$DATA"/val/*/; do
     [[ -d "$d" ]] || continue
     (cd "$GROOT_DIR" && "$PY" -m gr00t.data.stats --dataset-path "${d%/}" --embodiment-tag NEW_EMBODIMENT \
@@ -105,7 +107,17 @@ stage_prepare() {
   mark "prepare $("$PY" -c 'import json,sys; r=json.load(open(sys.argv[1])); print(" ".join(f"{x["name"]}:train={x["train_episodes"]}ep/{x["train_frames"]}fr,val={x["val_episodes"]}ep" for x in r))' "$DATA/prepare_report.json")"
 }
 
-train_paths() { local d out=(); for d in "$DATA"/train/*/; do out+=("${d%/}"); done; (IFS=:; echo "${out[*]}"); }
+# OVERSAMPLE="<prefix>=<k>" lists every train dir whose name starts with <prefix> k times. GR00T's DatasetFactory
+# weights each listed path by its frame count (sharded_mixture_dataset samples shards in proportion), so a path
+# listed k times gets k times its natural share of the batches (and of the merged normalisation statistics).
+train_paths() {
+  local d i k out=() prefix="${OVERSAMPLE%%=*}" factor="${OVERSAMPLE#*=}"
+  for d in "$DATA"/train/*/; do
+    k=1; [[ -n "$OVERSAMPLE" && "$(basename "$d")" == "$prefix"* ]] && k="$factor"
+    for ((i = 0; i < k; i++)); do out+=("${d%/}"); done
+  done
+  (IFS=:; echo "${out[*]}")
+}
 
 launch() {   # $1 output dir, $2 max steps, $3 save steps; extra args are passed on
   local out="$1" steps="$2" save="$3"; shift 3
@@ -135,13 +147,15 @@ stage_smoke() {   # 4 steps + one save on the training GPUs: data, model, multi-
 
 # Prints "<seconds per step> <total steps>" from the HF Trainer progress bar once GATE_STEPS steps are logged.
 measured_speed() {
-  python3 - "$1" "$GATE_STEPS" <<'PY'
+  python3 - "$1" "$GATE_STEPS" "$MAX_STEPS" <<'PY'
 import re, sys
 text = open(sys.argv[1], errors="replace").read().replace("\r", "\n")
 bars = re.findall(r"\| *(\d+)/(\d+) \[[^\]]*?([\d.]+)(s/it|it/s)\]", text)
+# Only the trainer's bar counts to MAX_STEPS; earlier bars (checkpoint shards, dataset init) have other totals.
+bars = [b for b in bars if b[1] == sys.argv[3]]
 if bars:
     total = bars[0][1]
-    done, _, rate, unit = [b for b in bars if b[1] == total][-1]
+    done, _, rate, unit = bars[-1]
     if int(done) >= int(sys.argv[2]):
         print(f"{float(rate) if unit == 's/it' else 1 / float(rate):.3f} {total}")
 PY
