@@ -6,7 +6,7 @@ Loaded by Isaac-GR00T's `launch_finetune.py --modality-config-path` and `gr00t/d
 Layout mirrors GR00T's DROID pre-training embodiment (single arm, exterior + wrist cameras, eef_9d):
 - video  table, side, wrist (current frame)
 - state  eef_9d (TCP xyz mm + rot6d), gripper (0 open / 1 closed), joints (J1..J6 deg)
-- action eef_9d + gripper, ACTION_HORIZON rows at the dataset fps (5 Hz = the demos' dt 0.2 s)
+- action eef_9d + gripper, ACTION_HORIZON rows at the dataset fps (5 Hz = the runtime's dt 0.2 s)
 - language annotation.human.task_description (the planner's instruction)
 
 The dataset stores ABSOLUTE act_tcp targets and the policy returns ABSOLUTE targets either way. GROOT_EEF_REP

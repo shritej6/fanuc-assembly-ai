@@ -37,8 +37,9 @@ writes it.
 | `next.done` | bool | optional; true on the last row |
 
 Rules that are checked:
-- **The rate is 5 Hz.** One row is one `Motion` step, `DT_S = 0.2` s (`sim/assembly_lab/skills/motion.py`). Do not
-  resample.
+- **The rate is 5 Hz.** One row is one 0.2 s runtime step (`policy_learn/deploy/groot_policy.py` `DT_S`, the real
+  cell's act dt). The recorder writes one row per 0.1 s Isaac env step (`sim/assembly_lab/skills/motion.py` `DT_S`);
+  `export_lerobot.py` keeps every 2nd row and refuses files that state another row period. Do not resample further.
 - `action[t]` is the target the arm moves to during step t. On the last row, repeat the final target (hold).
 - Every `action` xyz stays inside the workspace box (x 150–650, y −450–450, z −334–300 mm, ±1 mm).
 - The gripper value in both state and action is between 0 and 1. Every demo uses exactly 0 or 1.

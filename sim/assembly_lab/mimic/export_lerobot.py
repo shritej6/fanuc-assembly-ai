@@ -5,6 +5,9 @@ guard (physics/limits.yaml). Rejections are counted per reason in `meta/t12_expo
 silently. Per frame: state = joints J1..J6 (deg) + gripper + TCP [x, y, z mm, w, p, r deg] (UF0);
 action = the absolute act_tcp row [x, y, z, w, p, r, gripper] the arm must reach by the next frame.
 Frames whose obs/train_mask is False (rows that only stage a recovery case) are left out.
+Timing: the recorder writes one row per Isaac env step (SIM_DT_S, 0.1 s); every exported row is one runtime step of
+the GR00T client and the real cell (1 / FPS = 0.2 s), so every 2nd recorded row is kept and labelled with the target
+reached 0.2 s later. A file that states another row period (sim_args or dt_s) is refused, never resampled silently.
 
     python -m sim.assembly_lab.mimic.export_lerobot --inputs ~/t12_data/mimic/pick_insert/p4/*.hdf5 \
         --out ~/t12_data/lerobot/t12_p4_small --max-episodes 300
@@ -23,6 +26,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+from ..skills.motion import DT_S
 from . import lerobot_writer as W
 from .catalog import REPO, decode_plan_ids
 from .force_guard import ForceLimits, check_trace, load_limits
@@ -31,6 +35,8 @@ from .instructions import instruction
 from .spec import load_spec
 
 ROBOT_TYPE = "fanuc_er4ia_teamv"
+SIM_DT_S = DT_S  # seconds per recorded row: one Motion row = one Isaac env step
+FPS = 5  # exported rows per second = 1 / the runtime step (policy_learn/deploy/groot_policy.py DT_S = 0.2 s)
 
 
 @dataclass(frozen=True)
@@ -115,10 +121,14 @@ def accepted_attr(attrs) -> bool:
 
 
 def recorded_dt(path: str) -> float | None:
-    """Seconds per recorded row from the recorder's env_args (dt x decimation), None if the file has no sim_args."""
+    """Seconds per recorded row from the file's env_args: the simulator's dt x decimation (sim_args) when present,
+    else the skills recorder's dt_s (skills/hdf5_io.env_args); None if the file states neither."""
     with h5py.File(path, "r") as f:
-        args = json.loads(f["data"].attrs.get("env_args", "{}")).get("sim_args")
-    return float(args["dt"]) * int(args["decimation"]) if args else None
+        args = json.loads(f["data"].attrs.get("env_args", "{}"))
+    sim = args.get("sim_args")
+    if sim:
+        return float(sim["dt"]) * int(sim["decimation"])
+    return float(args["dt_s"]) if "dt_s" in args else None
 
 
 def frame_indices(n_steps: int, sim_dt: float, fps: int) -> tuple[np.ndarray, np.ndarray]:
@@ -276,8 +286,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inputs", nargs="+", required=True, help="generated Mimic HDF5 files (successful ones)")
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--sim-dt", type=float, default=0.1, help="time per recorded row (skills/motion.py DT_S = env step)")
-    ap.add_argument("--fps", type=int, default=5, help="exported frame rate = 1 / act dt on the cell")
+    ap.add_argument("--sim-dt", type=float, default=SIM_DT_S, help="time per recorded row (skills/motion.py DT_S = env step)")
+    ap.add_argument("--fps", type=int, default=FPS, help="exported frame rate = 1 / act dt on the cell and GR00T runtime")
     ap.add_argument("--width", type=int, default=640, help="frame width (DATA_FORMAT.md: 640)")
     ap.add_argument("--height", type=int, default=360, help="frame height (DATA_FORMAT.md: 360)")
     ap.add_argument("--max-episodes", type=int, default=None)
