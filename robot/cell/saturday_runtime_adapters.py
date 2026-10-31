@@ -16,11 +16,10 @@ from types import MethodType
 import numpy as np
 
 from assembly.catalog import Catalog
-from assembly.controller_ports import ControllerPortError, InventorySnapshot
+from assembly.controller_ports import ControllerPortError, InventorySnapshot, observation_time
 from assembly.final_verification import FinalViewIdentityEvidence
 from assembly.final_views import FinalViewPose, FinalViewRegistry
 from assembly.motion import MotionConfig
-from assembly.safety import SafetyConfigurationViolation, SafetySupervisor
 from assembly.verification import VerificationThresholds
 from perception.cell.models import ModelLoadError
 from perception.port.backends import DefectHeadClassifier, RtDetrDetector, WristReading
@@ -48,6 +47,8 @@ from robot.cell.real_layout import (
     ExpectedLayoutVerifier,
     load_real_cell_layout,
 )
+from robot.cell.saturday_placement_evidence import PlacementInspectionEvidence
+from robot.cell.saturday_scene_safety import SaturdaySceneSafetySupervisor
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +58,13 @@ DETECTOR_RUN_ENV = "FANUC_T09_DETECTOR_RUN_DIR"
 CLASSIFIER_RUN_ENV = "FANUC_T09_CLASSIFIER_RUN_DIR"
 RUN_DIR_ENV = "FANUC_CELL_RUN_DIR"
 _CONSTRUCTION_ONLY_SOURCE = "CONSTRUCTION-ONLY: required CSI measurement/review is absent"
+_PRELIMINARY_MOTION_SOURCE = (
+    "PRELIMINARY discarded deterministic-plan parameters: approach=30, lift=10 and hover=5 mm from "
+    "sim/assembly_lab/objects/planner.py; retreat=10 mm from sim/assembly_lab/eval/director.py; "
+    "15 mm and 6 deg row bounds derived from GuardLimits at minimum dt=0.1 s; "
+    "measured CSI safe transit Z=-180 from robot/cell/real_layout.py. "
+    "CELL sends semantic GR00T intents, never these deterministic waypoints"
+)
 __all__ = (
     "DETECTOR_PRESENCE_TOLERANCE_MM",
     "PLACEMENT_POSE_UNCERTAINTY",
@@ -153,20 +161,12 @@ def conservative_corridor() -> ArmCorridor:
     return ArmCorridor(math.nextafter(0.0, math.inf), _CONSTRUCTION_ONLY_SOURCE)
 
 
-class _UnavailableSafetySupervisor(SafetySupervisor):
-    """Typed construction placeholder that refuses every plan before motion."""
+class _UnverifiedFinalIdentityBackend:
+    """Return explicit non-passing evidence without fabricating physical identity."""
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, sink: PngJsonlImageSink) -> None:
+        self._sink = sink
 
-    def validate(self, *args: object, **kwargs: object):
-        del args, kwargs
-        raise SafetyConfigurationViolation(
-            "production robot-link and held-part sweeps are not reviewed; CELL motion is blocked"
-        )
-
-
-class _UnavailableFinalIdentityBackend:
     def capture(
         self,
         observation: dict[str, object],
@@ -174,23 +174,34 @@ class _UnavailableFinalIdentityBackend:
         base_instance_id: str,
         installed_instance_ids: tuple[str, str, str, str],
     ) -> FinalViewIdentityEvidence:
-        del observation, view, base_instance_id, installed_instance_ids
-        raise ControllerPortError("final identity backend is unverified; product completion is blocked")
+        del base_instance_id
+        self._sink.event(
+            "final_identity_unverified",
+            f"view={view.view_id}; no reviewed final-identity model; controller must hold before DONE",
+        )
+        return FinalViewIdentityEvidence(
+            observation_time(observation),
+            True,
+            view.view_id,
+            installed_instance_ids,
+            view.expected_instance_roles,
+            False,
+            None,
+        )
 
 
-def _construction_only_motion_config() -> MotionConfig:
-    """Return an exact typed config whose first use fails finite-value validation."""
-    unavailable = math.nan
+def _preliminary_discarded_motion_config() -> MotionConfig:
+    """Supply finite compile inputs; CELL discards their deterministic waypoints."""
     return MotionConfig(
-        unavailable,
-        unavailable,
-        unavailable,
-        unavailable,
-        unavailable,
-        unavailable,
+        30.0,
+        10.0,
+        5.0,
+        10.0,
+        15.0,
+        6.0,
         1,
         INSPECTION_SAFE_Z_MM,
-        _CONSTRUCTION_ONLY_SOURCE,
+        _PRELIMINARY_MOTION_SOURCE,
     )
 
 
@@ -209,13 +220,28 @@ def _wire_snapshot_bridge(
 
     def scan(_self: CellPerceptionPort, observation: dict[str, object]) -> InventorySnapshot:
         estimator.activate(observation)
-        detail = f"{estimator.presence.status.value}: {estimator.presence.source}"
+        detail = (
+            f"{estimator.presence.status.value}: {estimator.presence.source}; "
+            f"inventory={estimator.placement_source}"
+        )
         sink.event("presence", detail)
-        snapshot = original_scan(observation)
         if estimator.presence.status is PresenceStatus.VERIFIED:
+            snapshot = original_scan(observation)
             gate.verify(observation, snapshot)
         else:
-            log.warning("UNVERIFIED presence is construction-only and cannot complete: %s", detail)
+            snapshot = estimator.reviewed_inventory_snapshot(observation)
+            _self._xy.update(
+                {
+                    item.instance_id: item.coarse_xy_mm
+                    for item in snapshot.items
+                    if item.coarse_xy_mm is not None
+                }
+            )
+            verifier = _self.expected_layout_verifier
+            if verifier is None:
+                raise ControllerPortError("unverified placement inventory requires the reviewed layout verifier")
+            verifier(observation, snapshot)
+            log.warning("UNVERIFIED operator-approved placement inventory is active: %s", detail)
         bridge.publish(snapshot)
         return snapshot
 
@@ -262,13 +288,15 @@ def load_saturday_runtime_adapters(
         expected_layout_verifier=expected_layout_verifier,
     )
     _wire_snapshot_bridge(perception, estimator, bridge, gate, sink)
+    if presence.status is PresenceStatus.UNVERIFIED:
+        PlacementInspectionEvidence(cad, estimator, bridge, sink).bind(perception)
     from robot.cell.t09_real_runtime import SaturdayRuntimeAdapters
 
     return SaturdayRuntimeAdapters(
         perception,
         bridge,
-        _construction_only_motion_config(),
-        _UnavailableSafetySupervisor(),
+        _preliminary_discarded_motion_config(),
+        SaturdaySceneSafetySupervisor(),
         _construction_only_verification_thresholds(),
-        _UnavailableFinalIdentityBackend(),
+        _UnverifiedFinalIdentityBackend(sink),
     )

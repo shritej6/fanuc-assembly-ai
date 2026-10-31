@@ -350,10 +350,15 @@ class GrootMotionQueue:
         intent = self._intent
         if intent is None or intent.base_instance_id is None:
             raise GrootGuardTrip("CELL watchdog requires identity-bound part and base instances")
+        scene_port = self._perception.collision_scene
+        if isinstance(intent, FixedInspectionMove):
+            inspection_scene = getattr(self._perception, "inspection_scene", None)
+            if callable(inspection_scene):
+                scene_port = inspection_scene
         try:
             scene = call_port(
                 "CELL watchdog perception",
-                self._perception.collision_scene,
+                scene_port,
                 observation,
                 intent.instance_id,
                 intent.base_instance_id,

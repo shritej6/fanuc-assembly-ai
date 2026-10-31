@@ -19,7 +19,6 @@ from assembly.controller_ports import (
     ObservedInventoryItem,
 )
 from assembly.inventory import InventoryItem, InventoryZone, ObjectCondition
-from assembly.safety import SafetyConfigurationViolation
 from perception.port.cad import load_cad
 from perception.port.frames import installed_pose
 from perception.port.placement import SEAT_GATE_MM, TILT_GATE_DEG
@@ -41,6 +40,7 @@ from robot.cell.saturday_runtime_adapters import (
     conservative_corridor,
     load_saturday_runtime_adapters,
 )
+from robot.cell.saturday_scene_safety import SaturdaySceneSafetySupervisor
 
 
 def _observation(index: int = 0) -> dict[str, object]:
@@ -324,9 +324,96 @@ def test_loader_constructs_fail_closed_bundle_when_explicitly_armed(monkeypatch,
     assert isinstance(adapters.poses, PlacementMeasuredPoseBridge)
     assert adapters.perception.expected_layout_verifier is not None
     assert adapters.motion_config.safe_z_mm == -180.0
-    assert math.isnan(adapters.motion_config.approach_mm)
-    with pytest.raises(SafetyConfigurationViolation, match="motion is blocked"):
-        adapters.safety.validate()
+    assert all(
+        math.isfinite(value)
+        for value in (
+            adapters.motion_config.approach_mm,
+            adapters.motion_config.lift_mm,
+            adapters.motion_config.hover_mm,
+            adapters.motion_config.retreat_mm,
+            adapters.motion_config.max_linear_step_mm,
+            adapters.motion_config.max_yaw_step_deg,
+        )
+    )
+    assert type(adapters.safety) is SaturdaySceneSafetySupervisor
+    assert adapters.safety.checks_only is True
     view = reviewed_final_view_registry().views[0]
-    with pytest.raises(ControllerPortError, match="completion is blocked"):
-        adapters.final_identity_backend.capture({}, view, "base-1", ("p1", "p2", "p3", "p4"))
+    evidence = adapters.final_identity_backend.capture(
+        {"t": 11.0}, view, "base-1", ("p1", "p2", "p3", "p4")
+    )
+    assert evidence.passed is False
+    assert evidence.failed_instance_id is None
+    events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert any(record["kind"] == "final_identity_unverified" for record in events)
+
+
+def test_explicit_unverified_presence_publishes_reviewed_inventory(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv("FANUC_CELL_RUN_DIR", str(tmp_path))
+    catalog, cad, layout = load_catalog(), load_cad(), load_real_cell_layout()
+    adapters = load_saturday_runtime_adapters(
+        catalog,
+        cad,
+        ExpectedLayoutVerifier(layout, catalog),
+        reviewed_final_view_registry(),
+    )
+
+    snapshot = adapters.perception.scan(_observation())
+
+    assert snapshot.complete is True
+    assert len(snapshot.items) == 15
+    m5_01 = next(item for item in snapshot.items if item.object_id == "M5_01")
+    assert m5_01.coarse_xy_mm == (335.0, -45.0)
+    assert m5_01.condition is ObjectCondition.VERIFIED
+    assert m5_01.instance_id == "placement-r0-M5_01"
+    assert adapters.perception._xy[m5_01.instance_id] == (335.0, -45.0)
+    events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert any(
+        record["kind"] == "presence"
+        and "unverified" in record["detail"].lower()
+        and "placement.yaml" in record["detail"]
+        for record in events
+    )
+
+
+def test_unverified_placement_supplies_inspection_only_scene(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv("FANUC_CELL_RUN_DIR", str(tmp_path))
+    catalog, cad, layout = load_catalog(), load_cad(), load_real_cell_layout()
+    adapters = load_saturday_runtime_adapters(
+        catalog,
+        cad,
+        ExpectedLayoutVerifier(layout, catalog),
+        reviewed_final_view_registry(),
+    )
+    observation = _observation()
+    observation.update(
+        {
+            "tcp_pose": [300.0, -45.0, -180.0, -180.0, 0.0, 180.0],
+            "joints": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        }
+    )
+    snapshot = adapters.perception.scan(observation)
+    moving = next(item for item in snapshot.items if item.object_id == "M5_01")
+    base = next(item for item in snapshot.items if item.object_id == "F05")
+
+    scene = adapters.perception.inspection_scene(
+        observation,
+        moving.instance_id,
+        base.instance_id,
+    )
+
+    assert scene.complete is True
+    assert scene.moving_instance_id == moving.instance_id
+    assert scene.base_instance_id == base.instance_id
+    assert scene.moving_attached is False
+    assert scene.intrusion_detected is False
+    assert scene.base_pose == pytest.approx((420.0, 0.0, -327.1, 45.0))
+    assert any(box.name == base.instance_id for box in scene.fixtures)
+    assert all(box.name != moving.instance_id for box in scene.parts)
+    with pytest.raises(ControllerPortError, match="requires detector evidence"):
+        adapters.perception.collision_scene(
+            observation,
+            moving.instance_id,
+            base.instance_id,
+        )

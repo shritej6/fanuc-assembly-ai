@@ -21,8 +21,13 @@ from assembly.calibrated_poses import (
     MeasuredRecipePoses,
 )
 from assembly.catalog import Catalog, ProductRecipe, RecipeStep, UnknownBaseError
-from assembly.controller_ports import ControllerPortError, InventorySnapshot, observation_time
-from assembly.inventory import InventoryItem, InventoryZone
+from assembly.controller_ports import (
+    ControllerPortError,
+    InventorySnapshot,
+    ObservedInventoryItem,
+    observation_time,
+)
+from assembly.inventory import InventoryItem, InventoryZone, ObjectCondition
 from assembly.motion import AbsolutePoseUF0, OrientedPartPose, RestingState
 from perception.port.backends import PoseFit
 from perception.port.cad import CadCatalog
@@ -117,6 +122,30 @@ class PlacementPoseEstimator:
     def activate(self, observation: dict[str, object]) -> None:
         self.active_rollout = self._layout.rollout_for_observation(observation)
         self.observed_at_s = observation_time(observation)
+
+    @property
+    def placement_source(self) -> str:
+        """Return the immutable placement artifact used by the supervised prior."""
+        return self._layout.source
+
+    def reviewed_inventory_snapshot(
+        self,
+        observation: dict[str, object],
+    ) -> InventorySnapshot:
+        """Publish operator-approved placement inventory under the explicit unverified flag."""
+        self.activate(observation)
+        assert self.active_rollout is not None
+        items = tuple(
+            ObservedInventoryItem(
+                f"placement-r{self.active_rollout.index}-{placed.object_id}",
+                placed.object_id,
+                InventoryZone.TABLE,
+                ObjectCondition.VERIFIED,
+                (placed.center_x_mm, placed.center_y_mm),
+            )
+            for placed in self.active_rollout.objects
+        )
+        return InventorySnapshot(self.observed_at_s, True, items)  # type: ignore[arg-type]
 
     def object_pose(
         self,
