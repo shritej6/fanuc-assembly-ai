@@ -16,6 +16,7 @@ from assembly.controller_ports import (
 from assembly.inventory import InventoryZone
 from robot.cell.real_layout import (
     PLACEMENT_SOURCE_COMMIT,
+    ExpectedLayoutVerifier,
     RealCellLayout,
     load_real_cell_layout,
     reviewed_inspection_registry,
@@ -98,6 +99,21 @@ def test_expected_layout_uses_t38_start_tolerance_not_execution_tolerance() -> N
 
     with pytest.raises(ControllerPortError, match="outside the reviewed 10.0 mm"):
         layout.verify_expected_snapshot(catalog, rollout, InventorySnapshot(1.0, True, tuple(items)))
+
+
+def test_expected_layout_reset_rechecks_the_same_trial_index() -> None:
+    layout = load_real_cell_layout(ROOT / "robot/cell/submission/placement.yaml")
+    verifier = ExpectedLayoutVerifier(layout, load_catalog())
+    rollout = layout.rollouts[1]
+    observation = _observation(1, rollout.prompt)
+    snapshot = _snapshot(layout, 1)
+
+    verifier(observation, snapshot)
+    verifier(observation, InventorySnapshot(1.0, True, ()))
+    verifier.reset()
+
+    with pytest.raises(ControllerPortError, match="missing"):
+        verifier(observation, InventorySnapshot(1.0, True, ()))
 
 
 def test_reviewed_inspection_registry_has_exact_twelve_t38_slots() -> None:

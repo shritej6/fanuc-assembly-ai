@@ -11,7 +11,10 @@ from assembly.final_views import (
     FinalViewPose,
     FinalViewRegistry,
 )
-from robot.cell.real_layout import reviewed_final_view_registry
+from perception.cell.targets import MAX_HELD_BELOW_TCP_MM, TABLE_Z_UF0_MM
+from perception.port.cad import load_cad
+from perception.port.placement import precision_gate_tolerances
+from robot.cell.real_layout import INSPECTION_SAFE_Z_MM, reviewed_final_view_registry
 
 
 def _view(view_id: str, x_mm: float) -> FinalViewPose:
@@ -59,6 +62,24 @@ def test_registry_refuses_unmeasured_or_non_camera_safe_pose() -> None:
             expected_instance_roles=("step:1", "step:2", "step:3", "step:4"),
             source="",
         )
+
+
+def test_registry_refuses_equivalent_views_or_mismatched_identity_roles() -> None:
+    left = _view("left", 300.0)
+    equivalent = replace(
+        left,
+        view_id="equivalent",
+        endpoint_tcp_uf0=(*left.endpoint_tcp_uf0[:5], left.endpoint_tcp_uf0[5] + 360.0),
+    )
+    with pytest.raises(FinalViewError, match="physically distinct"):
+        FinalViewRegistry((left, equivalent))
+
+    wrong_roles = replace(
+        _view("right", 340.0),
+        expected_instance_roles=("step:1", "step:2", "step:3", "wrong"),
+    )
+    with pytest.raises(FinalViewError, match="identity roles"):
+        FinalViewRegistry((left, wrong_roles))
     with pytest.raises(FinalViewError, match="straight down"):
         FinalViewPose(
             product=1,
@@ -111,7 +132,21 @@ def test_reviewed_registry_has_product_five_b2_views_and_catalog_roles() -> None
         max_distance_mm=10.0,
     )
 
-    assert tuple(view.endpoint_tcp_uf0[:2] for view in views) == ((420.0, 0.0),) * 2
-    assert {view.endpoint_tcp_uf0[5] for view in views} == {45.0, 225.0}
+    assert tuple(view.endpoint_tcp_uf0[:2] for view in views) == ((420.0, -25.0), (420.0, 25.0))
+    assert {view.endpoint_tcp_uf0[5] for view in views} == {45.0}
     assert all(view.expected_instance_roles == ("M5_01", "M5_02", "M5_03", "M5_04") for view in views)
     assert all("PRELIMINARY" in view.source and "1f97ff5" in view.source for view in views)
+
+
+def test_every_reviewed_final_view_clears_the_assembled_cad_stack() -> None:
+    cad = load_cad()
+    execution, _perception = precision_gate_tolerances()
+    required_mm = MAX_HELD_BELOW_TCP_MM + execution.max_position_error_mm
+
+    for view in reviewed_final_view_registry().views:
+        object_ids = (view.base_object_id, *view.expected_instance_roles)
+        stack_top_z = TABLE_Z_UF0_MM + max(cad.get(object_id).seated_top_z_mm for object_id in object_ids)
+        lowest_tcp_z = min(view.safe_z_mm, view.endpoint_tcp_uf0[2])
+
+        assert view.safe_z_mm == INSPECTION_SAFE_Z_MM
+        assert lowest_tcp_z - stack_top_z >= required_mm

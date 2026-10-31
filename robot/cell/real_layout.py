@@ -17,12 +17,15 @@ import yaml
 
 from assembly.catalog import Catalog, load_catalog
 from assembly.controller_ports import ControllerPortError, InventorySnapshot
-from assembly.final_views import FinalViewPose, FinalViewRegistry
+from assembly.final_views import FinalViewError, FinalViewPose, FinalViewRegistry
 from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.inventory import InventoryZone
-from perception.cell.targets import APPROACH_ABOVE_MM, TABLE_Z_UF0_MM
+from perception.cell.targets import MAX_HELD_BELOW_TCP_MM
+from perception.port.cad import CadCatalog, load_cad
+from perception.port.placement import precision_gate_tolerances
 
 DEFAULT_PLACEMENT_PATH = Path(__file__).with_name("submission") / "placement.yaml"
+CELL_LAYOUT_PATH = Path(__file__).resolve().parents[2] / "sdg" / "configs" / "cell_layout.yaml"
 PLACEMENT_SOURCE_COMMIT = "1f97ff5"
 START_POSITION_TOLERANCE_MM = 10.0
 INSPECTION_Z_MM = -168.0
@@ -39,7 +42,7 @@ _INSPECTION_SOURCE = (
 )
 _FINAL_VIEW_SOURCE = (
     "PRELIMINARY T38 placement commit 1f97ff5 base XY/yaw + "
-    "sdg/configs/cell_layout.yaml table_z and perception/cell/targets.py approach clearance; "
+    "sdg/configs/cell_layout.yaml clearance.base_gap_mm; "
     "PR9 measured CSI wrist inspection Z=-168, W=-180, P=0"
 )
 _BASE_SPOT_BY_Y = {-165.0: "B1", 0.0: "B2", 165.0: "B3"}
@@ -122,6 +125,10 @@ class ExpectedLayoutVerifier:
             return
         self._layout.verify_expected_snapshot(self._catalog, rollout, snapshot)
         self._verified_trials.add(rollout.index)
+
+    def reset(self) -> None:
+        """Require the reviewed start layout to be checked again for the next trial."""
+        self._verified_trials.clear()
 
 
 def load_real_cell_layout(path: Path = DEFAULT_PLACEMENT_PATH) -> RealCellLayout:
@@ -239,6 +246,8 @@ def reviewed_final_view_registry() -> FinalViewRegistry:
     """Derive two straight-down views for every reviewed placement base spot."""
     layout = load_real_cell_layout()
     catalog = load_catalog()
+    cad = load_cad()
+    baseline_mm, table_z_mm = _final_view_layout_values()
     unique = {
         (int(base.object_id[1:]), base.object_id, base.center_x_mm, base.center_y_mm, base.yaw_deg)
         for rollout in layout.rollouts
@@ -254,8 +263,11 @@ def reviewed_final_view_registry() -> FinalViewRegistry:
             y_mm,
             yaw_deg,
             tuple(step.object_id for step in catalog.product(product).steps),
+            baseline_mm,
         )
     )
+    for view in views:
+        _require_final_view_clearance(view, cad, table_z_mm)
     return FinalViewRegistry(views)
 
 
@@ -266,23 +278,52 @@ def _final_views_for_base(
     y_mm: float,
     yaw_deg: float,
     roles: tuple[str, str, str, str],
+    baseline_mm: float,
 ) -> tuple[FinalViewPose, FinalViewPose]:
     spot = _BASE_SPOT_BY_Y.get(y_mm, f"XY-{x_mm:g}-{y_mm:g}")
-    safe_z = TABLE_Z_UF0_MM + APPROACH_ABOVE_MM
-    wrist_yaws = (yaw_deg % 360.0, (yaw_deg + 180.0) % 360.0)
+    view_y = (y_mm - baseline_mm, y_mm + baseline_mm)
     return tuple(
         FinalViewPose(
             product,
             object_id,
             f"{spot}-view-{index}",
-            (x_mm, y_mm, INSPECTION_Z_MM, FINGERS_DOWN_W_DEG, 0.0, wrist_yaw),
-            safe_z,
+            (x_mm, view_y_mm, INSPECTION_Z_MM, FINGERS_DOWN_W_DEG, 0.0, yaw_deg % 360.0),
+            INSPECTION_SAFE_Z_MM,
             roles,
             _FINAL_VIEW_SOURCE,
             (x_mm, y_mm),
         )
-        for index, wrist_yaw in enumerate(wrist_yaws, start=1)
+        for index, view_y_mm in enumerate(view_y, start=1)
     )  # type: ignore[return-value]
+
+
+def _final_view_layout_values() -> tuple[float, float]:
+    try:
+        payload = yaml.safe_load(CELL_LAYOUT_PATH.read_text(encoding="utf-8"))
+        baseline_mm = float(payload["clearance"]["base_gap_mm"])
+        table_z_mm = float(payload["table_z"])
+    except (OSError, UnicodeError, yaml.YAMLError, KeyError, TypeError, ValueError) as error:
+        raise ControllerPortError(f"cannot load final-view clearance from {CELL_LAYOUT_PATH}: {error}") from error
+    if not math.isfinite(baseline_mm) or baseline_mm <= 0.0 or not math.isfinite(table_z_mm):
+        raise ControllerPortError("final-view base gap and table Z must be finite, with a positive base gap")
+    return baseline_mm, table_z_mm
+
+
+def _require_final_view_clearance(
+    view: FinalViewPose,
+    cad: CadCatalog,
+    table_z_mm: float,
+) -> None:
+    object_ids = (view.base_object_id, *view.expected_instance_roles)
+    stack_top_z = table_z_mm + max(cad.get(object_id).seated_top_z_mm for object_id in object_ids)
+    execution, _perception = precision_gate_tolerances()
+    required_mm = MAX_HELD_BELOW_TCP_MM + execution.max_position_error_mm
+    lowest_tcp_z = min(view.safe_z_mm, view.endpoint_tcp_uf0[2])
+    if lowest_tcp_z - stack_top_z < required_mm:
+        raise FinalViewError(
+            f"{view.view_id} lacks assembled-product clearance: "
+            f"{lowest_tcp_z - stack_top_z:.1f} mm < {required_mm:.1f} mm"
+        )
 
 
 def _inspection_slot(prefix: str, x_mm: float, index: int, y_mm: float) -> InspectionSlotPose:

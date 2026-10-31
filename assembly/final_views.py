@@ -11,6 +11,10 @@ class FinalViewError(ValueError):
     """A production final-view definition is absent, ambiguous, or unsourced."""
 
 
+_MIN_INDEPENDENT_POSITION_MM = 0.3
+_MIN_INDEPENDENT_ANGLE_DEG = 1.0
+
+
 def _finite(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Number):
         raise FinalViewError(f"{field} must be a finite number")
@@ -91,8 +95,25 @@ class FinalViewRegistry:
             raise FinalViewError(f"{key!r} requires exactly two final views")
         if pair[0].view_id == pair[1].view_id:
             raise FinalViewError(f"{key!r} requires distinct final-view IDs")
-        if pair[0].endpoint_tcp_uf0 == pair[1].endpoint_tcp_uf0:
-            raise FinalViewError(f"{key!r} requires distinct final-view poses")
+        if pair[0].expected_instance_roles != pair[1].expected_instance_roles:
+            raise FinalViewError(f"{key!r} final views must bind the same identity roles")
+        position_delta = math.dist(
+            pair[0].endpoint_tcp_uf0[:3],
+            pair[1].endpoint_tcp_uf0[:3],
+        )
+        angle_delta = max(
+            _wrapped_angle_delta(first, second)
+            for first, second in zip(
+                pair[0].endpoint_tcp_uf0[3:],
+                pair[1].endpoint_tcp_uf0[3:],
+                strict=True,
+            )
+        )
+        if (
+            position_delta <= _MIN_INDEPENDENT_POSITION_MM
+            and angle_delta <= _MIN_INDEPENDENT_ANGLE_DEG
+        ):
+            raise FinalViewError(f"{key!r} requires physically distinct final-view poses")
 
     def views_for(
         self,
@@ -154,3 +175,7 @@ class FinalViewRegistry:
         if not nearby:
             raise FinalViewError("measured base center is outside the reviewed final-view spots")
         return tuple(nearby)
+
+
+def _wrapped_angle_delta(first_deg: float, second_deg: float) -> float:
+    return abs((first_deg - second_deg + 180.0) % 360.0 - 180.0)
