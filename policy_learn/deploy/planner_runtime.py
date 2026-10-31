@@ -26,6 +26,10 @@ def _planner_path(tcp: np.ndarray, goal, grip_after: float, after_mm: float) -> 
 
 
 class PlannerRuntime(HybridRuntime):
+    # user 2026-10-31 15:3x: the arm was too slow. Per 0.2 s row: 140 / 9 mm/s and 55 / 12.5 deg/s, still under the
+    # guard's 150 / 10 mm/s and 60 / 15 deg/s (the limits are unchanged)
+    STEP_MM_DEG = (28.0, 1.8, 11.0, 2.5)
+
     def act(self, obs: dict) -> np.ndarray:
         """Start the trial here so its first act is planned too (the parent would ask GR00T for it)."""
         pr = self.progress

@@ -42,6 +42,8 @@ def _path(tcp: np.ndarray, goal, grip_after: float, after_mm: float) -> list:
 
 
 class HybridRuntime(DirectGrootRuntime):
+    STEP_MM_DEG = (FAST_MM, SLOW_MM, FAST_DEG, SLOW_DEG)
+
     def reset(self) -> None:
         super().reset()
         self._plan_path: list | None = None
@@ -103,7 +105,8 @@ class HybridRuntime(DirectGrootRuntime):
         d = np.array(wp[:3]) - pose[:3]
         dr = _wrap(wp[3] - pose[5])
         n = float(np.linalg.norm(d))
-        lin, rot = (SLOW_MM, SLOW_DEG) if slow else (FAST_MM, FAST_DEG)
+        fast_mm, slow_mm, fast_deg, slow_deg = self.STEP_MM_DEG
+        lin, rot = (slow_mm, slow_deg) if slow else (fast_mm, fast_deg)
         k = min(1.0, lin / n if n > 1e-9 else 1.0, rot / abs(dr) if abs(dr) > 1e-9 else 1.0)
         out = pose.copy()
         out[:3] += d * k
