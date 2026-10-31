@@ -80,6 +80,10 @@ class MotionConfig:
     safe_z_mm: float
     safe_z_source: str
 
+    def __post_init__(self) -> None:
+        """Reject unusable deployment inputs before a controller can retain them."""
+        _validate_config(self)
+
 
 @dataclass(frozen=True)
 class InspectionStopConfig:
@@ -162,8 +166,8 @@ def _validate_config(config: MotionConfig) -> None:
     if not isinstance(config.safe_z_source, str) or not config.safe_z_source.strip():
         raise MotionConfigError("safe_z_mm requires a recorded source")
     for field in ("approach_mm", "lift_mm", "hover_mm", "retreat_mm"):
-        if _finite(getattr(config, field), field=field, error_type=MotionConfigError) < 0.0:
-            raise MotionConfigError(f"motion clearance {field} must be nonnegative")
+        if _finite(getattr(config, field), field=field, error_type=MotionConfigError) <= 0.0:
+            raise MotionConfigError(f"motion clearance {field} must be positive")
     for field in ("max_linear_step_mm", "max_yaw_step_deg"):
         if _finite(getattr(config, field), field=field, error_type=MotionConfigError) <= 0.0:
             raise MotionConfigError(f"{field} must be finite and positive")

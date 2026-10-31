@@ -463,24 +463,22 @@ def test_compile_pick_insert_rejects_untrusted_pose(change: dict[str, object], m
 @pytest.mark.parametrize(
     ("change", "message"),
     [
+        ({"approach_mm": math.nan}, "finite"),
         ({"approach_mm": -1.0}, "clearance"),
         ({"max_linear_step_mm": 0.0}, "positive"),
         ({"max_yaw_step_deg": math.inf}, "finite"),
         ({"max_waypoints_per_chunk": 101}, "1..100"),
+        ({"safe_z_mm": math.nan}, "finite"),
+        ({"safe_z_source": ""}, "recorded source"),
     ],
 )
-def test_compile_pick_insert_rejects_unsafe_config(change: dict[str, object], message: str) -> None:
-    """Bad caller-supplied bounds must fail closed instead of hanging or oversizing actions."""
-    config = replace(_config(), **change)
-
+def test_motion_config_rejects_unsafe_values_at_construction(
+    change: dict[str, object],
+    message: str,
+) -> None:
+    """Bad bounds must fail when built, before they can enter a controller bundle."""
     with pytest.raises(ValueError, match=message):
-        compile_pick_insert(
-            _current(),
-            _pose(250.0, -100.0, -300.0, 10.0),
-            _pose(340.0, 20.0, -280.0, 40.0),
-            gripper_roll_deg=0.0,
-            config=config,
-        )
+        replace(_config(), **change)
 
 
 @pytest.mark.parametrize("roll", [math.nan, math.inf, "90"])
