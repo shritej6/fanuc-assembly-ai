@@ -136,6 +136,22 @@ def test_model_rows_across_r_180_are_one_small_turn_not_a_hold():
     np.testing.assert_allclose(rows[:, [3, 5]], [[-180.0, -180.2], [-180.0, -179.7]], atol=1e-9)
 
 
+def test_policy_sends_the_valid_prefix_and_logs_the_truncation():
+    tcp = [380.0, 74.0, -300.0, -180.0, 0.0, 180.0]
+    chunk = [[380.0, 74.0, -300.0 - 2.8 * (k + 1), -180.0, 0.0, 180.0, 0] for k in range(10)]
+    chunk += [[380.0, 74.0, -334.5, -180.0, 0.0, 180.0, 0]] * 6
+    pol = GrootPolicy(model=Fixed(chunk))
+    pol.reset()
+    rows = pol.act(obs(tcp=tcp))
+    assert rows.shape == (10, 7)
+    entry = pol.guard_log[-1]
+    assert not entry["held"] and entry["truncated_at"] == 10 and "outside workspace" in entry["reasons"][0]
+    pol = GrootPolicy(model=Fixed(chunk[10:]))
+    pol.reset()
+    rows = pol.act(obs(tcp=tcp))
+    assert rows.shape == (1, 7) and pol.guard_log[-1]["held"] and pol.guard_log[-1]["truncated_at"] is None
+
+
 def test_a_real_large_wrist_turn_is_still_refused():
     tcp = [300.0, 0.0, -90.0, -180.0, 0.0, 0.0]
     pol = GrootPolicy(model=Fixed([[300, 0, -90, -180.0, 0, 90.0, 0]]))

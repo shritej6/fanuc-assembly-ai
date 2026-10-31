@@ -186,7 +186,8 @@ class GrootPolicy:
     def _record(self, res: GuardResult) -> np.ndarray:
         if res.reasons:
             self.guard_log.append({"rollout": self.rollout, "step": self.steps, "held": res.held,
-                                   "reasons": list(res.reasons)})
-            (log.warning if res.held else log.info)("guard %s at act %d: %s", "HOLD" if res.held else "clamp",
-                                                    self.steps, "; ".join(res.reasons))
+                                   "truncated_at": res.truncated_at, "reasons": list(res.reasons)})
+            kind = "HOLD" if res.held else "truncate" if res.truncated_at is not None else "clamp"
+            (log.info if kind == "clamp" else log.warning)("guard %s at act %d: %s", kind, self.steps,
+                                                           "; ".join(res.reasons))
         return res.rows
