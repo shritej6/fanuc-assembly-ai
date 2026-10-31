@@ -54,13 +54,13 @@ def test_endpoint_settle_timeout_holds_with_andon_and_keeps_reservation() -> Non
     )
     controller._emit_guarded_action(observation, current, 10.0, "p1-1")
 
-    action = controller.act(_observation(current, t=12.0))
+    action = controller.act(_observation(current, t=13.0))
 
     assert action == current.as_action()
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.inventory.active_product == 1
     assert controller.events[-1].kind == "andon"
-    assert "did not settle within 2 s" in controller.events[-1].detail
+    assert "did not settle within 3 s" in controller.events[-1].detail
     assert len(executor.inspections) == 1
 
 

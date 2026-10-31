@@ -32,11 +32,11 @@ SATURDAY_EXECUTION_TOLERANCES = ExecutionTolerances(
     1.0,
 )  # sim/assembly_lab/INTERFACES.md precision gates, user-approved for Saturday.
 SATURDAY_ENDPOINT_SETTLE_LIMITS = EndpointSettleLimits(
-    2.0,
+    3.0,
     3.0,
     "PRELIMINARY",
-    "Saturday conservative observation-to-settle limit (includes inference and dispatch latency); "
-    "pending CSI TCP/gripper measurement",
+    "T38 realistic-arm rehearsal: 2.5 s failed and 3.0 s cleared TCP settlement at the unchanged "
+    "0.3 mm / 1 deg gate; pending CSI TCP/gripper measurement",
 )
 SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
     pick_insert_s=90.0,

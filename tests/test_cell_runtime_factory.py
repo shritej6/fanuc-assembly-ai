@@ -61,6 +61,14 @@ def test_runtime_risks_name_every_explicit_sunday_deferral() -> None:
     assert all(risk.owner and risk.detail for risk in runtime.runtime_blockers())
 
 
+def test_saturday_settle_budget_matches_realistic_arm_rehearsal() -> None:
+    assert runtime.SATURDAY_ENDPOINT_SETTLE_LIMITS.tcp_timeout_s == 3.0
+    assert runtime.SATURDAY_ENDPOINT_SETTLE_LIMITS.status == "PRELIMINARY"
+    assert "T38 realistic-arm rehearsal" in runtime.SATURDAY_ENDPOINT_SETTLE_LIMITS.source
+    assert runtime.SATURDAY_EXECUTION_TOLERANCES.max_position_error_mm == 0.3
+    assert runtime.SATURDAY_EXECUTION_TOLERANCES.max_orientation_error_deg == 1.0
+
+
 @pytest.mark.parametrize("checkpoint", [None, "stub", "checkpoint.pt", "http://127.0.0.1:5555"])
 def test_cell_factory_requires_explicit_groot_server_url(checkpoint: str | None) -> None:
     with pytest.raises(runtime.CellRuntimeBlockedError, match="explicit groot://"):
