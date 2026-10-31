@@ -101,7 +101,11 @@ class HybridRuntime(DirectGrootRuntime):
         return i
 
     def _toward(self, pose: np.ndarray, wp):
-        slow = min(pose[2], wp[2]) <= self._plan_contact + EDGE_MM - 0.1  # as the guard: either end in the slow zone
+        edge = self._plan_contact + EDGE_MM
+        if pose[2] > edge and wp[2] < edge - 0.1:      # a lagging arm far above the slow zone: fast down to its edge first
+            out, _ = self._toward(pose, (wp[0], wp[1], edge, wp[3]))
+            return out, False
+        slow = min(pose[2], wp[2]) <= edge - 0.1       # as the guard: either end in the slow zone
         d = np.array(wp[:3]) - pose[:3]
         dr = _wrap(wp[3] - pose[5])
         n = float(np.linalg.norm(d))

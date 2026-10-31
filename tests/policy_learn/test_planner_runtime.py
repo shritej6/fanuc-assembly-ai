@@ -40,3 +40,18 @@ def test_planner_completes_on_a_lagging_arm():
     pol = _run(LaggyCell(PROMPT_1))
     assert pol.progress.ended == "done", pol.events[-3:]
     assert [g for g in pol.guard_log if g["held"]] == []
+
+
+def test_a_lagging_arm_far_above_the_pad_descends_fast_to_the_slow_zone_edge():
+    """Real cell 16:07: the arm lagged 40 mm behind, and the rows crawled at slow-zone speed all the way down."""
+    import numpy as np
+
+    from policy_learn.deploy.hybrid_runtime import EDGE_MM
+
+    pol = PlannerRuntime(model=NeverAskedGroot(), exec_horizon=8)
+    pol._plan_contact = -324.6
+    pose = np.array([373.8, 183.8, -284.6, -180.0, 0.0, 150.0])
+    out, reached = pol._toward(pose, (373.8, 183.8, -324.6, 150.0))
+    assert not reached
+    assert out[2] == -284.6 - PlannerRuntime.STEP_MM_DEG[0] or out[2] == -324.6 + EDGE_MM
+    assert out[2] >= -324.6 + EDGE_MM
