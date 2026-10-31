@@ -113,8 +113,7 @@ SCENARIOS: tuple[Scenario, ...] = (
     Scenario("ideal_arm_low_offaxis_row", {**IDEAL_ARM, "inject_low_row": True, "budget_s": 45.0},
              expect_low_row_guarded),
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
-    Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs,
-             "every Held is final: acknowledge_resume is not wired in CELL, trial 2 never moves"),
+    Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs),  # trial 2 installs
     Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_real_groot_safe,
              tags=("groot",)),
     Scenario("real_groot_ideal_arm", {**IDEAL_ARM, "budget_s": 45.0}, expect_real_groot_safe, tags=("groot",)),

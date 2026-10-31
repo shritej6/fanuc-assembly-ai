@@ -172,7 +172,8 @@ class _Monitor(threading.Thread):
             self.outcome.completed = True
         if self.cell.log.dropped_at is not None and self.outcome.drop_detected_after_s is None:
             return self.outcome.completed  # keep watching a dropped part until detection or the budget
-        return self.outcome.completed or self.outcome.held_reason is not None
+        # The CURRENT Held state ends this trial; a Held recorded in an earlier trial must not end the next one.
+        return self.outcome.completed or reason is not None
 
 
 def _low_row_verdict(groot: ScriptedGroot, cell: LaggyMock, guard_log: list[dict]) -> str:
