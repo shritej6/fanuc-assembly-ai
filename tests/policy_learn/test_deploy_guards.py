@@ -28,9 +28,13 @@ def test_safe_chunk_passes_unchanged():
 def test_outside_workspace_box_is_refused(k, value):
     rows = path(HOME, HOME, 3)
     rows[1, k] = value
-    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
-    assert res.held and not res.passed
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)  # row 0 is valid: only it is sent, row 1 is refused
+    assert not res.held and not res.passed and res.truncated_at == 1
     assert "outside workspace" in res.reasons[0]
+    np.testing.assert_allclose(res.rows, rows[:1])
+    rows[0, k] = value  # no valid prefix: hold
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and not res.passed and res.truncated_at is None
     np.testing.assert_allclose(res.rows, [HOME + [0.0]])
 
 
@@ -65,6 +69,9 @@ def test_tilted_fingers_are_refused_but_insert_tilt_is_allowed():
     bad = path(HOME, HOME, 2)
     bad[-1, 3:6] = [-170.0, 0.0, 0.0]
     res = ChunkGuard().guard(bad, HOME, 0.0, DT)
+    assert res.truncated_at == 1 and len(res.rows) == 1 and "tilted" in res.reasons[0]
+    bad[0, 3:6] = [-170.0, 0.0, 0.0]
+    res = ChunkGuard().guard(bad, HOME, 0.0, DT)
     assert res.held and "tilted" in res.reasons[0]
 
 
@@ -83,8 +90,12 @@ def test_contact_floor_refuses_far_below_seated_height():
     res = guard.guard(ok, start, 1.0, DT)
     assert res.passed and not res.held
     bad = path(start, [400.0, 0.0, seated - 4.2, -180, 0, 0], 20)  # 3.2 mm below the floor: past the clamp band
-    res = guard.guard(bad, start, 1.0, DT)
-    assert res.held and "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+    res = guard.guard(bad, start, 1.0, DT)  # the descent down to the clamp band is sent, the deepest row is not
+    assert not res.held and res.truncated_at == 19 and len(res.rows) == 19
+    assert "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+    assert res.rows[:, 2].min() >= seated - 1.0
+    res = guard.guard(bad[-1:], start, 1.0, DT)
+    assert res.held and "contact floor" in res.reasons[0]
 
 
 def test_slightly_below_floor_is_clamped_up_to_the_floor():
@@ -157,8 +168,9 @@ def test_gripper_values_snap_or_refuse():
 def test_gripper_chatter_is_refused():
     rows = path(HOME, HOME, 4)
     rows[:, 6] = [1, 0, 1, 1]
-    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
-    assert res.held and "chatter" in res.reasons[0]
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)  # the single close at row 0 (arm still) is a valid prefix
+    assert res.truncated_at == 1 and "chatter" in res.reasons[0]
+    np.testing.assert_allclose(res.rows, rows[:1])
 
 
 def test_gripper_change_while_moving_is_refused():
@@ -175,6 +187,36 @@ def test_clamped_row_rechecked_against_floor():
     rows = path(start, [391.5, 0.0, -300.5, -180, 0, 0], 1)  # 2.5x the slow limit: clamps to x 390.3, z -301.4
     res = guard.guard(rows, start, 0.0, 0.1)
     assert res.held and any("after clamp" in r and "contact floor" in r for r in res.reasons)
+
+
+def test_valid_prefix_before_a_refused_row_is_sent():
+    """The 10/31 product-5 evals froze: one row under the workspace floor held the whole chunk, so the policy was
+    asked again from the same pose forever. Now rows 0-9 go and the arm stops at row 9."""
+    start = [380.0, 74.0, -300.0, -180.0, 0.0, 180.0]
+    rows = path(start, [380.0, 74.0, -328.0, -180, 0, 180], 10)  # above the slow zone: unchanged
+    rows = np.vstack([rows, [[380.0, 74.0, -334.5, -180.0, 0.0, 180.0, 0.0]] * 6])
+    res = ChunkGuard().guard(rows, start, 0.0, 0.2)
+    assert not res.held and not res.passed and res.truncated_at == 10
+    np.testing.assert_allclose(res.rows, rows[:10])
+    assert any("row 10" in r and "outside workspace" in r for r in res.reasons)
+    assert any("truncated at row 10" in r for r in res.reasons)
+
+
+def test_truncated_prefix_still_passes_every_check():
+    """The prefix is re-checked on its own: a speed clamp inside it is applied and reported, nothing is loosened."""
+    lim = GuardLimits()
+    fast = path(HOME, [HOME[0] + lim.max_speed_mm_s * DT * 2.0] + HOME[1:], 1)  # 2x: clamped
+    rows = np.vstack([fast, [[HOME[0], 0.0, -335.0, -180.0, 0.0, 0.0, 0.0]]])
+    res = ChunkGuard(lim).guard(rows, HOME, 0.0, DT)
+    assert res.truncated_at == 1 and any("clamped" in r for r in res.reasons)
+    assert res.rows[0, 0] - HOME[0] == pytest.approx(lim.max_speed_mm_s * DT)
+
+
+def test_malformed_chunk_is_held_whole_even_with_a_valid_prefix():
+    rows = path(HOME, HOME, 3)
+    rows[2, 0] = np.nan
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and res.truncated_at is None and len(res.rows) == 1
 
 
 def test_hold_row_is_clipped_into_the_box():

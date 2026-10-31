@@ -3,8 +3,12 @@
 Every chunk the learned policy outputs passes through `guard_chunk` before it reaches the cell. The guard never
 passes a bad chunk silently:
 
-- Hard violations REFUSE the whole chunk and return one safe HOLD row (the current pose, the current gripper state, so
-  a held part stays held) plus the reasons: wrong shape, NaN/inf, dt outside 0.1-1.0 s, a target outside the
+- Hard violations REFUSE the chunk from the first refused row on. The rows before it are sent only if that prefix on
+  its own passes every check below (the arm then stops at its last row and the policy is asked again from a new
+  pose, instead of being re-asked forever from a pose that never changes); with no valid prefix the guard returns one
+  safe HOLD row (the current pose, the current gripper state, so a held part stays held). Either way the reasons are
+  reported. A malformed chunk (shape, NaN/inf, dt) is always held whole. Refused: wrong shape, NaN/inf, dt outside
+  0.1-1.0 s, a target outside the
   workspace box, fingers tilted past the fingers-down limit, a target more than `floor_clamp_mm` below the contact
   floor (seated height - 1 mm) near the current insertion target, a gripper value that is neither open nor closed, gripper chatter, a
   gripper change while moving, or a step more than `refuse_factor` times the speed limit (a model glitch).
@@ -71,6 +75,7 @@ class GuardResult:
     passed: bool                      # True: the chunk went through unchanged
     held: bool                        # True: the chunk was refused and `rows` is one hold row
     reasons: tuple[str, ...] = field(default_factory=tuple)
+    truncated_at: int | None = None   # set when only rows [0, truncated_at) are sent: row truncated_at was refused
 
 
 def wpr_to_matrix(w: float, p: float, r: float) -> np.ndarray:
@@ -121,11 +126,25 @@ class ChunkGuard:
         self.target = target
 
     def guard(self, rows, current_pose, current_gripper: float, dt: float) -> GuardResult:
-        hold = hold_row(current_pose, current_gripper, self.limits)
         reasons = _check_shape(rows, dt)
         if reasons:
-            return GuardResult(hold, False, True, tuple(reasons))
-        chunk = np.array(rows, dtype=float).reshape(-1, ROW_LEN)
+            return GuardResult(hold_row(current_pose, current_gripper, self.limits), False, True, tuple(reasons))
+        raw = np.array(rows, dtype=float).reshape(-1, ROW_LEN)
+        res = self._guard_chunk(raw.copy(), current_pose, current_gripper, dt)
+        if not res.held:
+            return res
+        # Every check is per row or along the path from the start, so a prefix of a valid chunk is valid: the longest
+        # valid prefix is found by shortening one row at a time, and it is re-checked on its own in full.
+        for k in range(len(raw) - 1, 0, -1):
+            pre = self._guard_chunk(raw[:k].copy(), current_pose, current_gripper, dt)
+            if not pre.held:
+                note = f"chunk truncated at row {k} of {len(raw)}: sent rows 0-{k - 1}, then the arm stops"
+                return GuardResult(pre.rows, False, False, (*res.reasons, note, *pre.reasons), truncated_at=k)
+        return res
+
+    def _guard_chunk(self, chunk: np.ndarray, current_pose, current_gripper: float, dt: float) -> GuardResult:
+        """All checks on one well-formed chunk (modified in place by the clamps); refused -> one hold row."""
+        hold = hold_row(current_pose, current_gripper, self.limits)
         floor_reasons = self._clamp_floor(chunk)
         hard = (self._check_box(chunk) + self._check_orientation(chunk) + self._check_floor(chunk)
                 + self._snap_gripper(chunk))
