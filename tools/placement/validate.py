@@ -73,19 +73,19 @@ def pretty(oid: str) -> str:
 # Per rollout: product -> base spot, and per part (spot, yaw offset from its base yaw).
 # Housings of type C (grip roll offset 0) get a negative offset, the rest positive, so pick and insert rolls stay
 # on the same wrist turn and inside 180 +- 60.
-DESIGN = {
-    1: {"products": [1, 2, 3], "base_spot": {1: "B1", 2: "B2", 3: "B3"},
-        "parts": {1: [("F", 1, -15), ("N", 1, 20), ("N", 0, -20), ("F", 0, 10)],
-                  2: [("F", 0, 15), ("N", 0, -10), ("F", 1, -20), ("N", 1, 20)],
-                  3: [("F", 1, 10), ("N", 1, -15), ("N", 0, 20), ("F", 0, -10)]}},
-    2: {"products": [4, 5, 6], "base_spot": {4: "B1", 5: "B2", 6: "B3"},
-        "parts": {4: [("F", 1, -20), ("N", 1, 15), ("N", 0, 25), ("F", 0, 10)],
-                  5: [("F", 0, -15), ("N", 0, 20), ("F", 1, 10), ("N", 1, 25)],
+DESIGN = {  # product 5 first in every rollout (user priority 2026-10-31: one full product, best demo yield)
+    1: {"products": [5, 1, 2], "base_spot": {5: "B2", 1: "B1", 2: "B3"},
+        "parts": {5: [("F", 0, -15), ("N", 0, 20), ("F", 1, 10), ("N", 1, 25)],
+                  1: [("F", 1, -15), ("N", 1, 20), ("N", 0, -20), ("F", 0, 10)],
+                  2: [("F", 0, 15), ("N", 0, -10), ("F", 1, -20), ("N", 1, 20)]}},
+    2: {"products": [5, 4, 6], "base_spot": {5: "B2", 4: "B1", 6: "B3"},
+        "parts": {5: [("F", 0, -15), ("N", 0, 20), ("F", 1, 10), ("N", 1, 25)],
+                  4: [("F", 1, -20), ("N", 1, 15), ("N", 0, 25), ("F", 0, 10)],
                   6: [("F", 1, -25), ("N", 0, 10), ("N", 1, 20), ("F", 0, 15)]}},
-    3: {"products": [1, 3, 5], "base_spot": {1: "B3", 3: "B1", 5: "B2"},
-        "parts": {1: [("F", 0, 20), ("N", 0, -15), ("F", 1, 10), ("N", 1, -20)],
-                  3: [("F", 1, -10), ("N", 1, 15), ("F", 0, 20), ("N", 0, -15)],
-                  5: [("F", 1, -20), ("N", 1, 20), ("N", 0, 10), ("F", 0, 25)]}},
+    3: {"products": [5, 1, 3], "base_spot": {5: "B2", 1: "B3", 3: "B1"},
+        "parts": {5: [("F", 1, -20), ("N", 1, 20), ("N", 0, 10), ("F", 0, 25)],
+                  1: [("F", 0, 20), ("N", 0, -15), ("F", 1, 10), ("N", 1, -20)],
+                  3: [("F", 1, -10), ("N", 1, 15), ("F", 0, 20), ("N", 0, -15)]}},
 }
 PROMPT = ("Assemble products {}, {} and {} on their bases. Reject any part that is defective, fallen or not in "
           "these products, and use a spare from the store instead.")
