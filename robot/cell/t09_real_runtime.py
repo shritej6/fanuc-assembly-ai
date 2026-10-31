@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from importlib import import_module
 
 from assembly.catalog import Catalog, load_catalog
 from assembly.cell_runtime import SATURDAY_ENDPOINT_SETTLE_LIMITS, SATURDAY_GROOT_WATCHDOG_LIMITS
@@ -261,13 +262,33 @@ def _load_saturday_runtime_adapters(
     expected_layout_verifier: ExpectedLayoutVerifier,
     final_view_registry: FinalViewRegistry,
 ) -> SaturdayRuntimeAdapters:
-    del catalog, cad, expected_layout_verifier, final_view_registry
-    raise RealCellFactoryBlockedError(
-        "missing production adapter module robot.cell.saturday_runtime_adapters: "
-        "RT-DETR/classifier artifacts and merged defect-head loader; FoundationPose PoseEstimator; "
-        "measured CloseupThresholds, PoseUncertainty and ArmCorridor; ImageSink; "
-        "CellPerceptionPort-to-MeasuredRecipePoses bridge; production IK/collision providers"
-    )
+    module_name = "robot.cell.saturday_runtime_adapters"
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as error:
+        if error.name != module_name:
+            raise
+        raise RealCellFactoryBlockedError(
+            f"missing production adapter module {module_name}: "
+            "RT-DETR/classifier artifacts and merged defect-head loader; "
+            "FoundationPose PoseEstimator; measured CloseupThresholds, PoseUncertainty "
+            "and ArmCorridor; ImageSink; CellPerceptionPort-to-MeasuredRecipePoses bridge; "
+            "production IK/collision providers"
+        ) from error
+    loader = getattr(module, "load_saturday_runtime_adapters", None)
+    blocked_error = getattr(module, "SaturdayAdapterBlockedError", None)
+    if not callable(loader):
+        raise RealCellFactoryBlockedError(
+            f"production adapter module {module_name} has no callable loader"
+        )
+    if not isinstance(blocked_error, type) or not issubclass(blocked_error, RuntimeError):
+        raise RealCellFactoryBlockedError(
+            f"production adapter module {module_name} has no typed blocked error"
+        )
+    try:
+        return loader(catalog, cad, expected_layout_verifier, final_view_registry)
+    except blocked_error as error:
+        raise RealCellFactoryBlockedError(str(error)) from error
 
 
 def load_saturday_real_cell_dependencies() -> RealCellDependencies:

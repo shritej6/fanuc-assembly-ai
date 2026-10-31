@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from importlib.util import find_spec
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -159,6 +160,50 @@ def test_public_real_factory_uses_pinned_loader_and_names_missing_software_adapt
     message = str(captured.value)
     assert "FoundationPose PoseEstimator" in message
     assert "production IK/collision providers" in message
+
+
+def test_saturday_adapter_boundary_imports_the_pinned_module(monkeypatch) -> None:
+    import robot.cell.t09_real_runtime as runtime
+
+    expected = object()
+    calls: list[tuple[object, ...]] = []
+
+    def load_adapters(*args):
+        calls.append(args)
+        return expected
+
+    module = SimpleNamespace(
+        SaturdayAdapterBlockedError=type("SaturdayAdapterBlockedError", (RuntimeError,), {}),
+        load_saturday_runtime_adapters=load_adapters,
+    )
+    monkeypatch.setattr(runtime, "import_module", lambda name: module)
+    inputs = (object(), object(), object(), object())
+
+    assert runtime._load_saturday_runtime_adapters(*inputs) is expected
+    assert calls == [inputs]
+
+
+def test_saturday_adapter_boundary_preserves_typed_fail_closed_reason(monkeypatch) -> None:
+    import robot.cell.t09_real_runtime as runtime
+
+    class SaturdayAdapterBlockedError(RuntimeError):
+        pass
+
+    def load_adapters(*args):
+        del args
+        raise SaturdayAdapterBlockedError("detector weights are absent; explicit arming required")
+
+    module = SimpleNamespace(
+        SaturdayAdapterBlockedError=SaturdayAdapterBlockedError,
+        load_saturday_runtime_adapters=load_adapters,
+    )
+    monkeypatch.setattr(runtime, "import_module", lambda name: module)
+
+    with pytest.raises(
+        runtime.RealCellFactoryBlockedError,
+        match="detector weights are absent; explicit arming required",
+    ):
+        runtime._load_saturday_runtime_adapters(object(), object(), object(), object())
 
 
 def test_real_dependency_bundle_names_every_controller_boundary_explicitly() -> None:
@@ -321,6 +366,7 @@ def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatc
         del catalog, cad, final_views
         perception = object.__new__(CellPerceptionPort)
         perception._expected_layout_verifier = expected
+        perception.reset = expected.reset
         mock = _controller_kwargs(MockPerception())
         return runtime.SaturdayRuntimeAdapters(
             perception,
