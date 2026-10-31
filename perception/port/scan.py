@@ -76,6 +76,10 @@ class Scanner:
         self._detector = detector
         self._geometry = geometry
         self._cad = cad
+        self.reset()
+
+    def reset(self) -> None:
+        """Discard all cross-frame identity and assembly evidence for a new trial."""
         self.tracker = Tracker()
         self.ledger = Ledger()
         self.assembly_bases: dict[str, tuple[float, float, float]] = {}   # base instance -> (x, y, footprint radius)

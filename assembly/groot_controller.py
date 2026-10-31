@@ -11,7 +11,12 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
 from assembly.controller_completion import validate_final_product_evidence
-from assembly.controller_ports import ControllerEvent, current_waypoint, oriented_pose_values
+from assembly.controller_ports import (
+    ControllerEvent,
+    current_waypoint,
+    endpoint_reached,
+    oriented_pose_values,
+)
 from assembly.execution import (
     CellTrialHeld,
     EndpointSettleLimits,
@@ -71,8 +76,6 @@ class GrootAssemblyController(AssemblyController):
                 raise TypeError("controller-owned verifier must retain the CELL final-view registry")
         elif final_view_registry is not None:
             raise TypeError("final-view registry requires the controller-owned verifier")
-        if "controller_owned_final_verification" in kwargs:
-            raise TypeError("CELL factory owns the final-verification authority flag")
         if "allow_missing_startup_hold" in kwargs:
             raise TypeError("CELL controller owns missing-TCP handling")
         self._groot_executor = groot_executor
@@ -82,12 +85,22 @@ class GrootAssemblyController(AssemblyController):
         self._runtime_authority = runtime_authority
         self._final_view_registry = final_view_registry
         self._pending_final_verification: PendingFinalVerification | None = None
-        kwargs["controller_owned_final_verification"] = controller_owned
         kwargs["allow_missing_startup_hold"] = True
         super().__init__(**kwargs)
 
+    def _owns_final_view_motion(self, verifier: object) -> bool:
+        return (
+            type(verifier) is ControllerOwnedFinalVerifier
+            and type(self._final_view_registry) is FinalViewRegistry
+            and verifier.registry is self._final_view_registry
+        )
+
     def reset(self) -> None:
         self._pending_final_verification = None
+        reset_perception = getattr(self._perception, "reset", None)
+        if not callable(reset_perception):
+            raise TypeError("CELL perception must provide a callable trial reset")
+        reset_perception()
         super().reset()
         self._groot_executor.reset()
         self._motion_queue = GrootMotionQueue(
@@ -126,6 +139,7 @@ class GrootAssemblyController(AssemblyController):
             return self._queue_final_view(observation, observed_at, pending)
         evidence = verifier.combine(
             pending.captures,
+            views=pending.views,
             observed_at_s=observed_at,
             product=pending.product,
             base_instance_id=pending.base_instance_id,
@@ -180,9 +194,19 @@ class GrootAssemblyController(AssemblyController):
         index = pending.awaiting_capture_index
         if index is None:
             raise RuntimeError("final-view capture has no settled endpoint")
+        view = pending.views[index]
+        expected = Waypoint(*view.endpoint_tcp_uf0, 0.0)
+        if not endpoint_reached(
+            current_waypoint(observation),
+            expected,
+            self._execution_tolerances,
+        ):
+            raise RuntimeError(
+                "final-view capture requires the reviewed final-view endpoint with an open gripper"
+            )
         capture = verifier.capture_view(
             observation,
-            pending.views[index],
+            view,
             pending.base_instance_id,
             pending.installed_instance_ids,
         )

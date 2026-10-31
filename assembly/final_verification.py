@@ -137,6 +137,7 @@ class ControllerOwnedFinalVerifier:
         self,
         captures: tuple[FinalViewIdentityEvidence, FinalViewIdentityEvidence],
         *,
+        views: tuple[FinalViewPose, FinalViewPose],
         observed_at_s: float,
         product: int,
         base_instance_id: str,
@@ -146,6 +147,12 @@ class ControllerOwnedFinalVerifier:
             raise ControllerPortError("controller-owned final verification requires two captures")
         if any(type(capture) is not FinalViewIdentityEvidence for capture in captures):
             raise ControllerPortError("controller-owned final captures must be typed evidence")
+        if type(views) is not tuple or len(views) != 2 or any(type(view) is not FinalViewPose for view in views):
+            raise ControllerPortError("controller-owned final verification requires two typed registry views")
+        if tuple(capture.view_id for capture in captures) != tuple(view.view_id for view in views):
+            raise ControllerPortError("controller-owned final captures must follow registry order")
+        if captures[0].observed_at_s >= captures[1].observed_at_s:
+            raise ControllerPortError("controller-owned final capture times must be strictly increasing")
         failed = next((capture.failed_instance_id for capture in captures if not capture.passed), None)
         identities = tuple(capture.instance_ids for capture in captures)
         return FinalProductEvidence(

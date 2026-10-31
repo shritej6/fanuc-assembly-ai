@@ -7,6 +7,7 @@ import numpy as np
 from assembly.final_verification import ControllerOwnedFinalVerifier, FinalViewIdentityEvidence
 from assembly.final_views import FinalViewPose, FinalViewRegistry
 from assembly.motion_intent import MotionIntent, SemanticSkill
+from assembly.state_machine import PackMLState
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
 from robot.cell.t09_mock_runtime import MockPerception, build_groot_mock_controller
@@ -100,8 +101,12 @@ def _apply(action: list[float], observation: dict) -> None:
 
 
 class _FinalIdentityBackend:
+    def __init__(self) -> None:
+        self.calls = []
+
     def capture(self, observation, view, base_instance_id, installed_instance_ids):
         del base_instance_id
+        self.calls.append((view.view_id, tuple(observation["tcp_pose"]), float(observation["t"])))
         return FinalViewIdentityEvidence(
             float(observation["t"]),
             True,
@@ -120,21 +125,22 @@ def _controller_owned_final_verifier():
             1,
             "F01",
             f"mock-B2-view-{index}",
-            (420.0, 80.0, -168.0, -180.0, 0.0, yaw),
+            (420.0, y_mm, -168.0, -180.0, 0.0, 90.0),
             -180.0,
             roles,
             source,
             (420.0, 80.0),
         )
-        for index, yaw in enumerate((90.0, 270.0), start=1)
+        for index, y_mm in enumerate((70.0, 90.0), start=1)
     )
     registry = FinalViewRegistry(views)
+    backend = _FinalIdentityBackend()
     verifier = ControllerOwnedFinalVerifier(
         registry,
-        _FinalIdentityBackend(),
+        backend,
         selection_tolerance_mm=0.0,
     )
-    return verifier, registry
+    return verifier, registry, backend
 
 
 def test_valid_guarded_fake_groot_completes_one_product_without_untrained_motion() -> None:
@@ -184,7 +190,7 @@ def test_controller_owned_final_views_complete_after_two_guarded_camera_poses() 
     model = _IntentAwareSafeModel()
     policy = GrootPolicy(model=model)
     executor = _RecordingExecutor(model, policy)
-    verifier, registry = _controller_owned_final_verifier()
+    verifier, registry, backend = _controller_owned_final_verifier()
     controller = build_groot_mock_controller(
         executor,
         final_verifier=verifier,
@@ -205,3 +211,43 @@ def test_controller_owned_final_views_complete_after_two_guarded_camera_poses() 
     assert controller.completed_products == (1,)
     assert len(inspection_events) >= 2
     assert all("non_learned_inspection" in event.detail for event in inspection_events[-2:])
+    assert tuple(call[0] for call in backend.calls) == ("mock-B2-view-1", "mock-B2-view-2")
+    assert backend.calls[0][2] < backend.calls[1][2]
+    endpoints = {view.view_id: np.asarray(view.endpoint_tcp_uf0) for view in registry.views}
+    assert all(
+        np.max(np.abs(np.asarray(tcp) - endpoints[view_id])) <= 0.3
+        for view_id, tcp, _observed_at in backend.calls
+    )
+
+
+def test_final_capture_holds_if_tcp_drifts_after_the_view_settles() -> None:
+    model = _IntentAwareSafeModel()
+    policy = GrootPolicy(model=model)
+    executor = _RecordingExecutor(model, policy)
+    verifier, registry, backend = _controller_owned_final_verifier()
+    controller = build_groot_mock_controller(
+        executor,
+        final_verifier=verifier,
+        final_view_registry=registry,
+    )
+    observation = _observation()
+
+    for step in range(20_000):
+        action = controller.act(observation)
+        _apply(action, observation)
+        if step == 0:
+            controller._perception.fallen_once.clear()
+            controller._perception.failed_insertions.clear()
+        pending = controller._pending_final_verification
+        if pending is not None and pending.awaiting_capture_index == 0 and not controller._motion_queue.active:
+            observation["tcp_pose"][0] += 1.0
+            break
+    else:
+        raise AssertionError("first final-view endpoint never settled")
+
+    controller.act(observation)
+
+    assert backend.calls == []
+    assert controller.completed_products == ()
+    assert controller.state_machine.state is PackMLState.HELD
+    assert "reviewed final-view endpoint" in controller.events[-1].detail

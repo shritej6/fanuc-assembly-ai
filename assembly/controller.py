@@ -85,7 +85,6 @@ class AssemblyController(
         recovery_targets: RecoveryTargetProvider,
         final_verifier: FinalProductVerifier,
         allow_mock_final_verification: bool = False,
-        controller_owned_final_verification: bool = False,
         allow_missing_startup_hold: bool = False,
     ) -> None:
         self._catalog = catalog
@@ -109,14 +108,17 @@ class AssemblyController(
         self._final_verifier = final_verifier
         if type(allow_mock_final_verification) is not bool:
             raise ControllerInputError("allow_mock_final_verification must be a boolean")
-        if type(controller_owned_final_verification) is not bool:
-            raise ControllerInputError("controller_owned_final_verification must be a boolean")
         self._final_motion_source = validate_final_product_verifier(
             final_verifier,
             allow_mock=allow_mock_final_verification,
-            controller_owned=controller_owned_final_verification,
+            controller_owned=self._owns_final_view_motion(final_verifier),
         )
         self.reset()
+
+    def _owns_final_view_motion(self, verifier: object) -> bool:
+        """Generic controllers cannot authorize physical final-view motion."""
+        del verifier
+        return False
 
     def reset(self) -> None:
         self._products: tuple[int, ...] = ()

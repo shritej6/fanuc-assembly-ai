@@ -217,6 +217,15 @@ def test_cell_refuses_startup_hold_without_measured_tcp() -> None:
     assert executor.inspections == []
 
 
+def test_cell_reset_clears_perception_trial_state() -> None:
+    controller = _controller(_Executor())
+    controller._perception._instruction = "stale trial"
+
+    controller.reset()
+
+    assert controller._perception._instruction is None
+
+
 def _queue_rear_guard_inspection(controller: GrootAssemblyController, plan: tuple[MotionChunk, ...]) -> None:
     candidate = _rear_guard_candidate()
     candidate = replace(candidate, target=replace(candidate.target, up_face="mock-installed:+z"))

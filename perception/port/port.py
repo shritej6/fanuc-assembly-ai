@@ -79,6 +79,22 @@ class CellPerceptionPort:
         """Expose the verifier identity so the real factory can fail closed."""
         return getattr(self, "_expected_layout_verifier", None)
 
+    def reset(self) -> None:
+        """Clear every identity, pose, and inspection cache at a trial boundary."""
+        self._scanner.reset()
+        self._xy.clear()
+        self._base_poses.clear()
+        self.base_fit_errors.clear()
+        self._pending.clear()
+        self._closeups.clear()
+        self._placements.clear()
+        verifier = self._expected_layout_verifier
+        if verifier is not None:
+            reset_verifier = getattr(verifier, "reset", None)
+            if not callable(reset_verifier):
+                raise PerceptionPortError("expected-layout verifier must provide a callable trial reset")
+            reset_verifier()
+
     def closeup(self, instance_id: str) -> CloseupReport:
         return self._report(self._closeups, instance_id, "close-up")
 

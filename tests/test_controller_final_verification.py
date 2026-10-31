@@ -1,10 +1,12 @@
 """Behavioral regressions for the trusted final-product verification gate."""
 
+import inspect
 from collections import Counter
 from dataclasses import replace
 
 import pytest
 
+from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerPortError
 from assembly.state_machine import PackMLState
 from tests.test_controller import (
@@ -124,6 +126,26 @@ def test_production_final_gate_cannot_self_attest_physical_view_motion() -> None
             allow_mock_final_verification=False,
         )
     assert verifier.called is False
+
+
+def test_generic_controller_cannot_claim_controller_owned_view_motion() -> None:
+    from tests.test_controller_owned_final_verifier import _verifier
+
+    perception = ScriptedPerception(_observed_products((1,)), set(), Counter(), set())
+    verifier, _backend, _views = _verifier()
+
+    with pytest.raises(ControllerPortError, match="controller-owned physical view motion"):
+        _controller(
+            perception,
+            final_verifier=verifier,
+            allow_mock_final_verification=False,
+        )
+
+
+def test_generic_controller_has_no_public_controller_owned_authority_flag() -> None:
+    assert "controller_owned_final_verification" not in inspect.signature(
+        AssemblyController,
+    ).parameters
 
 
 def test_final_gate_holds_when_verifier_has_no_callable_boundary() -> None:

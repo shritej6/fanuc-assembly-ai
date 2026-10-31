@@ -180,6 +180,36 @@ def test_scan_runs_the_real_layout_verifier_before_returning_inventory():
     assert verified[0][0]["t"] == 11.0
 
 
+def test_reset_clears_tracking_evidence_and_resets_layout_verifier() -> None:
+    class ResetVerifier:
+        def __init__(self) -> None:
+            self.reset_calls = 0
+
+        def __call__(self, observation, snapshot) -> None:
+            del observation, snapshot
+
+        def reset(self) -> None:
+            self.reset_calls += 1
+
+    verifier = ResetVerifier()
+    port, *_ = _world(expected_layout_verifier=verifier)
+    _scanned(port, 11.0)
+    port._pending["part"] = object()
+    port._closeups["part"] = object()
+    port._placements["part"] = object()
+
+    port.reset()
+
+    assert port.last_scan is None
+    assert port._xy == {}
+    assert port._base_poses == {}
+    assert port.base_fit_errors == {}
+    assert port._pending == {}
+    assert port._closeups == {}
+    assert port._placements == {}
+    assert verifier.reset_calls == 1
+
+
 def test_a_contested_identity_is_uncertain():
     port, *_ = _world(detector=FakeDetector(table=[RawBox("M1_02", 0.9, PART_BOX), RawBox("M2_02", 0.85, PART_BOX)]))
     assert _item(_scanned(port), "M1_02").condition is ObjectCondition.UNCERTAIN

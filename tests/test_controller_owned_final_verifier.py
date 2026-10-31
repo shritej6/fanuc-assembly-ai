@@ -69,6 +69,7 @@ def test_two_passive_captures_combine_into_identity_bound_product_evidence() -> 
 
     evidence = verifier.combine(
         captures,
+        views=views,
         observed_at_s=3.0,
         product=5,
         base_instance_id="base-5",
@@ -79,6 +80,32 @@ def test_two_passive_captures_combine_into_identity_bound_product_evidence() -> 
     assert evidence.view_passes == (True, True)
     assert evidence.checks_agree is True
     assert evidence.motion_source == "PRELIMINARY reviewed B2 views"
+
+
+def test_combine_refuses_reused_time_or_reversed_view_order() -> None:
+    verifier, _backend, views = _verifier()
+    instances = ("p5-1", "p5-2", "p5-3", "p5-4")
+    first = verifier.capture_view({"t": 1.0}, views[0], "base-5", instances)
+    second = verifier.capture_view({"t": 1.0}, views[1], "base-5", instances)
+
+    with pytest.raises(ControllerPortError, match="strictly increasing"):
+        verifier.combine(
+            (first, second),
+            views=views,
+            observed_at_s=2.0,
+            product=5,
+            base_instance_id="base-5",
+            installed_instance_ids=instances,
+        )
+    with pytest.raises(ControllerPortError, match="registry order"):
+        verifier.combine(
+            (replace(second, observed_at_s=2.0), first),
+            views=views,
+            observed_at_s=3.0,
+            product=5,
+            base_instance_id="base-5",
+            installed_instance_ids=instances,
+        )
 
 
 def test_capture_refuses_backend_roles_that_do_not_match_the_catalog() -> None:
