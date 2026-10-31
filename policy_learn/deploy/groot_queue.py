@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
+from numbers import Number
+
 from assembly.controller_ports import ExecutionTolerances, endpoint_reached
-from assembly.execution import ExecutionError
+from assembly.execution import EndpointSettleLimits, EndpointSettleTimeout, ExecutionError
 from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionPhase, Waypoint
 from assembly.motion_intent import MotionIntent
@@ -18,9 +21,17 @@ class GrootGuardTrip(ExecutionError):
 class GrootMotionQueue:
     """Preserve T09 lifecycle without accepting generic scripted MotionChunk data."""
 
-    def __init__(self, executor: T09GrootExecutor, tolerances: ExecutionTolerances) -> None:
+    def __init__(
+        self,
+        executor: T09GrootExecutor,
+        tolerances: ExecutionTolerances,
+        settle_limits: EndpointSettleLimits,
+    ) -> None:
+        if not isinstance(settle_limits, EndpointSettleLimits):
+            raise TypeError("CELL queue requires sourced EndpointSettleLimits")
         self._executor = executor
         self._tolerances = tolerances
+        self._settle_limits = settle_limits
         self._last_authority_label: str | None = None
         self._last_authority_source: str | None = None
         self.clear()
@@ -56,6 +67,8 @@ class GrootMotionQueue:
     def clear(self) -> None:
         self._intent: MotionIntent | FixedInspectionMove | None = None
         self._expected_endpoint: Waypoint | None = None
+        self._expected_issued_at_s: float | None = None
+        self._expected_deadline_s: float | None = None
         self._last_emitted_phase: MotionPhase | None = None
 
     def queue(self, intent: MotionIntent | FixedInspectionMove) -> None:
@@ -68,12 +81,31 @@ class GrootMotionQueue:
             )
         self._intent = intent
 
-    def confirm_previous_endpoint(self, current: Waypoint) -> None:
+    def confirm_previous_endpoint(self, current: Waypoint, observed_at_s: float) -> Action | None:
         if self._expected_endpoint is None:
-            return
-        if not endpoint_reached(current, self._expected_endpoint, self._tolerances):
-            raise ExecutionError("observed TCP did not reach the previous guarded GR00T row")
-        self._expected_endpoint = None
+            return None
+        now = self._time(observed_at_s)
+        if self._expected_issued_at_s is None or self._expected_deadline_s is None:
+            raise ExecutionError("CELL endpoint settlement is missing its original deadline")
+        if now < self._expected_issued_at_s:
+            raise ExecutionError("CELL endpoint settlement observation time moved backwards")
+        expected = self._expected_endpoint
+        if endpoint_reached(current, expected, self._tolerances):
+            self._clear_endpoint()
+            return None
+        if now >= self._expected_deadline_s:
+            detail = (
+                "guarded CELL endpoint did not settle within "
+                f"{self._expected_deadline_s - self._expected_issued_at_s:.3g} s at "
+                f"{self._tolerances.max_position_error_mm} mm / "
+                f"{self._tolerances.max_orientation_error_deg} deg; "
+                f"source={self._settle_limits.source}"
+            )
+            self.clear()
+            raise EndpointSettleTimeout(detail)
+        pose_only = Waypoint(*current.as_action()[:6], expected.gripper)
+        gripper = expected.gripper if endpoint_reached(pose_only, expected, self._tolerances) else current.gripper
+        return [*current.as_action()[:6], gripper]
 
     def emit(
         self,
@@ -82,7 +114,10 @@ class GrootMotionQueue:
         current: Waypoint,
         observed_at_s: float,
     ) -> Action:
-        del current, observed_at_s
+        if self._expected_endpoint is not None:
+            raise ExecutionError(
+                "CELL cannot emit another GR00T row before the previous endpoint settles"
+            )
         if self._intent is None:
             raise ExecutionError("CELL motion queue is empty")
         try:
@@ -106,10 +141,30 @@ class GrootMotionQueue:
         if result.reached_endpoint:
             self._intent = None
             return result.action
-        self._expected_endpoint = Waypoint(*result.action)
+        endpoint = Waypoint(*result.action)
+        issued_at = self._time(observed_at_s)
+        self._expected_endpoint = endpoint
+        self._expected_issued_at_s = issued_at
+        self._expected_deadline_s = issued_at + self._settle_limits.timeout_s(
+            gripper_transition=endpoint.gripper != current.gripper,
+        )
         return result.action
 
     def finish(self) -> None:
         if self.active or self._expected_endpoint is not None:
             raise ExecutionError("CELL queue cannot finish before its guarded endpoint")
         self.clear()
+
+    def _clear_endpoint(self) -> None:
+        self._expected_endpoint = None
+        self._expected_issued_at_s = None
+        self._expected_deadline_s = None
+
+    @staticmethod
+    def _time(value: object) -> float:
+        if isinstance(value, bool) or not isinstance(value, Number):
+            raise ExecutionError("CELL endpoint settlement time must be numeric")
+        result = float(value)
+        if not math.isfinite(result):
+            raise ExecutionError("CELL endpoint settlement time must be finite")
+        return result

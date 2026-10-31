@@ -6,12 +6,15 @@ import numpy as np
 import pytest
 
 from assembly.controller_ports import ExecutionTolerances
+from assembly.execution import EndpointSettleLimits
 from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionPhase, Waypoint
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
 from policy_learn.deploy.groot_policy import CellPolicySafetyError, GrootPolicy
 from policy_learn.deploy.groot_queue import GrootMotionQueue
 from policy_learn.deploy.guards import GuardLimits
+
+SETTLE = EndpointSettleLimits(2.0, 3.0, "PRELIMINARY", "fixed inspection test fixture")
 
 
 class _ForbiddenModel:
@@ -106,7 +109,7 @@ def test_cell_queue_dispatches_fixed_inspection_separately_from_semantic_motion(
     model = _ForbiddenModel()
     executor = _executor(model)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
-    queue = GrootMotionQueue(executor, ExecutionTolerances(0.3, 1.0))
+    queue = GrootMotionQueue(executor, ExecutionTolerances(0.3, 1.0), SETTLE)
     queue.queue(_move((310.0, 0.0, -200.0, -180.0, 0.0, 0.0)))
 
     action = queue.emit(

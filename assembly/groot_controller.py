@@ -10,7 +10,7 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerEvent
-from assembly.execution import CellTrialHeld, ExecutionError
+from assembly.execution import CellTrialHeld, EndpointSettleLimits, ExecutionError
 from assembly.fixed_inspection import FixedInspectionMove, InspectionPoseRegistry
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
@@ -36,6 +36,7 @@ class GrootAssemblyController(AssemblyController):
         *,
         groot_executor: T09GrootExecutor,
         inspection_poses: InspectionPoseRegistry,
+        endpoint_settle_limits: EndpointSettleLimits,
         runtime_authority: GrootControllerAuthority,
         **kwargs,
     ) -> None:
@@ -43,15 +44,22 @@ class GrootAssemblyController(AssemblyController):
             raise TypeError("CELL inspection poses must use InspectionPoseRegistry")
         if not isinstance(runtime_authority, GrootControllerAuthority):
             raise TypeError("CELL controller requires a typed GrootControllerAuthority")
+        if not isinstance(endpoint_settle_limits, EndpointSettleLimits):
+            raise TypeError("CELL controller requires sourced EndpointSettleLimits")
         self._groot_executor = groot_executor
         self._inspection_poses = inspection_poses
+        self._endpoint_settle_limits = endpoint_settle_limits
         self._runtime_authority = runtime_authority
         super().__init__(**kwargs)
 
     def reset(self) -> None:
         super().reset()
         self._groot_executor.reset()
-        self._motion_queue = GrootMotionQueue(self._groot_executor, self._execution_tolerances)
+        self._motion_queue = GrootMotionQueue(
+            self._groot_executor,
+            self._execution_tolerances,
+            self._endpoint_settle_limits,
+        )
 
     def close(self) -> None:
         """Release the sole CELL motion transport."""
@@ -130,6 +138,13 @@ class GrootAssemblyController(AssemblyController):
             return current.as_action()
         self._track_emitted_phase(instance_id)
         return action
+
+    def _confirm_previous_endpoint(
+        self,
+        current: Waypoint,
+        observed_at: float,
+    ) -> Action | None:
+        return self._motion_queue.confirm_previous_endpoint(current, observed_at)
 
     def _intent_from_state(
         self,

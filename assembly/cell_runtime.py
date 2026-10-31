@@ -14,6 +14,7 @@ from enum import Enum
 from importlib import import_module
 
 from assembly.controller_ports import ExecutionTolerances
+from assembly.execution import EndpointSettleLimits
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
@@ -30,6 +31,13 @@ SATURDAY_EXECUTION_TOLERANCES = ExecutionTolerances(
     0.3,
     1.0,
 )  # sim/assembly_lab/INTERFACES.md precision gates, user-approved for Saturday.
+SATURDAY_ENDPOINT_SETTLE_LIMITS = EndpointSettleLimits(
+    2.0,
+    3.0,
+    "PRELIMINARY",
+    "Saturday conservative observation-to-settle limit (includes inference and dispatch latency); "
+    "pending CSI TCP/gripper measurement",
+)
 
 
 class CellRuntimeBlockedError(RuntimeError):

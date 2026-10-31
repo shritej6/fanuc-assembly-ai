@@ -23,7 +23,7 @@ from assembly.controller_ports import (
 )
 from assembly.controller_recovery import PendingInsertionLift, RecoveryControllerMixin
 from assembly.controller_startup import StartupHoldConfig, validated_startup_hold
-from assembly.execution import ExecutionError, GuardedMotionQueue
+from assembly.execution import EndpointSettleTimeout, ExecutionError, GuardedMotionQueue
 from assembly.instruction import InstructionError, parse_requested_products
 from assembly.inventory import (
     InvalidInventoryObjectError,
@@ -242,11 +242,25 @@ class AssemblyController(
             return current.as_action()
         self._resume_after_scan()
         try:
-            self._motion_queue.confirm_previous_endpoint(current)
+            settle_action = self._confirm_previous_endpoint(current, observed_at)
+        except EndpointSettleTimeout as error:
+            self._hold(str(error))
+            return current.as_action()
         except ExecutionError as error:
             self._abort(str(error))
             return current.as_action()
+        if settle_action is not None:
+            return settle_action
         return self._progress(observation, current, observed_at)
+
+    def _confirm_previous_endpoint(
+        self,
+        current: Waypoint,
+        observed_at: float,
+    ) -> Action | None:
+        del observed_at
+        self._motion_queue.confirm_previous_endpoint(current)
+        return None
 
     def _resume_after_scan(self) -> None:
         if self.state_machine.state is not PackMLState.HELD or not self._resume_acknowledged:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 from assembly.controller_ports import (
     CollisionScene,
@@ -27,6 +30,32 @@ class ExecutionError(RuntimeError):
 
 class CellTrialHeld(ExecutionError):
     """CELL intentionally emitted no action and held only the active trial."""
+
+
+class EndpointSettleTimeout(ExecutionError):
+    """A guarded CELL row did not settle before its sourced deadline."""
+
+
+@dataclass(frozen=True, slots=True)
+class EndpointSettleLimits:
+    """Explicit CELL endpoint-settlement deadlines; never motion tolerances."""
+
+    tcp_timeout_s: float
+    gripper_timeout_s: float
+    status: Literal["PRELIMINARY", "MEASURED", "MOCK"]
+    source: str
+
+    def __post_init__(self) -> None:
+        values = (self.tcp_timeout_s, self.gripper_timeout_s)
+        if any(isinstance(value, bool) or not math.isfinite(value) or value <= 0.0 for value in values):
+            raise ValueError("endpoint settle timeouts must be finite and positive")
+        if self.status not in ("PRELIMINARY", "MEASURED", "MOCK"):
+            raise ValueError("endpoint settle status must be PRELIMINARY, MEASURED, or MOCK")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("endpoint settle limits require a recorded source")
+
+    def timeout_s(self, *, gripper_transition: bool) -> float:
+        return self.gripper_timeout_s if gripper_transition else self.tcp_timeout_s
 
 
 class WorkAreaIntrusionError(ExecutionError):
