@@ -9,6 +9,7 @@ Andon with both pictures) and `placement(instance_id)` (SeatReport with the meas
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from assembly.controller_ports import (
     CollisionScene,
@@ -51,7 +52,8 @@ class CellPerceptionPort:
     def __init__(self, *, detector: Detector, classifier: WristClassifier, pose_estimator: PoseEstimator,
                  geometry: CellGeometry, thresholds: CloseupThresholds, wrist_size: SizeUncertainty,
                  wrist_pose: PoseUncertainty, table_pose: PoseUncertainty, arm_corridor: ArmCorridor,
-                 image_sink: ImageSink, cad: CadCatalog | None = None) -> None:
+                 image_sink: ImageSink, cad: CadCatalog | None = None,
+                 expected_layout_verifier: Callable[[Observation, InventorySnapshot], None] | None = None) -> None:
         self._cad = cad or load_cad()
         self._geometry = geometry
         self._pose = pose_estimator
@@ -60,6 +62,7 @@ class CellPerceptionPort:
         self._corridor = arm_corridor
         self._scanner = Scanner(detector, geometry, self._cad)
         self._inspector = WristInspector(geometry, pose_estimator, classifier, self._cad, wrist_size, image_sink)
+        self._expected_layout_verifier = expected_layout_verifier
         self._xy: dict[str, tuple[float, float]] = {}
         self._base_poses: dict[str, InstalledPose] = {}
         self.base_fit_errors: dict[str, str] = {}
@@ -70,6 +73,11 @@ class CellPerceptionPort:
     @property
     def last_scan(self) -> ScanReport | None:
         return self._scanner.last_report
+
+    @property
+    def expected_layout_verifier(self) -> Callable[[Observation, InventorySnapshot], None] | None:
+        """Expose the verifier identity so the real factory can fail closed."""
+        return getattr(self, "_expected_layout_verifier", None)
 
     def closeup(self, instance_id: str) -> CloseupReport:
         return self._report(self._closeups, instance_id, "close-up")
@@ -92,6 +100,8 @@ class CellPerceptionPort:
         for scanned in report.objects:
             if scanned.object_id is not None and scanned.object_id.startswith("F"):
                 self._fit_base(observation, scanned.instance_id, scanned.object_id)
+        if self._expected_layout_verifier is not None:
+            self._expected_layout_verifier(observation, snapshot)
         return snapshot
 
     def _fit_base(self, observation: Observation, instance_id: str, object_id: str) -> None:

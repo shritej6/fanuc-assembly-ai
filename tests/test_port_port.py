@@ -169,6 +169,17 @@ def test_instance_ids_are_stable_across_scans():
     assert first == second
 
 
+def test_scan_runs_the_real_layout_verifier_before_returning_inventory():
+    verified: list[tuple[dict, InventorySnapshot]] = []
+    port, *_ = _world(expected_layout_verifier=lambda obs, snapshot: verified.append((obs, snapshot)))
+
+    snapshot = _scanned(port, 11.0)
+
+    assert len(verified) == 1
+    assert verified[0][1] is snapshot
+    assert verified[0][0]["t"] == 11.0
+
+
 def test_a_contested_identity_is_uncertain():
     port, *_ = _world(detector=FakeDetector(table=[RawBox("M1_02", 0.9, PART_BOX), RawBox("M2_02", 0.85, PART_BOX)]))
     assert _item(_scanned(port), "M1_02").condition is ObjectCondition.UNCERTAIN

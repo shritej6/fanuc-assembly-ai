@@ -23,6 +23,7 @@ from assembly.safety import SafetySupervisor
 from assembly.verification import VerificationThresholds
 from perception.port.port import CellPerceptionPort
 from policy_learn.deploy.cell_executor import T09GrootExecutor
+from robot.cell.real_layout import ExpectedLayoutVerifier, reviewed_inspection_registry
 
 
 class RequirementKind(StrEnum):
@@ -174,6 +175,12 @@ _RUNTIME_REQUIREMENTS = (
         ("per_intent_budget_s", "scene_interval_rows", "base_tilt_limit_deg", "source"),
         "Supply sourced per-intent and periodic perception watchdog limits.",
     ),
+    RealCellRequirement(
+        "expected_layout_verifier",
+        RequirementKind.RUNTIME_DEPENDENCY,
+        ("exact_type", "placement_source", "trial_index", "prompt", "start_tolerance"),
+        "Verify the reviewed placement once per trial without using it as grasp authority.",
+    ),
 )
 
 
@@ -209,6 +216,7 @@ class RealCellDependencies:
     inspection_poses: InspectionPoseRegistry
     endpoint_settle_limits: EndpointSettleLimits
     watchdog_limits: GrootWatchdogLimits
+    expected_layout_verifier: ExpectedLayoutVerifier
 
 
 # Source review must replace this with a committed loader. Environment variables
@@ -253,6 +261,19 @@ def _build_groot_real_controller(
     if type(dependencies.perception) is not CellPerceptionPort:
         raise RealCellFactoryConfigurationError(
             "real CELL factory requires the exact CellPerceptionPort type"
+        )
+    verifier = dependencies.expected_layout_verifier
+    if type(verifier) is not ExpectedLayoutVerifier:
+        raise RealCellFactoryConfigurationError(
+            "real CELL factory requires the exact ExpectedLayoutVerifier type"
+        )
+    if dependencies.perception.expected_layout_verifier is not verifier:
+        raise RealCellFactoryConfigurationError(
+            "real CELL perception must retain the reviewed expected-layout verifier"
+        )
+    if dependencies.inspection_poses != reviewed_inspection_registry():
+        raise RealCellFactoryConfigurationError(
+            "real CELL factory requires the reviewed T38 fixed inspection registry"
         )
     return GrootAssemblyController(
         groot_executor=safe_executor,
