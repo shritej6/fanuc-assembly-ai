@@ -59,3 +59,11 @@ def test_saturday_tilt_cone_allows_three_plus_two_degree_wiggle() -> None:
     wiggle = np.array([[400.0, 0.0, -250.0, -180.0, 5.0, 0.0, 0.0]])  # 3 deg tilt + 2 deg twist margin
     result = guard.guard(wiggle, start, 0.0, 0.2)
     assert not result.held, result.reasons
+
+
+def test_saturday_base_tilt_limit_stays_three_degrees() -> None:
+    """The product BASE must sit flat (3 deg); the 6 deg cone is the tool's, never the base's (PR 24, W3)."""
+    from assembly.cell_runtime import SATURDAY_GROOT_WATCHDOG_LIMITS
+
+    assert SATURDAY_GROOT_WATCHDOG_LIMITS.base_tilt_limit_deg == 3.0
+    assert 4.0 > SATURDAY_GROOT_WATCHDOG_LIMITS.base_tilt_limit_deg  # a 4 deg base tilt must trip
