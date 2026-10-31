@@ -14,7 +14,7 @@ from enum import Enum
 from importlib import import_module
 
 from assembly.controller_ports import ExecutionTolerances
-from assembly.groot_controller import GrootAssemblyController
+from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
 from policy_learn.deploy.guards import GuardLimits
@@ -160,12 +160,21 @@ def create_cell_policy(
         raise
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         raise CellRuntimeBlockedError(f"CELL controller factory failed: {error}") from error
-    if not isinstance(controller, GrootAssemblyController):
+    if type(controller) is not GrootAssemblyController:
         raise CellRuntimeBlockedError(
-            "CELL controller factory must return a GrootAssemblyController"
+            "CELL controller factory must return the exact GrootAssemblyController type"
         )
     if controller.groot_executor is not executor:
         raise CellRuntimeBlockedError(
             "CELL controller factory did not retain the exact guarded executor"
+        )
+    expected_authority = (
+        GrootControllerAuthority.REAL_CELL
+        if transport is CellTransport.REAL
+        else GrootControllerAuthority.OFFICIAL_MOCK_PROOF
+    )
+    if controller.runtime_authority is not expected_authority:
+        raise CellRuntimeBlockedError(
+            "CELL controller runtime authority does not match the selected transport"
         )
     return controller

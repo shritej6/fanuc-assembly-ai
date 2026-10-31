@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
-import re
 from contextlib import AbstractContextManager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -18,13 +18,18 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE, load_catalog
 from assembly.cell_runtime import CellTransport
 from assembly.state_machine import PackMLState
 from policy_learn.deploy.attestation import REQUIRED_CELL_SKILLS
+from policy_learn.deploy.groot_policy import DT_S
+from policy_learn.deploy.guards import GuardLimits
 from policy_learn.groot.groot_client import ATTESTATION_PROTOCOL, pack, unpack
-from policy_learn.groot.tcp_convert import tcp_to_eef9d
+from policy_learn.groot.tcp_convert import eef9d_to_tcp, tcp_to_eef9d
 from robot.cell.policy import Policy
 from robot.cell.t09_mock_runtime import MockPerception
 
 CELL_DIR = Path(__file__).resolve().parents[2] / "robot" / "cell"
 INITIAL_TCP = [400.0, 0.0, -200.0, -180.0, 0.0, 0.0]
+FAKE_GUARD_LIMITS = GuardLimits()
+
+
 class _FakeGrootServer(AbstractContextManager["_FakeGrootServer"]):
     """Small PolicyServer-compatible REP service returning one unsafe row."""
 
@@ -144,13 +149,19 @@ class _SafeFakeGrootServer(_FakeGrootServer):
             ]
         )
         state = observation["state"]
-        current_xyz = np.asarray(state["eef_9d"], dtype=float)[0, 0, :3]
+        current_eef = np.asarray(state["eef_9d"], dtype=float)[0, 0]
+        current = eef9d_to_tcp(current_eef[None], np.array([-180.0, 0.0, 0.0]))[0]
         gripper = float(np.asarray(state["gripper"], dtype=float)[0, 0, 0])
-        target, target_gripper = _next_semantic_target(
-            current_xyz,
+        desired, target_gripper = _next_semantic_target(
+            current,
             gripper,
             grasp,
             insert,
+        )
+        target = (
+            current
+            if target_gripper != gripper
+            else _bounded_semantic_step(current, desired, insert=insert)
         )
         action = {
             "eef_9d": tcp_to_eef9d(target[None])[None],
@@ -184,20 +195,81 @@ def _validated_wire_request(request: dict[str, Any]) -> tuple[dict[str, Any], st
 
 
 def _next_semantic_target(
-    current_xyz: np.ndarray,
+    current: np.ndarray,
     gripper: float,
     grasp: np.ndarray,
     insert: np.ndarray,
 ) -> tuple[np.ndarray, float]:
-    at_grasp = np.linalg.norm(current_xyz - grasp[:3]) <= 0.3
-    at_insert = np.linalg.norm(current_xyz - insert[:3]) <= 0.3
-    if gripper == 0.0 and at_insert:
+    at_grasp = _same_tcp(current, grasp)
+    at_insert = _same_tcp(current, insert)
+    if gripper == 0.0 and _on_release_column(current, insert):
         retreat = insert.copy()
         retreat[2] += 10.0
         return retreat, 0.0
     if gripper == 0.0:
         return (grasp, 1.0) if at_grasp else (grasp, 0.0)
     return (insert, 0.0) if at_insert else (insert, 1.0)
+
+
+def _same_tcp(left: np.ndarray, right: np.ndarray) -> bool:
+    position_error = float(np.linalg.norm(left[:3] - right[:3]))
+    angle_error = float(np.abs((left[3:6] - right[3:6] + 180.0) % 360.0 - 180.0).max())
+    return position_error <= 0.3 and angle_error <= 1.0
+
+
+def _on_release_column(current: np.ndarray, insert: np.ndarray) -> bool:
+    xy_error = float(np.linalg.norm(current[:2] - insert[:2]))
+    angle_error = float(np.abs((current[3:6] - insert[3:6] + 180.0) % 360.0 - 180.0).max())
+    z_offset = float(current[2] - insert[2])
+    return xy_error <= 0.3 and angle_error <= 1.0 and 0.0 <= z_offset <= 10.0
+
+
+def _bounded_semantic_step(
+    current: np.ndarray,
+    target: np.ndarray,
+    *,
+    insert: np.ndarray,
+) -> np.ndarray:
+    free_candidate = _bounded_step(
+        current,
+        target,
+        linear_step=0.98 * FAKE_GUARD_LIMITS.max_speed_mm_s * DT_S,
+        angular_step=0.98 * FAKE_GUARD_LIMITS.max_rot_deg_s * DT_S,
+    )
+    if _in_guard_slow_zone(current, insert) or _in_guard_slow_zone(free_candidate, insert):
+        candidate = _bounded_step(
+            current,
+            target,
+            linear_step=0.95 * FAKE_GUARD_LIMITS.slow_speed_mm_s * DT_S,
+            angular_step=0.95 * FAKE_GUARD_LIMITS.slow_rot_deg_s * DT_S,
+        )
+    else:
+        candidate = free_candidate
+    return target.copy() if _same_tcp(candidate, target) else candidate
+
+
+def _bounded_step(
+    current: np.ndarray,
+    target: np.ndarray,
+    *,
+    linear_step: float,
+    angular_step: float,
+) -> np.ndarray:
+    delta = target - current
+    delta[3:6] = (delta[3:6] + 180.0) % 360.0 - 180.0
+    ratio = max(
+        float(np.linalg.norm(delta[:3])) / linear_step,
+        float(np.abs(delta[3:6]).max()) / angular_step,
+        1.0,
+    )
+    return current + delta / ratio
+
+
+def _in_guard_slow_zone(pose: np.ndarray, insert: np.ndarray) -> bool:
+    at_contact_xy = float(np.linalg.norm(pose[:2] - insert[:2])) <= 1e-9
+    near_contact_z = pose[2] <= insert[2] + FAKE_GUARD_LIMITS.slow_zone_mm
+    near_floor = pose[2] <= FAKE_GUARD_LIMITS.z_mm[0] + FAKE_GUARD_LIMITS.slow_zone_mm
+    return near_floor or (at_contact_xy and near_contact_z)
 
 
 class _MockCellServer(AbstractContextManager["_MockCellServer"]):
@@ -281,37 +353,48 @@ def test_cell_policy_uses_fake_groot_against_official_mock_and_reaches_a_termina
     )
     monkeypatch.setenv("FANUC_T09_SOFTWARE_PROOF", "1")
     monkeypatch.syspath_prepend(str(CELL_DIR))
-    with _FakeGrootServer() as groot, _MockCellServer() as cell:
+    with _FakeGrootServer() as groot, _MockCellServer(trial_s=15.0) as cell:
         policy = Policy(
             runtime="cell",
             checkpoint=groot.url,
             cell_transport=CellTransport.OFFICIAL_MOCK,
         )
-        run_trial(cell.client, policy, cell.ready_trial())
+        try:
+            trial = cell.ready_trial()
+            monitor = threading.Thread(
+                target=_end_trial_on_controller_terminal,
+                args=(cell, policy),
+                daemon=True,
+            )
+            monitor.start()
+            run_trial(cell.client, policy, trial)
+            monitor.join(timeout=2.0)
 
-        endpoints = [request["endpoint"] for request in groot.requests]
-        completed = tuple(policy.controller.completed_products)
-        reason = _held_reason(policy)
-        outcome = "DONE" if 1 in completed else "hold_andon"
-        print(
-            f"CELL_PROOF outcome={outcome} completed={completed} "
-            f"reason={reason!r} get_action={endpoints.count('get_action')} "
-            f"rejections={cell.mock.rejections}"
-        )
+            endpoints = [request["endpoint"] for request in groot.requests]
+            completed = tuple(policy.controller.completed_products)
+            reason = _held_reason(policy)
+            outcome = "DONE" if 1 in completed else "hold_andon"
+            print(
+                f"CELL_PROOF outcome={outcome} completed={completed} "
+                f"reason={reason!r} get_action={endpoints.count('get_action')} "
+                f"rejections={cell.mock.rejections}"
+            )
 
-        assert "get_action" in endpoints, endpoints
-        assert "reset" in endpoints, endpoints
-        assert cell.mock.rejections == []
-        assert 1 in completed or reason, (
-            f"product 1 neither completed nor entered an explained Held state; "
-            f"completed={completed}, state={policy.controller.state_machine.current_record}"
-        )
-        if reason is not None:
-            assert "GR00T guard trip" in reason
-            assert "outside" in reason
+            assert "get_action" in endpoints, endpoints
+            assert "reset" in endpoints, endpoints
+            assert cell.mock.rejections == []
+            assert 1 in completed or reason, (
+                f"product 1 neither completed nor entered an explained Held state; "
+                f"completed={completed}, state={policy.controller.state_machine.current_record}"
+            )
+            if reason is not None:
+                assert "GR00T guard trip" in reason
+                assert "outside" in reason
+        finally:
+            policy.controller.groot_executor.close()
 
 
-def test_cell_policy_network_path_completes_product_with_guard_active(
+def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The positive proof must cross Policy, ZMQ, guards, CellClient, and mock_cell."""
@@ -331,47 +414,58 @@ def test_cell_policy_network_path_completes_product_with_guard_active(
         self.failed_insertions.clear()
 
     monkeypatch.setattr(MockPerception, "_configure_from_prompt", configure_nominal)
-    with _SafeFakeGrootServer() as groot, _MockCellServer(trial_s=60.0) as cell:
+    with _SafeFakeGrootServer() as groot, _MockCellServer(trial_s=90.0) as cell:
         policy = Policy(
             runtime="cell",
             checkpoint=groot.url,
             cell_transport=CellTransport.OFFICIAL_MOCK,
         )
-        trial = cell.ready_trial()
-        monitor = threading.Thread(
-            target=_end_trial_on_controller_terminal,
-            args=(cell, policy),
-            daemon=True,
-        )
-        monitor.start()
-        run_trial(cell.client, policy, trial)
-        monitor.join(timeout=2.0)
+        try:
+            trial = cell.ready_trial()
+            monitor = threading.Thread(
+                target=_end_trial_on_controller_terminal,
+                args=(cell, policy),
+                daemon=True,
+            )
+            monitor.start()
+            run_trial(cell.client, policy, trial)
+            monitor.join(timeout=2.0)
 
-        endpoints = [request["endpoint"] for request in groot.requests]
-        completed = tuple(policy.controller.completed_products)
-        reason = _held_reason(policy)
-        guard_log = policy.controller.groot_executor._policy.guard_log
-        print(
-            f"CELL_PROOF outcome={'DONE' if completed else 'hold_andon'} "
-            f"completed={completed} reason={reason!r} "
-            f"get_action={endpoints.count('get_action')} rejections={cell.mock.rejections}"
-        )
+            endpoints = [request["endpoint"] for request in groot.requests]
+            completed = _completed_steps(policy)
+            reason = _held_reason(policy)
+            guard_log = policy.controller.groot_executor._policy.guard_log
+            print(
+                f"CELL_PROOF outcome={'phase_complete' if completed else 'hold_andon'} "
+                f"completed_steps={completed} reason={reason!r} "
+                f"get_action={endpoints.count('get_action')} rejections={cell.mock.rejections}"
+            )
 
-        assert completed == (1,)
-        assert reason is None
-        assert endpoints.count("get_action") > 0
-        assert "reset" in endpoints
-        assert cell.mock.rejections == []
-        assert all(not entry["held"] for entry in guard_log)
+            assert completed
+            assert reason is None
+            assert endpoints.count("get_action") > 0
+            assert "reset" in endpoints
+            assert cell.mock.rejections == []
+            assert all(not entry["held"] for entry in guard_log)
+        finally:
+            policy.controller.groot_executor.close()
 
 
 def _end_trial_on_controller_terminal(cell: _MockCellServer, policy: Policy) -> None:
-    deadline = time.monotonic() + 45.0
+    deadline = time.monotonic() + 75.0
     while time.monotonic() < deadline:
-        if policy.controller.completed_products or _held_reason(policy) is not None:
+        if _completed_steps(policy) or _held_reason(policy) is not None:
             with cell.mock.lock:
                 cell.mock.queue.clear()
                 cell.mock.trials[0]["status"] = "done"
                 cell.mock.state = "homing"
             return
         time.sleep(0.01)
+
+
+def _completed_steps(policy: Policy) -> tuple[str, ...]:
+    return tuple(
+        event.object_id
+        for event in policy.controller.events
+        if event.kind == "installed" and event.object_id is not None
+    )

@@ -135,6 +135,10 @@ class GrootServerModel:
     def predict(self, obs: dict) -> np.ndarray:
         return np.asarray(self.client.act(obs), dtype=float)
 
+    def close(self) -> None:
+        """Release the owned GR00T transport."""
+        self.client.close()
+
 
 def load_model(spec: str | None) -> ChunkModel:
     """spec: "stub", "groot://host:port", or None to read $GROOT_POLICY. Anything else is an error, not a fallback."""
@@ -260,6 +264,12 @@ class GrootPolicy:
         if hasattr(self.model, "reset"):
             self.model.reset()
 
+    def close(self) -> None:
+        """Release an optional model transport without relying on GC teardown."""
+        close = getattr(self.model, "close", None)
+        if callable(close):
+            close()
+
     def set_task(self, instruction: str | None, target: ContactTarget | None = None) -> None:
         """The planner's (T09) current step: the instruction GR00T gets and the contact target the guard enforces."""
         self.instruction = instruction
@@ -364,15 +374,16 @@ class GrootPolicy:
         _, gripper, tcp = self._observed_state(obs)
         if tcp is None:
             raise CellPolicySafetyError("fixed inspection requires an observed tcp_pose")
+        if gripper != 0.0:
+            raise CellPolicySafetyError(
+                "fixed inspection requires an observed open gripper; policy refuses an unauthorized release"
+            )
         self.guard.set_target(None)
         final_row = np.asarray([(*move.endpoint_tcp, 0.0)], dtype=float)
         reasons = self.guard.static_reasons(final_row, self.DT)
         if reasons:
             result = GuardResult(hold_row(tcp, gripper, self.guard.limits), False, True, reasons)
             return self._record(result)
-        if gripper == 1.0:
-            opening_row = np.concatenate([tcp, [0.0]])[None, :]
-            return self._record(self.guard.guard(opening_row, tcp, gripper, self.DT))
         current_tcp = tuple(float(value) for value in tcp)
         leg_target = next_inspection_leg(current_tcp, move)
         step = _incremental_fixed_pose(tcp, leg_target, self.guard.limits)

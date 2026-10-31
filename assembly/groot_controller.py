@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from enum import Enum
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.controller import AssemblyController
@@ -19,6 +20,13 @@ from policy_learn.deploy.groot_queue import GrootGuardTrip, GrootMotionQueue
 from robot.adapter import Action, Observation
 
 
+class GrootControllerAuthority(str, Enum):
+    """Reviewed runtime provenance carried by the concrete CELL controller."""
+
+    REAL_CELL = "real_cell"
+    OFFICIAL_MOCK_PROOF = "official_mock_proof"
+
+
 class GrootAssemblyController(AssemblyController):
     """Keep T09 planning/recovery, replacing its scripted queue only in CELL."""
 
@@ -27,12 +35,16 @@ class GrootAssemblyController(AssemblyController):
         *,
         groot_executor: T09GrootExecutor,
         inspection_poses: InspectionPoseRegistry,
+        runtime_authority: GrootControllerAuthority,
         **kwargs,
     ) -> None:
         if not isinstance(inspection_poses, InspectionPoseRegistry):
             raise TypeError("CELL inspection poses must use InspectionPoseRegistry")
+        if not isinstance(runtime_authority, GrootControllerAuthority):
+            raise TypeError("CELL controller requires a typed GrootControllerAuthority")
         self._groot_executor = groot_executor
         self._inspection_poses = inspection_poses
+        self._runtime_authority = runtime_authority
         super().__init__(**kwargs)
 
     def reset(self) -> None:
@@ -44,6 +56,11 @@ class GrootAssemblyController(AssemblyController):
     def groot_executor(self) -> T09GrootExecutor:
         """Expose immutable motion-authority identity to the CELL factory gate."""
         return self._groot_executor
+
+    @property
+    def runtime_authority(self) -> GrootControllerAuthority:
+        """Identify real-cell versus reviewed software-proof dependencies."""
+        return self._runtime_authority
 
     def _hold_last_safe(self, reason: str) -> Action:
         """Refuse CELL output when the current TCP is not measured."""

@@ -35,6 +35,12 @@ class _OtherExecutor:
         pass
 
 
+class _MaliciousGrootController(GrootAssemblyController):
+    def act(self, observation):
+        del observation
+        return [400.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
+
+
 def test_runtime_risks_name_every_explicit_sunday_deferral() -> None:
     codes = {risk.code for risk in runtime.runtime_blockers()}
 
@@ -117,6 +123,44 @@ def test_factory_rejects_groot_controller_bound_to_another_executor(
     )
 
     with pytest.raises(runtime.CellRuntimeBlockedError, match="exact guarded executor"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
+def test_factory_rejects_groot_controller_subclass_that_can_override_motion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+
+    def malicious_factory(executor):
+        controller = object.__new__(_MaliciousGrootController)
+        controller._groot_executor = executor
+        return controller
+
+    monkeypatch.setattr(runtime, "_resolve_factory", lambda transport: malicious_factory)
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="exact GrootAssemblyController"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
+def test_real_transport_rejects_aliased_software_proof_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_factory",
+        lambda transport: build_groot_mock_controller,
+    )
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="runtime authority"):
         runtime.create_cell_policy(
             checkpoint="groot://127.0.0.1:5555",
             transport=runtime.CellTransport.REAL,

@@ -84,6 +84,7 @@ class _Policy:
         self.task = None
         self.act_calls = 0
         self.release_calls = 0
+        self.closed = False
         self.last_guard_result = None
 
     def set_task(self, instruction, target) -> None:
@@ -94,6 +95,9 @@ class _Policy:
 
     def authorize_release(self) -> None:
         self.release_calls += 1
+
+    def close(self) -> None:
+        self.closed = True
 
     def act(self, observation):
         del observation
@@ -119,6 +123,14 @@ def _executor(policy: _Policy, safety: _Safety | None = None) -> T09GrootExecuto
         safety=safety or _Safety(),
         tolerances=ExecutionTolerances(0.3, 1.0),
     )
+
+
+def test_executor_closes_its_guarded_policy_transport() -> None:
+    policy = _Policy((300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0))
+
+    _executor(policy).close()
+
+    assert policy.closed is True
 
 
 def test_learned_row_uses_raw_object_instruction_then_live_scene_safety() -> None:

@@ -41,6 +41,8 @@ class GuardedPolicy(Protocol):
 
     def reset(self) -> None: ...
 
+    def close(self) -> None: ...
+
     def set_task(self, instruction: str, target: ContactTarget | None = None) -> None: ...
 
     def authorize_release(self) -> None: ...
@@ -155,6 +157,10 @@ class T09GrootExecutor:
         """Start a fresh rollout in both the T09 and served-policy layers."""
         self._policy.reset()
 
+    def close(self) -> None:
+        """Release the guarded policy's network transport deterministically."""
+        self._policy.close()
+
     def act(
         self,
         intent: MotionIntent,
@@ -198,6 +204,10 @@ class T09GrootExecutor:
     def inspect(self, move: FixedInspectionMove, *, observation: dict) -> GrootExecutionResult:
         """Execute a reviewed non-learned camera pose through the policy guard."""
         current = _observed_waypoint(observation)
+        if current.gripper != 0.0:
+            raise CellExecutionError(
+                "fixed inspection requires an observed open gripper; CELL refuses an unauthorized release"
+            )
         expected = Waypoint(*move.endpoint_tcp, 0.0)
         if endpoint_reached(current, expected, self._tolerances):
             return GrootExecutionResult(current.as_action(), MotionPhase.INSPECT, True, False, ())
@@ -211,9 +221,6 @@ class T09GrootExecutor:
         target = _waypoint(rows[0])
         if target.gripper != 0.0:
             raise CellExecutionError("fixed inspection requires an open gripper")
-        opening_in_place = _pose_reached(target, _tcp(current), 0.0, self._tolerances)
-        if current.gripper == 1.0 and not opening_in_place:
-            raise CellExecutionError("fixed inspection must open stationary before camera motion")
         return GrootExecutionResult(
             target.as_action(),
             MotionPhase.INSPECT,

@@ -112,6 +112,7 @@ def test_load_model_never_falls_back_silently(monkeypatch):
 class FakeClient:
     def __init__(self, rows=None, attestation=None):
         self.resets, self.obs = 0, None
+        self.closed = False
         self.rows = rows or [TCP + [0.0]] * 4
         self.attestation = attestation or {"checkpoint_sha256": "a" * 64}
 
@@ -124,6 +125,9 @@ class FakeClient:
 
     def describe(self):
         return self.attestation
+
+    def close(self):
+        self.closed = True
 
 
 def _approved() -> DeploymentAttestation:
@@ -221,6 +225,15 @@ def test_server_model_gets_planner_instruction_and_no_sim_extras():
     assert rows.shape == (4, 7) and fake.resets == 1
     assert fake.obs["instruction"] == "pick M4_02 at (400, 0, 30) gripping X" and "sim" not in fake.obs
     assert pol.model.describe() == {"checkpoint_sha256": "a" * 64}
+
+
+def test_policy_close_releases_the_server_transport() -> None:
+    client = FakeClient()
+    policy = GrootPolicy(model=GrootServerModel("x", 0, client=client))
+
+    policy.close()
+
+    assert client.closed is True
 
 
 def test_set_plan_uses_the_training_instruction_format():
