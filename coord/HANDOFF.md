@@ -46,15 +46,17 @@ Newest first. One entry per finished task.
   300 actions, 0 rejected**. Its banner proves client compatibility only; it does not override the CELL blockers.
 - Next: Claude reviews the integration PR. Before physical use, add a real T30/pose/recovery/final-verifier factory;
   its recovery provider must supply the measured `PullOutTarget` set-down pose, absolute clear-Z plane, and source.
-  Add operator ingress for typed advisory decisions and a live force/torque channel; then implement/review every
-  remaining `assembly.cell_runtime.runtime_blockers()` item and run the CSI measured safety/calibration acceptance.
-  Do not bypass the factory.
+  Add operator ingress for typed advisory decisions, implement/review every remaining CELL gate, and run the CSI
+  measured safety/calibration acceptance. The user explicitly accepted the absent force/torque channel for the
+  supervised Saturday run on 2026-10-31; it remains post-Saturday production hardening. Do not bypass the factory.
 - 2026-10-31 audit closure: `aa24012` removes startup-hold motion from CELL (missing measured TCP enters Held and emits
   no command); `a739baa` structurally rejects non-GR00T controllers; `96c31e2` requires reviewed fixed inspection
   slots and an open gripper; `c517c17` adds the non-skipped positive/fail-closed network proofs; and `b426204` binds
   exact executor/controller/transport authority and closes rejected transports. `REVIEWED_REAL_CELL_FACTORY` remains
-  deliberately `None`, so environment variables cannot self-authorize the physical transport. The user deferred the
-  absent force/torque channel; step/speed/floor values remain explicitly `PRELIMINARY`.
+  deliberately `None`, so environment variables cannot self-authorize the physical transport. On 2026-10-31 the user
+  explicitly accepted a supervised Saturday run without force/torque sensing, relying on the unchanged guards, slow
+  insertion, FANUC's external collision stop, and the physical E-stop. Step/speed/floor values remain explicitly
+  `PRELIMINARY`; this acceptance does not waive another gate.
 - Port-A freeze correction: `71ca8d0` adds a PRELIMINARY 3.0 mm contact-floor band. Raw GR00T rows within that band
   are raised exactly to the active labelled contact floor before hard checks, return `passed=False, held=False`, and
   then still pass through speed, box, tilt, gripper, and strict post-speed checks. A deeper row still refuses the whole

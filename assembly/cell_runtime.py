@@ -80,8 +80,10 @@ _KNOWN_RISKS = (
     ),
     RuntimeBlocker(
         "live_force_torque",
-        "cell hardware/API",
-        "The official observation has no force/torque channel.",
+        "user-accepted Saturday risk, 2026-10-31",
+        "The official observation has no force/torque channel; the supervised Saturday run relies on existing "
+        "workspace/tilt/step/speed/contact-floor guards, slow insertion, FANUC's external collision stop, and the "
+        "physical E-stop. This does not waive any other CELL gate.",
     ),
     RuntimeBlocker(
         "cosmos_pin_disabled",

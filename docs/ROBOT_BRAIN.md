@@ -49,6 +49,10 @@ changes a contract; where the state machine (T09, Codex) must change, this file 
   - On the real arm, a guard stops any target lower than 1 mm below the seated height, and the last 5 mm is slow.
   - The limits come from the physics study (agent 2). The calculated starting point is PRELIMINARY: ≤ 15 N straight
     down and ≤ 5 N sideways, because the Ø3 mm, 2.5 mm tall PLA peg's layers fail at about 16 N sideways.
+  - User decision, 2026-10-31: accept this risk for the supervised Saturday run, relying on the existing software
+    guards, slow insertion, FANUC's native collision stop, and the physical emergency stop. Collision-stop and E-stop
+    behavior are external to this repository and are not verified here. The preliminary force values above filter sim
+    demonstrations; without a sensor they are not measured or enforced on the real arm.
 
 ## 3. Every case (user answers)
 
