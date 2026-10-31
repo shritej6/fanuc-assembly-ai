@@ -17,6 +17,7 @@ DROP_DETECT_LIMIT_S = float(os.environ.get("REHEARSAL_DROP_DETECT_S", "2.0"))  #
 REAL_ARM = {"tau_s": 0.15, "noise_mm": 0.05}  # ~0.45 s to settle, +-0.05 mm measurement noise
 NOISY_IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.05}  # no lag, real-sensor noise only
 IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.0}  # official-mock arm (+0.5 s binary gripper): probes past freezes
+REAL_FACTORY_MOVE_S = 10.0  # the real factory must reach real motion (trial 0, product 5) without an early Held
 FULL_PRODUCT_BUDGET_S = float(os.environ.get("REHEARSAL_FULL_PRODUCT_BUDGET_S", "600.0"))  # PRELIMINARY
 REAL_ARM_BUDGET_S = float(os.environ.get("REHEARSAL_REAL_ARM_BUDGET_S", "90.0"))  # test patience, not a guard
 Verdict = tuple[bool, str]
@@ -90,6 +91,17 @@ def expect_next_trial_runs(o: Outcome) -> Verdict:
     return False, f"trial 2 sent no rows after trial 1's Held (rows per trial {o.trial_rows}): Held is permanent"
 
 
+def expect_real_factory_moves(o: Outcome) -> Verdict:
+    if (bad := _no_exit(o)) is not None:
+        return bad
+    rows = sum(o.trial_rows)
+    if o.held_after_s is not None and o.held_after_s < REAL_FACTORY_MOVE_S:
+        return False, f"real factory Held after {o.held_after_rows} rows / {o.held_after_s} s: {o.held_reason[:110]}"
+    if rows < 10:
+        return False, f"real factory sent only {rows} rows in {o.elapsed_s} s"
+    return True, f"real factory moved {rows} rows without a Held in its first {REAL_FACTORY_MOVE_S} s"
+
+
 def expect_real_groot_safe(o: Outcome) -> Verdict:
     if (bad := _no_exit(o)) is not None:
         return bad
@@ -114,6 +126,10 @@ SCENARIOS: tuple[Scenario, ...] = (
              expect_low_row_guarded),
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
     Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs),  # trial 2 installs
+    Scenario("real_factory_trial0_product5", {**REAL_ARM, "budget_s": 15.0, "real_factory": True},
+             expect_real_factory_moves,
+             "4c693b0 adapters are construction-only: the unverified detector returns no parts, so the layout check "
+             "Holds at the first scan ('reviewed placement is missing M5_01')"),
     Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_real_groot_safe,
              tags=("groot",)),
     Scenario("real_groot_ideal_arm", {**IDEAL_ARM, "budget_s": 45.0}, expect_real_groot_safe, tags=("groot",)),

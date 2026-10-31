@@ -114,6 +114,41 @@ def _patched_runtime(cell: LaggyMock):
                 os.environ[key] = value
 
 
+def _placement_prompt(index: int) -> str:
+    import yaml
+
+    data = yaml.safe_load((REPO / "robot/cell/submission/placement.yaml").read_text(encoding="utf-8"))
+    return str(data["rollouts"][index]["prompt"])
+
+
+@contextmanager
+def _real_factory_seam():
+    """Run Codex's REAL factory (pinned loader, real adapters) over the mock transport.
+
+    Harness-only seam: the mock transport normally refuses the real factory, and the controller carries REAL_CELL
+    authority, so the transport check is told REAL. Presence runs explicitly unverified (no RT-DETR weights on this
+    host), which is the flag the user would accept at arming. Nothing here reaches a robot.
+    """
+    from robot.cell.t09_real_runtime import build_groot_real_controller
+
+    from assembly import cell_runtime
+
+    saved_resolve, saved_validate = cell_runtime._resolve_factory, cell_runtime._validate_controller
+    saved_flag = os.environ.get("FANUC_T09_ALLOW_UNVERIFIED_PRESENCE")
+    cell_runtime._resolve_factory = lambda transport: build_groot_real_controller
+    cell_runtime._validate_controller = (
+        lambda controller, executor, transport: saved_validate(controller, executor, cell_runtime.CellTransport.REAL))
+    os.environ["FANUC_T09_ALLOW_UNVERIFIED_PRESENCE"] = "1"
+    try:
+        yield
+    finally:
+        cell_runtime._resolve_factory, cell_runtime._validate_controller = saved_resolve, saved_validate
+        if saved_flag is None:
+            os.environ.pop("FANUC_T09_ALLOW_UNVERIFIED_PRESENCE", None)
+        else:
+            os.environ["FANUC_T09_ALLOW_UNVERIFIED_PRESENCE"] = saved_flag
+
+
 def _held_reason(policy: Any) -> str | None:
     from assembly.state_machine import PackMLState
 
@@ -196,7 +231,8 @@ def _low_row_verdict(groot: ScriptedGroot, cell: LaggyMock, guard_log: list[dict
 
 def run_scenario(name: str, *, faults: CellFaults | None = None, inject_low_row: bool = False,
                  groot_url: str | None = None, n_trials: int = 1, budget_s: float = 75.0,
-                 tau_s: float = 0.15, noise_mm: float = 0.05, installs: int = 1) -> Outcome:
+                 tau_s: float = 0.15, noise_mm: float = 0.05, installs: int = 1,
+                 real_factory: bool = False) -> Outcome:
     """Run one rehearsal scenario end to end and return its measured outcome."""
     from cell_client import CellClient, run_all
     from policy import Policy
@@ -205,11 +241,12 @@ def run_scenario(name: str, *, faults: CellFaults | None = None, inject_low_row:
     from assembly.cell_runtime import CellTransport
 
     outcome, started = Outcome(name), time.monotonic()
-    mock = LaggyMock(n_trials, budget_s + 5.0, INSTRUCTION, faults=faults, tau_s=tau_s,
+    instruction = _placement_prompt(0) if real_factory else INSTRUCTION
+    mock = LaggyMock(n_trials, budget_s + 5.0, instruction, faults=faults, tau_s=tau_s,
                      noise_mm=noise_mm)
     with ExitStack() as stack:
         groot = None if groot_url else stack.enter_context(ScriptedGroot(inject_low_row=inject_low_row))
-        stack.enter_context(_patched_runtime(mock))
+        stack.enter_context(_real_factory_seam() if real_factory else _patched_runtime(mock))
         server = stack.enter_context(LaggyCellServer(mock))
         policy = Policy(checkpoint=groot_url or groot.url, runtime="cell",
                         cell_transport=CellTransport.OFFICIAL_MOCK)
