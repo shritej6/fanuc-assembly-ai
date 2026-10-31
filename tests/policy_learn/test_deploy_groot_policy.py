@@ -211,7 +211,7 @@ def _saturday_policy(rows) -> GrootPolicy:
     return GrootPolicy(
         model=model,
         saturday_cell=True,
-        limits=GuardLimits(max_tilt_deg=3.0, source="T05 final adapter envelope"),
+        limits=GuardLimits(max_tilt_deg=6.0, source="Saturday fingers-down cone"),
     )
 
 
@@ -315,7 +315,7 @@ def test_saturday_cell_keeps_one_row_release_and_final_adapter_tilt_fences() -> 
     assert release.last_guard_result is not None and release.last_guard_result.held
     assert "release is not authorized" in release.last_guard_result.reasons[0]
 
-    tilted = _saturday_policy([[300.0, 0.0, -90.0, -176.0, 0.0, 0.0, 0.0]])
+    tilted = _saturday_policy([[300.0, 0.0, -90.0, -173.0, 0.0, 0.0, 0.0]])
     tilted.act(obs())
     assert tilted.last_guard_result is not None and tilted.last_guard_result.held
     assert "tilted" in tilted.last_guard_result.reasons[0]

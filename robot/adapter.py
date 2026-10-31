@@ -53,8 +53,10 @@ JOINT_LIMITS = (
     (-360.0, 360.0, "degrees"),
     (0.0, 1.0, "state"),
 )
-# Source: measured set-O close-up envelope in PR #9's T28 follow-up (2026-10-29).
-TOOL_DOWN_TOLERANCE_DEG = 3.0
+# Source: supervised Saturday CELL decision (2026-10-31): the T12 insert
+# trajectory is about 3 degrees with a +/-2 degree correction; enforce one
+# true fingers-down cone rather than independent W/P boxes.
+TOOL_DOWN_TOLERANCE_DEG = 6.0
 DT_LIMITS = (0.1, 1.0)
 MAX_ACTION_CHUNK = 100
 DtSource: TypeAlias = object | Callable[[], object]
@@ -198,17 +200,22 @@ def _guard_bounded_action(
 
 def _check_tool_down(row: list[float], *, row_index: int) -> None:
     w, p = row[3:5]
-    w_error = min(abs(w - 180.0), abs(w + 180.0))
-    for field, value, error in (("w", w, w_error), ("p", p, abs(p))):
-        if error <= TOOL_DOWN_TOLERANCE_DEG:
-            continue
-        raise ActionBoundsError(
-            f"tcp action row {row_index} field '{field}'={value!r} violates fingers-down tolerance "
-            f"{TOOL_DOWN_TOLERANCE_DEG} degrees",
-            field=field,
-            row_index=row_index,
-            value=value,
-        )
+    cosine = -math.cos(math.radians(p)) * math.cos(math.radians(w))
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
+    if tilt <= TOOL_DOWN_TOLERANCE_DEG or math.isclose(
+        tilt,
+        TOOL_DOWN_TOLERANCE_DEG,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        return
+    raise ActionBoundsError(
+        f"tcp action row {row_index} field 'tilt'={tilt!r} violates fingers-down cone "
+        f"{TOOL_DOWN_TOLERANCE_DEG} degrees",
+        field="tilt",
+        row_index=row_index,
+        value=tilt,
+    )
 
 
 def guard_tcp_action(action: object, *, dt: object) -> list[float] | list[list[float]]:

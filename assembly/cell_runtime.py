@@ -100,9 +100,9 @@ def runtime_blockers() -> tuple[RuntimeBlocker, ...]:
 
 def _saturday_limits() -> GuardLimits:
     return GuardLimits(
-        max_tilt_deg=3.0,
+        max_tilt_deg=6.0,
         status="PRELIMINARY",
-        source="T05 final CellAdapter W/P envelope, mirrored before CELL dispatch",
+        source="2026-10-31 supervised Saturday 6-degree fingers-down cone, mirrored by CellAdapter",
     )
 
 

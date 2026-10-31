@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 import assembly.cell_runtime as runtime
+import robot.adapter as adapter_module
 from assembly.groot_controller import GrootAssemblyController
 from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
@@ -224,5 +225,6 @@ def test_groot_url_arms_t09_semantic_controller_for_explicit_proof(
     policy = controller._groot_executor._policy
     assert policy.checkpoint == "groot://127.0.0.1:5555"
     assert policy.saturday_cell is True
-    assert policy.limits.max_tilt_deg == 3.0
+    assert policy.limits.max_tilt_deg == 6.0
+    assert policy.limits.max_tilt_deg == adapter_module.TOOL_DOWN_TOLERANCE_DEG
     assert policy.resets == 1

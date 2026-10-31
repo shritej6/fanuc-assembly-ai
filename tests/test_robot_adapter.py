@@ -334,10 +334,10 @@ def test_tcp_values_must_be_finite_numbers(value: object) -> None:
 @pytest.mark.parametrize(
     ("index", "field", "value"),
     [
-        (3, "w", math.nextafter(-177.0, math.inf)),
-        (3, "w", math.nextafter(177.0, -math.inf)),
-        (4, "p", math.nextafter(-3.0, -math.inf)),
-        (4, "p", math.nextafter(3.0, math.inf)),
+        (3, "tilt", -174.0 + 1e-6),
+        (3, "tilt", 174.0 - 1e-6),
+        (4, "tilt", -6.0 - 1e-6),
+        (4, "tilt", 6.0 + 1e-6),
         (5, "r", math.nextafter(-360.0, -math.inf)),
         (5, "r", math.nextafter(360.0, math.inf)),
         (6, "gripper", math.nextafter(0.0, -math.inf)),
@@ -355,12 +355,12 @@ def test_tcp_tool_down_and_gripper_outside_bounds_are_rejected(index: int, field
 @pytest.mark.parametrize(
     ("index", "value"),
     [
-        (3, -183.0),
-        (3, -177.0),
-        (3, 177.0),
-        (3, 183.0),
-        (4, -3.0),
-        (4, 3.0),
+        (3, -186.0),
+        (3, -174.0),
+        (3, 174.0),
+        (3, 186.0),
+        (4, -6.0),
+        (4, 6.0),
         (5, -360.0),
         (5, 360.0),
         (6, 0.0),
@@ -371,6 +371,23 @@ def test_tcp_tool_down_and_gripper_bounds_are_inclusive(index: int, value: float
     row = tcp_row(index, value)
 
     assert guard_tcp_action(row, dt=0.1) == row
+
+
+def test_tcp_tool_down_guard_enforces_one_true_six_degree_cone() -> None:
+    inside = SAFE_TCP_ROW.copy()
+    inside[3:5] = [-176.0, 4.0]
+    assert guard_tcp_action(inside, dt=0.1) == inside
+
+    boundary = SAFE_TCP_ROW.copy()
+    boundary[3] = -174.0
+    assert guard_tcp_action(boundary, dt=0.1) == boundary
+
+    outside = SAFE_TCP_ROW.copy()
+    outside[3:5] = [-175.0, 5.0]
+    with pytest.raises(ActionBoundsError, match="fingers-down cone") as raised:
+        guard_tcp_action(outside, dt=0.1)
+
+    assert raised.value.field == "tilt"
 
 
 @pytest.mark.parametrize("dt", [0.1, 1.0])
