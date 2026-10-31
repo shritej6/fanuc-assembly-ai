@@ -126,10 +126,10 @@ SCENARIOS: tuple[Scenario, ...] = (
              expect_low_row_guarded),
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
     Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs),  # trial 2 installs
+    # Fixed 8f11633 (placement-derived inventory). Next stop in this double: the wrist close-up needs >= 12 depth
+    # pixels on the part, and the mock's synthetic depth has none; the real wrist camera is needed past that point.
     Scenario("real_factory_trial0_product5", {**REAL_ARM, "budget_s": 15.0, "real_factory": True},
-             expect_real_factory_moves,
-             "4c693b0 adapters are construction-only: the unverified detector returns no parts, so the layout check "
-             "Holds at the first scan ('reviewed placement is missing M5_01')"),
+             expect_real_factory_moves),
     Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_real_groot_safe,
              tags=("groot",)),
     Scenario("real_groot_ideal_arm", {**IDEAL_ARM, "budget_s": 45.0}, expect_real_groot_safe, tags=("groot",)),
