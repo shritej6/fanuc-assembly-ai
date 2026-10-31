@@ -6,11 +6,25 @@ from __future__ import annotations
 
 import numpy as np
 
-from .catalog import decode_plan_ids
+from .catalog import decode_plan_ids, product_bases
+
+# identical bases (PLAN section 3.2), as sim/assembly_lab/eval/cad.py base_group
+BASE_GROUPS = (("F01", "F02"), ("F03",), ("F04", "F05", "F06"))
 
 
 def _f(v: float) -> str:
     return f"{round(float(v))}"
+
+
+def _named_base(plan: dict) -> str:
+    """Identical bases are interchangeable (PLAN section 3.2), but every demo names the product's own base type
+    (M5 -> F05), so the text does too; the goal coordinates stay the physical base's. A base outside the product's
+    interchangeable group is named as it is."""
+    canonical = product_bases().get(plan["product"])
+    base = plan["base_id"]
+    if canonical is None or base == canonical:
+        return base
+    return canonical if any(base in g and canonical in g for g in BASE_GROUPS) else base
 
 
 def instruction(plan_ids, plan_target) -> str:
@@ -26,7 +40,7 @@ def instruction(plan_ids, plan_target) -> str:
     if skill == "pick_insert":
         if p["base_id"] is None:
             raise ValueError("pick_insert needs a base id")
-        text = f"pick {part} {grip}, insert on {p['base_id']} at {goal}"
+        text = f"pick {part} {grip}, insert on {_named_base(p)} at {goal}"
     elif skill == "pull_out":
         text = f"pull out {part} {grip}, set it down at {goal}"
     elif skill == "place_free":

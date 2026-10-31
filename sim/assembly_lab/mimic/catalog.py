@@ -30,6 +30,13 @@ def grip_axes() -> dict[str, list[str]]:
     return {oid: [g["closing_axis"] for g in obj["grips"]] for oid, obj in frames.items()}
 
 
+@lru_cache(maxsize=1)
+def product_bases() -> dict[int, str]:
+    """Product -> the base its parts are trained on (grasp_frames.json 'base' of the product's first part)."""
+    frames = json.loads((REPO / "cad/grasp_frames.json").read_text())["objects"]
+    return {product_of(oid): obj["base"] for oid, obj in frames.items() if oid.endswith("_01") and obj.get("base")}
+
+
 def product_of(object_id: str) -> int | None:
     """M4_02 -> 4, F04 -> 4, foreign -> None."""
     if object_id.startswith("M") and "_" in object_id:

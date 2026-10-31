@@ -57,6 +57,25 @@ def test_instruction_carries_plan_target():
         instructions.instruction(ids, [1, 2, 3])
 
 
+def test_instruction_names_the_products_trained_base_for_an_interchangeable_base():
+    # every product-5 demo says F05; an eval/cell layout may use the identical F04 or F06 (PLAN section 3.2)
+    target = [410, 162, -1, 179, 375, -132, -105]
+    for physical in ("F04", "F06"):
+        ids = catalog.encode_plan_ids("pick_insert", "M5_01", physical, 0, "nominal")
+        text = instructions.instruction(ids, target)
+        assert text == "pick M5_01 at (410, 162, -1) gripping Y at roll 179, insert on F05 at (375, -132, -105)"
+    ids = catalog.encode_plan_ids("pick_insert", "M2_01", "F01", 0, "nominal")
+    assert "insert on F02 at" in instructions.instruction(ids, target)
+
+
+def test_instruction_with_the_trained_base_is_unchanged():
+    ids = catalog.encode_plan_ids("pick_insert", "M5_01", "F05", 0, "nominal")
+    text = instructions.instruction(ids, [332, -47, 30, 210, 420, 0, 45])
+    assert text == "pick M5_01 at (332, -47, 30) gripping Y at roll 210, insert on F05 at (420, 0, 45)"
+    ids = catalog.encode_plan_ids("pick_insert", "M4_02", "F04", 0, "nominal")
+    assert "insert on F04 at" in instructions.instruction(ids, [332, -47, 30, 210, 420, 0, 45])
+
+
 def test_wpr_roundtrip_and_w_wrap():
     rng = np.random.default_rng(1)
     wpr = np.stack([rng.uniform(-269, 89, 200), rng.uniform(-80, 80, 200), rng.uniform(-179, 179, 200)], 1)
