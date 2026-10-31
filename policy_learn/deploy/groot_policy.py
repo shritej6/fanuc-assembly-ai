@@ -247,6 +247,7 @@ class GrootPolicy:
         self.guard_log: list[dict] = []  # kept across rollouts, for the run's report
         self.last_guard_result: GuardResult | None = None
         self.release_authorized = False
+        self._grasp_fence: tuple[tuple[float, ...], ExecutionTolerances] | None = None
         self.steps, self.rollout = 0, -1
 
     def _validate_saturday_server(self) -> None:
@@ -261,6 +262,7 @@ class GrootPolicy:
         self.instruction, self.steps, self.rollout = None, 0, self.rollout + 1
         self.last_guard_result = None
         self.release_authorized = False
+        self._grasp_fence = None
         self.guard.set_target(None)
         if hasattr(self.model, "reset"):
             self.model.reset()
@@ -275,6 +277,17 @@ class GrootPolicy:
         """The planner's (T09) current step: the instruction GR00T gets and the contact target the guard enforces."""
         self.instruction = instruction
         self.guard.set_target(target)
+
+    def set_grasp_fence(
+        self,
+        grasp_tcp: tuple[float, ...],
+        tolerances: ExecutionTolerances,
+    ) -> None:
+        """Authorize deferring a moving close only at T09's reviewed grasp TCP."""
+        grasp = tuple(float(value) for value in grasp_tcp)
+        if len(grasp) != 6 or not np.isfinite(grasp).all():
+            raise CellPolicySafetyError("grasp fence requires one finite six-axis TCP")
+        self._grasp_fence = (grasp, tolerances)
 
     def authorize_release(self) -> None:
         """Authorize one observed model step to open the gripper after T09 verification."""
@@ -364,10 +377,50 @@ class GrootPolicy:
         release_authorized = self.release_authorized
         self.release_authorized = False
         chunk = nearest_turns(self.model.predict(model_obs), tcp)
+        chunk, close_deferred = self._defer_moving_close(chunk, tcp, gripper)
         refusal = self._production_refusal(chunk, tcp, gripper, release_authorized)
         if refusal is not None:
             return self._record(refusal)
-        return self._record(self.guard.guard(chunk, tcp, gripper, self.DT))
+        result = self.guard.guard(chunk, tcp, gripper, self.DT)
+        if close_deferred and not result.held:
+            result = GuardResult(
+                result.rows,
+                False,
+                False,
+                ("gripper close deferred until stationary at the reviewed T29 grasp TCP", *result.reasons),
+            )
+        return self._record(result)
+
+    def _defer_moving_close(
+        self,
+        chunk: np.ndarray,
+        tcp: np.ndarray,
+        gripper: float,
+    ) -> tuple[np.ndarray, bool]:
+        """Split GR00T's near-grasp move+close before the unchanged ChunkGuard."""
+        if self._grasp_fence is None or gripper != 0.0 or chunk.shape != (1, 7):
+            return chunk, False
+        row = chunk[0]
+        if not np.isfinite(row).all() or abs(float(row[6]) - 1.0) > self.guard.limits.gripper_snap:
+            return chunk, False
+        grasp, tolerances = self._grasp_fence
+        target = row[:6]
+        xyz_error = float(np.linalg.norm(target[:3] - np.asarray(grasp[:3], dtype=float)))
+        angle_error = float(np.abs((target[3:6] - grasp[3:6] + 180.0) % 360.0 - 180.0).max())
+        current_xyz_error = float(np.linalg.norm(target[:3] - tcp[:3]))
+        current_angle_error = float(np.abs((target[3:6] - tcp[3:6] + 180.0) % 360.0 - 180.0).max())
+        if (
+            xyz_error > tolerances.max_position_error_mm
+            or angle_error > tolerances.max_orientation_error_deg
+            or (
+                current_xyz_error <= tolerances.max_position_error_mm
+                and current_angle_error <= tolerances.max_orientation_error_deg
+            )
+        ):
+            return chunk, False
+        deferred = np.array(chunk, copy=True)
+        deferred[0, 6] = 0.0
+        return deferred, True
 
     def guard_fixed_inspection(
         self,

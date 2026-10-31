@@ -45,6 +45,12 @@ class GuardedPolicy(Protocol):
 
     def set_task(self, instruction: str, target: ContactTarget | None = None) -> None: ...
 
+    def set_grasp_fence(
+        self,
+        grasp_tcp: tuple[float, ...],
+        tolerances: ExecutionTolerances,
+    ) -> None: ...
+
     def authorize_release(self) -> None: ...
 
     def act(self, observation: dict) -> np.ndarray: ...
@@ -179,6 +185,7 @@ class T09GrootExecutor:
         expected = Waypoint(*intent.endpoint)
         if endpoint_reached(current, expected, self._tolerances):
             return GrootExecutionResult(current.as_action(), _skill_phase(intent), True, False, ())
+        self._policy.set_grasp_fence(intent.grasp_tcp, self._tolerances)
         self._policy.set_task(semantic_instruction(intent), _contact(intent))
         release_ready = (
             intent.release_authorized
@@ -195,12 +202,17 @@ class T09GrootExecutor:
         phase = _phase(intent, current, target)
         if result.held:
             return GrootExecutionResult(target.as_action(), phase, False, True, result.reasons)
+        target, close_deferred = self._defer_moving_close(intent, current, target)
+        phase = _phase(intent, current, target)
         self._validate_release_fence(current, target, release_ready)
         self._validate_gripper_transition(intent, current, target, release_ready)
         if self._require_scene_safety:
             assert scene is not None
             self._validate_motion(intent, current, target, phase, scene)
-        return GrootExecutionResult(target.as_action(), phase, False, False, result.reasons)
+        reasons = result.reasons
+        if close_deferred:
+            reasons += ("gripper close deferred until stationary at the reviewed T29 grasp TCP",)
+        return GrootExecutionResult(target.as_action(), phase, False, False, reasons)
 
     def inspect(self, move: FixedInspectionMove, *, observation: dict) -> GrootExecutionResult:
         """Execute a reviewed non-learned camera pose through the policy guard."""
@@ -241,6 +253,20 @@ class T09GrootExecutor:
         stationary = _pose_reached(target, _tcp(current), target.gripper, self._tolerances)
         if target.gripper != 0.0 or not stationary:
             raise CellExecutionError("the first row at an authorized release TCP must open while stationary")
+
+    def _defer_moving_close(
+        self,
+        intent: MotionIntent,
+        current: Waypoint,
+        target: Waypoint,
+    ) -> tuple[Waypoint, bool]:
+        if current.gripper != 0.0 or target.gripper != 1.0:
+            return target, False
+        stationary = _pose_reached(target, _tcp(current), 1.0, self._tolerances)
+        at_grasp = _pose_reached(target, intent.grasp_tcp, 1.0, self._tolerances)
+        if stationary or not at_grasp:
+            return target, False
+        return Waypoint(*_tcp(target), 0.0), True
 
     def _validate_gripper_transition(
         self,

@@ -84,6 +84,7 @@ class _Policy:
 
     def __post_init__(self) -> None:
         self.task = None
+        self.grasp_fence = None
         self.act_calls = 0
         self.release_calls = 0
         self.closed = False
@@ -91,6 +92,9 @@ class _Policy:
 
     def set_task(self, instruction, target) -> None:
         self.task = (instruction, target)
+
+    def set_grasp_fence(self, grasp_tcp, tolerances) -> None:
+        self.grasp_fence = (grasp_tcp, tolerances)
 
     def reset(self) -> None:
         self.task = None
@@ -185,6 +189,7 @@ def test_learned_row_uses_raw_object_instruction_then_live_scene_safety() -> Non
 
     assert "M1_02 at (300, -50, 30)" in policy.task[0]
     assert "302" not in policy.task[0]
+    assert policy.grasp_fence[0] == _intent().grasp_tcp
     assert result.action == [301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
     assert result.blocked is False
     assert len(safety.calls) == 1
@@ -307,6 +312,22 @@ def test_close_is_allowed_only_while_stationary_at_t29_grasp_tcp() -> None:
     policy = _Policy((300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 1.0))
     with pytest.raises(CellExecutionError, match="T29 grasp TCP"):
         _executor(policy).act(_intent(), observation=_observation(), scene=_scene())
+
+
+def test_moving_close_at_t29_grasp_is_split_into_move_then_stationary_close() -> None:
+    grasp = (299.1, -48.441154, -270.0, -180.0, 0.0, 120.0)
+    current = [grasp[0], grasp[1], grasp[2] + 2.7, grasp[3], grasp[4], grasp[5]]
+    policy = _Policy((*grasp, 1.0))
+
+    result = _executor(policy).act(
+        _intent(grasp_tcp=grasp),
+        observation=_observation(tcp=current),
+        scene=_scene(),
+    )
+
+    assert result.action == [*grasp, 0.0]
+    assert result.blocked is False
+    assert result.reached_endpoint is False
 
 
 def test_release_row_cannot_open_while_retreating() -> None:

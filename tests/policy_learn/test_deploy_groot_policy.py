@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
+from assembly.controller_ports import ExecutionTolerances
 from policy_learn.deploy import attestation as attestation_module
 from policy_learn.deploy.attestation import (
     REQUIRED_CELL_SKILLS,
@@ -302,6 +303,49 @@ def test_saturday_cell_requires_a_noninjected_live_server() -> None:
         GrootPolicy(model=Fixed([TCP + [0.0]]), saturday_cell=True)
     with pytest.raises(CellPolicySafetyError, match="injected"):
         GrootPolicy(model=GrootServerModel("x", 0, client=FakeClient()), saturday_cell=True)
+
+
+def test_saturday_policy_defers_moving_close_before_the_gripper_guard() -> None:
+    grasp = (299.1, -48.441154, -270.0, -180.0, 0.0, 120.0)
+    current = [grasp[0], grasp[1], grasp[2] + 2.7, *grasp[3:]]
+    policy = _saturday_policy([[*grasp, 1.0]])
+    policy.reset()
+    policy.set_grasp_fence(grasp, ExecutionTolerances(0.3, 1.0))
+
+    rows = policy.act(obs(tcp=current, grip=0.0))
+
+    assert rows[0, 6] == 0.0
+    assert policy.last_guard_result is not None
+    assert policy.last_guard_result.held is False
+    assert "deferred" in policy.last_guard_result.reasons[0]
+
+
+def test_saturday_policy_allows_stationary_close_at_the_grasp_fence() -> None:
+    grasp = (299.1, -48.441154, -270.0, -180.0, 0.0, 120.0)
+    policy = _saturday_policy([[*grasp, 1.0]])
+    policy.reset()
+    policy.set_grasp_fence(grasp, ExecutionTolerances(0.3, 1.0))
+
+    rows = policy.act(obs(tcp=list(grasp), grip=0.0))
+
+    assert rows[0, 6] == 1.0
+    assert policy.last_guard_result is not None
+    assert policy.last_guard_result.held is False
+
+
+def test_saturday_policy_does_not_defer_close_at_the_wrong_pose() -> None:
+    grasp = (299.1, -48.441154, -270.0, -180.0, 0.0, 120.0)
+    wrong = (309.1, -48.441154, -270.0, -180.0, 0.0, 120.0)
+    current = [wrong[0], wrong[1], wrong[2] + 2.7, *wrong[3:]]
+    policy = _saturday_policy([[*wrong, 1.0]])
+    policy.reset()
+    policy.set_grasp_fence(grasp, ExecutionTolerances(0.3, 1.0))
+
+    policy.act(obs(tcp=current, grip=0.0))
+
+    assert policy.last_guard_result is not None
+    assert policy.last_guard_result.held is True
+    assert "gripper changes while moving" in policy.last_guard_result.reasons[0]
 
 
 def test_saturday_cell_keeps_one_row_release_and_final_adapter_tilt_fences() -> None:

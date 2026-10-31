@@ -180,6 +180,24 @@ class _SafeFakeGrootServer(_FakeGrootServer):
         return [action, {"fake": "deterministic-in-limit-semantic-row"}]
 
 
+class _RecoveringFakeGrootServer(_FakeGrootServer):
+    """Refuse trial one, then serve valid learned rows after the next reset."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.unsafe_served = False
+        self.serve_safe = False
+
+    def _reply(self, request: object) -> object:
+        if isinstance(request, dict) and request.get("endpoint") == "reset" and self.unsafe_served:
+            self.serve_safe = True
+        if isinstance(request, dict) and request.get("endpoint") == "get_action":
+            if self.serve_safe:
+                return _SafeFakeGrootServer._hold_action(request)
+            self.unsafe_served = True
+        return super()._reply(request)
+
+
 class _FloorClampFakeGrootServer(_FakeGrootServer):
     """Return the measured checkpoint undershoot once, then hold position."""
 
@@ -237,13 +255,26 @@ def _next_semantic_target(
 ) -> tuple[np.ndarray, float]:
     at_grasp = _same_tcp(current, grasp)
     at_insert = _same_tcp(current, insert)
+    safe_z = max(float(grasp[2]), float(insert[2])) + FAKE_GUARD_LIMITS.slow_zone_mm + 5.0
+    above_insert = insert.copy()
+    above_insert[2] = safe_z
     if gripper == 0.0 and _on_release_column(current, insert):
         retreat = insert.copy()
         retreat[2] += 10.0
         return retreat, 0.0
     if gripper == 0.0:
         return (grasp, 1.0) if at_grasp else (grasp, 0.0)
-    return (insert, 0.0) if at_insert else (insert, 1.0)
+    if at_insert:
+        return insert, 0.0
+    if _same_xy_orientation(current, insert):
+        return insert, 1.0
+    if current[2] < safe_z - 0.3:
+        lift = current.copy()
+        lift[2] = safe_z
+        return lift, 1.0
+    if _same_tcp(current, above_insert):
+        return insert, 1.0
+    return above_insert, 1.0
 
 
 def _same_tcp(left: np.ndarray, right: np.ndarray) -> bool:
@@ -253,10 +284,14 @@ def _same_tcp(left: np.ndarray, right: np.ndarray) -> bool:
 
 
 def _on_release_column(current: np.ndarray, insert: np.ndarray) -> bool:
-    xy_error = float(np.linalg.norm(current[:2] - insert[:2]))
-    angle_error = float(np.abs((current[3:6] - insert[3:6] + 180.0) % 360.0 - 180.0).max())
     z_offset = float(current[2] - insert[2])
-    return xy_error <= 0.3 and angle_error <= 1.0 and 0.0 <= z_offset <= 10.0
+    return _same_xy_orientation(current, insert) and 0.0 <= z_offset <= 10.0
+
+
+def _same_xy_orientation(current: np.ndarray, target: np.ndarray) -> bool:
+    xy_error = float(np.linalg.norm(current[:2] - target[:2]))
+    angle_error = float(np.abs((current[3:6] - target[3:6] + 180.0) % 360.0 - 180.0).max())
+    return xy_error <= 0.3 and angle_error <= 1.0
 
 
 def _bounded_semantic_step(
@@ -463,7 +498,7 @@ def test_cell_policy_uses_fake_groot_against_official_mock_and_reaches_a_termina
             policy.controller.groot_executor.close()
 
 
-def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
+def test_cell_policy_network_path_completes_full_product_with_guard_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The positive proof must cross Policy, ZMQ, guards, CellClient, and mock_cell."""
@@ -483,7 +518,7 @@ def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
         self.failed_insertions.clear()
 
     monkeypatch.setattr(MockPerception, "_configure_from_prompt", configure_nominal)
-    with _SafeFakeGrootServer() as groot, _MockCellServer(trial_s=90.0) as cell:
+    with _SafeFakeGrootServer() as groot, _MockCellServer(trial_s=360.0) as cell:
         policy = Policy(
             runtime="cell",
             checkpoint=groot.url,
@@ -502,15 +537,17 @@ def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
 
             endpoints = [request["endpoint"] for request in groot.requests]
             completed = _completed_steps(policy)
+            completed_products = tuple(policy.controller.completed_products)
             reason = _held_reason(policy)
             guard_log = policy.controller.groot_executor._policy.guard_log
             print(
-                f"CELL_PROOF outcome={'phase_complete' if completed else 'hold_andon'} "
-                f"completed_steps={completed} reason={reason!r} "
+                f"CELL_PROOF outcome={'product_complete' if 1 in completed_products else 'hold_andon'} "
+                f"completed_steps={completed} completed_products={completed_products} reason={reason!r} "
                 f"get_action={endpoints.count('get_action')} rejections={cell.mock.rejections}"
             )
 
-            assert completed
+            assert completed == ("M1_01", "M1_02", "M1_03", "M1_04")
+            assert completed_products == (1,)
             assert reason is None
             assert endpoints.count("get_action") > 0
             assert "reset" in endpoints
@@ -518,6 +555,66 @@ def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
             assert all(not entry["held"] for entry in guard_log)
         finally:
             policy.controller.groot_executor.close()
+
+
+def test_held_trial_does_not_block_next_policy_controller_trial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same Policy instance must reset Held state before the next trial."""
+    from robot.cell.cell_client import run_trial
+
+    monkeypatch.setenv(
+        "FANUC_T09_CELL_FACTORY",
+        "robot.cell.t09_mock_runtime:build_groot_mock_controller",
+    )
+    monkeypatch.setenv("FANUC_T09_SOFTWARE_PROOF", "1")
+    monkeypatch.syspath_prepend(str(CELL_DIR))
+    original_configure = MockPerception._configure_from_prompt
+
+    def configure_nominal(self: MockPerception, observation: dict) -> None:
+        original_configure(self, observation)
+        self.fallen_once.clear()
+        self.failed_insertions.clear()
+
+    monkeypatch.setattr(MockPerception, "_configure_from_prompt", configure_nominal)
+    with _RecoveringFakeGrootServer() as groot:
+        policy = Policy(
+            runtime="cell",
+            checkpoint=groot.url,
+            cell_transport=CellTransport.OFFICIAL_MOCK,
+        )
+        try:
+            with _MockCellServer(trial_s=20.0) as first_cell:
+                first = first_cell.ready_trial()
+                first_monitor = threading.Thread(
+                    target=_end_trial_on_controller_terminal,
+                    args=(first_cell, policy),
+                    daemon=True,
+                )
+                first_monitor.start()
+                run_trial(first_cell.client, policy, first)
+                first_monitor.join(timeout=2.0)
+                first_reason = _held_reason(policy)
+                assert first_reason is not None
+
+            with _MockCellServer(trial_s=90.0) as second_cell:
+                second = second_cell.ready_trial()
+                policy.reset()
+                assert _held_reason(policy) is None
+                second_monitor = threading.Thread(
+                    target=_end_trial_on_first_completed_step,
+                    args=(second_cell, policy),
+                    daemon=True,
+                )
+                second_monitor.start()
+                run_trial(second_cell.client, policy, second)
+                second_monitor.join(timeout=2.0)
+
+                assert _completed_steps(policy) == ("M1_01",)
+                assert _held_reason(policy) is None
+                assert second_cell.mock.rejections == []
+        finally:
+            policy.close()
 
 
 def test_cell_policy_network_path_clamps_checkpoint_floor_undershoot(
@@ -618,9 +715,9 @@ def _configure_floor_clamp_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _end_trial_on_controller_terminal(cell: _MockCellServer, policy: Policy) -> None:
-    deadline = time.monotonic() + 75.0
+    deadline = time.monotonic() + 330.0
     while time.monotonic() < deadline:
-        if _completed_steps(policy) or _held_reason(policy) is not None:
+        if 1 in policy.controller.completed_products or _held_reason(policy) is not None:
             with cell.mock.lock:
                 cell.mock.queue.clear()
                 cell.mock.trials[0]["status"] = "done"
@@ -641,6 +738,18 @@ def _end_trial_on_floor_clamp(cell: _MockCellServer, policy: Policy) -> None:
         with cell.mock.lock:
             action_applied = abs(cell.mock.tcp[2] - (-325.1)) <= 1e-6
         if (clamped and action_applied) or _held_reason(policy) is not None:
+            with cell.mock.lock:
+                cell.mock.queue.clear()
+                cell.mock.trials[0]["status"] = "done"
+                cell.mock.state = "homing"
+            return
+        time.sleep(0.01)
+
+
+def _end_trial_on_first_completed_step(cell: _MockCellServer, policy: Policy) -> None:
+    deadline = time.monotonic() + 75.0
+    while time.monotonic() < deadline:
+        if _completed_steps(policy) or _held_reason(policy) is not None:
             with cell.mock.lock:
                 cell.mock.queue.clear()
                 cell.mock.trials[0]["status"] = "done"
