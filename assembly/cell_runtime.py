@@ -10,9 +10,11 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from importlib import import_module
 
 from assembly.controller_ports import ExecutionTolerances
+from assembly.groot_controller import GrootAssemblyController
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
 from policy_learn.deploy.guards import GuardLimits
@@ -29,6 +31,13 @@ SATURDAY_EXECUTION_TOLERANCES = ExecutionTolerances(
 
 class CellRuntimeBlockedError(RuntimeError):
     """A required Saturday CELL dependency is absent or unsafe."""
+
+
+class CellTransport(str, Enum):
+    """Identity of the official client transport hosting the CELL policy."""
+
+    REAL = "real"
+    OFFICIAL_MOCK = "official_mock"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,15 +101,28 @@ def _saturday_limits() -> GuardLimits:
     )
 
 
-def _resolve_factory() -> Callable[[T09GrootExecutor], Controller]:
+def _resolve_factory(transport: CellTransport) -> Callable[[T09GrootExecutor], Controller]:
+    if transport is CellTransport.REAL and SOFTWARE_PROOF_ENV in os.environ:
+        raise CellRuntimeBlockedError(
+            f"real CELL transport refuses the software-proof flag {SOFTWARE_PROOF_ENV}"
+        )
     spec = os.environ.get(CELL_FACTORY_ENV, "").strip()
     if not spec:
         raise CellRuntimeBlockedError(
             f"CELL runtime needs {CELL_FACTORY_ENV}=<module>:<factory>; no mock fallback is allowed"
         )
-    if spec == MOCK_PROOF_FACTORY and os.environ.get(SOFTWARE_PROOF_ENV) != "1":
+    if spec == MOCK_PROOF_FACTORY:
+        if transport is not CellTransport.OFFICIAL_MOCK:
+            raise CellRuntimeBlockedError(
+                f"{MOCK_PROOF_FACTORY} is forbidden on the real CELL transport"
+            )
+        if os.environ.get(SOFTWARE_PROOF_ENV) != "1":
+            raise CellRuntimeBlockedError(
+                f"{MOCK_PROOF_FACTORY} is software-proof-only; set {SOFTWARE_PROOF_ENV}=1 only with mock_cell"
+            )
+    elif transport is CellTransport.OFFICIAL_MOCK:
         raise CellRuntimeBlockedError(
-            f"{MOCK_PROOF_FACTORY} is software-proof-only; set {SOFTWARE_PROOF_ENV}=1 only with mock_cell"
+            f"official-mock transport requires the reviewed proof factory {MOCK_PROOF_FACTORY}"
         )
     module_name, separator, attribute = spec.partition(":")
     if not separator or not module_name or not attribute:
@@ -114,11 +136,17 @@ def _resolve_factory() -> Callable[[T09GrootExecutor], Controller]:
     return factory
 
 
-def create_cell_policy(*, checkpoint: str | None) -> Controller:
+def create_cell_policy(
+    *,
+    checkpoint: str | None,
+    transport: CellTransport = CellTransport.REAL,
+) -> Controller:
     """Build the explicit T09 -> semantic executor -> guarded GR00T CELL path."""
+    if not isinstance(transport, CellTransport):
+        raise CellRuntimeBlockedError("CELL transport must be an explicit CellTransport value")
     if not isinstance(checkpoint, str) or not checkpoint.startswith("groot://"):
         raise CellRuntimeBlockedError("CELL runtime requires an explicit groot://host:port server URL")
-    factory = _resolve_factory()
+    factory = _resolve_factory(transport)
     policy = GrootPolicy(checkpoint, limits=_saturday_limits(), saturday_cell=True)
     executor = T09GrootExecutor(
         policy=policy,
@@ -132,6 +160,12 @@ def create_cell_policy(*, checkpoint: str | None) -> Controller:
         raise
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         raise CellRuntimeBlockedError(f"CELL controller factory failed: {error}") from error
-    if not callable(getattr(controller, "act", None)) or not callable(getattr(controller, "reset", None)):
-        raise CellRuntimeBlockedError("CELL controller factory did not return a reset/act controller")
+    if not isinstance(controller, GrootAssemblyController):
+        raise CellRuntimeBlockedError(
+            "CELL controller factory must return a GrootAssemblyController"
+        )
+    if controller.groot_executor is not executor:
+        raise CellRuntimeBlockedError(
+            "CELL controller factory did not retain the exact guarded executor"
+        )
     return controller

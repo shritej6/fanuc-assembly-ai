@@ -68,7 +68,10 @@ def test_mock_factory_is_proof_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
 
     with pytest.raises(runtime.CellRuntimeBlockedError, match="software-proof-only"):
-        runtime.create_cell_policy(checkpoint="groot://127.0.0.1:5555")
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.OFFICIAL_MOCK,
+        )
 
 
 def test_real_transport_rejects_software_proof_configuration(

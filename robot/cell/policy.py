@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from assembly.cell_runtime import CellTransport
 from robot import CellAdapter, Controller
 from robot.adapter import TCP_LIMITS
 
@@ -57,9 +58,13 @@ class Policy:
         controller: Controller | None = None,
         action_mode: Literal["joints", "tcp"] | None = None,
         runtime: Literal["mock", "cell"] = "cell",
+        cell_transport: CellTransport = CellTransport.REAL,
     ):
         self.checkpoint = checkpoint
         self.mock_only = checkpoint == "t09-mock"
+        if not isinstance(cell_transport, CellTransport):
+            raise TypeError("cell_transport must be an explicit CellTransport value")
+        self.cell_transport = cell_transport
         if runtime not in ("mock", "cell"):
             raise ValueError(f"unsupported runtime: {runtime!r}")
         if runtime == "cell":
@@ -81,7 +86,10 @@ class Policy:
             raise ValueError("the cell runtime does not accept injected controller overrides")
         from assembly.cell_runtime import create_cell_policy
 
-        return create_cell_policy(checkpoint=self.checkpoint)
+        return create_cell_policy(
+            checkpoint=self.checkpoint,
+            transport=self.cell_transport,
+        )
 
     def _mock_controller(
         self,

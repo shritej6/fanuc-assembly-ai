@@ -31,6 +31,11 @@ class GrootAssemblyController(AssemblyController):
         self._groot_executor.reset()
         self._motion_queue = GrootMotionQueue(self._groot_executor, self._execution_tolerances)
 
+    @property
+    def groot_executor(self) -> T09GrootExecutor:
+        """Expose immutable motion-authority identity to the CELL factory gate."""
+        return self._groot_executor
+
     def _hold_last_safe(self, reason: str) -> Action:
         """Refuse CELL output when the current TCP is not measured."""
         self._hold(reason)
