@@ -10,7 +10,7 @@ Prompt: `Assemble product 5 on its base. Reject any part that is defective, fall
 | # | object | x | y | yaw | pick roll r | insert roll r |
 |---|---|---|---|---|---|---|
 | 1 | F05 base (IO Connector Fixture, product 5) | 275 | -123 | -34 | - | - |
-| 2 | M5_01 Housing | 358 | 193 | -30 | 150 | 146 |
+| 2 | M5_01 Housing | 358 | 193 | 0 | 180 | 146 |
 | 3 | M5_02 IO Insert | 305 | 36 | -86 | 184 | 236 |
 | 4 | M5_03 Alignment Guide | 302 | 115 | -92 | 178 | 236 |
 | 5 | M5_04 Service Lock | 383 | 12 | -79 | 191 | 236 |
@@ -22,7 +22,7 @@ Prompt: `Assemble product 5 on its base. Reject any part that is defective, fall
 | # | object | x | y | yaw | pick roll r | insert roll r |
 |---|---|---|---|---|---|---|
 | 1 | F05 base (IO Connector Fixture, product 5) | 275 | -123 | -34 | - | - |
-| 2 | M5_01 Housing | 358 | 193 | -30 | 150 | 146 |
+| 2 | M5_01 Housing | 358 | 193 | 0 | 180 | 146 |
 | 3 | M5_02 IO Insert | 305 | 36 | -86 | 184 | 236 |
 | 4 | M5_03 Alignment Guide | 302 | 115 | -92 | 178 | 236 |
 | 5 | M5_04 Service Lock | 383 | 12 | -79 | 191 | 236 |
@@ -34,7 +34,7 @@ Prompt: `Assemble product 5 on its base. Reject any part that is defective, fall
 | # | object | x | y | yaw | pick roll r | insert roll r |
 |---|---|---|---|---|---|---|
 | 1 | F05 base (IO Connector Fixture, product 5) | 275 | -123 | -34 | - | - |
-| 2 | M5_01 Housing | 358 | 193 | -30 | 150 | 146 |
+| 2 | M5_01 Housing | 358 | 193 | 0 | 180 | 146 |
 | 3 | M5_02 IO Insert | 305 | 36 | -86 | 184 | 236 |
 | 4 | M5_03 Alignment Guide | 302 | 115 | -92 | 178 | 236 |
 | 5 | M5_04 Service Lock | 383 | 12 | -79 | 191 | 236 |
