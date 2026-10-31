@@ -54,7 +54,9 @@ def test_layout_selects_zero_based_rollout_only_for_exact_prompt() -> None:
     assert selected is layout.rollouts[1]
     assert len(selected.parts) == 12
     assert len(selected.bases) == 3
-    assert PLACEMENT_SOURCE_COMMIT.startswith("57eff21")
+    assert PLACEMENT_SOURCE_COMMIT == "1f97ff5"
+    assert tuple(item.object_id for item in selected.bases) == ("F05", "F04", "F06")
+    assert selected.prompt.startswith("Assemble products 5, 4 and 6")
     with pytest.raises(ControllerPortError, match="prompt does not match"):
         layout.rollout_for_observation(_observation(1, prompt + " changed"))
 

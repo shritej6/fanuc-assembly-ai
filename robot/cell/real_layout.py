@@ -21,7 +21,7 @@ from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.inventory import InventoryZone
 
 DEFAULT_PLACEMENT_PATH = Path(__file__).with_name("submission") / "placement.yaml"
-PLACEMENT_SOURCE_COMMIT = "57eff21"
+PLACEMENT_SOURCE_COMMIT = "1f97ff5"
 START_POSITION_TOLERANCE_MM = 10.0
 INSPECTION_Z_MM = -168.0
 INSPECTION_SAFE_Z_MM = -180.0
@@ -32,7 +32,7 @@ _SLOT_X = (("PN", 255.0), ("PF", 335.0))
 _SLOT_Y = (-225.0, -135.0, -45.0, 45.0, 135.0, 225.0)
 _SLOT_HALF_MM = 25.0
 _INSPECTION_SOURCE = (
-    "T38 placement commit 57eff21 slot XY and neutral R=180; "
+    "T38 placement commit 1f97ff5 slot XY and neutral R=180; "
     "PR9 measured CSI wrist inspection stop Z=-168, W=-180, P=0 and safe transit Z=-180"
 )
 
