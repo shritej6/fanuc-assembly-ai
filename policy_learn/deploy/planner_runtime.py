@@ -48,7 +48,10 @@ class PlannerRuntime(HybridRuntime):
             goal, grip_after, after, kind = pr.step.seat_tcp, 0.0, RETREAT_UP_MM, "insert"
         else:
             return
-        self._plan_path, self._plan_i, self._plan_contact = _planner_path(tcp, goal, grip_after, after), 0, goal[2]
+        # insert: slow from just above the part's first contact with the base (up to 13 mm above the seat, M5_02),
+        # not only above the seat; run r20261031-57450f faulted on M5_02 hitting the base at free-space speed
+        contact = max(goal[2], pr.step.contact_z) if kind == "insert" else goal[2]
+        self._plan_path, self._plan_i, self._plan_contact = _planner_path(tcp, goal, grip_after, after), 0, contact
         self._event("takeover", mode=f"planner {kind}", part=pr.step.object_id,
                     dxy=round(float(np.hypot(tcp[0] - goal[0], tcp[1] - goal[1])), 1),
                     dz=round(float(tcp[2] - goal[2]), 1))
