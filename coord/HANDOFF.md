@@ -15,10 +15,10 @@ Newest first. One entry per finished task.
   model/observation gripper ambiguity and nonfinite values fail closed. `INSPECT_VIEW` and `PLACE_FREE` are rejected
   before learned-policy inference because the training dataset contains no such demonstrations.
 - User-selected inspection option A is a distinct `FixedInspectionMove`, not a learned or fallback skill. It binds
-  part/base identity, uses the observed inventory-slot center plus the sourced `InspectionStopConfig` and
-  `MotionConfig.safe_z_mm`, follows rise -> safe-plane transit -> final view, preserves the observed gripper, and sends
-  every incremental row through the same `ChunkGuard`. Events label this authority `non_learned_inspection` with its
-  provenance; no unreviewed absolute XY/yaw value was added.
+  part/base identity and resolves the observed coarse slot to exactly one reviewed `InspectionSlotPose`; perception
+  selects a slot but never supplies motion coordinates. The move follows rise -> safe-plane transit -> final view,
+  requires the observed gripper to be open, and sends every incremental row through the same `ChunkGuard`. Events
+  label this authority `non_learned_inspection` with its provenance; an unreviewed or overlapping slot fails closed.
 - Authoritative T18 language audit: `shritej81632/fanuc-groot-t18` is the model repository and has no task manifest.
   The LeRobot source is private dataset `shritej81632/fanuc-t12-lerobot` at revision
   `0a9a230e395268f45a2c79252dac0ad1d4831f6e`: 22 manifests, 114 unique strings, with 25 `pick_insert`, 64
@@ -49,6 +49,23 @@ Newest first. One entry per finished task.
   Add operator ingress for typed advisory decisions and a live force/torque channel; then implement/review every
   remaining `assembly.cell_runtime.runtime_blockers()` item and run the CSI measured safety/calibration acceptance.
   Do not bypass the factory.
+- 2026-10-31 audit closure: `aa24012` removes startup-hold motion from CELL (missing measured TCP enters Held and emits
+  no command); `a739baa` structurally rejects non-GR00T controllers; `96c31e2` requires reviewed fixed inspection
+  slots and an open gripper; `c517c17` adds the non-skipped positive/fail-closed network proofs; and `b426204` binds
+  exact executor/controller/transport authority and closes rejected transports. `REVIEWED_REAL_CELL_FACTORY` remains
+  deliberately `None`, so environment variables cannot self-authorize the physical transport. The user deferred the
+  absent force/torque channel; step/speed/floor values remain explicitly `PRELIMINARY`.
+- Port-A freeze correction: `71ca8d0` adds a PRELIMINARY 3.0 mm contact-floor band. Raw GR00T rows within that band
+  are raised exactly to the active labelled contact floor before hard checks, return `passed=False, held=False`, and
+  then still pass through speed, box, tilt, gripper, and strict post-speed checks. A deeper row still refuses the whole
+  chunk. `6ce02f3` proves the exact checkpoint-3000 case through
+  `Policy(runtime="cell") -> groot:// -> T09GrootExecutor -> ChunkGuard -> official mock client`:
+  `CELL_FLOOR_PROOF held_reason=None tcp_z=-325.10 clamps=1 get_action=1`. The raw -329.4 mm request was raised to
+  the -327.7 mm floor and independently speed-limited from -323.1 to -325.1 mm; no below-floor command was emitted.
+- Final evidence after those changes: focused guard/executor/all fake-network gate **94 passed** with fail-closed,
+  positive phase-completion, and floor-clamp outputs; repository-wide `uv run pytest -q` **1532 passed, 5 skipped** in
+  247.52 s; `.venv/bin/ruff check .`, `git diff --check`, and the protected-client diff passed. The official
+  `robot/cell/cell_client.py` remains unchanged.
 
 ## 2026-10-30 · T33 · CODEX · M1_01/M3_01 size-twin contract
 
