@@ -99,6 +99,19 @@ Newest first. One entry per finished task.
 - Final unrestricted gate after these fixes: `UV_CACHE_DIR=/private/tmp/fanuc-t37-uv-cache uv run pytest -q` =
   **1572 passed, 5 skipped** in 268.82 s; repository-wide `uv run ruff check .` and `git diff --check` passed. The
   official `robot/cell/cell_client.py` remains unchanged.
+- Saturday adapter closure: `4c693b0` adds the exact production-loader boundary, default refusal when RT-DETR
+  presence authority is absent, the explicit construction-only override, placement-derived 2 mm / 2 degree
+  PRELIMINARY poses, catalog/CAD installed up-faces, fixed +/-25 mm missing/extra presence checks, same-shape base
+  interchangeability with instance-to-reviewed-slot binding, PNG+JSONL evidence, and the
+  `CellPerceptionPort -> MeasuredRecipePoses` bridge. Unmeasured motion/collision/final-identity dependencies remain
+  typed stops before physical motion or DONE.
+- Public CELL construction now binds the exact dependency `SafetySupervisor` once before executor activation,
+  rejects rebinding, and revalidates the retained binding and REAL_CELL authority after factory construction. The
+  rollout-0/product-5 dependency graph and the public factory path construct without adapter injection, but
+  `REVIEWED_REAL_CELL_FACTORY` remains `None`; this is not physical arming.
+- Final unrestricted gate at `4c693b0`: **1649 passed, 5 skipped** in 315.72 s under the permissions required by the
+  Bash-process-substitution and localhost-ZMQ tests; repository-wide Ruff and `git diff --check` passed. Official
+  mock smoke: **3 rollouts, 301 actions, 0 rejected**. The official `robot/cell/cell_client.py` remains unchanged.
 
 ## 2026-10-30 · T33 · CODEX · M1_01/M3_01 size-twin contract
 
