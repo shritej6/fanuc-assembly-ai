@@ -11,6 +11,7 @@ import pytest
 
 from assembly.catalog import load_catalog
 from assembly.controller_recovery import PendingInsertionLift
+from assembly.execution import ExecutionError
 from assembly.fixed_inspection import FixedInspectionMove
 from assembly.groot_controller import GrootAssemblyController
 from assembly.inventory import Inventory, InventoryItem, InventoryZone, ObjectCondition
@@ -21,6 +22,7 @@ from assembly.recovery import PullOutTarget
 from assembly.state_machine import PackMLState
 from assembly.verification import VerificationReason
 from policy_learn.deploy.cell_executor import GrootExecutionResult
+from robot.adapter import CellAdapter
 from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
 OBJECT_ORIGIN = (300.0, -50.0, -300.0)
@@ -170,6 +172,20 @@ def _controller(executor: _Executor) -> GrootAssemblyController:
     controller = build_groot_mock_controller(executor)
     assert isinstance(controller, GrootAssemblyController)
     return controller
+
+
+def test_cell_refuses_startup_hold_without_measured_tcp() -> None:
+    executor = _Executor()
+    controller = _controller(executor)
+    adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
+
+    with pytest.raises(ExecutionError, match="measured current TCP"):
+        adapter.act({"t": 10.0, "tcp_pose": None, "joints": [0.0] * 7})
+
+    assert controller.state_machine.state is PackMLState.HELD
+    assert controller.events[-1].kind == "andon"
+    assert executor.intents == []
+    assert executor.inspections == []
 
 
 def _queue_rear_guard_inspection(controller: GrootAssemblyController, plan: tuple[MotionChunk, ...]) -> None:
