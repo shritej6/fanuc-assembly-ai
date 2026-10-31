@@ -434,6 +434,8 @@ def build_groot_mock_controller(
     executor,
     *,
     inspection_poses: InspectionPoseRegistry | None = None,
+    final_verifier=None,
+    final_view_registry=None,
 ) -> AssemblyController:
     """Software-proof fixture: real T09 states with GR00T as sole row source."""
     from assembly.cell_runtime import (
@@ -443,13 +445,18 @@ def build_groot_mock_controller(
     from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 
     perception = MockPerception()
+    kwargs = _controller_kwargs(perception)
+    if final_verifier is not None:
+        kwargs["final_verifier"] = final_verifier
+        kwargs["allow_mock_final_verification"] = False
     return GrootAssemblyController(
         groot_executor=executor,
         inspection_poses=inspection_poses or _mock_inspection_poses(),
         endpoint_settle_limits=SATURDAY_ENDPOINT_SETTLE_LIMITS,
         watchdog_limits=SATURDAY_GROOT_WATCHDOG_LIMITS,
         runtime_authority=GrootControllerAuthority.OFFICIAL_MOCK_PROOF,
-        **_controller_kwargs(perception),
+        final_view_registry=final_view_registry,
+        **kwargs,
     )
 
 

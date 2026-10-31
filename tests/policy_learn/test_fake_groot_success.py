@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from assembly.final_verification import ControllerOwnedFinalVerifier, FinalViewIdentityEvidence
+from assembly.final_views import FinalViewPose, FinalViewRegistry
 from assembly.motion_intent import MotionIntent, SemanticSkill
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
@@ -97,6 +99,44 @@ def _apply(action: list[float], observation: dict) -> None:
     observation["t"] += 0.2
 
 
+class _FinalIdentityBackend:
+    def capture(self, observation, view, base_instance_id, installed_instance_ids):
+        del base_instance_id
+        return FinalViewIdentityEvidence(
+            float(observation["t"]),
+            True,
+            view.view_id,
+            installed_instance_ids,
+            view.expected_instance_roles,
+            True,
+        )
+
+
+def _controller_owned_final_verifier():
+    roles = ("M1_01", "M1_02", "M1_03", "M1_04")
+    source = "mock proof of controller-owned guarded final views"
+    views = tuple(
+        FinalViewPose(
+            1,
+            "F01",
+            f"mock-B2-view-{index}",
+            (420.0, 80.0, -168.0, -180.0, 0.0, yaw),
+            -180.0,
+            roles,
+            source,
+            (420.0, 80.0),
+        )
+        for index, yaw in enumerate((90.0, 270.0), start=1)
+    )
+    registry = FinalViewRegistry(views)
+    verifier = ControllerOwnedFinalVerifier(
+        registry,
+        _FinalIdentityBackend(),
+        selection_tolerance_mm=0.0,
+    )
+    return verifier, registry
+
+
 def test_valid_guarded_fake_groot_completes_one_product_without_untrained_motion() -> None:
     model = _IntentAwareSafeModel()
     policy = GrootPolicy(model=model)
@@ -138,3 +178,30 @@ def test_valid_guarded_fake_groot_completes_one_product_without_untrained_motion
     )
     assert policy.last_guard_result is not None
     assert all(entry["held"] is False for entry in policy.guard_log)
+
+
+def test_controller_owned_final_views_complete_after_two_guarded_camera_poses() -> None:
+    model = _IntentAwareSafeModel()
+    policy = GrootPolicy(model=model)
+    executor = _RecordingExecutor(model, policy)
+    verifier, registry = _controller_owned_final_verifier()
+    controller = build_groot_mock_controller(
+        executor,
+        final_verifier=verifier,
+        final_view_registry=registry,
+    )
+    observation = _observation()
+
+    for _step in range(20_000):
+        action = controller.act(observation)
+        _apply(action, observation)
+        if _step == 0:
+            controller._perception.fallen_once.clear()
+            controller._perception.failed_insertions.clear()
+        if controller.completed_products:
+            break
+
+    inspection_events = tuple(event for event in controller.events if event.kind == "inspection_motion")
+    assert controller.completed_products == (1,)
+    assert len(inspection_events) >= 2
+    assert all("non_learned_inspection" in event.detail for event in inspection_events[-2:])

@@ -10,17 +10,29 @@ from assembly.controller_ports import (
     require_complete,
     require_fresh,
 )
+from assembly.final_verification import ControllerOwnedFinalVerifier
 from assembly.state_machine import PackMLState
 from robot.adapter import Observation
 
 
-def validate_final_product_verifier(verifier: object, *, allow_mock: bool) -> str:
+def validate_final_product_verifier(
+    verifier: object,
+    *,
+    allow_mock: bool,
+    controller_owned: bool = False,
+) -> str:
     source = getattr(verifier, "reviewed_motion_source", None)
     mock_only = getattr(verifier, "mock_only", None)
     if type(source) is not str or not source.strip():
         raise ControllerPortError("final-product verifier requires reviewed motion-source provenance")
     if type(mock_only) is not bool:
         raise ControllerPortError("final-product verifier mock_only must be a boolean")
+    if type(verifier) is ControllerOwnedFinalVerifier:
+        if not controller_owned:
+            raise ControllerPortError(
+                "production final-product verification requires controller-owned physical view motion"
+            )
+        return source
     if not callable(getattr(verifier, "verify", None)):
         raise ControllerPortError("final-product verifier requires a callable verify method")
     if mock_only and not allow_mock:

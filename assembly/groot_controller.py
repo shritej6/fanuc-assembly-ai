@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import replace
 from enum import Enum
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
-from assembly.controller_ports import ControllerEvent, oriented_pose_values
+from assembly.controller_completion import validate_final_product_evidence
+from assembly.controller_ports import ControllerEvent, current_waypoint, oriented_pose_values
 from assembly.execution import (
     CellTrialHeld,
     EndpointSettleLimits,
     ExecutionError,
     GrootWatchdogLimits,
 )
+from assembly.final_verification import (
+    ControllerOwnedFinalVerifier,
+    PendingFinalVerification,
+)
+from assembly.final_views import FinalViewRegistry
 from assembly.fixed_inspection import FixedInspectionMove, InspectionPoseRegistry
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
@@ -44,6 +51,7 @@ class GrootAssemblyController(AssemblyController):
         endpoint_settle_limits: EndpointSettleLimits,
         watchdog_limits: GrootWatchdogLimits,
         runtime_authority: GrootControllerAuthority,
+        final_view_registry: FinalViewRegistry | None = None,
         **kwargs,
     ) -> None:
         if not isinstance(inspection_poses, InspectionPoseRegistry):
@@ -54,14 +62,29 @@ class GrootAssemblyController(AssemblyController):
             raise TypeError("CELL controller requires sourced EndpointSettleLimits")
         if not isinstance(watchdog_limits, GrootWatchdogLimits):
             raise TypeError("CELL controller requires sourced GrootWatchdogLimits")
+        verifier = kwargs.get("final_verifier")
+        controller_owned = type(verifier) is ControllerOwnedFinalVerifier
+        if controller_owned:
+            if type(final_view_registry) is not FinalViewRegistry:
+                raise TypeError("controller-owned completion requires FinalViewRegistry")
+            if verifier.registry is not final_view_registry:
+                raise TypeError("controller-owned verifier must retain the CELL final-view registry")
+        elif final_view_registry is not None:
+            raise TypeError("final-view registry requires the controller-owned verifier")
+        if "controller_owned_final_verification" in kwargs:
+            raise TypeError("CELL factory owns the final-verification authority flag")
         self._groot_executor = groot_executor
         self._inspection_poses = inspection_poses
         self._endpoint_settle_limits = endpoint_settle_limits
         self._watchdog_limits = watchdog_limits
         self._runtime_authority = runtime_authority
+        self._final_view_registry = final_view_registry
+        self._pending_final_verification: PendingFinalVerification | None = None
+        kwargs["controller_owned_final_verification"] = controller_owned
         super().__init__(**kwargs)
 
     def reset(self) -> None:
+        self._pending_final_verification = None
         super().reset()
         self._groot_executor.reset()
         self._motion_queue = GrootMotionQueue(
@@ -86,6 +109,115 @@ class GrootAssemblyController(AssemblyController):
     def runtime_authority(self) -> GrootControllerAuthority:
         """Identify real-cell versus reviewed software-proof dependencies."""
         return self._runtime_authority
+
+    def _verify_finished_product(self, observation: Observation, observed_at: float) -> bool:
+        verifier = self._final_verifier
+        if type(verifier) is not ControllerOwnedFinalVerifier:
+            return super()._verify_finished_product(observation, observed_at)
+        pending = self._pending_final_verification
+        if pending is None:
+            pending = self._start_final_verification(observed_at, verifier)
+        if pending.awaiting_capture_index is not None:
+            pending = self._capture_final_view(observation, pending, verifier)
+        if len(pending.captures) < 2:
+            return self._queue_final_view(observation, observed_at, pending)
+        evidence = verifier.combine(
+            pending.captures,
+            observed_at_s=observed_at,
+            product=pending.product,
+            base_instance_id=pending.base_instance_id,
+            installed_instance_ids=pending.installed_instance_ids,
+        )
+        verified = validate_final_product_evidence(
+            evidence,
+            observed_at=observed_at,
+            product=pending.product,
+            base_instance_id=pending.base_instance_id,
+            installed_instance_ids=pending.installed_instance_ids,
+            motion_source=self._final_motion_source,
+        )
+        self._pending_final_verification = None
+        if not all(verified.view_passes):
+            self._hold(self._finished_failure_reason(pending.product, verified.failed_instance_id))
+            return False
+        self._finish_product(verified)
+        return False
+
+    def _start_final_verification(
+        self,
+        observed_at: float,
+        verifier: ControllerOwnedFinalVerifier,
+    ) -> PendingFinalVerification:
+        reservation = self.inventory.active_reservation
+        installed = tuple(part.instance_id for part in reservation.parts)
+        if len(installed) != 4:
+            raise RuntimeError("controller-owned final verification requires four installed parts")
+        base_pose = self._poses.base_for(reservation.base, observed_at_s=observed_at)
+        views = verifier.registry.views_for(
+            reservation.product,
+            reservation.base.object_id,
+            base_xy_mm=(base_pose.tcp.x, base_pose.tcp.y),
+            max_distance_mm=verifier.selection_tolerance_mm,
+        )
+        pending = PendingFinalVerification(
+            reservation.product,
+            reservation.base.instance_id,
+            installed,  # type: ignore[arg-type]
+            views,
+        )
+        self._pending_final_verification = pending
+        return pending
+
+    def _capture_final_view(
+        self,
+        observation: Observation,
+        pending: PendingFinalVerification,
+        verifier: ControllerOwnedFinalVerifier,
+    ) -> PendingFinalVerification:
+        index = pending.awaiting_capture_index
+        if index is None:
+            raise RuntimeError("final-view capture has no settled endpoint")
+        capture = verifier.capture_view(
+            observation,
+            pending.views[index],
+            pending.base_instance_id,
+            pending.installed_instance_ids,
+        )
+        updated = replace(
+            pending,
+            captures=(*pending.captures, capture),
+            awaiting_capture_index=None,
+        )
+        self._pending_final_verification = updated
+        return updated
+
+    def _queue_final_view(
+        self,
+        observation: Observation,
+        observed_at: float,
+        pending: PendingFinalVerification,
+    ) -> bool:
+        index = len(pending.captures)
+        view = pending.views[index]
+        move = FixedInspectionMove(
+            pending.base_instance_id,
+            pending.base_instance_id,
+            view.view_id,
+            view.endpoint_tcp_uf0,
+            view.safe_z_mm,
+            view.source,
+        )
+        base = self.inventory.active_reservation.base
+        base_pose = self._poses.base_for(base, observed_at_s=observed_at)
+        self._motion_queue.queue(
+            move,
+            observation=observation,
+            current=current_waypoint(observation),
+            observed_at_s=observed_at,
+            base_pose=oriented_pose_values(base_pose),
+        )
+        self._pending_final_verification = replace(pending, awaiting_capture_index=index)
+        return True
 
     def _hold_last_safe(self, reason: str) -> Action:
         """Refuse CELL output when the current TCP is not measured."""

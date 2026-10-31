@@ -14,6 +14,7 @@ from assembly.controller_ports import (
 )
 from assembly.controller_startup import StartupHoldConfig
 from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
+from assembly.final_verification import ControllerOwnedFinalVerifier
 from assembly.final_views import FinalViewRegistry
 from assembly.fixed_inspection import InspectionPoseRegistry
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
@@ -292,12 +293,21 @@ def _build_groot_real_controller(
         raise RealCellFactoryConfigurationError(
             "real CELL factory requires the exact FinalViewRegistry type"
         )
+    if type(dependencies.final_verifier) is not ControllerOwnedFinalVerifier:
+        raise RealCellFactoryConfigurationError(
+            "real CELL factory requires the controller-owned final verifier"
+        )
+    if dependencies.final_verifier.registry is not dependencies.final_view_registry:
+        raise RealCellFactoryConfigurationError(
+            "real CELL final verifier must retain the reviewed FinalViewRegistry"
+        )
     return GrootAssemblyController(
         groot_executor=safe_executor,
         inspection_poses=dependencies.inspection_poses,
         endpoint_settle_limits=dependencies.endpoint_settle_limits,
         watchdog_limits=dependencies.watchdog_limits,
         runtime_authority=GrootControllerAuthority.REAL_CELL,
+        final_view_registry=dependencies.final_view_registry,
         catalog=dependencies.catalog,
         perception=dependencies.perception,
         poses=dependencies.poses,

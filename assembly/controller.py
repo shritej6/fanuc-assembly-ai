@@ -85,6 +85,7 @@ class AssemblyController(
         recovery_targets: RecoveryTargetProvider,
         final_verifier: FinalProductVerifier,
         allow_mock_final_verification: bool = False,
+        controller_owned_final_verification: bool = False,
     ) -> None:
         self._catalog = catalog
         self._perception = perception
@@ -100,9 +101,12 @@ class AssemblyController(
         self._final_verifier = final_verifier
         if type(allow_mock_final_verification) is not bool:
             raise ControllerInputError("allow_mock_final_verification must be a boolean")
+        if type(controller_owned_final_verification) is not bool:
+            raise ControllerInputError("controller_owned_final_verification must be a boolean")
         self._final_motion_source = validate_final_product_verifier(
             final_verifier,
             allow_mock=allow_mock_final_verification,
+            controller_owned=controller_owned_final_verification,
         )
         self.reset()
 
