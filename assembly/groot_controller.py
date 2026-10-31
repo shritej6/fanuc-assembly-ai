@@ -196,9 +196,6 @@ class GrootAssemblyController(AssemblyController):
     ) -> MotionIntent:
         active_grasp = grasp or prepared.grasp
         object_pose, origin_z, grasp_tcp, wrist_roll = self._grasp_fields(active_grasp, prepared)
-        pose_source = f"{active_grasp.tcp.source} + T29 preferred grasp"
-        if pose_source_suffix is not None:
-            pose_source = f"{pose_source}; {pose_source_suffix}"
         return MotionIntent(
             skill=skill,
             instance_id=prepared.part.instance_id,
@@ -215,11 +212,16 @@ class GrootAssemblyController(AssemblyController):
             release_tcp=release_tcp,
             endpoint_tcp=endpoint,
             final_gripper=final_gripper,
-            pose_source=pose_source,
+            pose_source=self._intent_pose_source(active_grasp, pose_source_suffix),
             grasp_source_sha256=TRUSTED_GRASP_SOURCE.sha256,
             contact=contact,
             release_authorized=release_authorized,
         )
+
+    @staticmethod
+    def _intent_pose_source(grasp: OrientedPartPose, suffix: str | None) -> str:
+        source = f"{grasp.tcp.source} + T29 preferred grasp"
+        return source if suffix is None else f"{source}; {suffix}"
 
     @staticmethod
     def _grasp_fields(
