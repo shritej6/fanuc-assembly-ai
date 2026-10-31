@@ -14,6 +14,7 @@ from assembly.controller_ports import (
 )
 from assembly.controller_startup import StartupHoldConfig
 from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
+from assembly.final_views import FinalViewRegistry
 from assembly.fixed_inspection import InspectionPoseRegistry
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from assembly.motion import InspectionStopConfig, MotionConfig
@@ -24,6 +25,7 @@ from assembly.verification import VerificationThresholds
 from perception.port.port import CellPerceptionPort
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from robot.cell.real_layout import ExpectedLayoutVerifier, reviewed_inspection_registry
+from robot.cell.real_recovery import RealCellRecoveryTargets
 
 
 class RequirementKind(StrEnum):
@@ -158,6 +160,12 @@ _RUNTIME_REQUIREMENTS = (
         "Own guarded motion to two reviewed views and return identity-bound evidence.",
     ),
     RealCellRequirement(
+        "final_view_registry",
+        RequirementKind.RUNTIME_DEPENDENCY,
+        ("exact_type", "two_views_per_product_base", "identity_roles", "source"),
+        "Bind the exact sourced final-view registry used by controller-owned verification.",
+    ),
+    RealCellRequirement(
         "production_safety",
         RequirementKind.RUNTIME_DEPENDENCY,
         ("full_ik", "joint_limits", "robot_link_sweep", "held_part_sweep", "source_hashes"),
@@ -217,6 +225,7 @@ class RealCellDependencies:
     endpoint_settle_limits: EndpointSettleLimits
     watchdog_limits: GrootWatchdogLimits
     expected_layout_verifier: ExpectedLayoutVerifier
+    final_view_registry: FinalViewRegistry
 
 
 # Source review must replace this with a committed loader. Environment variables
@@ -274,6 +283,14 @@ def _build_groot_real_controller(
     if dependencies.inspection_poses != reviewed_inspection_registry():
         raise RealCellFactoryConfigurationError(
             "real CELL factory requires the reviewed T38 fixed inspection registry"
+        )
+    if type(dependencies.recovery_targets) is not RealCellRecoveryTargets:
+        raise RealCellFactoryConfigurationError(
+            "real CELL factory requires the exact RealCellRecoveryTargets type"
+        )
+    if type(dependencies.final_view_registry) is not FinalViewRegistry:
+        raise RealCellFactoryConfigurationError(
+            "real CELL factory requires the exact FinalViewRegistry type"
         )
     return GrootAssemblyController(
         groot_executor=safe_executor,

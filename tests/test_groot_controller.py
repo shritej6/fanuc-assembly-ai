@@ -258,6 +258,21 @@ def test_rear_guard_t29_inverse_recovers_origin_and_90_degree_wrist_turn() -> No
     assert grasp_tcp[5] == pytest.approx(wrist_roll)
 
 
+def test_t38_neutral_sim_roll_maps_to_real_fanuc_r_without_changing_tool_cone() -> None:
+    candidate = _rear_guard_candidate()
+    grasp = _grasp_from_object(candidate.recipe_step, (300.0, -50.0, 90.0))
+    prepared = RecipePlanner.finalize_candidate(candidate, grasp)
+
+    _object_pose, _origin_z, command, wrist_roll = GrootAssemblyController._grasp_fields(
+        grasp,
+        prepared,
+    )
+
+    assert candidate.recipe_step.preferred_grasp.turn_deg == 90.0
+    assert wrist_roll == pytest.approx(180.0)
+    assert command[3:] == pytest.approx((-180.0, 0.0, 180.0))
+
+
 def test_pick_insert_floor_envelope_covers_physical_base_footprint() -> None:
     candidate = _rear_guard_candidate()
     prepared = RecipePlanner.finalize_candidate(candidate, _reviewed_rear_guard_grasp(candidate))

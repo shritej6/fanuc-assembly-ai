@@ -67,6 +67,7 @@ def test_real_cell_requirements_name_every_calibration_and_runtime_dependency() 
         "model_adapters",
         "watchdog_limits",
         "expected_layout_verifier",
+        "final_view_registry",
     }
     assert len({item.code for item in requirements}) == len(requirements)
     assert {item.kind for item in requirements} == {
@@ -178,6 +179,7 @@ def test_real_dependency_bundle_names_every_controller_boundary_explicitly() -> 
         "endpoint_settle_limits",
         "watchdog_limits",
         "expected_layout_verifier",
+        "final_view_registry",
     }
 
 
@@ -232,4 +234,56 @@ def test_internal_real_factory_requires_the_exact_t38_inspection_registry() -> N
     )
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="T38 fixed inspection"):
+        runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+
+
+def test_internal_real_factory_requires_cell_layout_recovery_targets() -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.catalog import load_catalog
+    from perception.port.port import CellPerceptionPort
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.real_layout import (
+        ExpectedLayoutVerifier,
+        load_real_cell_layout,
+        reviewed_inspection_registry,
+    )
+
+    catalog = load_catalog()
+    verifier = ExpectedLayoutVerifier(load_real_cell_layout(), catalog)
+    perception = object.__new__(CellPerceptionPort)
+    perception._expected_layout_verifier = verifier
+    dependencies = replace(
+        _dependency_bundle(runtime, perception),
+        expected_layout_verifier=verifier,
+        inspection_poses=reviewed_inspection_registry(),
+    )
+
+    with pytest.raises(runtime.RealCellFactoryConfigurationError, match="RealCellRecoveryTargets"):
+        runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+
+
+def test_internal_real_factory_requires_sourced_final_view_registry() -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.catalog import load_catalog
+    from perception.port.port import CellPerceptionPort
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.real_layout import (
+        ExpectedLayoutVerifier,
+        load_real_cell_layout,
+        reviewed_inspection_registry,
+    )
+    from robot.cell.real_recovery import RealCellRecoveryTargets
+
+    catalog = load_catalog()
+    verifier = ExpectedLayoutVerifier(load_real_cell_layout(), catalog)
+    perception = object.__new__(CellPerceptionPort)
+    perception._expected_layout_verifier = verifier
+    dependencies = replace(
+        _dependency_bundle(runtime, perception),
+        expected_layout_verifier=verifier,
+        inspection_poses=reviewed_inspection_registry(),
+        recovery_targets=object.__new__(RealCellRecoveryTargets),
+    )
+
+    with pytest.raises(runtime.RealCellFactoryConfigurationError, match="FinalViewRegistry"):
         runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
