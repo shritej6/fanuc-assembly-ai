@@ -67,6 +67,7 @@ def test_saturday_settle_budget_matches_realistic_arm_rehearsal() -> None:
     assert "T38 realistic-arm rehearsal" in runtime.SATURDAY_ENDPOINT_SETTLE_LIMITS.source
     assert runtime.SATURDAY_EXECUTION_TOLERANCES.max_position_error_mm == 0.3
     assert runtime.SATURDAY_EXECUTION_TOLERANCES.max_orientation_error_deg == 1.0
+    assert runtime.SATURDAY_GROOT_WATCHDOG_LIMITS.base_tilt_limit_deg == 6.0
 
 
 @pytest.mark.parametrize("checkpoint", [None, "stub", "checkpoint.pt", "http://127.0.0.1:5555"])

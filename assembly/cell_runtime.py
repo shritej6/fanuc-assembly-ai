@@ -45,7 +45,7 @@ SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
     defect_drop_s=60.0,
     inspection_s=30.0,
     scene_interval_rows=5,
-    base_tilt_limit_deg=3.0,
+    base_tilt_limit_deg=6.0,
     status="PRELIMINARY",
     source=(
         "Claude PR 24 work order 2026-10-31: 60 s pre-grasp, 90 s post-grasp insertion, "
