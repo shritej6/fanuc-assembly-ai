@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from assembly.catalog import load_catalog
@@ -26,6 +27,7 @@ from assembly.recovery import PullOutTarget
 from assembly.state_machine import PackMLState
 from assembly.verification import VerificationReason
 from policy_learn.deploy.cell_executor import GrootExecutionResult
+from policy_learn.deploy.guards import ChunkGuard, ContactTarget
 from robot.adapter import CellAdapter
 from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
@@ -245,6 +247,42 @@ def test_rear_guard_t29_inverse_recovers_origin_and_90_degree_wrist_turn() -> No
     assert grasp_tcp[:3] == pytest.approx((grasp.tcp.x, grasp.tcp.y, grasp.tcp.z), abs=1e-6)
     assert wrist_roll == pytest.approx(OBJECT_YAW_DEG + 90.0)
     assert grasp_tcp[5] == pytest.approx(wrist_roll)
+
+
+def test_pick_insert_floor_envelope_covers_physical_base_footprint() -> None:
+    candidate = _rear_guard_candidate()
+    prepared = RecipePlanner.finalize_candidate(candidate, _reviewed_rear_guard_grasp(candidate))
+    intent = _controller(_Executor())._pick_insert_intent(prepared)
+    contact = intent.contact
+    assert contact is not None
+    assert contact.radius_mm > math.hypot(
+        intent.endpoint_tcp[0] - prepared.base_pose.tcp.x,
+        intent.endpoint_tcp[1] - prepared.base_pose.tcp.y,
+    )
+    assert contact.radius_mm > 0.3
+    assert load_catalog().geometry_source.sha256 in contact.source
+
+    guard = ChunkGuard()
+    guard.set_target(
+        ContactTarget(
+            contact.x_mm,
+            contact.y_mm,
+            contact.z_contact_mm,
+            radius_mm=contact.radius_mm,
+            label=contact.label,
+        )
+    )
+    start = np.asarray(
+        [[contact.x_mm + 0.5, contact.y_mm, contact.z_contact_mm + 0.5, -180.0, 0.0, 90.0, 1.0]],
+        dtype=float,
+    )
+    below_floor = start.copy()
+    below_floor[0, 2] = contact.z_contact_mm - 5.2
+
+    result = guard.guard(below_floor, start[0, :6], 1.0, 0.1)
+
+    assert result.held is True
+    assert any("contact floor" in reason for reason in result.reasons)
 
 
 @pytest.mark.parametrize(

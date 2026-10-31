@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from enum import Enum
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
+from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerEvent
 from assembly.execution import ExecutionError
@@ -204,11 +205,23 @@ class GrootAssemblyController(AssemblyController):
 
     def _pick_insert_intent(self, prepared: PreparedPlanStep) -> MotionIntent:
         endpoint = self._command_tcp(prepared.target, prepared)
+        part_origin, _, _, _ = self._grasp_fields(prepared.target, prepared)
+        radius_mm = contact_envelope_radius_mm(
+            (endpoint[0], endpoint[1]),
+            (
+                (prepared.part.object_id, part_origin[:2], part_origin[2]),
+                (
+                    prepared.base.object_id,
+                    (prepared.base_pose.tcp.x, prepared.base_pose.tcp.y),
+                    prepared.base_pose.tcp.r,
+                ),
+            ),
+        )
         contact = ContactEnvelope(
             endpoint[0], endpoint[1], endpoint[2],
-            max(self._execution_tolerances.max_position_error_mm, 1e-9),
+            radius_mm,
             f"{prepared.part.object_id} on {prepared.base.object_id}",
-            "T09 execution tolerance around calibrated insertion TCP",
+            f"CAD part/base footprints from {contact_geometry_source()}",
         )
         return self._intent(
             prepared, SemanticSkill.PICK_INSERT_HOLD, endpoint, 1.0, "nominal",
