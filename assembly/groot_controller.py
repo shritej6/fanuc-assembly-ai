@@ -31,6 +31,13 @@ class GrootAssemblyController(AssemblyController):
         self._groot_executor.reset()
         self._motion_queue = GrootMotionQueue(self._groot_executor, self._execution_tolerances)
 
+    def _hold_last_safe(self, reason: str) -> Action:
+        """Refuse CELL output when the current TCP is not measured."""
+        self._hold(reason)
+        raise ExecutionError(
+            f"CELL refuses action without a measured current TCP: {reason}"
+        )
+
     def _queue_drop_release(
         self,
         observation: Observation,
