@@ -140,7 +140,7 @@ def test_public_real_factory_rejects_every_non_executor_object() -> None:
         runtime.build_groot_real_controller(object())
 
 
-def test_public_real_factory_lists_all_missing_requirements_and_stays_unpinned() -> None:
+def test_public_real_factory_uses_pinned_loader_and_names_missing_software_adapter() -> None:
     import robot.cell.t09_real_runtime as runtime
     from assembly import cell_runtime
     from policy_learn.deploy.cell_executor import T09GrootExecutor
@@ -149,13 +149,16 @@ def test_public_real_factory_lists_all_missing_requirements_and_stays_unpinned()
 
     assert cell_runtime.REVIEWED_REAL_CELL_FACTORY is None
     assert hasattr(runtime, "REVIEWED_REAL_CELL_DEPENDENCY_LOADER")
-    assert runtime.REVIEWED_REAL_CELL_DEPENDENCY_LOADER is None
-    with pytest.raises(runtime.RealCellFactoryBlockedError) as captured:
+    assert runtime.REVIEWED_REAL_CELL_DEPENDENCY_LOADER is runtime.load_saturday_real_cell_dependencies
+    with pytest.raises(
+        runtime.RealCellFactoryBlockedError,
+        match="robot.cell.saturday_runtime_adapters",
+    ) as captured:
         runtime.build_groot_real_controller(executor)
 
     message = str(captured.value)
-    assert "no reviewed real-cell dependency loader" in message
-    assert all(item.code in message for item in runtime.required_real_cell_requirements())
+    assert "FoundationPose PoseEstimator" in message
+    assert "production IK/collision providers" in message
 
 
 def test_real_dependency_bundle_names_every_controller_boundary_explicitly() -> None:
@@ -287,3 +290,84 @@ def test_internal_real_factory_requires_sourced_final_view_registry() -> None:
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="FinalViewRegistry"):
         runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+
+
+def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatch) -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.controller_ports import ExecutionTolerances
+    from assembly.groot_controller import GrootControllerAuthority
+    from perception.port.port import CellPerceptionPort
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.t09_mock_runtime import (
+        MockCalibratedPoses,
+        MockPerception,
+        _controller_kwargs,
+    )
+
+    class ResetOnlyPolicy:
+        last_guard_result = None
+
+        def reset(self):
+            return None
+
+        def close(self):
+            return None
+
+    class FinalIdentityBackend:
+        def capture(self, observation, view, base_instance_id, installed_instance_ids):
+            raise AssertionError("construction must not capture final evidence")
+
+    def load_test_adapters(catalog, cad, expected, final_views):
+        del catalog, cad, final_views
+        perception = object.__new__(CellPerceptionPort)
+        perception._expected_layout_verifier = expected
+        mock = _controller_kwargs(MockPerception())
+        return runtime.SaturdayRuntimeAdapters(
+            perception,
+            MockCalibratedPoses(),
+            mock["motion_config"],
+            mock["safety"],
+            mock["verification_thresholds"],
+            FinalIdentityBackend(),
+        )
+
+    monkeypatch.setattr(runtime, "_load_saturday_runtime_adapters", load_test_adapters)
+    executor = T09GrootExecutor(
+        policy=ResetOnlyPolicy(),
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+
+    dependencies = runtime.load_saturday_real_cell_dependencies()
+    controller = runtime._build_groot_real_controller(executor, dependencies)
+
+    assert controller.runtime_authority is GrootControllerAuthority.REAL_CELL
+    assert controller.groot_executor is executor
+    assert controller._execution_tolerances == ExecutionTolerances(0.3, 1.0)
+    assert dependencies.startup_hold is None
+    assert dependencies.perception.expected_layout_verifier is dependencies.expected_layout_verifier
+    views = dependencies.final_view_registry.views_for(
+        5,
+        "F05",
+        base_xy_mm=(420.0, 0.0),
+        max_distance_mm=10.0,
+    )
+    assert tuple(view.view_id for view in views) == ("B2-view-1", "B2-view-2")
+
+
+def test_rollout_two_pins_product_five_parts_and_b2_pose() -> None:
+    from robot.cell.real_layout import load_real_cell_layout
+
+    layout = load_real_cell_layout()
+    rollout = layout.rollout_for_observation(
+        {"trial": {"index": 1, "instruction": layout.rollouts[1].prompt}}
+    )
+    by_id = {item.object_id: item for item in rollout.objects}
+
+    assert (by_id["F05"].center_x_mm, by_id["F05"].center_y_mm, by_id["F05"].yaw_deg) == (
+        420.0,
+        0.0,
+        45.0,
+    )
+    assert set(by_id) >= {"F05", "M5_01", "M5_02", "M5_03", "M5_04"}

@@ -6,7 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from assembly.catalog import Catalog
+from assembly.catalog import Catalog, load_catalog
+from assembly.cell_runtime import SATURDAY_ENDPOINT_SETTLE_LIMITS, SATURDAY_GROOT_WATCHDOG_LIMITS
 from assembly.controller_ports import (
     ExecutionTolerances,
     FinalProductVerifier,
@@ -14,7 +15,7 @@ from assembly.controller_ports import (
 )
 from assembly.controller_startup import StartupHoldConfig
 from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
-from assembly.final_verification import ControllerOwnedFinalVerifier
+from assembly.final_verification import ControllerOwnedFinalVerifier, FinalViewIdentityBackend
 from assembly.final_views import FinalViewRegistry
 from assembly.fixed_inspection import InspectionPoseRegistry
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
@@ -23,9 +24,22 @@ from assembly.planner import CalibratedPoseProvider
 from assembly.recovery import RecoveryTargetProvider
 from assembly.safety import SafetySupervisor
 from assembly.verification import VerificationThresholds
+from perception.cell.localize import CellZones
+from perception.cell.targets import CellTargets
+from perception.port.cad import CadCatalog, load_cad
+from perception.port.placement import precision_gate_tolerances
 from perception.port.port import CellPerceptionPort
 from policy_learn.deploy.cell_executor import T09GrootExecutor
-from robot.cell.real_layout import ExpectedLayoutVerifier, reviewed_inspection_registry
+from robot.cell.real_layout import (
+    FINGERS_DOWN_W_DEG,
+    INSPECTION_SAFE_Z_MM,
+    INSPECTION_Z_MM,
+    START_POSITION_TOLERANCE_MM,
+    ExpectedLayoutVerifier,
+    load_real_cell_layout,
+    reviewed_final_view_registry,
+    reviewed_inspection_registry,
+)
 from robot.cell.real_recovery import RealCellRecoveryTargets
 
 
@@ -215,7 +229,7 @@ class RealCellDependencies:
     poses: CalibratedPoseProvider
     motion_config: MotionConfig
     inspection_stop: InspectionStopConfig
-    startup_hold: StartupHoldConfig
+    startup_hold: StartupHoldConfig | None
     safety: SafetySupervisor
     verification_thresholds: VerificationThresholds
     execution_tolerances: ExecutionTolerances
@@ -229,9 +243,94 @@ class RealCellDependencies:
     final_view_registry: FinalViewRegistry
 
 
-# Source review must replace this with a committed loader. Environment variables
-# cannot provide or self-authorize physical dependencies.
-REVIEWED_REAL_CELL_DEPENDENCY_LOADER: Callable[[], RealCellDependencies] | None = None
+@dataclass(frozen=True, slots=True)
+class SaturdayRuntimeAdapters:
+    """Typed software adapters not derivable from placement/calibration files."""
+
+    perception: CellPerceptionPort
+    poses: CalibratedPoseProvider
+    motion_config: MotionConfig
+    safety: SafetySupervisor
+    verification_thresholds: VerificationThresholds
+    final_identity_backend: FinalViewIdentityBackend
+
+
+def _load_saturday_runtime_adapters(
+    catalog: Catalog,
+    cad: CadCatalog,
+    expected_layout_verifier: ExpectedLayoutVerifier,
+    final_view_registry: FinalViewRegistry,
+) -> SaturdayRuntimeAdapters:
+    del catalog, cad, expected_layout_verifier, final_view_registry
+    raise RealCellFactoryBlockedError(
+        "missing production adapter module robot.cell.saturday_runtime_adapters: "
+        "RT-DETR/classifier artifacts and merged defect-head loader; FoundationPose PoseEstimator; "
+        "measured CloseupThresholds, PoseUncertainty and ArmCorridor; ImageSink; "
+        "CellPerceptionPort-to-MeasuredRecipePoses bridge; production IK/collision providers"
+    )
+
+
+def load_saturday_real_cell_dependencies() -> RealCellDependencies:
+    """Compose committed Saturday facts; fail closed on absent software adapters."""
+    catalog = load_catalog()
+    cad = load_cad()
+    layout = load_real_cell_layout()
+    expected = ExpectedLayoutVerifier(layout, catalog)
+    final_views = reviewed_final_view_registry()
+    adapters = _load_saturday_runtime_adapters(catalog, cad, expected, final_views)
+    if type(adapters) is not SaturdayRuntimeAdapters:
+        raise RealCellFactoryConfigurationError(
+            "Saturday runtime adapter loader must return SaturdayRuntimeAdapters"
+        )
+    execution_tolerances, perception_tolerances = precision_gate_tolerances()
+    final_verifier = ControllerOwnedFinalVerifier(
+        final_views,
+        adapters.final_identity_backend,
+        selection_tolerance_mm=START_POSITION_TOLERANCE_MM,
+    )
+    recovery = RealCellRecoveryTargets(
+        catalog=catalog,
+        cad=cad,
+        cell_targets=CellTargets(CellZones.load()),
+        staging_slots=(),
+        pull_out_slots={},
+        source=(
+            "Saturday explicit no-approved-empty-staging-slot authority; "
+            "sdg/configs/cell_layout.yaml reject/spare zones"
+        ),
+    )
+    return RealCellDependencies(
+        catalog,
+        adapters.perception,
+        adapters.poses,
+        adapters.motion_config,
+        InspectionStopConfig(
+            INSPECTION_Z_MM,
+            FINGERS_DOWN_W_DEG,
+            0.0,
+            "PR9 measured CSI wrist inspection stop; safe transit "
+            f"{INSPECTION_SAFE_Z_MM:g} mm is enforced by reviewed fixed poses",
+        ),
+        None,
+        adapters.safety,
+        adapters.verification_thresholds,
+        execution_tolerances,
+        perception_tolerances,
+        recovery,
+        final_verifier,
+        reviewed_inspection_registry(),
+        SATURDAY_ENDPOINT_SETTLE_LIMITS,
+        SATURDAY_GROOT_WATCHDOG_LIMITS,
+        expected,
+        final_views,
+    )
+
+
+# The loader is source-pinned, but real-cell arming remains a separate None gate
+# in assembly.cell_runtime until review and explicit user approval.
+REVIEWED_REAL_CELL_DEPENDENCY_LOADER: Callable[[], RealCellDependencies] | None = (
+    load_saturday_real_cell_dependencies
+)
 
 
 def _missing_requirements_message() -> str:

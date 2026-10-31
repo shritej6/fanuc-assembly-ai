@@ -73,6 +73,8 @@ class GrootAssemblyController(AssemblyController):
             raise TypeError("final-view registry requires the controller-owned verifier")
         if "controller_owned_final_verification" in kwargs:
             raise TypeError("CELL factory owns the final-verification authority flag")
+        if "allow_missing_startup_hold" in kwargs:
+            raise TypeError("CELL controller owns missing-TCP handling")
         self._groot_executor = groot_executor
         self._inspection_poses = inspection_poses
         self._endpoint_settle_limits = endpoint_settle_limits
@@ -81,6 +83,7 @@ class GrootAssemblyController(AssemblyController):
         self._final_view_registry = final_view_registry
         self._pending_final_verification: PendingFinalVerification | None = None
         kwargs["controller_owned_final_verification"] = controller_owned
+        kwargs["allow_missing_startup_hold"] = True
         super().__init__(**kwargs)
 
     def reset(self) -> None:

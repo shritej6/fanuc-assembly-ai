@@ -77,7 +77,7 @@ class AssemblyController(
         poses: CalibratedPoseProvider,
         motion_config: MotionConfig,
         inspection_stop: InspectionStopConfig,
-        startup_hold: StartupHoldConfig,
+        startup_hold: StartupHoldConfig | None,
         safety: SafetySupervisor,
         verification_thresholds: VerificationThresholds,
         execution_tolerances: ExecutionTolerances,
@@ -86,13 +86,21 @@ class AssemblyController(
         final_verifier: FinalProductVerifier,
         allow_mock_final_verification: bool = False,
         controller_owned_final_verification: bool = False,
+        allow_missing_startup_hold: bool = False,
     ) -> None:
         self._catalog = catalog
         self._perception = perception
         self._poses = poses
         self._motion_config = motion_config
         self._inspection_stop = inspection_stop
-        self._startup_hold = validated_startup_hold(startup_hold)
+        if type(allow_missing_startup_hold) is not bool:
+            raise ControllerInputError("allow_missing_startup_hold must be a boolean")
+        if startup_hold is None:
+            if not allow_missing_startup_hold:
+                raise ControllerInputError("startup hold is required unless the controller owns missing-TCP handling")
+            self._startup_hold = None
+        else:
+            self._startup_hold = validated_startup_hold(startup_hold)
         self._safety = safety
         self._verification_thresholds = verification_thresholds
         self._execution_tolerances = execution_tolerances
@@ -387,6 +395,8 @@ class AssemblyController(
 
     def _hold_last_safe(self, reason: str) -> Action:
         hold = self._motion_queue.pending_endpoint or self._last_safe_waypoint or self._startup_hold
+        if hold is None:
+            raise ControllerInputError("controller has no measured TCP or reviewed startup hold")
         self._hold(reason)
         return hold.as_action()
 
