@@ -16,6 +16,8 @@ import zmq
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE, load_catalog
 from assembly.cell_runtime import CellTransport
+from assembly.controller_ports import ExecutionTolerances
+from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.state_machine import PackMLState
 from policy_learn.deploy.attestation import REQUIRED_CELL_SKILLS
 from policy_learn.deploy.groot_policy import DT_S
@@ -23,7 +25,7 @@ from policy_learn.deploy.guards import GuardLimits
 from policy_learn.groot.groot_client import ATTESTATION_PROTOCOL, pack, unpack
 from policy_learn.groot.tcp_convert import eef9d_to_tcp, tcp_to_eef9d
 from robot.cell.policy import Policy
-from robot.cell.t09_mock_runtime import MockPerception
+from robot.cell.t09_mock_runtime import MockCalibratedPoses, MockPerception, _oriented
 
 CELL_DIR = Path(__file__).resolve().parents[2] / "robot" / "cell"
 INITIAL_TCP = [400.0, 0.0, -200.0, -180.0, 0.0, 0.0]
@@ -170,6 +172,31 @@ class _SafeFakeGrootServer(_FakeGrootServer):
         return [action, {"fake": "deterministic-in-limit-semantic-row"}]
 
 
+class _FloorClampFakeGrootServer(_FakeGrootServer):
+    """Return the measured checkpoint undershoot once, then hold position."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._undershoot_sent = False
+
+    def _hold_action(self, request: dict[str, Any]) -> list[object]:
+        observation, language = _validated_wire_request(request)
+        if "M1_01" not in language:
+            raise ValueError(f"floor-clamp proof requires M1_01, got {language!r}")
+        state = observation["state"]
+        current_eef = np.asarray(state["eef_9d"], dtype=float)[0, 0]
+        current = eef9d_to_tcp(current_eef[None], np.array([-180.0, 0.0, 0.0]))[0]
+        target = current.copy()
+        if not self._undershoot_sent:
+            target[:3] = (267.2, -105.8, -329.4)
+            self._undershoot_sent = True
+        action = {
+            "eef_9d": tcp_to_eef9d(target[None])[None],
+            "gripper": np.asarray(state["gripper"], dtype=np.float32).copy(),
+        }
+        return [action, {"fake": "checkpoint-3000-floor-undershoot"}]
+
+
 def _validated_wire_request(request: dict[str, Any]) -> tuple[dict[str, Any], str]:
     data = request["data"]
     observation = data["observation"]
@@ -273,10 +300,16 @@ def _in_guard_slow_zone(pose: np.ndarray, insert: np.ndarray) -> bool:
 
 
 class _MockCellServer(AbstractContextManager["_MockCellServer"]):
-    def __init__(self, *, trial_s: float = 1.0) -> None:
+    def __init__(
+        self,
+        *,
+        trial_s: float = 1.0,
+        initial_tcp: tuple[float, float, float, float, float, float] | None = None,
+    ) -> None:
         from robot.cell.mock_cell import Mock, handler
 
         self.mock = Mock(1, trial_s, "mock", "assemble product 1", quiet=True)
+        self.initial_tcp = list(INITIAL_TCP if initial_tcp is None else initial_tcp)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler(self.mock))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -302,7 +335,7 @@ class _MockCellServer(AbstractContextManager["_MockCellServer"]):
             trials = self.client.trials()
             if trials[0]["status"] == "ready":
                 with self.mock.lock:
-                    self.mock.tcp = list(INITIAL_TCP)
+                    self.mock.tcp = list(self.initial_tcp)
                 return trials[0]
             time.sleep(0.01)
         raise AssertionError("official mock trial did not become ready")
@@ -451,10 +484,127 @@ def test_cell_policy_network_path_completes_pick_insert_phase_with_guard_active(
             policy.controller.groot_executor.close()
 
 
+def test_cell_policy_network_path_clamps_checkpoint_floor_undershoot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact checkpoint error must move safely instead of entering Held."""
+    from robot.cell.cell_client import run_trial
+
+    monkeypatch.setenv(
+        "FANUC_T09_CELL_FACTORY",
+        "robot.cell.t09_mock_runtime:build_groot_mock_controller",
+    )
+    monkeypatch.setenv("FANUC_T09_SOFTWARE_PROOF", "1")
+    monkeypatch.syspath_prepend(str(CELL_DIR))
+    _configure_floor_clamp_fixture(monkeypatch)
+    eval_start = (267.2, -105.8, -323.1, -180.0, 0.0, 0.0)
+    with _FloorClampFakeGrootServer() as groot, _MockCellServer(
+        trial_s=20.0,
+        initial_tcp=eval_start,
+    ) as cell:
+        policy = Policy(
+            runtime="cell",
+            checkpoint=groot.url,
+            cell_transport=CellTransport.OFFICIAL_MOCK,
+        )
+        try:
+            trial = cell.ready_trial()
+            monitor = threading.Thread(
+                target=_end_trial_on_floor_clamp,
+                args=(cell, policy),
+                daemon=True,
+            )
+            monitor.start()
+            run_trial(cell.client, policy, trial)
+            monitor.join(timeout=2.0)
+
+            guard_log = policy.controller.groot_executor._policy.guard_log
+            clamp_entries = [
+                entry
+                for entry in guard_log
+                if any("raised to the contact floor" in reason for reason in entry["reasons"])
+            ]
+            endpoints = [request["endpoint"] for request in groot.requests]
+            reason = _held_reason(policy)
+            print(
+                f"CELL_FLOOR_PROOF held_reason={reason!r} tcp_z={cell.mock.tcp[2]:.2f} "
+                f"clamps={len(clamp_entries)} get_action={endpoints.count('get_action')}"
+            )
+
+            assert clamp_entries
+            assert all(entry["held"] is False for entry in clamp_entries)
+            assert any(
+                "M1_01 on F01" in clamp_reason
+                for entry in clamp_entries
+                for clamp_reason in entry["reasons"]
+            )
+            assert cell.mock.tcp[2] == pytest.approx(-325.1)
+            assert cell.mock.tcp[2] >= -327.7
+            assert reason is None
+            assert cell.mock.rejections == []
+            assert endpoints.count("get_action") >= 1
+        finally:
+            policy.close()
+
+
+def _configure_floor_clamp_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    import robot.cell.t09_mock_runtime as mock_runtime
+
+    original_target_for = MockCalibratedPoses.target_for
+    original_controller_kwargs = mock_runtime._controller_kwargs
+
+    def target_for(self, product, base, step, *, observed_at_s):
+        if product.product == 1 and step.step == 1:
+            return _oriented(267.2, -105.8, -326.7, 0.0)
+        return original_target_for(self, product, base, step, observed_at_s=observed_at_s)
+
+    def inspection_poses() -> InspectionPoseRegistry:
+        return InspectionPoseRegistry(
+            (
+                InspectionSlotPose(
+                    "checkpoint-3000-m1-01",
+                    (230.0, 250.0, -135.0, -115.0),
+                    (267.2, -105.8, -323.1, -180.0, 0.0, 0.0),
+                    -168.0,
+                    "checkpoint-3000 floor-clamp software proof; mock only",
+                ),
+            )
+        )
+
+    def controller_kwargs(perception: MockPerception) -> dict[str, object]:
+        kwargs = original_controller_kwargs(perception)
+        kwargs["execution_tolerances"] = ExecutionTolerances(0.3, 1.0)
+        return kwargs
+
+    monkeypatch.setattr(MockCalibratedPoses, "target_for", target_for)
+    monkeypatch.setattr(mock_runtime, "_controller_kwargs", controller_kwargs)
+    monkeypatch.setattr("robot.cell.t09_mock_runtime._mock_inspection_poses", inspection_poses)
+
+
 def _end_trial_on_controller_terminal(cell: _MockCellServer, policy: Policy) -> None:
     deadline = time.monotonic() + 75.0
     while time.monotonic() < deadline:
         if _completed_steps(policy) or _held_reason(policy) is not None:
+            with cell.mock.lock:
+                cell.mock.queue.clear()
+                cell.mock.trials[0]["status"] = "done"
+                cell.mock.state = "homing"
+            return
+        time.sleep(0.01)
+
+
+def _end_trial_on_floor_clamp(cell: _MockCellServer, policy: Policy) -> None:
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline:
+        guard_log = policy.controller.groot_executor._policy.guard_log
+        clamped = any(
+            "raised to the contact floor" in reason
+            for entry in guard_log
+            for reason in entry["reasons"]
+        )
+        with cell.mock.lock:
+            action_applied = abs(cell.mock.tcp[2] - (-325.1)) <= 1e-6
+        if (clamped and action_applied) or _held_reason(policy) is not None:
             with cell.mock.lock:
                 cell.mock.queue.clear()
                 cell.mock.trials[0]["status"] = "done"
