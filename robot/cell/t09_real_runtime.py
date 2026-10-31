@@ -13,7 +13,7 @@ from assembly.controller_ports import (
     PerceptionTolerances,
 )
 from assembly.controller_startup import StartupHoldConfig
-from assembly.execution import EndpointSettleLimits
+from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
 from assembly.fixed_inspection import InspectionPoseRegistry
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from assembly.motion import InspectionStopConfig, MotionConfig
@@ -171,7 +171,7 @@ _RUNTIME_REQUIREMENTS = (
     RealCellRequirement(
         "watchdog_limits",
         RequirementKind.RUNTIME_DEPENDENCY,
-        ("per_intent_budget_s", "scene_period_s", "base_tilt_limit_deg", "source"),
+        ("per_intent_budget_s", "scene_interval_rows", "base_tilt_limit_deg", "source"),
         "Supply sourced per-intent and periodic perception watchdog limits.",
     ),
 )
@@ -208,6 +208,7 @@ class RealCellDependencies:
     final_verifier: FinalProductVerifier
     inspection_poses: InspectionPoseRegistry
     endpoint_settle_limits: EndpointSettleLimits
+    watchdog_limits: GrootWatchdogLimits
 
 
 # Source review must replace this with a committed loader. Environment variables
@@ -257,6 +258,7 @@ def _build_groot_real_controller(
         groot_executor=safe_executor,
         inspection_poses=dependencies.inspection_poses,
         endpoint_settle_limits=dependencies.endpoint_settle_limits,
+        watchdog_limits=dependencies.watchdog_limits,
         runtime_authority=GrootControllerAuthority.REAL_CELL,
         catalog=dependencies.catalog,
         perception=dependencies.perception,

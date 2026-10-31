@@ -161,6 +161,7 @@ def test_real_dependency_bundle_names_every_controller_boundary_explicitly() -> 
         "final_verifier",
         "inspection_poses",
         "endpoint_settle_limits",
+        "watchdog_limits",
     }
 
 
