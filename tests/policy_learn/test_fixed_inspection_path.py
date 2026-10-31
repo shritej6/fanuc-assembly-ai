@@ -102,6 +102,7 @@ def test_policy_fixed_inspection_refuses_closed_gripper_direct_call() -> None:
         policy.guard_fixed_inspection(
             _observation(tcp=current, gripper=1.0),
             _move((310.0, 0.0, -200.0, -180.0, 0.0, 0.0)),
+            ExecutionTolerances(0.3, 1.0),
         )
 
     assert model.calls == 0
@@ -186,4 +187,19 @@ def test_fixed_inspection_far_lateral_leg_is_incremental_not_guard_refused() -> 
     assert result.blocked is False
     assert 300.0 < result.action[0] <= 330.0
     assert result.action[1:3] == [0.0, -180.0]
+    assert model.calls == 0
+
+
+def test_fixed_inspection_advances_past_safe_plane_within_reviewed_tolerances() -> None:
+    model = _ForbiddenModel()
+    executor = _executor(model)
+    current = (500.05, -0.04, -179.95, 179.6, 0.2, -0.2)
+
+    result = executor.inspect(
+        _move((500.0, 0.0, -168.0, -180.0, 0.0, 0.0), safe_z_mm=-180.0),
+        observation=_observation(tcp=current),
+    )
+
+    assert result.blocked is False
+    assert result.action[2] > current[2]
     assert model.calls == 0

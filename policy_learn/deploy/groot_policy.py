@@ -21,6 +21,7 @@ from typing import ClassVar, Protocol
 
 import numpy as np
 
+from assembly.controller_ports import ExecutionTolerances
 from assembly.fixed_inspection import FixedInspectionMove, next_inspection_leg
 from policy_learn.deploy.attestation import (
     AttestationError,
@@ -368,7 +369,12 @@ class GrootPolicy:
             return self._record(refusal)
         return self._record(self.guard.guard(chunk, tcp, gripper, self.DT))
 
-    def guard_fixed_inspection(self, obs: dict, move: FixedInspectionMove) -> np.ndarray:
+    def guard_fixed_inspection(
+        self,
+        obs: dict,
+        move: FixedInspectionMove,
+        tolerances: ExecutionTolerances,
+    ) -> np.ndarray:
         """Guard one reviewed camera pose without invoking the learned model."""
         self.steps += 1
         _, gripper, tcp = self._observed_state(obs)
@@ -385,7 +391,7 @@ class GrootPolicy:
             result = GuardResult(hold_row(tcp, gripper, self.guard.limits), False, True, reasons)
             return self._record(result)
         current_tcp = tuple(float(value) for value in tcp)
-        leg_target = next_inspection_leg(current_tcp, move)
+        leg_target = next_inspection_leg(current_tcp, move, tolerances)
         step = _incremental_fixed_pose(tcp, leg_target, self.guard.limits)
         row = np.concatenate([step, [0.0]])[None, :]
         return self._record(self.guard.guard(row, tcp, gripper, self.DT))

@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass
 from numbers import Number
 
+from assembly.controller_ports import ExecutionTolerances
+
 
 class FixedInspectionError(ValueError):
     """A fixed inspection request lacks reviewed finite pose evidence."""
@@ -133,17 +135,21 @@ class FixedInspectionMove:
 def next_inspection_leg(
     current_tcp: tuple[float, float, float, float, float, float],
     move: FixedInspectionMove,
+    tolerances: ExecutionTolerances,
 ) -> tuple[float, float, float, float, float, float]:
     """Choose rise, safe-plane transit, or final camera approach."""
     endpoint = move.endpoint_tcp
-    if current_tcp[2] < move.safe_z_mm - 1e-9:
+    if current_tcp[2] < move.safe_z_mm - tolerances.max_position_error_mm:
         return (*current_tcp[:2], move.safe_z_mm, *current_tcp[3:])
     xy_error = math.hypot(current_tcp[0] - endpoint[0], current_tcp[1] - endpoint[1])
     angle_error = max(
         abs((current_tcp[index] - endpoint[index] + 180.0) % 360.0 - 180.0)
         for index in range(3, 6)
     )
-    if xy_error > 1e-9 or angle_error > 1e-9:
+    if (
+        xy_error > tolerances.max_position_error_mm
+        or angle_error > tolerances.max_orientation_error_deg
+    ):
         transit_z = max(current_tcp[2], move.safe_z_mm)
         return (*endpoint[:2], transit_z, *endpoint[3:])
     return endpoint

@@ -53,6 +53,7 @@ class GuardedPolicy(Protocol):
         self,
         observation: dict,
         move: FixedInspectionMove,
+        tolerances: ExecutionTolerances,
     ) -> np.ndarray: ...
 
 
@@ -212,7 +213,7 @@ class T09GrootExecutor:
         if endpoint_reached(current, expected, self._tolerances):
             return GrootExecutionResult(current.as_action(), MotionPhase.INSPECT, True, False, ())
         rows = np.asarray(
-            self._policy.guard_fixed_inspection(observation, move),
+            self._policy.guard_fixed_inspection(observation, move, self._tolerances),
             dtype=float,
         )
         result = self._policy.last_guard_result

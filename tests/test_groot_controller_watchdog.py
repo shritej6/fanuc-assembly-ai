@@ -128,7 +128,7 @@ def test_watchdog_clock_failure_holds_active_trial_instead_of_aborting() -> None
     assert "clock moved backwards" in controller.events[-1].detail
 
 
-def test_intent_time_budget_trip_holds_with_andon() -> None:
+def test_fixed_inspection_leg_progress_does_not_reset_time_budget() -> None:
     current = Waypoint(300.0, -45.0, -168.0, -180.0, 0.0, 77.0, 0.0)
     target = [321.0, -45.0, -168.0, -180.0, 0.0, 77.0, 0.0]
     executor = _Executor(GrootExecutionResult(target, MotionPhase.INSPECT, False, False, ()))
@@ -145,13 +145,23 @@ def test_intent_time_budget_trip_holds_with_andon() -> None:
         observation=observation, current=current, observed_at_s=10.0,
         base_pose=(420.0, 80.0, -320.0, 90.0),
     )
+    clock[0] = 1.0
+    assert controller._emit_guarded_action(
+        observation, current, 10.0, "p1-1"
+    ) == target
+    reached = Waypoint(*target)
+    assert controller._confirm_previous_endpoint(
+        _observation(reached, t=10.1), reached, 10.1
+    ) is None
     clock[0] = 31.0
 
-    action = controller._emit_guarded_action(observation, current, 10.0, "p1-1")
+    action = controller._emit_guarded_action(
+        _observation(reached, t=10.2), reached, 10.2, "p1-1"
+    )
 
-    assert action == current.as_action()
+    assert action == reached.as_action()
     assert controller.state_machine.state is PackMLState.HELD
     assert controller.inventory.active_product == 1
     assert controller.events[-1].kind == "andon"
     assert "30 s time budget" in controller.events[-1].detail
-    assert len(executor.inspections) == 0
+    assert len(executor.inspections) == 1
