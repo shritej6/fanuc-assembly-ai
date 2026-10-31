@@ -15,3 +15,4 @@ runs/
 !sim/assets/**/*.usda
 !sim/starter/assets/**/*.usda
 cad/defects/*.stl
+robot/cell/direct_runtime_report.json
