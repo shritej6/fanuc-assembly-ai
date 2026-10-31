@@ -207,8 +207,11 @@ export_inc() {
           grep -vxF -f ~/t12_data/a7/exported_$run.txt || true); \
         [ -n \"\$files\" ] || exit 0; mkdir -p ~/t12_data/a7/bin; \
         ln -sf \$($TOOLS python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())') ~/t12_data/a7/bin/ffmpeg; \
-        PATH=~/t12_data/a7/bin:\$PATH $TOOLS python -m sim.assembly_lab.mimic.export_lerobot \
-          --inputs \$files --out ~/t12_data/lerobot/$name --workers ${EXPORT_WORKERS:-6} && \
+        if PATH=~/t12_data/a7/bin:\$PATH $TOOLS python -m sim.assembly_lab.mimic.export_lerobot \
+          --inputs \$files --out ~/t12_data/lerobot/$name --workers ${EXPORT_WORKERS:-6} 2> ~/t12_data/lerobot/$name.err; then :; \
+        elif grep -q 'no episode passed success + force guard' ~/t12_data/lerobot/$name.err; then \
+          rm -rf ~/t12_data/lerobot/$name; echo '[export] $h $s: new chunks hold no kept episode'; \
+        else cat ~/t12_data/lerobot/$name.err >&2; exit 1; fi; \
         printf '%s\n' \$files >> ~/t12_data/a7/exported_$run.txt" || { echo "[export] $h $s failed"; continue; }
       "${SSH[@]}" "$h" "test -f ~/t12_data/lerobot/$name/meta/info.json" || continue
       [[ "$h" == "$GATHER" ]] && { echo "[export] $h $s -> $GATHER:~/t12_data/lerobot/$name"; continue; }
