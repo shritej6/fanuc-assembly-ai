@@ -13,6 +13,8 @@ Scenarios (docs/ROBOT_BRAIN.md section 3):
     fix_above  pull_out of an installed part to an empty test-bed spot (reverse sheet order)
     crowded    place_free of the planner's blocker to an empty remembered test-bed spot (move the blocker first)
     defect     defect_drop of a part into the defect area
+    align_insert  pick_insert, learned from a staged wrong pose above the base (correction demo, skills/correct.py)
+    align_grasp   pick_insert, learned from a staged wrong pose above the grip pad (correction demo)
 
 Every attempt is counted. Only episodes that pass every success check AND the force guard are written; the rest are
 counted with their reason in <out>/<seed_dir>/product_<n>_stats.json. Nothing is retried silently.
@@ -42,7 +44,8 @@ from .runner import EpisodeFailed, EpisodeRecorder, ResetInvalid
 
 DEMO_ROOT = Path.home() / "t12_data" / "demos"
 SEED_DIR = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert",
-            "fix_above": "pull_out", "crowded": "place_free", "defect": "defect_drop"}
+            "fix_above": "pull_out", "crowded": "place_free", "defect": "defect_drop",
+            "align_insert": "pick_insert", "align_grasp": "pick_insert"}
 STAGED_BEYOND_CAPTURE_MM = 1.0  # the staged first try misses by this much more than the part's chamfer capture
 
 
@@ -80,6 +83,9 @@ def _episode(backend, rec: EpisodeRecorder, rng, scenario: str, product: int, pa
         case = {"build": "nominal"}.get(scenario, scenario)
         miss = _staged(rng, ins.capture_mm) if scenario == "wont_seat" else (0.0, 0.0, 0.0)
         episodes.pick_insert(rec, pick, ins, case, miss)
+    elif scenario in ("align_insert", "align_grasp"):
+        pick, ins = backend.pick_insert(obs, part, base_of(product))
+        getattr(episodes, scenario)(rec, pick, ins, rng)
     elif scenario == "fix_above":
         pull, spot = backend.pull_out(obs, part, rng)
         episodes.pull_out(rec, pull, spot)

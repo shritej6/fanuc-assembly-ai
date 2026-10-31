@@ -14,7 +14,7 @@ import numpy as np
 
 from ..mimic.catalog import encode_plan_ids, product_of
 from ..mimic.instructions import instruction
-from . import checks
+from . import checks, correct
 from .geometry import matrix_to_pose, pose_to_matrix, wrap_deg
 from .plan import FreePlacePlan, InsertPlan, PickPlan, PullOutPlan
 from .runner import EpisodeFailed, EpisodeRecorder
@@ -60,6 +60,37 @@ def pick_insert(rec: EpisodeRecorder, pick: PickPlan, ins: InsertPlan, case: str
         raise EpisodeFailed(f"{pick.object_id}: {outcome}")
     if any(misalign) and not rec.events:
         raise EpisodeFailed("staged won't-seat case seated on the first try: not a recovery demo")
+    _end(rec, ("grasped", "seated"))
+
+
+def align_insert(rec: EpisodeRecorder, pick: PickPlan, ins: InsertPlan, rng: np.random.Generator) -> None:
+    """Correction demo: masked pick + carry to a wrong pose above the base; learned line-up + entry from there.
+    Case stays nominal: the instruction must read exactly like the planner's (no "[case]" tag at deploy)."""
+    base_pose = checks.object_pose(rec.obs, ins.base_id)
+    target = _part_xy_yaw(rec, pick.object_id) + [pick.grasp_tcp[5], base_pose[0], base_pose[1], base_pose[5]]
+    _begin(rec, "pick_insert", pick.object_id, ins.base_id, pick.grip_index, "nominal", target)
+    rec.define_frame("grasp_frame", pick.object_id, pick.grasp_tcp)
+    rec.define_frame("seat_frame", ins.base_id, ins.seated_tcp)
+    rec.do_pick(pick, learn=False)
+    rec.run(correct.stage_near_base(ins, rec.pose, rec.gripper, correct.staged_insert_pose(ins, (0.0, 0.0, 0.0), rng)))
+    outcome = rec.do_insert(ins, near=True)
+    if outcome != "seated":
+        raise EpisodeFailed(f"{pick.object_id}: {outcome}")
+    _end(rec, ("grasped", "seated"))
+
+
+def align_grasp(rec: EpisodeRecorder, pick: PickPlan, ins: InsertPlan, rng: np.random.Generator) -> None:
+    """Correction demo: masked move to a wrong pose above the grip pad; learned line-up + grasp + normal insert."""
+    base_pose = checks.object_pose(rec.obs, ins.base_id)
+    target = _part_xy_yaw(rec, pick.object_id) + [pick.grasp_tcp[5], base_pose[0], base_pose[1], base_pose[5]]
+    _begin(rec, "pick_insert", pick.object_id, ins.base_id, pick.grip_index, "nominal", target)
+    rec.define_frame("grasp_frame", pick.object_id, pick.grasp_tcp)
+    rec.define_frame("seat_frame", ins.base_id, ins.seated_tcp)
+    rec.run(correct.stage_near_pad(pick, rec.pose, correct.staged_grasp_pose(pick, rng)))
+    rec.do_pick(pick, near=True)
+    outcome = rec.do_insert(ins)
+    if outcome != "seated":
+        raise EpisodeFailed(f"{pick.object_id}: {outcome}")
     _end(rec, ("grasped", "seated"))
 
 

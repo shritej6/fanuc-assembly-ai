@@ -37,7 +37,7 @@ from .geometry import pose_to_matrix
 from .plan import PullOutPlan
 
 SKILL_OF = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert", "fix_above": "pull_out",
-            "crowded": "place_free", "defect": "defect_drop"}
+            "crowded": "place_free", "defect": "defect_drop", "align_insert": "pick_insert", "align_grasp": "pick_insert"}
 CROWD_LAYOUTS = 20  # random layouts tried per reset for the crowded case
 CROWD_DIRECTIONS = 24  # neighbour directions tried around the target
 CROWD_GAPS_MM = (1.0, 2.0, 3.0)  # neighbour footprint clear of the target's by this much
@@ -152,7 +152,7 @@ class IsaacBackend:
     def _plan(self, obs: dict, rng, product: int, part: str) -> tuple:
         scene = scene_from_obs(obs, self.installed)
         sc = self.scenario
-        if sc in ("build", "wont_seat", "dropped"):
+        if sc in ("build", "wont_seat", "dropped", "align_insert", "align_grasp"):
             g = _feasible(self.planner.plan_pick(scene, part))
             p = _feasible(self.planner.plan_place(scene, part, base_of(product), flip=g.flip))
             if p.flip != g.flip:
