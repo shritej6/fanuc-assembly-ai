@@ -86,6 +86,19 @@ Newest first. One entry per finished task.
   envelope as production; it does not weaken a guard. Final gate: `uv run pytest -q` = **1569 passed, 5 skipped** in
   256.89 s; repository-wide Ruff and `git diff --check` passed; the worktree was clean and the official client was
   not edited.
+- T38 realistic-arm closure: `d4a344b` reissues the original guarded endpoint during settlement instead of
+  commanding the lagging observation; the original deadline remains anchored and the move-first-then-close gripper
+  gate remains active. `f01bbd9` threads the reviewed 0.3 mm / 1 degree execution tolerances through fixed-inspection
+  rise/transit/approach selection, including wrapped angles. The sourced 30-second inspection budget is not reset by
+  successful leg progress and still becomes Held + Andon on non-convergence.
+- `6e1cf41` records the T38 settle-budget measurement: 2.5 seconds still timed out, while 3.0 seconds cleared the
+  unchanged 0.3 mm / 1 degree endpoint gate. Under current T37 sources, the noisy ideal-arm rehearsal completed one
+  pick-insert in **20.5 s / 94 rows / 76 GR00T calls**. The laggy-arm double now progresses through guarded legs
+  instead of freezing at row 11; its 40-second/200-row harness cap ends before the 90-second pick-insert watchdog, so
+  that capped run is not reported as a full-product pass.
+- Final unrestricted gate after these fixes: `UV_CACHE_DIR=/private/tmp/fanuc-t37-uv-cache uv run pytest -q` =
+  **1572 passed, 5 skipped** in 268.82 s; repository-wide `uv run ruff check .` and `git diff --check` passed. The
+  official `robot/cell/cell_client.py` remains unchanged.
 
 ## 2026-10-30 · T33 · CODEX · M1_01/M3_01 size-twin contract
 
