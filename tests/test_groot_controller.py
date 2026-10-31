@@ -12,7 +12,7 @@ import pytest
 
 from assembly.catalog import load_catalog
 from assembly.controller_recovery import PendingInsertionLift
-from assembly.execution import ExecutionError
+from assembly.execution import CellTrialHeld
 from assembly.fixed_inspection import (
     FixedInspectionMove,
     InspectionPoseRegistry,
@@ -205,7 +205,7 @@ def test_cell_refuses_startup_hold_without_measured_tcp() -> None:
     controller = _controller(executor)
     adapter = CellAdapter(controller, action_mode="tcp", dt=0.1)
 
-    with pytest.raises(ExecutionError, match="measured current TCP"):
+    with pytest.raises(CellTrialHeld, match="measured current TCP"):
         adapter.act({"t": 10.0, "tcp_pose": None, "joints": [0.0] * 7})
 
     assert controller.state_machine.state is PackMLState.HELD

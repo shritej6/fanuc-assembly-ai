@@ -23,6 +23,7 @@ from pathlib import Path
 
 from cell_client import CellClient, run_all
 from policy import Policy
+from trial_runner import run_cell_trials
 
 HERE = Path(__file__).resolve().parent
 SUBMISSION = HERE / "submission" / "submission.yaml"
@@ -256,7 +257,11 @@ def main() -> None:
             LOG.info(results_link(st))
     policy = Policy(args.checkpoint, runtime="cell")
     try:
-        run_all(CellClient(url, token, args.ca), policy)
+        run_cell_trials(
+            CellClient(url, token, args.ca),
+            policy,
+            run_all_fn=run_all,
+        )
     finally:
         policy.close()
 

@@ -25,6 +25,10 @@ class ExecutionError(RuntimeError):
     """Observed execution diverged from the previously guarded plan."""
 
 
+class CellTrialHeld(ExecutionError):
+    """CELL intentionally emitted no action and held only the active trial."""
+
+
 class WorkAreaIntrusionError(ExecutionError):
     """A fresh scene reports an unexpected work-area intrusion."""
 

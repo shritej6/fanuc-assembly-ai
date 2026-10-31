@@ -10,7 +10,7 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerEvent
-from assembly.execution import ExecutionError
+from assembly.execution import CellTrialHeld, ExecutionError
 from assembly.fixed_inspection import FixedInspectionMove, InspectionPoseRegistry
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
@@ -70,7 +70,7 @@ class GrootAssemblyController(AssemblyController):
     def _hold_last_safe(self, reason: str) -> Action:
         """Refuse CELL output when the current TCP is not measured."""
         self._hold(reason)
-        raise ExecutionError(
+        raise CellTrialHeld(
             f"CELL refuses action without a measured current TCP: {reason}"
         )
 
