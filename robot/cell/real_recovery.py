@@ -31,8 +31,10 @@ class RealCellRecoveryTargets:
     ) -> None:
         if not isinstance(source, str) or not source.strip():
             raise RecoveryError("real recovery targets require a calibration source")
-        if not staging_slots or len(staging_slots) != len(set(staging_slots)):
+        if type(staging_slots) is not tuple or len(staging_slots) != len(set(staging_slots)):
             raise RecoveryError("real recovery targets need unique reviewed empty staging slots")
+        if any(not isinstance(slot_id, str) or not slot_id.strip() for slot_id in staging_slots):
+            raise RecoveryError("real recovery staging slot identifiers must be nonempty strings")
         self._catalog = catalog
         self._cad = cad
         self._targets = cell_targets
@@ -61,6 +63,8 @@ class RealCellRecoveryTargets:
         slot: int,
     ) -> OrientedPartPose:
         step = self._step(product, part)
+        if not self._staging_slots:
+            raise RecoveryError("no reviewed empty staging slot authority is configured")
         if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= len(self._staging_slots):
             raise RecoveryError(f"recovery stage {slot!r} has no reviewed empty staging slot")
         release = self._release_for_slot(self._staging_slots[slot - 1], part.object_id)

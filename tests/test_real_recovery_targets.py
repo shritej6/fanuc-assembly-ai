@@ -17,12 +17,12 @@ def _part(object_id: str = "M1_02") -> InventoryItem:
     return InventoryItem("part-1", object_id, InventoryZone.INSTALLED, ObjectCondition.VERIFIED, 1)
 
 
-def _targets(*, pull_out_slots=None) -> RealCellRecoveryTargets:
+def _targets(*, staging_slots=("S1", "S2", "S3"), pull_out_slots=None) -> RealCellRecoveryTargets:
     return RealCellRecoveryTargets(
         catalog=load_catalog(),
         cad=load_cad(),
         cell_targets=CellTargets(CellZones.load()),
-        staging_slots=("S1", "S2", "S3"),
+        staging_slots=staging_slots,
         pull_out_slots={} if pull_out_slots is None else pull_out_slots,
         source="CSI operator verified cell_layout.yaml slots on 2026-10-31",
     )
@@ -62,6 +62,15 @@ def test_unreviewed_staging_and_pull_out_slots_fail_closed() -> None:
         targets.staging_target_for(1, part, 4)
     with pytest.raises(RecoveryError, match="reviewed pull-out slot"):
         targets.pull_out_target_for(1, part)
+
+
+def test_explicit_no_staging_authority_builds_but_never_returns_motion() -> None:
+    targets = _targets(staging_slots=())
+
+    with pytest.raises(RecoveryError, match="no reviewed empty staging slot"):
+        targets.staging_target_for(1, _part(), 1)
+    with pytest.raises(RecoveryError, match="no reviewed empty staging slot"):
+        targets.staging_verification_target_for(1, _part(), 1)
 
 
 def test_pull_out_uses_explicit_empty_slot_and_cell_clearance() -> None:
