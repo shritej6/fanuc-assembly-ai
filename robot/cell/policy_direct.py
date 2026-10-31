@@ -57,7 +57,7 @@ def report() -> None:
         print(f"  NOTE: {note}")
     for pol in data:
         for e in pol["events"]:
-            if e["type"] in ("trial_start", "step_start", "grasped", "released", "step_done", "trial_end"):
+            if e["type"] in ("trial_start", "step_start", "takeover", "grasped", "released", "step_done", "trial_end"):
                 detail = {k: v for k, v in e.items() if k not in ("t", "type", "rollout")}
                 print(f"  [trial {e['rollout'] + 1}] {e['type']}: {detail}")
         held = sum(g["held"] for g in pol["guard_log"])
