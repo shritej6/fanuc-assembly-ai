@@ -152,6 +152,25 @@ def test_policy_sends_the_valid_prefix_and_logs_the_truncation():
     assert rows.shape == (1, 7) and pol.guard_log[-1]["held"] and pol.guard_log[-1]["truncated_at"] is None
 
 
+def test_exec_horizon_sends_only_the_first_rows_and_guards_only_those(monkeypatch):
+    tcp = [380.0, 74.0, -300.0, -180.0, 0.0, 180.0]
+    chunk = [[380.0, 74.0, -300.0 - 2.8 * (k + 1), -180.0, 0.0, 180.0, 0] for k in range(10)]
+    chunk += [[380.0, 74.0, -334.5, -180.0, 0.0, 180.0, 0]] * 6
+    pol = GrootPolicy(model=Fixed(chunk), exec_horizon=8)
+    pol.reset()
+    rows = pol.act(obs(tcp=tcp))
+    np.testing.assert_allclose(rows, np.array(chunk[:8], float))
+    assert pol.guard_log == []                         # row 10 under the floor is never sent, so never refused
+    monkeypatch.setenv("GROOT_EXEC_HORIZON", "4")
+    pol = GrootPolicy(model=Fixed(chunk))
+    pol.reset()
+    assert pol.exec_horizon == 4 and len(pol.act(obs(tcp=tcp))) == 4
+    monkeypatch.delenv("GROOT_EXEC_HORIZON")
+    assert GrootPolicy(model=Fixed(chunk)).exec_horizon == 16
+    with pytest.raises(ValueError):
+        GrootPolicy(model=Fixed(chunk), exec_horizon=101)
+
+
 def test_a_real_large_wrist_turn_is_still_refused():
     tcp = [300.0, 0.0, -90.0, -180.0, 0.0, 0.0]
     pol = GrootPolicy(model=Fixed([[300, 0, -90, -180.0, 0, 90.0, 0]]))

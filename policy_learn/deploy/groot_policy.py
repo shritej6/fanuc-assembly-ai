@@ -24,6 +24,7 @@ from policy_learn.deploy.guards import ChunkGuard, ContactTarget, GuardLimits, G
 
 log = logging.getLogger(__name__)
 DT_S = 0.2  # GR00T training control step (policy_learn/groot/groot_client.py DT_S, 5 Hz)
+EXEC_HORIZON = 16  # rows of each model chunk sent before GR00T is asked again (the full trained chunk)
 
 # FK fallback for a missing obs["tcp_pose"] (the mock reports none before the first tcp command). The chain is the
 # official twin's, copied from robot/cell/calibration/geometry.py (read-only there); UTOOL1 is 293 mm along the
@@ -137,7 +138,12 @@ class GrootPolicy:
     DT = DT_S
 
     def __init__(self, checkpoint: str | None = None, model: ChunkModel | None = None,
-                 limits: GuardLimits | None = None):
+                 limits: GuardLimits | None = None, exec_horizon: int | None = None):
+        """exec_horizon: send only the first N rows of each chunk, then ask GR00T again from the new pose (None reads
+        $GROOT_EXEC_HORIZON, default 16 = the whole chunk). The guard checks just those N rows."""
+        self.exec_horizon = int(exec_horizon or os.environ.get("GROOT_EXEC_HORIZON") or EXEC_HORIZON)
+        if not 1 <= self.exec_horizon <= 100:
+            raise ValueError(f"exec_horizon must be 1..100 rows, got {self.exec_horizon}")
         self.model = model or load_model(checkpoint)
         self.guard = ChunkGuard(limits)
         self.instruction: str | None = None
@@ -181,6 +187,8 @@ class GrootPolicy:
         model_obs = {"images": obs.get("images", {}), "joints": joints, "tcp_pose": tcp,
                      "instruction": self._instruction(obs)}  # never obs["sim"]
         chunk = nearest_turns(self.model.predict(model_obs), tcp)
+        if chunk.ndim == 2:
+            chunk = chunk[:self.exec_horizon]  # rows past N are never sent, so they are not guarded either
         return self._record(self.guard.guard(chunk, tcp, float(joints[6]), self.DT))
 
     def _record(self, res: GuardResult) -> np.ndarray:
