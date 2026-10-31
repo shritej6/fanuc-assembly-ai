@@ -187,7 +187,7 @@ class GrootMotionQueue:
             raise EndpointSettleTimeout(detail)
         pose_only = Waypoint(*current.as_action()[:6], expected.gripper)
         gripper = expected.gripper if endpoint_reached(pose_only, expected, self._tolerances) else current.gripper
-        return [*current.as_action()[:6], gripper]
+        return [*expected.as_action()[:6], gripper]
 
     def emit(
         self,

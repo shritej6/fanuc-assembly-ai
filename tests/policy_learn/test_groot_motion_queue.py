@@ -198,14 +198,32 @@ def test_endpoint_confirmation_polls_without_loosening_position_or_angle_gate() 
     )
 
     position_pending = Waypoint(300.69, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
-    assert _confirm(queue, position_pending, 1.5) == position_pending.as_action()
+    assert _confirm(queue, position_pending, 1.5) == list(action)
     angle_pending = Waypoint(301.0, 0.0, -200.0, 178.99, 0.0, 0.0, 0.0)
-    assert _confirm(queue, angle_pending, 2.0) == angle_pending.as_action()
+    assert _confirm(queue, angle_pending, 2.0) == list(action)
 
     settled = Waypoint(300.71, 0.0, -200.0, 179.01, 0.0, 0.0, 0.0)
     assert _confirm(queue, settled, 2.5) is None
     assert queue.pending_endpoint is None
     assert executor.intents == [_intent()]
+
+
+def test_endpoint_settlement_reissues_original_guarded_endpoint() -> None:
+    action = (301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    queue = _queue(
+        _Executor(GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ()))
+    )
+    _start(queue)
+    start = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    queue.emit(
+        observation=_observation(tuple(start.as_action()[:6])),
+        current=start,
+        observed_at_s=1.0,
+    )
+    lagged = Waypoint(300.25, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+
+    assert _confirm(queue, lagged, 1.5) == list(action)
+    assert queue.pending_endpoint == Waypoint(*action)
 
 
 def test_gripper_settlement_reissues_only_gripper_at_measured_tcp() -> None:
@@ -229,8 +247,8 @@ def test_endpoint_settle_deadline_never_resets_and_times_out_typed() -> None:
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     queue.emit(observation=_observation(tuple(current.as_action()[:6])), current=current, observed_at_s=1.0)
 
-    assert _confirm(queue, current, 2.0) == current.as_action()
-    assert _confirm(queue, current, 2.9) == current.as_action()
+    assert _confirm(queue, current, 2.0) == list(action)
+    assert _confirm(queue, current, 2.9) == list(action)
     with pytest.raises(EndpointSettleTimeout, match="0.3 mm / 1.0 deg"):
         _confirm(queue, current, 3.0)
 

@@ -208,7 +208,7 @@ def test_intent_deadline_keeps_running_during_endpoint_settlement() -> None:
     clock.advance(89.0)
     assert queue.confirm_previous_endpoint(
         _observation(1.5, current), current, 1.5
-    ) == current.as_action()
+    ) == [301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
     clock.advance(2.0)
 
     with pytest.raises(GrootGuardTrip, match="90.*time budget"):
@@ -267,7 +267,7 @@ def test_closed_gripper_rechecks_attachment_during_each_settle_poll() -> None:
 
     assert queue.confirm_previous_endpoint(
         _observation(1.1, settling), settling, 1.1
-    ) == settling.as_action()
+    ) == [302.0, 0.0, -200.0, -180.0, 0.0, 0.0, 1.0]
     with pytest.raises(GrootGuardTrip, match="attachment.*lost"):
         queue.confirm_previous_endpoint(_observation(1.2, settling), settling, 1.2)
 
