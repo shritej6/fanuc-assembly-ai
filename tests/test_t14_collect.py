@@ -132,6 +132,7 @@ def _arguments(tmp_path: Path) -> argparse.Namespace:
         env_audit_remote="/remote/audit.json",
         benchmark_gate_remote="/remote/gate.json",
         destination=tmp_path / "offhost",
+        resume_partial=False,
     )
 
 
@@ -205,6 +206,218 @@ def test_hash_failure_preserves_partial_evidence_and_stops_instance(tmp_path: Pa
     partial = args.destination.with_name("offhost.partial")
     assert (partial / "COLLECTION_FAILED.json").is_file()
     assert not args.destination.exists()
+
+
+def test_existing_partial_requires_explicit_resume(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+
+    with pytest.raises(CollectionError, match="explicit resume"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda _action, _instance: None,
+            resolve_instance=_resolve_fa_t14,
+        )
+
+
+def test_resume_reuses_only_hash_verified_partial_files(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    (partial / "environment/python").mkdir(parents=True)
+    (partial / "environment/python/python3.11").write_bytes(remote["/remote/python/python3.11"])
+    (partial / "runs/M1_01").mkdir(parents=True)
+    (partial / "runs/M1_01/model.ckpt").write_bytes(remote["/remote/M1_01/model.ckpt"])
+    (partial / "summary.json").write_text('{"status":"stale"}')
+    (partial / "COLLECTION_FAILED.json").write_text('{"status":"collection_failed"}')
+    copied_sources: list[str] = []
+    actions: list[tuple[str, str]] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    result = collect_and_shutdown(
+        args,
+        copy_file=copy,
+        lifecycle=lambda action, instance: actions.append((action, instance)),
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert actions == [("delete", INSTANCE_ID)]
+    assert "/remote/summary.json" in copied_sources
+    assert "/remote/python/python3.11" not in copied_sources
+    assert "/remote/M1_01/model.ckpt" not in copied_sources
+    assert not (result / "COLLECTION_FAILED.json").exists()
+
+
+def test_resume_refuses_tampered_hash_bound_evidence(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    (partial / "environment/python").mkdir(parents=True)
+    (partial / "environment/python/python3.11").write_bytes(b"tampered")
+    copied_sources: list[str] = []
+    actions: list[tuple[str, str]] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    with pytest.raises(CollectionError, match="partial evidence hash mismatch"):
+        collect_and_shutdown(
+            args,
+            copy_file=copy,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    assert "/remote/python/python3.11" not in copied_sources
+    assert not args.destination.exists()
+
+
+def test_resume_refuses_untracked_partial_evidence(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    (partial / "untracked.bin").write_bytes(b"not part of the approved generation")
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match="untracked partial evidence"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    assert not args.destination.exists()
+
+
+def test_resume_rejects_symlinked_parent_before_any_copy(tmp_path: Path) -> None:
+    _remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (partial / "dataset").symlink_to(outside, target_is_directory=True)
+    copies: list[tuple[str, str, Path]] = []
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match="must not contain symlinks"):
+        collect_and_shutdown(
+            args,
+            copy_file=lambda instance, source, destination: copies.append(
+                (instance, source, destination)
+            ),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert copies == []
+    assert actions == [("stop", INSTANCE_ID)]
+    assert list(outside.iterdir()) == []
+
+
+def test_interrupted_copy_leaves_no_candidate_and_can_resume(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    actions: list[tuple[str, str]] = []
+
+    def interrupted_copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        destination.write_bytes(remote[source][:5])
+        raise OSError("simulated transport interruption")
+
+    with pytest.raises(OSError, match="transport interruption"):
+        collect_and_shutdown(
+            args,
+            copy_file=interrupted_copy,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    partial = args.destination.with_name("offhost.partial")
+    assert not (partial / "summary.json").exists()
+    assert not (partial / ".summary.json.t14-copy").exists()
+    assert (partial / "COLLECTION_FAILED.json").is_file()
+
+    args.resume_partial = True
+    result = collect_and_shutdown(
+        args,
+        copy_file=_copy_from(remote),
+        lifecycle=lambda action, instance: actions.append((action, instance)),
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert actions == [("stop", INSTANCE_ID), ("delete", INSTANCE_ID)]
+
+
+@pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
+def test_untrusted_failure_marker_cannot_overwrite_external_file(
+    tmp_path: Path,
+    link_kind: str,
+) -> None:
+    _remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("SAFE")
+    marker = partial / "COLLECTION_FAILED.json"
+    if link_kind == "symlink":
+        marker.symlink_to(outside)
+        expected_error = "must not contain symlinks"
+    else:
+        marker.hardlink_to(outside)
+        expected_error = "must not contain hard links"
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match=expected_error):
+        collect_and_shutdown(
+            args,
+            copy_file=lambda _instance, _source, _destination: None,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert outside.read_text() == "SAFE"
+    assert actions == [("stop", INSTANCE_ID)]
+
+
+def test_resume_discards_only_known_regular_copy_temporary(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    temporary = partial / "environment/python/.python3.11.t14-copy"
+    temporary.parent.mkdir(parents=True)
+    temporary.write_bytes(b"interrupted")
+    copied_sources: list[str] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    result = collect_and_shutdown(
+        args,
+        copy_file=copy,
+        lifecycle=lambda _action, _instance: None,
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert "/remote/python/python3.11" in copied_sources
+    assert not (result / "environment/python/.python3.11.t14-copy").exists()
 
 
 @pytest.mark.parametrize(

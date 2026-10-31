@@ -2,6 +2,28 @@
 
 Newest first. One entry per finished task.
 
+## 2026-10-30 · T14 off-host collection recovery · CODEX · REVIEW, exact instance remains stopped
+
+- Brev attempt `t14-brev-l4-20261030-prod-a` produced all 24 approved per-part artifacts on exact instance
+  `fisjik4qw`. Collection did not complete: the first transfer lost Brev authentication and the second hit Brev
+  `resource exhausted` while copying the managed Python executable. The collector stopped the exact instance; it was
+  not restarted and no second instance was created.
+- Added explicit `--resume-partial` support to `perception/brev/t14_collect_and_shutdown.py`. Resume always refreshes
+  the five small seed records, then reuses a prior file only when its SHA-256 matches the refreshed approved record.
+  Mismatched, symlinked, hard-linked, special, or untracked evidence fails closed and stops the exact instance.
+- New transfers are atomic: data is copied to a temporary sibling, checked, and renamed only after verification. A
+  final exact-tree and all-spec hash pass still runs before the partial directory can become the verified destination
+  and before `brev delete` can execute. A prior `COLLECTION_FAILED.json` is removed only after successful verification.
+- Regression coverage proves explicit opt-in, valid-file reuse, tamper refusal, untracked-file refusal, symlink-parent
+  refusal before any copy, safe failure-marker replacement, stale temporary cleanup, and recovery after an interrupted
+  partial write. Verified: focused collector suite `21 passed`; full suite `250 passed`; `ruff check .` passed.
+- Preserved recovery inputs are outside Git under
+  `/Users/shritej/Desktop/FANUC_ASSEMBLY_AI/runs/t14-brev-t14-brev-l4-20261030-prod-a.partial` and the timestamped
+  first partial. The final destination is still absent.
+- Next: after user authorization, restart only immutable instance `fisjik4qw`, rerun the exact collection command with
+  `--resume-partial`, independently verify the completed off-host manifest, and permit deletion only after that gate.
+  Do not allocate another instance or automatically restart production.
+
 ## 2026-10-30 · T14 PatchCore Set T recovery · CODEX · REVIEW, measured rerun pending
 
 - Added evaluation-only Set T ingestion for the installed rear guards `M1_04`, `M2_04`, and `M3_04`. Only

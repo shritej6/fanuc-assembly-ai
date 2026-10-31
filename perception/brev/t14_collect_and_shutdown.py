@@ -3,41 +3,34 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from perception.brev.t14_collection_files import (
+    CollectionError,
+    CopyFile,
+    CopySpec,
+    _clear_failure_marker,
+    _copy_many,
+    _destination,
+    _failure_marker,
+    _partial_entries,
+    _remove_stale_copy_temporaries,
+    _sha256,
+    _verify_partial_tree,
+    _verify_spec_hashes,
+)
 
 PARTS = tuple(f"M{product}_{position:02d}" for product in range(1, 7) for position in range(1, 5))
 INSTANCE_NAME = "fa-t14"
 
 
-class CollectionError(ValueError):
-    """Raised when off-host T14 evidence cannot be proven complete."""
-
-
-@dataclass(frozen=True)
-class CopySpec:
-    remote: str
-    relative: str
-    expected_sha256: str | None = None
-
-
-CopyFile = Callable[[str, str, Path], None]
 Lifecycle = Callable[[str, str], None]
 ResolveInstance = Callable[[str], str]
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _reject_constant(value: str) -> None:
@@ -69,19 +62,6 @@ def _digest(value: Any, label: str) -> str:
     if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
         raise CollectionError(f"{label} SHA-256 is invalid")
     return value
-
-
-def _destination(path: Path) -> tuple[Path, Path]:
-    destination = path.expanduser()
-    if not destination.is_absolute() or destination == Path("/"):
-        raise CollectionError("destination must be a safe absolute path")
-    partial = destination.with_name(f"{destination.name}.partial")
-    if destination.exists() or destination.is_symlink() or partial.exists() or partial.is_symlink():
-        raise CollectionError("destination and partial directory must be fresh")
-    if not destination.parent.is_dir():
-        raise CollectionError("destination parent must already exist")
-    partial.mkdir()
-    return destination, partial
 
 
 def _brev_copy(instance: str, remote: str, local: Path) -> None:
@@ -119,26 +99,6 @@ def _brev_resolve_instance_id(instance_name: str) -> str:
     if re.fullmatch(r"[a-z0-9]+", matches[0]) is None:
         raise CollectionError("brev ls returned an invalid instance ID")
     return matches[0]
-
-
-def _copy(spec: CopySpec, root: Path, instance: str, copy_file: CopyFile) -> None:
-    target = root / spec.relative
-    if target.exists() or target.is_symlink():
-        raise CollectionError(f"duplicate collection target: {spec.relative}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    copy_file(instance, spec.remote, target)
-    if target.is_symlink() or not target.is_file():
-        raise CollectionError(f"Brev copy did not produce a real file: {spec.relative}")
-    if spec.expected_sha256 is not None and _sha256(target) != spec.expected_sha256:
-        raise CollectionError(f"copied evidence hash mismatch: {spec.relative}")
-
-
-def _copy_many(specs: Iterable[CopySpec], root: Path, instance: str, copy_file: CopyFile) -> list[CopySpec]:
-    copied = []
-    for spec in specs:
-        _copy(spec, root, instance, copy_file)
-        copied.append(spec)
-    return copied
 
 
 def _seed_specs(args: argparse.Namespace) -> tuple[CopySpec, ...]:
@@ -358,11 +318,6 @@ def _verify_instance(root: Path, instance_id: str) -> None:
         raise CollectionError("requested Brev instance ID disagrees with platform evidence")
 
 
-def _failure_marker(root: Path, error: Exception) -> None:
-    payload = {"status": "collection_failed", "error_type": type(error).__name__, "message": str(error)}
-    (root / "COLLECTION_FAILED.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-
 def _preserve_and_stop(
     partial: Path,
     destination: Path,
@@ -374,7 +329,7 @@ def _preserve_and_stop(
     marker_error = None
     try:
         _failure_marker(root, error)
-    except OSError as exc:
+    except (CollectionError, OSError) as exc:
         marker_error = exc
     try:
         lifecycle("stop", instance_id)
@@ -384,6 +339,47 @@ def _preserve_and_stop(
         raise CollectionError(
             f"collection failed ({error}); failure evidence could not be written ({marker_error})"
         ) from error
+
+
+def _collect_generation(
+    args: argparse.Namespace,
+    partial: Path,
+    copy_file: CopyFile,
+    *,
+    resume_partial: bool,
+) -> tuple[list[CopySpec], dict[str, Any], list[dict[str, Any]]]:
+    if resume_partial:
+        _partial_entries(partial)
+    seeds = _seed_specs(args)
+    specs = _copy_many(
+        seeds,
+        partial,
+        INSTANCE_NAME,
+        copy_file,
+        resume_partial=resume_partial,
+    )
+    summary = _json(partial / "summary.json")
+    runs = _runs(summary)
+    support = _support_specs(partial, runs)
+    expected = {spec.relative for spec in (*seeds, *support)}
+    expected.update({"benchmark/metrics.json", "benchmark/model.ckpt"})
+    _remove_stale_copy_temporaries(partial, expected)
+    _verify_partial_tree(partial, expected, complete=False)
+    specs += _copy_many(
+        support,
+        partial,
+        INSTANCE_NAME,
+        copy_file,
+        resume_partial=resume_partial,
+    )
+    specs += _copy_many(
+        _benchmark_specs(partial),
+        partial,
+        INSTANCE_NAME,
+        copy_file,
+        resume_partial=resume_partial,
+    )
+    return specs, summary, runs
 
 
 def collect_and_shutdown(
@@ -401,18 +397,21 @@ def collect_and_shutdown(
     live_instance_id = resolve_instance(args.instance_name)
     if live_instance_id != args.instance_id:
         raise CollectionError("requested Brev instance ID disagrees with the live fa-t14 instance")
-    destination, partial = _destination(Path(args.destination))
-    specs: list[CopySpec] = []
+    resume_partial = bool(getattr(args, "resume_partial", False))
+    destination, partial = _destination(Path(args.destination), resume_partial=resume_partial)
     try:
-        specs += _copy_many(_seed_specs(args), partial, INSTANCE_NAME, copy_file)
-        summary = _json(partial / "summary.json")
-        runs = _runs(summary)
-        support = _support_specs(partial, runs)
-        specs += _copy_many(support, partial, INSTANCE_NAME, copy_file)
-        specs += _copy_many(_benchmark_specs(partial), partial, INSTANCE_NAME, copy_file)
+        specs, summary, runs = _collect_generation(
+            args,
+            partial,
+            copy_file,
+            resume_partial=resume_partial,
+        )
         _verify_seed_hashes(partial, summary)
         _verify_run_records(partial, runs)
         _verify_instance(partial, args.instance_id)
+        _verify_spec_hashes(partial, specs)
+        _clear_failure_marker(partial)
+        _verify_partial_tree(partial, {spec.relative for spec in specs}, complete=True)
         _manifest(partial, specs, args.instance_id)
         partial.replace(destination)
         lifecycle("delete", args.instance_id)
@@ -433,6 +432,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-audit-remote", required=True)
     parser.add_argument("--benchmark-gate-remote", required=True)
     parser.add_argument("--destination", type=Path, required=True)
+    parser.add_argument(
+        "--resume-partial",
+        action="store_true",
+        help="resume an existing .partial directory using only hash-verified files",
+    )
     return parser
 
 
