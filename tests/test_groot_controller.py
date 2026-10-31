@@ -12,7 +12,11 @@ import pytest
 from assembly.catalog import load_catalog
 from assembly.controller_recovery import PendingInsertionLift
 from assembly.execution import ExecutionError
-from assembly.fixed_inspection import FixedInspectionMove
+from assembly.fixed_inspection import (
+    FixedInspectionMove,
+    InspectionPoseRegistry,
+    InspectionSlotPose,
+)
 from assembly.groot_controller import GrootAssemblyController
 from assembly.inventory import Inventory, InventoryItem, InventoryZone, ObjectCondition
 from assembly.motion import AbsolutePoseUF0, MotionChunk, MotionPhase, OrientedPartPose, RestingState, Waypoint
@@ -168,8 +172,28 @@ class _Executor:
         return self.result
 
 
-def _controller(executor: _Executor) -> GrootAssemblyController:
-    controller = build_groot_mock_controller(executor)
+def _inspection_slots() -> InspectionPoseRegistry:
+    return InspectionPoseRegistry(
+        (
+            InspectionSlotPose(
+                slot_id="slot-a",
+                selection_bounds_xy_mm=(240.0, 260.0, -110.0, -90.0),
+                endpoint_tcp=(321.0, -45.0, -168.0, -180.0, 0.0, 77.0),
+                safe_z_mm=-180.0,
+                source="reviewed CSI slot-pose test fixture",
+            ),
+        )
+    )
+
+
+def _controller(
+    executor: _Executor,
+    inspection_poses: InspectionPoseRegistry | None = None,
+) -> GrootAssemblyController:
+    controller = build_groot_mock_controller(
+        executor,
+        inspection_poses=inspection_poses or _inspection_slots(),
+    )
     assert isinstance(controller, GrootAssemblyController)
     return controller
 
@@ -304,11 +328,42 @@ def test_scripted_motion_coordinates_never_enter_the_cell_semantic_queue() -> No
 
     intent = controller._motion_queue._intent
     assert isinstance(intent, FixedInspectionMove)
-    assert intent.endpoint_tcp[:3] == (250.0, -100.0, -168.0)
+    assert intent.slot_id == "slot-a"
+    assert intent.endpoint_tcp == (321.0, -45.0, -168.0, -180.0, 0.0, 77.0)
     assert intent.label == "non_learned_inspection"
     assert "measured CSI wrist inspection stop" in intent.source
     assert 999.0 not in intent.endpoint_tcp
     assert executor.intents == []
+
+
+def test_missing_reviewed_inspection_slot_holds_and_never_queues_motion() -> None:
+    executor = _Executor()
+    missing = InspectionPoseRegistry(
+        (
+            InspectionSlotPose(
+                slot_id="other-slot",
+                selection_bounds_xy_mm=(400.0, 420.0, 200.0, 220.0),
+                endpoint_tcp=(410.0, 210.0, -168.0, -180.0, 0.0, 0.0),
+                safe_z_mm=-180.0,
+                source="reviewed CSI slot-pose test fixture",
+            ),
+        )
+    )
+    controller = _controller(executor, missing)
+    candidate = _rear_guard_candidate()
+    controller._pending_pre_pick = candidate
+    controller._coarse_xy_by_instance[candidate.part.instance_id] = (250.0, -100.0)
+    current = Waypoint(400.0, 0.0, -200.0, -180.0, 0.0, 15.0, 0.0)
+
+    queued = controller._set_guarded_motion(
+        (), {}, current, 10.0, candidate.part.instance_id, candidate.part.object_id,
+        candidate.base.instance_id, candidate.base_pose,
+    )
+
+    assert queued is False
+    assert controller.state_machine.state is PackMLState.HELD
+    assert "no reviewed inspection slot" in controller.state_machine.current_record.reason
+    assert executor.inspections == []
 
 
 def test_guard_trip_enters_packml_held_with_andon_reason() -> None:

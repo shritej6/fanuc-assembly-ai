@@ -42,6 +42,7 @@ def _move(
     return FixedInspectionMove(
         instance_id="part-1",
         base_instance_id="base-1",
+        slot_id="slot-a",
         endpoint_tcp=endpoint,
         safe_z_mm=safe_z_mm,
         source="reviewed CSI inspection stop; observed inventory slot XY",
@@ -58,17 +59,20 @@ def _executor(model: _ForbiddenModel) -> T09GrootExecutor:
     )
 
 
-def test_fixed_inspection_uses_guard_without_invoking_groot_or_changing_gripper() -> None:
+def test_fixed_inspection_opens_stationary_before_camera_motion() -> None:
     model = _ForbiddenModel()
     executor = _executor(model)
     current = (300.0, 0.0, -200.0, -180.0, 0.0, 0.0)
     move = _move((310.0, 0.0, -200.0, -180.0, 0.0, 0.0))
 
-    result = executor.inspect(move, observation=_observation(tcp=current, gripper=1.0))
+    opened = executor.inspect(move, observation=_observation(tcp=current, gripper=1.0))
+    moved = executor.inspect(move, observation=_observation(tcp=current, gripper=0.0))
 
-    assert result.action == [310.0, 0.0, -200.0, -180.0, 0.0, 0.0, 1.0]
-    assert result.phase is MotionPhase.INSPECT
-    assert result.blocked is False
+    assert opened.action == [*current, 0.0]
+    assert opened.phase is MotionPhase.INSPECT
+    assert opened.blocked is False
+    assert moved.action == [310.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
+    assert moved.blocked is False
     assert model.calls == 0
 
 
