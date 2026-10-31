@@ -17,8 +17,10 @@ import yaml
 
 from assembly.catalog import Catalog, load_catalog
 from assembly.controller_ports import ControllerPortError, InventorySnapshot
+from assembly.final_views import FinalViewPose, FinalViewRegistry
 from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.inventory import InventoryZone
+from perception.cell.targets import APPROACH_ABOVE_MM, TABLE_Z_UF0_MM
 
 DEFAULT_PLACEMENT_PATH = Path(__file__).with_name("submission") / "placement.yaml"
 PLACEMENT_SOURCE_COMMIT = "1f97ff5"
@@ -35,6 +37,12 @@ _INSPECTION_SOURCE = (
     "T38 placement commit 1f97ff5 slot XY and neutral R=180; "
     "PR9 measured CSI wrist inspection stop Z=-168, W=-180, P=0 and safe transit Z=-180"
 )
+_FINAL_VIEW_SOURCE = (
+    "PRELIMINARY T38 placement commit 1f97ff5 base XY/yaw + "
+    "sdg/configs/cell_layout.yaml table_z and perception/cell/targets.py approach clearance; "
+    "PR9 measured CSI wrist inspection Z=-168, W=-180, P=0"
+)
+_BASE_SPOT_BY_Y = {-165.0: "B1", 0.0: "B2", 165.0: "B3"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +233,56 @@ def reviewed_inspection_registry() -> InspectionPoseRegistry:
         for index, y_mm in enumerate(_SLOT_Y, start=1)
     )
     return InspectionPoseRegistry(slots)
+
+
+def reviewed_final_view_registry() -> FinalViewRegistry:
+    """Derive two straight-down views for every reviewed placement base spot."""
+    layout = load_real_cell_layout()
+    catalog = load_catalog()
+    unique = {
+        (int(base.object_id[1:]), base.object_id, base.center_x_mm, base.center_y_mm, base.yaw_deg)
+        for rollout in layout.rollouts
+        for base in rollout.bases
+    }
+    views = tuple(
+        view
+        for product, object_id, x_mm, y_mm, yaw_deg in sorted(unique)
+        for view in _final_views_for_base(
+            product,
+            object_id,
+            x_mm,
+            y_mm,
+            yaw_deg,
+            tuple(step.object_id for step in catalog.product(product).steps),
+        )
+    )
+    return FinalViewRegistry(views)
+
+
+def _final_views_for_base(
+    product: int,
+    object_id: str,
+    x_mm: float,
+    y_mm: float,
+    yaw_deg: float,
+    roles: tuple[str, str, str, str],
+) -> tuple[FinalViewPose, FinalViewPose]:
+    spot = _BASE_SPOT_BY_Y.get(y_mm, f"XY-{x_mm:g}-{y_mm:g}")
+    safe_z = TABLE_Z_UF0_MM + APPROACH_ABOVE_MM
+    wrist_yaws = (yaw_deg % 360.0, (yaw_deg + 180.0) % 360.0)
+    return tuple(
+        FinalViewPose(
+            product,
+            object_id,
+            f"{spot}-view-{index}",
+            (x_mm, y_mm, INSPECTION_Z_MM, FINGERS_DOWN_W_DEG, 0.0, wrist_yaw),
+            safe_z,
+            roles,
+            _FINAL_VIEW_SOURCE,
+            (x_mm, y_mm),
+        )
+        for index, wrist_yaw in enumerate(wrist_yaws, start=1)
+    )  # type: ignore[return-value]
 
 
 def _inspection_slot(prefix: str, x_mm: float, index: int, y_mm: float) -> InspectionSlotPose:

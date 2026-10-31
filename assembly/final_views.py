@@ -31,6 +31,7 @@ class FinalViewPose:
     safe_z_mm: float
     expected_instance_roles: tuple[str, str, str, str]
     source: str
+    base_center_xy_mm: tuple[float, float] | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.product, bool) or not isinstance(self.product, int) or self.product <= 0:
@@ -54,6 +55,11 @@ class FinalViewPose:
             raise FinalViewError("final view instance roles must be unique")
         if not isinstance(self.source, str) or not self.source.strip():
             raise FinalViewError("final view requires recorded measurement source")
+        center = self.base_center_xy_mm
+        if center is not None:
+            if type(center) is not tuple or len(center) != 2:
+                raise FinalViewError("final view base center must contain x and y")
+            tuple(_finite(value, "final view base center") for value in center)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,16 +71,22 @@ class FinalViewRegistry:
     def __post_init__(self) -> None:
         if type(self.views) is not tuple or any(type(view) is not FinalViewPose for view in self.views):
             raise FinalViewError("final-view registry requires typed views")
-        grouped: dict[tuple[int, str], list[FinalViewPose]] = {}
+        grouped: dict[tuple[int, str, tuple[float, float] | None], list[FinalViewPose]] = {}
         for view in self.views:
-            grouped.setdefault((view.product, view.base_object_id), []).append(view)
+            grouped.setdefault(
+                (view.product, view.base_object_id, view.base_center_xy_mm),
+                [],
+            ).append(view)
         if not grouped:
             raise FinalViewError("each product/base pair requires exactly two final views")
         for key, pair in grouped.items():
             self._validate_pair(key, pair)
 
     @staticmethod
-    def _validate_pair(key: tuple[int, str], pair: list[FinalViewPose]) -> None:
+    def _validate_pair(
+        key: tuple[int, str, tuple[float, float] | None],
+        pair: list[FinalViewPose],
+    ) -> None:
         if len(pair) != 2:
             raise FinalViewError(f"{key!r} requires exactly two final views")
         if pair[0].view_id == pair[1].view_id:
@@ -82,14 +94,63 @@ class FinalViewRegistry:
         if pair[0].endpoint_tcp_uf0 == pair[1].endpoint_tcp_uf0:
             raise FinalViewError(f"{key!r} requires distinct final-view poses")
 
-    def views_for(self, product: int, base_object_id: str) -> tuple[FinalViewPose, FinalViewPose]:
-        matches = tuple(
-            view
-            for view in self.views
-            if view.product == product and view.base_object_id == base_object_id
-        )
-        if len(matches) != 2:
+    def views_for(
+        self,
+        product: int,
+        base_object_id: str,
+        *,
+        base_xy_mm: tuple[float, float] | None = None,
+        max_distance_mm: float | None = None,
+    ) -> tuple[FinalViewPose, FinalViewPose]:
+        groups = self._groups_for(product, base_object_id)
+        if base_xy_mm is not None:
+            groups = self._nearby_groups(groups, base_xy_mm, max_distance_mm)
+        if len(groups) != 1:
             raise FinalViewError(
                 f"no reviewed final views for product {product} on {base_object_id}"
             )
-        return matches
+        return groups[0]
+
+    def _groups_for(
+        self,
+        product: int,
+        base_object_id: str,
+    ) -> tuple[tuple[FinalViewPose, FinalViewPose], ...]:
+        centers = {
+            view.base_center_xy_mm
+            for view in self.views
+            if view.product == product and view.base_object_id == base_object_id
+        }
+        return tuple(
+            tuple(
+                view
+                for view in self.views
+                if view.product == product
+                and view.base_object_id == base_object_id
+                and view.base_center_xy_mm == center
+            )
+            for center in centers
+        )  # type: ignore[return-value]
+
+    @staticmethod
+    def _nearby_groups(
+        groups: tuple[tuple[FinalViewPose, FinalViewPose], ...],
+        base_xy_mm: tuple[float, float],
+        max_distance_mm: float | None,
+    ) -> tuple[tuple[FinalViewPose, FinalViewPose], ...]:
+        if type(base_xy_mm) is not tuple or len(base_xy_mm) != 2:
+            raise FinalViewError("measured base center must contain x and y")
+        center = tuple(_finite(value, "measured base center") for value in base_xy_mm)
+        limit = _finite(max_distance_mm, "final-view selection tolerance")
+        if limit < 0.0:
+            raise FinalViewError("final-view selection tolerance must be nonnegative")
+        nearby = []
+        for pair in groups:
+            reviewed = pair[0].base_center_xy_mm
+            if reviewed is None:
+                continue
+            if math.hypot(center[0] - reviewed[0], center[1] - reviewed[1]) <= limit:
+                nearby.append(pair)
+        if not nearby:
+            raise FinalViewError("measured base center is outside the reviewed final-view spots")
+        return tuple(nearby)
