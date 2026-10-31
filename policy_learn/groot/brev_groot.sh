@@ -149,7 +149,7 @@ PY
 
 kill_tree() { local c; for c in $(pgrep -P "$1"); do kill_tree "$c"; done; kill "$1" 2>/dev/null || true; }
 
-latest_ckpt() { ls -d "$OUT"/checkpoint-*/ 2>/dev/null | sort -t- -k2 -n | tail -1 | sed 's:/$::'; }
+latest_ckpt() { { ls -d "$OUT"/checkpoint-*/ 2>/dev/null || true; } | sort -t- -k2 -n | tail -1 | sed 's:/$::'; }
 
 sync_ckpt() {    # $1 checkpoint dir; failures are reported in $STATUS and retried on the next round
   local ckpt="$1" name; name="$(basename "$1")"
