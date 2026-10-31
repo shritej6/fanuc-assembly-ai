@@ -68,6 +68,24 @@ Newest first. One entry per finished task.
   positive phase-completion, and floor-clamp outputs; repository-wide `uv run pytest -q` **1532 passed, 5 skipped** in
   247.52 s; `.venv/bin/ruff check .`, `git diff --check`, and the protected-client diff passed. The official
   `robot/cell/cell_client.py` remains unchanged.
+- 2026-10-31 final CELL safety closure: `7cef74c`/`1ae59e8` bind floor protection to the exact CAD part/base
+  footprint; `4ba2390` applies the reviewed 6-degree fingers-down cone; `37980f1` contains missing measured TCP to
+  the active trial as Held; and `8b47413` polls the unchanged 0.3 mm / 1 degree endpoint gate until its sourced
+  settle deadline. No startup pose is commanded and no tolerance was loosened.
+- `8d43259` adds sourced PRELIMINARY per-intent budgets, fresh identity-bound collision evidence for every GR00T
+  row, and recurring attachment/base-pose/base-tilt checks during settlement. Lost attachment, disturbed/tipped
+  base, intrusion, malformed/stale evidence, deadline expiry, and watchdog clock faults all clear motion authority
+  and enter Held + Andon. Late model rows are discarded. The accepted no-force-sensor decision does not change
+  these checks or claim force evidence.
+- `656bc60`/`12b78f2` add the fail-closed `build_groot_real_controller()` boundary and an explicit manifest of every
+  missing CSI calibration and production runtime dependency. The exact `T09GrootExecutor`, `CellPerceptionPort`,
+  sourced watchdog limits, inspection/reject/staging/pull-out/final-view poses, frames, camera extrinsics, motion
+  clearances, base regions, model adapters, live IK/collision backend, reset behavior, and verifier are required.
+  No coordinates are invented. Both reviewed factory hooks remain `None` pending Claude review and user approval.
+- `5eade06` repairs the positive network proof by deriving its slow zone from the same SHA-pinned CAD contact
+  envelope as production; it does not weaken a guard. Final gate: `uv run pytest -q` = **1569 passed, 5 skipped** in
+  256.89 s; repository-wide Ruff and `git diff --check` passed; the worktree was clean and the official client was
+  not edited.
 
 ## 2026-10-30 · T33 · CODEX · M1_01/M3_01 size-twin contract
 
