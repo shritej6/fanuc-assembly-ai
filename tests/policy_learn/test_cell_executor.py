@@ -12,7 +12,8 @@ from assembly.controller_ports import CollisionScene, ExecutionTolerances
 from assembly.motion import MotionPhase
 from assembly.motion_intent import ContactEnvelope, MotionIntent, SemanticSkill
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
-from policy_learn.deploy.guards import GuardResult
+from policy_learn.deploy.groot_policy import GrootPolicy
+from policy_learn.deploy.guards import GuardLimits, GuardResult
 
 
 def _intent(**changes) -> MotionIntent:
@@ -117,6 +118,15 @@ class _Safety:
         return tuple(plan)
 
 
+class _FixedModel:
+    def __init__(self, row: tuple[float, ...]) -> None:
+        self._row = row
+
+    def predict(self, observation: dict) -> np.ndarray:
+        del observation
+        return np.asarray([self._row], dtype=float)
+
+
 def _executor(policy: _Policy, safety: _Safety | None = None) -> T09GrootExecutor:
     return T09GrootExecutor(
         policy=policy,
@@ -131,6 +141,36 @@ def test_executor_closes_its_guarded_policy_transport() -> None:
     _executor(policy).close()
 
     assert policy.closed is True
+
+
+def test_cell_executor_clamps_small_model_floor_error_without_holding() -> None:
+    model = _FixedModel((267.2, -105.8, -329.4, -180.0, 0.0, 0.0, 0.0))
+    policy = GrootPolicy(model=model, limits=GuardLimits())
+    executor = T09GrootExecutor(
+        policy=policy,
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+    intent = _intent(
+        endpoint_tcp=(267.2, -105.8, -326.7, -180.0, 0.0, 0.0),
+        contact=ContactEnvelope(
+            267.2,
+            -105.8,
+            -326.7,
+            18.0,
+            "grasp M1_01",
+            "checkpoint-3000 eval 2026-10-31",
+        ),
+    )
+    observation = _observation(tcp=[267.2, -105.8, -323.1, -180.0, 0.0, 0.0])
+
+    result = executor.act(intent, observation=observation, scene=None)
+
+    assert result.blocked is False
+    assert result.action[2] == pytest.approx(-325.1)
+    assert any("raised to the contact floor" in reason and "M1_01" in reason for reason in result.reasons)
+    assert any("slow" in reason and "clamped" in reason for reason in result.reasons)
 
 
 def test_learned_row_uses_raw_object_instruction_then_live_scene_safety() -> None:

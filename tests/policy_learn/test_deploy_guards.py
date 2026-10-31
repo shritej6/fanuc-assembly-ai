@@ -86,16 +86,32 @@ def test_tilt_is_wrap_safe():
     assert tilt_deg(-180.0, 10.0, 0.0) == pytest.approx(10.0, abs=1e-6)
 
 
-def test_contact_floor_refuses_more_than_1mm_below_seated_height():
+def test_contact_floor_refuses_far_below_seated_height():
     seated = -300.0
     start = [400.0, 0.0, -298.0, -180.0, 0.0, 0.0]
     guard = ChunkGuard()
     guard.set_target(ContactTarget(400.0, 0.0, seated, label="M4_02 on F04"))
     ok = path(start, [400.0, 0.0, seated - 0.9, -180, 0, 0], 20)  # light push, inside 1 mm
     assert not guard.guard(ok, start, 1.0, DT).held
-    bad = path(start, [400.0, 0.0, seated - 1.2, -180, 0, 0], 20)
+    bad = path(start, [400.0, 0.0, seated - 4.2, -180, 0, 0], 20)
     res = guard.guard(bad, start, 1.0, DT)
     assert res.held and "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+
+
+def test_eval_row_slightly_below_floor_is_raised_to_the_floor() -> None:
+    seated = -326.7
+    floor = seated - 1.0
+    start = [267.2, -105.8, -323.1, -180.0, 0.0, 0.0]
+    guard = ChunkGuard()
+    guard.set_target(ContactTarget(267.2, -105.8, seated, label="grasp M1_01"))
+    rows = path(start, [267.2, -105.8, -329.4, -180.0, 0.0, 0.0], 20)
+
+    result = guard.guard(rows, start, 0.0, DT)
+
+    assert result.held is False
+    assert result.passed is False
+    assert result.rows[:, 2].min() == pytest.approx(floor)
+    assert any("raised to the contact floor" in reason and "M1_01" in reason for reason in result.reasons)
 
 
 def test_floor_applies_only_near_the_target():
@@ -196,6 +212,8 @@ def test_hold_row_never_guesses_an_invalid_gripper_state(gripper):
         {"slow_speed_mm_s": 151.0},
         {"refuse_factor": 1.0},
         {"gripper_snap": 0.5},
+        {"floor_clamp_mm": float("nan")},
+        {"floor_clamp_mm": -1.0},
     ],
 )
 def test_guard_limits_reject_nonfinite_or_inconsistent_values(changes):
@@ -224,6 +242,7 @@ def _calibration_report(tmp_path, **changes):
             "slow_rot_deg_s",
             "slow_zone_mm",
             "floor_margin_mm",
+            "floor_clamp_mm",
             "refuse_factor",
             "gripper_snap",
             "gripper_change_max_step_mm",

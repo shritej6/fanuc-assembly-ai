@@ -4,13 +4,13 @@ Every chunk the learned policy outputs passes through `guard_chunk` before it re
 passes a bad chunk silently:
 
 - Hard violations REFUSE the whole chunk and return one safe HOLD row (the current pose, the current gripper state, so
-  a held part stays held) plus the reasons: wrong shape, NaN/inf, dt outside 0.1-1.0 s, a target outside the
-  workspace box, fingers tilted past the fingers-down limit, a target lower than the contact floor (seated height
-  - 1 mm) near the current insertion target, a gripper value that is neither open nor closed, gripper chatter, a
-  gripper change while moving, or a step more than `refuse_factor` times the speed limit (a model glitch).
-- Steps a little too fast (up to `refuse_factor` times the limit) are CLAMPED to the limit, and every clamp is
-  reported as a reason. Inside the slow zone (the last 5 mm above the contact target, or above the table floor) the
-  slow limit applies.
+  a held part stays held) plus the reasons: wrong shape, NaN/inf, dt outside 0.1-1.0 s, a target outside the workspace
+  box, fingers tilted past the fingers-down limit, a target more than `floor_clamp_mm` below the contact floor (seated
+  height - 1 mm) near the current insertion target, a gripper value that is neither open nor closed, gripper chatter,
+  a gripper change while moving, or a step more than `refuse_factor` times the speed limit (a model glitch).
+- Steps a little too fast (up to `refuse_factor` times the limit) are CLAMPED to the limit, and targets up to
+  `floor_clamp_mm` below the contact floor are RAISED to it; every clamp is reported as a reason. Inside the slow zone
+  (the last 5 mm above the contact target, or above the table floor) the slow limit applies.
 
 Units: mm, degrees, seconds; frame UF0 (identical to `CellClient.act_tcp`). Fingers straight down: w, p, r = -180, 0, R.
 The speed limits are PRELIMINARY engineering choices, not measured values; tune them only with the user.
@@ -42,6 +42,7 @@ _LIMIT_FIELDS = (
     "slow_rot_deg_s",
     "slow_zone_mm",
     "floor_margin_mm",
+    "floor_clamp_mm",
     "refuse_factor",
     "gripper_snap",
     "gripper_change_max_step_mm",
@@ -92,6 +93,7 @@ class GuardLimits:
     slow_rot_deg_s: float = 15.0  # PRELIMINARY
     slow_zone_mm: float = 5.0  # ROBOT_BRAIN section 2: the last 5 mm is slow
     floor_margin_mm: float = 1.0  # ROBOT_BRAIN section 2: never lower than seated height - 1 mm
+    floor_clamp_mm: float = 3.0  # PRELIMINARY: bounded model undershoot raised to the contact floor
     refuse_factor: float = 3.0  # a step over 3x the limit is a glitch: refuse instead of clamp
     gripper_snap: float = 0.1  # 0.93 counts as closed; 0.5 is refused
     gripper_change_max_step_mm: float = 2.0  # the gripper opens/closes only while (nearly) still
@@ -131,6 +133,8 @@ class GuardLimits:
             raise InvalidGuardLimitsError("tilt/refusal limits are outside their valid ranges")
         if not _finite_scalar(self.floor_margin_mm) or self.floor_margin_mm < 0.0:
             raise InvalidGuardLimitsError("floor margin must be finite and nonnegative")
+        if not _finite_scalar(self.floor_clamp_mm) or self.floor_clamp_mm < 0.0:
+            raise InvalidGuardLimitsError("floor clamp must be finite and nonnegative")
         if not _finite_scalar(self.gripper_snap) or not 0.0 <= self.gripper_snap < 0.5:
             raise InvalidGuardLimitsError("gripper snap must be finite and below 0.5")
         if not _finite_scalar(self.gripper_change_max_step_mm) or self.gripper_change_max_step_mm < 0.0:
@@ -281,6 +285,7 @@ class ChunkGuard:
         if reasons:
             return GuardResult(hold, False, True, tuple(reasons))
         chunk = np.array(rows, dtype=float).reshape(-1, ROW_LEN)
+        floor_reasons = self._clamp_floor(chunk)
         hard = (
             self._check_box(chunk)
             + self._check_orientation(chunk)
@@ -300,7 +305,8 @@ class ChunkGuard:
             after = self._check_box(chunk) + self._check_orientation(chunk) + self._check_floor(chunk)
             if after:
                 return GuardResult(hold, False, True, tuple(speed_reasons + [f"after clamp: {r}" for r in after]))
-        return GuardResult(chunk, not speed_reasons, False, tuple(speed_reasons))
+        clamped = floor_reasons + speed_reasons
+        return GuardResult(chunk, not clamped, False, tuple(clamped))
 
     def static_reasons(self, rows, dt: float) -> tuple[str, ...]:
         """Check a final target without treating its distance as one control step."""
@@ -340,6 +346,27 @@ class ChunkGuard:
         if t is None:
             return np.zeros(len(chunk), dtype=bool)
         return np.hypot(chunk[:, 0] - t.x_mm, chunk[:, 1] - t.y_mm) <= t.radius_mm
+
+    def _clamp_floor(self, chunk: np.ndarray) -> list[str]:
+        """Raise a bounded raw model undershoot to the contact floor."""
+        if self.target is None:
+            return []
+        floor = self.target.z_contact_mm - self.limits.floor_margin_mm
+        low = (
+            self._near_target(chunk)
+            & (chunk[:, 2] < floor)
+            & (chunk[:, 2] >= floor - self.limits.floor_clamp_mm)
+        )
+        if not low.any():
+            return []
+        first = int(np.flatnonzero(low)[0])
+        label = f" ({self.target.label})" if self.target.label else ""
+        reason = (
+            f"rows {int(low.sum())} from row {first}: z={chunk[first, 2]:.2f} mm "
+            f"raised to the contact floor {floor:.2f} mm{label}"
+        )
+        chunk[low, 2] = floor
+        return [reason]
 
     def _check_floor(self, chunk: np.ndarray) -> list[str]:
         if self.target is None:
