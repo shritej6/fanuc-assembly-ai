@@ -23,7 +23,10 @@ class ObjectFootprint:
 
 @lru_cache(maxsize=1)
 def _pinned_footprints() -> dict[str, ObjectFootprint]:
-    contents = OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH.read_bytes()
+    try:
+        contents = OBJECT_GEOMETRY_SOURCE_SNAPSHOT_PATH.read_bytes()
+    except OSError as error:
+        raise ContactGeometryError("pinned CAD contact geometry is unavailable") from error
     if sha256(contents).hexdigest() != TRUSTED_GEOMETRY_SOURCE.sha256:
         raise ContactGeometryError("contact geometry does not match the pinned CAD SHA-256")
     try:
@@ -51,7 +54,7 @@ def contact_envelope_radius_mm(
     endpoint_xy_mm: tuple[float, float],
     objects: tuple[tuple[str, tuple[float, float], float], ...],
 ) -> float:
-    """Return a TCP-centred circle enclosing each rotated CAD footprint."""
+    """Conservatively enclose each rotated upright-projection CAD footprint."""
     footprints = _pinned_footprints()
     extents: list[float] = []
     for object_id, origin_xy, yaw_deg in objects:

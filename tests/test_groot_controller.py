@@ -255,11 +255,11 @@ def test_pick_insert_floor_envelope_covers_physical_base_footprint() -> None:
     intent = _controller(_Executor())._pick_insert_intent(prepared)
     contact = intent.contact
     assert contact is not None
-    assert contact.radius_mm > math.hypot(
+    assert math.hypot(
         intent.endpoint_tcp[0] - prepared.base_pose.tcp.x,
         intent.endpoint_tcp[1] - prepared.base_pose.tcp.y,
-    )
-    assert contact.radius_mm > 0.3
+    ) == pytest.approx(20.0)
+    assert contact.radius_mm == pytest.approx(57.828)
     assert load_catalog().geometry_source.sha256 in contact.source
 
     guard = ChunkGuard()
