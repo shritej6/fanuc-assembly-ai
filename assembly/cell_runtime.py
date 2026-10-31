@@ -23,6 +23,9 @@ from robot import Controller
 CELL_FACTORY_ENV = "FANUC_T09_CELL_FACTORY"
 SOFTWARE_PROOF_ENV = "FANUC_T09_SOFTWARE_PROOF"
 MOCK_PROOF_FACTORY = "robot.cell.t09_mock_runtime:build_groot_mock_controller"
+# No reviewed production factory exists on T37 yet. Adding one is a source
+# change reviewed on its own PR; an environment variable cannot self-authorize.
+REVIEWED_REAL_CELL_FACTORY: str | None = None
 SATURDAY_EXECUTION_TOLERANCES = ExecutionTolerances(
     0.3,
     1.0,
@@ -111,6 +114,10 @@ def _resolve_factory(transport: CellTransport) -> Callable[[T09GrootExecutor], C
         raise CellRuntimeBlockedError(
             f"CELL runtime needs {CELL_FACTORY_ENV}=<module>:<factory>; no mock fallback is allowed"
         )
+    if transport is CellTransport.REAL and spec != REVIEWED_REAL_CELL_FACTORY:
+        raise CellRuntimeBlockedError(
+            "real CELL transport has no reviewed real-cell factory pin in this source revision"
+        )
     if spec == MOCK_PROOF_FACTORY:
         if transport is not CellTransport.OFFICIAL_MOCK:
             raise CellRuntimeBlockedError(
@@ -156,10 +163,21 @@ def create_cell_policy(
     )
     try:
         controller = factory(executor)
+        _validate_controller(controller, executor, transport)
     except CellRuntimeBlockedError:
+        _close_failed_executor(executor)
         raise
     except (OSError, RuntimeError, TypeError, ValueError) as error:
+        _close_failed_executor(executor)
         raise CellRuntimeBlockedError(f"CELL controller factory failed: {error}") from error
+    return controller
+
+
+def _validate_controller(
+    controller: Controller,
+    executor: T09GrootExecutor,
+    transport: CellTransport,
+) -> None:
     if type(controller) is not GrootAssemblyController:
         raise CellRuntimeBlockedError(
             "CELL controller factory must return the exact GrootAssemblyController type"
@@ -177,4 +195,12 @@ def create_cell_policy(
         raise CellRuntimeBlockedError(
             "CELL controller runtime authority does not match the selected transport"
         )
-    return controller
+
+
+def _close_failed_executor(executor: T09GrootExecutor) -> None:
+    try:
+        executor.close()
+    except (OSError, RuntimeError, ValueError) as error:
+        raise CellRuntimeBlockedError(
+            f"CELL factory rejection could not close the GR00T transport: {error}"
+        ) from error

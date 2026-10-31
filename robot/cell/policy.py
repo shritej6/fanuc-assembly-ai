@@ -115,6 +115,12 @@ class Policy:
         """Called at the start of every rollout."""
         self.adapter.reset()
 
+    def close(self) -> None:
+        """Release an owned controller transport, if the runtime has one."""
+        close = getattr(self.controller, "close", None)
+        if callable(close):
+            close()
+
     def act(self, obs: dict):
         """obs["images"]   {camera: (H, W, 3) uint8 RGB}
         obs["joints"]      [J1..J6 deg (the v0.5 twin's convention), gripper 0 open / 1 closed]

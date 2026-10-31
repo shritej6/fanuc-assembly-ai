@@ -52,6 +52,10 @@ class GrootAssemblyController(AssemblyController):
         self._groot_executor.reset()
         self._motion_queue = GrootMotionQueue(self._groot_executor, self._execution_tolerances)
 
+    def close(self) -> None:
+        """Release the sole CELL motion transport."""
+        self._groot_executor.close()
+
     @property
     def groot_executor(self) -> T09GrootExecutor:
         """Expose immutable motion-authority identity to the CELL factory gate."""

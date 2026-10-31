@@ -16,9 +16,13 @@ class _FakeGrootPolicy:
         self.saturday_cell = saturday_cell
         self.last_guard_result = None
         self.resets = 0
+        self.closed = False
 
     def reset(self) -> None:
         self.resets += 1
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class _ScriptedController:
@@ -93,6 +97,22 @@ def test_real_transport_rejects_software_proof_configuration(
         )
 
 
+def test_real_transport_rejects_unpinned_factory_before_it_can_self_attest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setenv(
+        runtime.CELL_FACTORY_ENV,
+        "tests.test_cell_runtime_factory:_self_attested_real_factory",
+    )
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="reviewed real-cell factory pin"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
 def test_factory_rejects_generic_scripted_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -109,6 +129,27 @@ def test_factory_rejects_generic_scripted_controller(
             checkpoint="groot://127.0.0.1:5555",
             transport=runtime.CellTransport.REAL,
         )
+
+
+def test_factory_rejection_closes_the_opened_groot_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = _FakeGrootPolicy("groot://127.0.0.1:5555", None, saturday_cell=True)
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", lambda *args, **kwargs: policy)
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_factory",
+        lambda transport: (lambda executor: _ScriptedController()),
+    )
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="exact GrootAssemblyController"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+    assert policy.closed is True
 
 
 def test_factory_rejects_groot_controller_bound_to_another_executor(
