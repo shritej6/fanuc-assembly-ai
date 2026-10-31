@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import threading
 import time
@@ -14,8 +15,9 @@ import numpy as np
 import pytest
 import zmq
 
-from assembly.catalog import TRUSTED_GRASP_SOURCE, load_catalog
+from assembly.catalog import TRUSTED_GRASP_SOURCE, RecipeStep, load_catalog
 from assembly.cell_runtime import CellTransport
+from assembly.contact_geometry import contact_envelope_radius_mm
 from assembly.controller_ports import ExecutionTolerances
 from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.state_machine import PackMLState
@@ -150,6 +152,7 @@ class _SafeFakeGrootServer(_FakeGrootServer):
                 (90.0 + turn) % 360.0,
             ]
         )
+        contact_radius_mm = _mock_contact_radius_mm(product, recipe_step, insert)
         state = observation["state"]
         current_eef = np.asarray(state["eef_9d"], dtype=float)[0, 0]
         current = eef9d_to_tcp(current_eef[None], np.array([-180.0, 0.0, 0.0]))[0]
@@ -163,7 +166,12 @@ class _SafeFakeGrootServer(_FakeGrootServer):
         target = (
             current
             if target_gripper != gripper
-            else _bounded_semantic_step(current, desired, insert=insert)
+            else _bounded_semantic_step(
+                current,
+                desired,
+                insert=insert,
+                contact_radius_mm=contact_radius_mm,
+            )
         )
         action = {
             "eef_9d": tcp_to_eef9d(target[None])[None],
@@ -256,6 +264,7 @@ def _bounded_semantic_step(
     target: np.ndarray,
     *,
     insert: np.ndarray,
+    contact_radius_mm: float,
 ) -> np.ndarray:
     free_candidate = _bounded_step(
         current,
@@ -263,7 +272,11 @@ def _bounded_semantic_step(
         linear_step=0.98 * FAKE_GUARD_LIMITS.max_speed_mm_s * DT_S,
         angular_step=0.98 * FAKE_GUARD_LIMITS.max_rot_deg_s * DT_S,
     )
-    if _in_guard_slow_zone(current, insert) or _in_guard_slow_zone(free_candidate, insert):
+    if _in_guard_slow_zone(current, insert, contact_radius_mm) or _in_guard_slow_zone(
+        free_candidate,
+        insert,
+        contact_radius_mm,
+    ):
         candidate = _bounded_step(
             current,
             target,
@@ -292,11 +305,34 @@ def _bounded_step(
     return current + delta / ratio
 
 
-def _in_guard_slow_zone(pose: np.ndarray, insert: np.ndarray) -> bool:
-    at_contact_xy = float(np.linalg.norm(pose[:2] - insert[:2])) <= 1e-9
+def _in_guard_slow_zone(
+    pose: np.ndarray,
+    insert: np.ndarray,
+    contact_radius_mm: float,
+) -> bool:
+    at_contact_xy = float(np.linalg.norm(pose[:2] - insert[:2])) <= contact_radius_mm
     near_contact_z = pose[2] <= insert[2] + FAKE_GUARD_LIMITS.slow_zone_mm
     near_floor = pose[2] <= FAKE_GUARD_LIMITS.z_mm[0] + FAKE_GUARD_LIMITS.slow_zone_mm
     return near_floor or (at_contact_xy and near_contact_z)
+
+
+def _mock_contact_radius_mm(product: int, recipe_step: RecipeStep, insert: np.ndarray) -> float:
+    """Mirror the mock controller's calibrated part/base CAD envelope."""
+    local_x, local_y, _ = recipe_step.preferred_grasp.tcp_local_mm
+    yaw_deg = 90.0
+    yaw = math.radians(yaw_deg)
+    part_origin = (
+        float(insert[0] - math.cos(yaw) * local_x + math.sin(yaw) * local_y),
+        float(insert[1] - math.sin(yaw) * local_x - math.cos(yaw) * local_y),
+    )
+    base_origin = (400.0 + 20.0 * product, 80.0)
+    return contact_envelope_radius_mm(
+        (float(insert[0]), float(insert[1])),
+        (
+            (recipe_step.object_id, part_origin, yaw_deg),
+            (f"F{product:02d}", base_origin, yaw_deg),
+        ),
+    )
 
 
 class _MockCellServer(AbstractContextManager["_MockCellServer"]):

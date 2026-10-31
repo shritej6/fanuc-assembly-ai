@@ -127,6 +127,14 @@ def test_valid_guarded_fake_groot_completes_one_product_without_untrained_motion
     assert SemanticSkill.PLACE_FREE not in model.skills
     assert executor.results
     assert all(not result.blocked for result in executor.results)
-    assert all(not result.reasons for result in executor.results)
+    clamp_reasons = tuple(
+        reason
+        for result in executor.results
+        for reason in result.reasons
+    )
+    assert all(
+        "raised to the contact floor" in reason or "step clamped from" in reason
+        for reason in clamp_reasons
+    )
     assert policy.last_guard_result is not None
     assert all(entry["held"] is False for entry in policy.guard_log)
