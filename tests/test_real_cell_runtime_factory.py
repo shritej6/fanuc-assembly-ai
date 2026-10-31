@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import fields
 from importlib.util import find_spec
+from pathlib import Path
 
 import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _dependency_bundle(runtime, perception: object):
@@ -19,6 +23,16 @@ def _dependency_bundle(runtime, perception: object):
 
 def test_real_cell_runtime_factory_module_exists() -> None:
     assert find_spec("robot.cell.t09_real_runtime") is not None
+
+
+def test_real_placement_artifact_has_three_reviewed_rollouts() -> None:
+    placement = yaml.safe_load(
+        (ROOT / "robot/cell/submission/placement.yaml").read_text(encoding="utf-8")
+    )
+
+    assert len(placement["rollouts"]) == 3
+    assert all(len(rollout["objects"]) == 15 for rollout in placement["rollouts"])
+    assert all("Assemble products" in rollout["prompt"] for rollout in placement["rollouts"])
 
 
 def test_real_cell_requirements_name_every_calibration_and_runtime_dependency() -> None:
