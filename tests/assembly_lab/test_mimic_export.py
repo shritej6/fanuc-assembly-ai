@@ -186,3 +186,21 @@ def test_screen_skips_demos_a_killed_worker_left_unreadable(setup):
         f["data/demo_0/obs/plan_ids"] = h5py.ExternalLink("never_written.hdf5", "/x")
     refs, counts = E.screen(str(path), load_limits(limits), "sim_contact_peak")
     assert [r.key for r in refs] == ["demo_3"] and counts["unreadable"] == 1
+
+
+@needs_ffmpeg
+def test_merge_reindexes_episodes_and_keeps_provenance(setup, tmp_path):
+    from sim.assembly_lab.mimic.merge_lerobot import MergeError, merge
+
+    path, limits, out = setup
+    E.export([str(path)], out, SIM_DT, FPS, (64, 36), None, workers=1, limits_path=limits)
+    one = tmp_path / "one"
+    E.export([str(path)], one, SIM_DT, FPS, (64, 36), 1, workers=1, limits_path=limits)  # a 1-episode source
+    merged = tmp_path / "merged"
+    assert merge([out, one], merged)["episodes"] == 3
+    assert validate(merged) == {"episodes": 3, "frames": 3 * (T - 2), "tasks": 1}
+    meta = [json.loads(x) for x in (merged / "meta/t12_episodes.jsonl").read_text().splitlines()]
+    assert [(m["episode_index"], m["src_dataset"], m["src_episode_index"]) for m in meta] == [
+        (0, "ds", 0), (1, "ds", 1), (2, "one", 0)]
+    with pytest.raises(MergeError, match="exists"):
+        merge([out], merged)
