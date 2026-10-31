@@ -61,7 +61,7 @@ def test_bad_model_output_becomes_hold_with_reason():
 
 
 def test_contact_target_from_planner_is_enforced():
-    pol = GrootPolicy(model=Fixed([[300, 0, -92.0, -180, 0, 0, 1]]))
+    pol = GrootPolicy(model=Fixed([[300, 0, -95.0, -180, 0, 0, 1]]))  # 3.5 mm below the floor
     pol.reset()
     pol.set_task("insert M4_02 on F04", ContactTarget(300.0, 0.0, -90.5))
     pol.act(obs(grip=1.0))

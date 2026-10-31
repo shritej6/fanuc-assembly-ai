@@ -74,16 +74,30 @@ def test_tilt_is_wrap_safe():
     assert tilt_deg(-180.0, 10.0, 0.0) == pytest.approx(10.0, abs=1e-6)
 
 
-def test_contact_floor_refuses_more_than_1mm_below_seated_height():
+def test_contact_floor_refuses_far_below_seated_height():
     seated = -300.0
     start = [400.0, 0.0, -298.0, -180.0, 0.0, 0.0]
     guard = ChunkGuard()
     guard.set_target(ContactTarget(400.0, 0.0, seated, label="M4_02 on F04"))
     ok = path(start, [400.0, 0.0, seated - 0.9, -180, 0, 0], 20)  # light push, inside 1 mm
-    assert not guard.guard(ok, start, 1.0, DT).held
-    bad = path(start, [400.0, 0.0, seated - 1.2, -180, 0, 0], 20)
+    res = guard.guard(ok, start, 1.0, DT)
+    assert res.passed and not res.held
+    bad = path(start, [400.0, 0.0, seated - 4.2, -180, 0, 0], 20)  # 3.2 mm below the floor: past the clamp band
     res = guard.guard(bad, start, 1.0, DT)
     assert res.held and "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+
+
+def test_slightly_below_floor_is_clamped_up_to_the_floor():
+    """GR00T aims 1-3 mm low at a grasp; refusing the whole chunk froze the arm 3.6 mm above the part (eval 10/31)."""
+    seated = -326.7
+    start = [267.2, -105.8, -323.1, -180.0, 0.0, 0.0]
+    guard = ChunkGuard()
+    guard.set_target(ContactTarget(267.2, -105.8, seated, label="grasp M1_01"))
+    rows = path(start, [267.2, -105.8, seated - 2.7, -180, 0, 0], 20)  # 1.7 mm below the floor
+    res = guard.guard(rows, start, 0.0, DT)
+    assert not res.held and not res.passed
+    assert res.rows[:, 2].min() == pytest.approx(seated - 1.0)
+    assert any("raised to the contact floor" in r and "M1_01" in r for r in res.reasons)
 
 
 def test_floor_applies_only_near_the_target():
