@@ -331,7 +331,7 @@ def test_scripted_motion_coordinates_never_enter_the_cell_semantic_queue() -> No
     assert intent.slot_id == "slot-a"
     assert intent.endpoint_tcp == (321.0, -45.0, -168.0, -180.0, 0.0, 77.0)
     assert intent.label == "non_learned_inspection"
-    assert "measured CSI wrist inspection stop" in intent.source
+    assert intent.source == "reviewed CSI slot-pose test fixture"
     assert 999.0 not in intent.endpoint_tcp
     assert executor.intents == []
 

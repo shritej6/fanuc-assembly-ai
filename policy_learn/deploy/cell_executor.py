@@ -198,7 +198,7 @@ class T09GrootExecutor:
     def inspect(self, move: FixedInspectionMove, *, observation: dict) -> GrootExecutionResult:
         """Execute a reviewed non-learned camera pose through the policy guard."""
         current = _observed_waypoint(observation)
-        expected = Waypoint(*move.endpoint_tcp, current.gripper)
+        expected = Waypoint(*move.endpoint_tcp, 0.0)
         if endpoint_reached(current, expected, self._tolerances):
             return GrootExecutionResult(current.as_action(), MotionPhase.INSPECT, True, False, ())
         rows = np.asarray(
@@ -209,8 +209,11 @@ class T09GrootExecutor:
         if result is None or rows.shape != (1, 7):
             raise CellExecutionError("fixed inspection guard did not expose one execution row")
         target = _waypoint(rows[0])
-        if target.gripper != current.gripper:
-            raise CellExecutionError("fixed inspection may not change the gripper")
+        if target.gripper != 0.0:
+            raise CellExecutionError("fixed inspection requires an open gripper")
+        opening_in_place = _pose_reached(target, _tcp(current), 0.0, self._tolerances)
+        if current.gripper == 1.0 and not opening_in_place:
+            raise CellExecutionError("fixed inspection must open stationary before camera motion")
         return GrootExecutionResult(
             target.as_action(),
             MotionPhase.INSPECT,

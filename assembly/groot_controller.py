@@ -9,7 +9,7 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.controller import AssemblyController
 from assembly.controller_ports import ControllerEvent
 from assembly.execution import ExecutionError
-from assembly.fixed_inspection import FixedInspectionMove
+from assembly.fixed_inspection import FixedInspectionMove, InspectionPoseRegistry
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
 from assembly.planner import PreparedPlanStep
@@ -22,8 +22,17 @@ from robot.adapter import Action, Observation
 class GrootAssemblyController(AssemblyController):
     """Keep T09 planning/recovery, replacing its scripted queue only in CELL."""
 
-    def __init__(self, *, groot_executor: T09GrootExecutor, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        groot_executor: T09GrootExecutor,
+        inspection_poses: InspectionPoseRegistry,
+        **kwargs,
+    ) -> None:
+        if not isinstance(inspection_poses, InspectionPoseRegistry):
+            raise TypeError("CELL inspection poses must use InspectionPoseRegistry")
         self._groot_executor = groot_executor
+        self._inspection_poses = inspection_poses
         super().__init__(**kwargs)
 
     def reset(self) -> None:
@@ -122,25 +131,19 @@ class GrootAssemblyController(AssemblyController):
         current: Waypoint,
         observed_at: float,
     ) -> FixedInspectionMove:
-        del observed_at
+        del current, observed_at
         pending = self._pending_pre_pick
         if pending is None:
             raise RuntimeError("inspection intent has no pending part")
         coarse = self._coarse_xy_by_instance[pending.part.instance_id]
-        endpoint = (
-            coarse[0], coarse[1], self._inspection_stop.tcp_z_mm,
-            self._inspection_stop.tool_w_deg, self._inspection_stop.tool_p_deg, current.r,
-        )
+        slot = self._inspection_poses.resolve(coarse)
         return FixedInspectionMove(
             instance_id=pending.part.instance_id,
             base_instance_id=pending.base.instance_id,
-            endpoint_tcp=endpoint,
-            safe_z_mm=self._motion_config.safe_z_mm,
-            source=(
-                f"{self._inspection_stop.source}; safe Z from "
-                f"{self._motion_config.safe_z_source}; observed inventory slot XY "
-                f"for {pending.part.instance_id}"
-            ),
+            slot_id=slot.slot_id,
+            endpoint_tcp=slot.endpoint_tcp,
+            safe_z_mm=slot.safe_z_mm,
+            source=slot.source,
         )
 
     def _release_intent(self, prepared: PreparedPlanStep) -> MotionIntent:

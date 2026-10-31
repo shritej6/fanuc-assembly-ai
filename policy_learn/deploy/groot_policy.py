@@ -365,15 +365,18 @@ class GrootPolicy:
         if tcp is None:
             raise CellPolicySafetyError("fixed inspection requires an observed tcp_pose")
         self.guard.set_target(None)
-        final_row = np.asarray([(*move.endpoint_tcp, gripper)], dtype=float)
+        final_row = np.asarray([(*move.endpoint_tcp, 0.0)], dtype=float)
         reasons = self.guard.static_reasons(final_row, self.DT)
         if reasons:
             result = GuardResult(hold_row(tcp, gripper, self.guard.limits), False, True, reasons)
             return self._record(result)
+        if gripper == 1.0:
+            opening_row = np.concatenate([tcp, [0.0]])[None, :]
+            return self._record(self.guard.guard(opening_row, tcp, gripper, self.DT))
         current_tcp = tuple(float(value) for value in tcp)
         leg_target = next_inspection_leg(current_tcp, move)
         step = _incremental_fixed_pose(tcp, leg_target, self.guard.limits)
-        row = np.concatenate([step, [gripper]])[None, :]
+        row = np.concatenate([step, [0.0]])[None, :]
         return self._record(self.guard.guard(row, tcp, gripper, self.DT))
 
     def _record(self, res: GuardResult) -> np.ndarray:

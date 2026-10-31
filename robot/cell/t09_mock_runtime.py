@@ -25,6 +25,7 @@ from assembly.controller_ports import (
     RecoveryTransferEvidence,
 )
 from assembly.controller_startup import StartupHoldConfig
+from assembly.fixed_inspection import InspectionPoseRegistry, InspectionSlotPose
 from assembly.instruction import parse_requested_products
 from assembly.inventory import InventoryItem, InventoryZone
 from assembly.motion import (
@@ -405,16 +406,43 @@ def _controller_kwargs(perception: MockPerception) -> dict[str, object]:
     }
 
 
+def _mock_inspection_poses() -> InspectionPoseRegistry:
+    """Return fixed mock-grid camera poses; these are not real-cell calibration."""
+    slots = []
+    for product in range(1, 7):
+        for step in range(1, 5):
+            x = 210.0 + 30.0 * product
+            y = -160.0 + 35.0 * step
+            slots.append(
+                InspectionSlotPose(
+                    f"mock-table-p{product}-s{step}",
+                    (x - 10.0, x + 10.0, y - 10.0, y + 10.0),
+                    (x, y, -168.0, -180.0, 0.0, 0.0),
+                    -180.0,
+                    "mock-only deterministic inventory grid; not real-cell calibration",
+                )
+            )
+    return InspectionPoseRegistry(tuple(slots))
+
+
 def _build_controller(perception: MockPerception) -> AssemblyController:
     return AssemblyController(**_controller_kwargs(perception))
 
 
-def build_groot_mock_controller(executor) -> AssemblyController:
+def build_groot_mock_controller(
+    executor,
+    *,
+    inspection_poses: InspectionPoseRegistry | None = None,
+) -> AssemblyController:
     """Software-proof fixture: real T09 states with GR00T as sole row source."""
     from assembly.groot_controller import GrootAssemblyController
 
     perception = MockPerception()
-    return GrootAssemblyController(groot_executor=executor, **_controller_kwargs(perception))
+    return GrootAssemblyController(
+        groot_executor=executor,
+        inspection_poses=inspection_poses or _mock_inspection_poses(),
+        **_controller_kwargs(perception),
+    )
 
 
 @dataclass(frozen=True, slots=True)
