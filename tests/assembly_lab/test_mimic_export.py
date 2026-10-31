@@ -175,3 +175,14 @@ def test_meta_matches_rejects_a_shifted_annotation(tmp_path):
         d.attrs["steps"] = 393
         del d["obs/plan_ids"]  # annotate skipped the plan obs on a count mismatch
         assert not meta_matches(d)
+
+
+def test_screen_skips_demos_a_killed_worker_left_unreadable(setup):
+    from sim.assembly_lab.mimic.force_guard import load_limits
+
+    path, limits, _ = setup
+    with h5py.File(path, "a") as f:  # the link is there but its object is not: what a stopped container leaves
+        del f["data/demo_0/obs/plan_ids"]
+        f["data/demo_0/obs/plan_ids"] = h5py.ExternalLink("never_written.hdf5", "/x")
+    refs, counts = E.screen(str(path), load_limits(limits), "sim_contact_peak")
+    assert [r.key for r in refs] == ["demo_3"] and counts["unreadable"] == 1
