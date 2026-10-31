@@ -152,14 +152,14 @@ def test_measured_pose_bridge_maps_dynamic_instance_ids_to_placement() -> None:
     base = bridge.base_for(_item("track-base-7", "F05"), observed_at_s=10.0)
     grasp = bridge.grasp_for(_item("track-part-12", "M5_01"), observed_at_s=10.0)
 
-    assert (base.tcp.x, base.tcp.y, base.tcp.r) == pytest.approx((420.0, 0.0, 45.0))
+    assert (base.tcp.x, base.tcp.y, base.tcp.r) == pytest.approx((275.0, -123.0, -34.0))
     assert base.up_face == "placement-base:+z"
     local = catalog.product(5).steps[0].preferred_grasp.tcp_local_mm
-    angle = np.radians(30.0)
+    angle = np.radians(-30.0)
     expected_tcp = (
-        335.0 + np.cos(angle) * local[0] - np.sin(angle) * local[1],
-        -45.0 + np.sin(angle) * local[0] + np.cos(angle) * local[1],
-        30.0,
+        358.0 + np.cos(angle) * local[0] - np.sin(angle) * local[1],
+        193.0 + np.sin(angle) * local[0] + np.cos(angle) * local[1],
+        -30.0,
     )
     assert (grasp.tcp.x, grasp.tcp.y, grasp.tcp.r) == pytest.approx(expected_tcp)
     assert base.tcp.source == grasp.tcp.source == "calibrated"
@@ -173,15 +173,15 @@ def test_installed_up_faces_derive_from_each_catalog_rotation() -> None:
     assert orientations["M1_01"].up_face != orientations["M1_04"].up_face
 
 
-def test_pose_bridge_preserves_catalog_derived_flat_part_up_face() -> None:
+def test_pose_bridge_preserves_catalog_derived_product_five_up_face() -> None:
     catalog, cad = load_catalog(), load_cad()
     estimator = PlacementPoseEstimator(load_real_cell_layout(), cad)
-    estimator("M1_04", "table", _observation(), np.ones((1, 1), dtype=bool))
+    estimator("M5_03", "table", _observation(), np.ones((1, 1), dtype=bool))
     bridge = PlacementMeasuredPoseBridge(catalog, estimator)
 
-    grasp = bridge.grasp_for(_item("rear-guard", "M1_04"), observed_at_s=10.0)
+    grasp = bridge.grasp_for(_item("alignment-guide", "M5_03"), observed_at_s=10.0)
 
-    assert grasp.up_face == "installed:+y"
+    assert grasp.up_face == catalog_installed_orientations(catalog)["M5_03"].up_face
 
 
 def test_verified_detector_presence_gate_rejects_missing_and_extra() -> None:
@@ -361,12 +361,12 @@ def test_explicit_unverified_presence_publishes_reviewed_inventory(monkeypatch, 
     snapshot = adapters.perception.scan(_observation())
 
     assert snapshot.complete is True
-    assert len(snapshot.items) == 15
+    assert len(snapshot.items) == 5
     m5_01 = next(item for item in snapshot.items if item.object_id == "M5_01")
-    assert m5_01.coarse_xy_mm == (335.0, -45.0)
+    assert m5_01.coarse_xy_mm == (358.0, 193.0)
     assert m5_01.condition is ObjectCondition.VERIFIED
     assert m5_01.instance_id == "placement-r0-M5_01"
-    assert adapters.perception._xy[m5_01.instance_id] == (335.0, -45.0)
+    assert adapters.perception._xy[m5_01.instance_id] == (358.0, 193.0)
     events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
     assert any(
         record["kind"] == "presence"
@@ -408,7 +408,7 @@ def test_unverified_placement_supplies_inspection_only_scene(monkeypatch, tmp_pa
     assert scene.base_instance_id == base.instance_id
     assert scene.moving_attached is False
     assert scene.intrusion_detected is False
-    assert scene.base_pose == pytest.approx((420.0, 0.0, -327.1, 45.0))
+    assert scene.base_pose == pytest.approx((275.0, -123.0, -327.1, -34.0))
     assert any(box.name == base.instance_id for box in scene.fixtures)
     assert all(box.name != moving.instance_id for box in scene.parts)
     with pytest.raises(ControllerPortError, match="requires detector evidence"):

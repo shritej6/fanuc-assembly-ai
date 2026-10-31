@@ -49,8 +49,8 @@ def test_real_placement_artifact_has_three_reviewed_rollouts() -> None:
     )
 
     assert len(placement["rollouts"]) == 3
-    assert all(len(rollout["objects"]) == 15 for rollout in placement["rollouts"])
-    assert all("Assemble products" in rollout["prompt"] for rollout in placement["rollouts"])
+    assert all(len(rollout["objects"]) == 5 for rollout in placement["rollouts"])
+    assert all("Assemble product 5" in rollout["prompt"] for rollout in placement["rollouts"])
 
 
 def test_real_cell_requirements_name_every_calibration_and_runtime_dependency() -> None:
@@ -526,10 +526,13 @@ def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatc
     views = dependencies.final_view_registry.views_for(
         5,
         "F05",
-        base_xy_mm=(420.0, 0.0),
+        base_xy_mm=(275.0, -123.0),
         max_distance_mm=10.0,
     )
-    assert tuple(view.view_id for view in views) == ("B2-view-1", "B2-view-2")
+    assert tuple(view.view_id for view in views) == (
+        "XY-275--123-view-1",
+        "XY-275--123-view-2",
+    )
 
 
 def test_pinned_loader_without_injection_builds_product_five_real_controller(
@@ -573,8 +576,8 @@ def test_pinned_loader_without_injection_builds_product_five_real_controller(
     assert dependencies.startup_hold is None
     assert dependencies.perception.expected_layout_verifier is dependencies.expected_layout_verifier
     rollout = load_real_cell_layout().rollouts[0]
-    assert parse_requested_products(rollout.prompt, dependencies.catalog) == (5, 1, 2)
-    assert {item.object_id for item in rollout.objects} >= {
+    assert parse_requested_products(rollout.prompt, dependencies.catalog) == (5,)
+    assert {item.object_id for item in rollout.objects} == {
         "F05",
         "M5_01",
         "M5_02",
@@ -584,10 +587,13 @@ def test_pinned_loader_without_injection_builds_product_five_real_controller(
     views = dependencies.final_view_registry.views_for(
         5,
         "F05",
-        base_xy_mm=(420.0, 0.0),
+        base_xy_mm=(275.0, -123.0),
         max_distance_mm=10.0,
     )
-    assert tuple(view.view_id for view in views) == ("B2-view-1", "B2-view-2")
+    assert tuple(view.view_id for view in views) == (
+        "XY-275--123-view-1",
+        "XY-275--123-view-2",
+    )
 
 
 def test_rollout_two_pins_product_five_parts_and_b2_pose() -> None:
@@ -600,8 +606,8 @@ def test_rollout_two_pins_product_five_parts_and_b2_pose() -> None:
     by_id = {item.object_id: item for item in rollout.objects}
 
     assert (by_id["F05"].center_x_mm, by_id["F05"].center_y_mm, by_id["F05"].yaw_deg) == (
-        420.0,
-        0.0,
-        45.0,
+        275.0,
+        -123.0,
+        -34.0,
     )
-    assert set(by_id) >= {"F05", "M5_01", "M5_02", "M5_03", "M5_04"}
+    assert set(by_id) == {"F05", "M5_01", "M5_02", "M5_03", "M5_04"}

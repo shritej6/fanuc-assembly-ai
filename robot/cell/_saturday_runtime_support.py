@@ -40,7 +40,7 @@ PLACEMENT_POSE_UNCERTAINTY = PoseUncertainty(
     2.0,
     2.0,
     Status.PRELIMINARY,
-    "PRELIMINARY supervised hand placement tolerance; placement.yaml@1f97ff5, pending CSI measurement",
+    "PRELIMINARY supervised hand placement tolerance; placement.yaml@434f488, pending CSI measurement",
 )
 DETECTOR_PRESENCE_TOLERANCE_MM = 25.0
 
@@ -298,7 +298,7 @@ class PlacementMeasuredPoseBridge:
             orientation_tolerance_deg=0.0,
             foundationpose_boundary=FoundationPoseFrameBoundary(
                 "installed_local",
-                "placement.yaml@1f97ff5 transformed by pinned T29 local-from-STL frames",
+                "placement.yaml@434f488 transformed by pinned T29 local-from-STL frames",
             ),
             grasp_frames=self._frames,
         )

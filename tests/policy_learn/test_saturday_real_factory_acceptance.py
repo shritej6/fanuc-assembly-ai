@@ -74,9 +74,9 @@ def test_pinned_real_factory_queues_product_five_inspection_over_official_mock(
             move = queue._intent
             assert isinstance(move, FixedInspectionMove)
             assert controller.inventory.item(move.instance_id).object_id == "M5_01"
-            assert controller._coarse_xy_by_instance[move.instance_id] == (335.0, -45.0)
-            assert move.slot_id == "PF3"
-            assert move.endpoint_tcp == (335.0, -45.0, -168.0, -180.0, 0.0, 180.0)
+            assert controller._coarse_xy_by_instance[move.instance_id] == (358.0, 193.0)
+            assert move.slot_id == "P1"
+            assert move.endpoint_tcp == (358.0, 193.0, -168.0, -180.0, 0.0, 180.0)
             assert queue.active is True
             assert queue.last_authority_label == "non_learned_inspection"
             assert float(observation["joints"][6]) == 0.0

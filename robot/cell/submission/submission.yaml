@@ -14,15 +14,15 @@ model_type: Hybrid
 # Hybrid      Combines multiple approaches, or choose this if unsure
 
 # --- Task ---
-task_id: assemble-3-of-6-V        # Short task name ending with your team letter
-task: Assemble 3 of 6 printed products on their bases, rejecting defective, fallen and look-alike parts.
+task_id: assemble-product-5-V     # Short task name ending with your team letter
+task: Assemble product 5 (base and its 4 parts) part after part, rejecting defective, fallen and look-alike parts.
                                   # Describe your task in one short sentence
 
 # --- Test Setup ---
 # Tell us how to prepare the workspace for each rollout.
 # Objects and layout can stay the same or change between rollouts.
 
-objects: different
+objects: same
 # same: Use the same set of objects for every rollout.
 # different: May use different objects across rollouts.
 

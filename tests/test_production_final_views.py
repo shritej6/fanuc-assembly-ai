@@ -124,18 +124,18 @@ def test_registry_selects_the_reviewed_base_spot_when_an_object_moves_between_ro
         registry.views_for(1, "F01", base_xy_mm=(320.0, 80.0), max_distance_mm=10.0)
 
 
-def test_reviewed_registry_has_product_five_b2_views_and_catalog_roles() -> None:
+def test_reviewed_registry_has_product_five_views_at_the_new_base_pose() -> None:
     views = reviewed_final_view_registry().views_for(
         5,
         "F05",
-        base_xy_mm=(420.0, 0.0),
+        base_xy_mm=(275.0, -123.0),
         max_distance_mm=10.0,
     )
 
-    assert tuple(view.endpoint_tcp_uf0[:2] for view in views) == ((420.0, -25.0), (420.0, 25.0))
-    assert {view.endpoint_tcp_uf0[5] for view in views} == {45.0}
+    assert tuple(view.endpoint_tcp_uf0[:2] for view in views) == ((275.0, -148.0), (275.0, -98.0))
+    assert {view.endpoint_tcp_uf0[5] for view in views} == {326.0}
     assert all(view.expected_instance_roles == ("M5_01", "M5_02", "M5_03", "M5_04") for view in views)
-    assert all("PRELIMINARY" in view.source and "1f97ff5" in view.source for view in views)
+    assert all("PRELIMINARY" in view.source and "434f488" in view.source for view in views)
 
 
 def test_every_reviewed_final_view_clears_the_assembled_cad_stack() -> None:

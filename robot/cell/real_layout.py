@@ -26,22 +26,25 @@ from perception.port.placement import precision_gate_tolerances
 
 DEFAULT_PLACEMENT_PATH = Path(__file__).with_name("submission") / "placement.yaml"
 CELL_LAYOUT_PATH = Path(__file__).resolve().parents[2] / "sdg" / "configs" / "cell_layout.yaml"
-PLACEMENT_SOURCE_COMMIT = "1f97ff5"
+PLACEMENT_SOURCE_COMMIT = "434f488"
 START_POSITION_TOLERANCE_MM = 10.0
 INSPECTION_Z_MM = -168.0
 INSPECTION_SAFE_Z_MM = -180.0
 FINGERS_DOWN_W_DEG = -180.0
 NEUTRAL_WRIST_R_DEG = 180.0
 _OBJECT_ID = re.compile(r"^(F\d{2}|M\d_\d{2})(?:\s|$)")
-_SLOT_X = (("PN", 255.0), ("PF", 335.0))
-_SLOT_Y = (-225.0, -135.0, -45.0, 45.0, 135.0, 225.0)
-_SLOT_HALF_MM = 25.0
+_INSPECTION_BOXES = (
+    ("P1", "M5_01", (333.0, 383.0, 168.0, 218.0)),
+    ("P2", "M5_02", (280.0, 330.0, 11.0, 61.0)),
+    ("P3", "M5_03", (277.0, 327.0, 90.0, 140.0)),
+    ("P4", "M5_04", (358.0, 408.0, -13.0, 37.0)),
+)
 _INSPECTION_SOURCE = (
-    "T38 placement commit 1f97ff5 slot XY and neutral R=180; "
+    "T38 placement commit 434f488 reviewed product-5 boxes and neutral R=180; "
     "PR9 measured CSI wrist inspection stop Z=-168, W=-180, P=0 and safe transit Z=-180"
 )
 _FINAL_VIEW_SOURCE = (
-    "PRELIMINARY T38 placement commit 1f97ff5 base XY/yaw + "
+    "PRELIMINARY T38 placement commit 434f488 base XY/yaw + "
     "sdg/configs/cell_layout.yaml clearance.base_gap_mm; "
     "PR9 measured CSI wrist inspection Z=-168, W=-180, P=0"
 )
@@ -109,6 +112,9 @@ class RealCellLayout:
         for expected in rollout.bases:
             match = _take_compatible_base(catalog, candidates, expected)
             _require_position(match.coarse_xy_mm, expected)
+        if candidates:
+            unexpected = ", ".join(sorted(item.object_id for item in candidates))
+            raise ControllerPortError(f"reviewed placement has unexpected table objects: {unexpected}")
 
 
 class ExpectedLayoutVerifier:
@@ -152,17 +158,34 @@ def _parse_rollout(index: int, raw: object, catalog: Catalog) -> PlacementRollou
     if not isinstance(raw["prompt"], str) or not raw["prompt"].strip():
         raise ControllerPortError(f"placement rollout {index} requires a prompt")
     objects = raw["objects"]
-    if not isinstance(objects, dict) or len(objects) != 15:
-        raise ControllerPortError(f"placement rollout {index} must contain exactly 15 objects")
+    if not isinstance(objects, dict) or len(objects) != 5:
+        raise ControllerPortError(f"placement rollout {index} must contain exactly five objects")
     known = _known_object_ids(catalog)
     parsed = tuple(_parse_object(label, pose, known) for label, pose in objects.items())
     identifiers = tuple(item.object_id for item in parsed)
     if len(identifiers) != len(set(identifiers)):
         raise ControllerPortError(f"placement rollout {index} contains duplicate object IDs")
     rollout = PlacementRollout(index, raw["prompt"], parsed)
-    if len(rollout.bases) != 3 or len(rollout.parts) != 12:
-        raise ControllerPortError(f"placement rollout {index} needs three bases and twelve parts")
+    _require_one_complete_product(index, rollout, catalog)
     return rollout
+
+
+def _require_one_complete_product(index: int, rollout: PlacementRollout, catalog: Catalog) -> None:
+    if len(rollout.bases) != 1 or len(rollout.parts) != 4:
+        raise ControllerPortError(f"placement rollout {index} needs one base and four parts")
+    part_ids = {part.object_id for part in rollout.parts}
+    matches = [
+        product
+        for product in catalog.products
+        if part_ids == {step.object_id for step in product.steps}
+    ]
+    if len(matches) != 1:
+        raise ControllerPortError(f"placement rollout {index} must contain one complete catalog product")
+    base_type = catalog.base_type_for_object(rollout.bases[0].object_id)
+    if base_type != matches[0].base_type:
+        raise ControllerPortError(
+            f"placement rollout {index} base is incompatible with its complete catalog product"
+        )
 
 
 def _known_object_ids(catalog: Catalog) -> set[str]:
@@ -234,11 +257,7 @@ def _require_position(coarse_xy_mm: tuple[float, float] | None, expected: Placed
 
 
 def reviewed_inspection_registry() -> InspectionPoseRegistry:
-    slots = tuple(
-        _inspection_slot(prefix, x_mm, index, y_mm)
-        for prefix, x_mm in _SLOT_X
-        for index, y_mm in enumerate(_SLOT_Y, start=1)
-    )
+    slots = tuple(_inspection_slot(*definition) for definition in _INSPECTION_BOXES)
     return InspectionPoseRegistry(slots)
 
 
@@ -326,15 +345,17 @@ def _require_final_view_clearance(
         )
 
 
-def _inspection_slot(prefix: str, x_mm: float, index: int, y_mm: float) -> InspectionSlotPose:
+def _inspection_slot(
+    slot_id: str,
+    object_id: str,
+    bounds: tuple[float, float, float, float],
+) -> InspectionSlotPose:
+    x_min, x_max, y_min, y_max = bounds
+    x_mm = (x_min + x_max) / 2.0
+    y_mm = (y_min + y_max) / 2.0
     return InspectionSlotPose(
-        slot_id=f"{prefix}{index}",
-        selection_bounds_xy_mm=(
-            x_mm - _SLOT_HALF_MM,
-            x_mm + _SLOT_HALF_MM,
-            y_mm - _SLOT_HALF_MM,
-            y_mm + _SLOT_HALF_MM,
-        ),
+        slot_id=slot_id,
+        selection_bounds_xy_mm=bounds,
         endpoint_tcp=(
             x_mm,
             y_mm,
@@ -344,5 +365,5 @@ def _inspection_slot(prefix: str, x_mm: float, index: int, y_mm: float) -> Inspe
             NEUTRAL_WRIST_R_DEG,
         ),
         safe_z_mm=INSPECTION_SAFE_Z_MM,
-        source=_INSPECTION_SOURCE,
+        source=f"{_INSPECTION_SOURCE}; {slot_id} reviewed for {object_id}",
     )
