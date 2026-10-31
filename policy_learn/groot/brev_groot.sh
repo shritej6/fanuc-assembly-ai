@@ -36,6 +36,7 @@ MAX_TRAIN_HOURS="${MAX_TRAIN_HOURS:-3.0}"
 STATE_DROPOUT="${STATE_DROPOUT:-0.2}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
 OVERSAMPLE="${OVERSAMPLE:-}"       # e.g. v2_=3, see train_paths
+DATALOADER_WORKERS="${DATALOADER_WORKERS:-8}"  # per rank; shard caching decodes video on CPU
 VAL_FRACTION="${VAL_FRACTION:-0.02}" # held-out share per source (v1 used 0.04)
 SYNC_SECONDS="${SYNC_SECONDS:-600}"
 EVAL_GPU="${EVAL_GPU:-}"
@@ -98,7 +99,8 @@ stage_prepare() {
   local srcs=() d
   for d in "$SRC_ROOT"/*/; do [[ -f "$d/meta/info.json" ]] && srcs+=(--src "${d%/}"); done
   (( ${#srcs[@]} )) || { mark "prepare no LeRobot dataset under $SRC_ROOT"; return 1; }
-  (cd "$REPO" && "$PY" -m policy_learn.groot.prepare_dataset "${srcs[@]}" --out "$DATA" --val-fraction "$VAL_FRACTION" > "$RUNS/prepare.log")
+  (cd "$REPO" && "$PY" -m policy_learn.groot.prepare_dataset "${srcs[@]}" --out "$DATA" --val-fraction "$VAL_FRACTION" \
+    --no-val-prefix "${OVERSAMPLE:+${OVERSAMPLE%%=*}}" > "$RUNS/prepare.log")
   for d in "$DATA"/train/*/ "$DATA"/val/*/; do
     [[ -d "$d" ]] || continue
     (cd "$GROOT_DIR" && "$PY" -m gr00t.data.stats --dataset-path "${d%/}" --embodiment-tag NEW_EMBODIMENT \
@@ -124,7 +126,7 @@ launch() {   # $1 output dir, $2 max steps, $3 save steps; extra args are passed
   local args=(gr00t/experiment/launch_finetune.py --base-model-path "$BASE" --dataset-path "$(train_paths)"
     --embodiment-tag NEW_EMBODIMENT --modality-config-path "$CFG" --num-gpus "$NGPU" --output-dir "$out"
     --max-steps "$steps" --save-steps "$save" --save-total-limit 3 --global-batch-size $((PER_GPU_BATCH * NGPU))
-    --learning-rate "$LEARNING_RATE" --state-dropout-prob "$STATE_DROPOUT" --dataloader-num-workers 8
+    --learning-rate "$LEARNING_RATE" --state-dropout-prob "$STATE_DROPOUT" --dataloader-num-workers "$DATALOADER_WORKERS"
     --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 "$@")
   compgen -G "$out/checkpoint-*/trainer_state.json" > /dev/null && args+=(--resume-from-checkpoint)
   cd "$GROOT_DIR"
