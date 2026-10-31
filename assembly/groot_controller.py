@@ -9,8 +9,13 @@ from enum import Enum
 from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.contact_geometry import contact_envelope_radius_mm, contact_geometry_source
 from assembly.controller import AssemblyController
-from assembly.controller_ports import ControllerEvent
-from assembly.execution import CellTrialHeld, EndpointSettleLimits, ExecutionError
+from assembly.controller_ports import ControllerEvent, oriented_pose_values
+from assembly.execution import (
+    CellTrialHeld,
+    EndpointSettleLimits,
+    ExecutionError,
+    GrootWatchdogLimits,
+)
 from assembly.fixed_inspection import FixedInspectionMove, InspectionPoseRegistry
 from assembly.motion import MotionChunk, MotionPhase, OrientedPartPose, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, MotionIntentError, SemanticSkill
@@ -37,6 +42,7 @@ class GrootAssemblyController(AssemblyController):
         groot_executor: T09GrootExecutor,
         inspection_poses: InspectionPoseRegistry,
         endpoint_settle_limits: EndpointSettleLimits,
+        watchdog_limits: GrootWatchdogLimits,
         runtime_authority: GrootControllerAuthority,
         **kwargs,
     ) -> None:
@@ -46,9 +52,12 @@ class GrootAssemblyController(AssemblyController):
             raise TypeError("CELL controller requires a typed GrootControllerAuthority")
         if not isinstance(endpoint_settle_limits, EndpointSettleLimits):
             raise TypeError("CELL controller requires sourced EndpointSettleLimits")
+        if not isinstance(watchdog_limits, GrootWatchdogLimits):
+            raise TypeError("CELL controller requires sourced GrootWatchdogLimits")
         self._groot_executor = groot_executor
         self._inspection_poses = inspection_poses
         self._endpoint_settle_limits = endpoint_settle_limits
+        self._watchdog_limits = watchdog_limits
         self._runtime_authority = runtime_authority
         super().__init__(**kwargs)
 
@@ -59,6 +68,9 @@ class GrootAssemblyController(AssemblyController):
             self._groot_executor,
             self._execution_tolerances,
             self._endpoint_settle_limits,
+            perception=self._perception,
+            perception_tolerances=self._perception_tolerances,
+            watchdog_limits=self._watchdog_limits,
         )
 
     def close(self) -> None:
@@ -108,10 +120,18 @@ class GrootAssemblyController(AssemblyController):
     ) -> bool:
         # Deliberately discard deterministic coordinates. They remain useful to
         # the mock controller, but they are never CELL motion authority.
-        del plan, observation, instance_id, object_id, base_instance_id, base_pose
+        del plan, object_id
         try:
             intent = self._intent_from_state(current, observed_at)
-            self._motion_queue.queue(intent)
+            if intent.instance_id != instance_id or intent.base_instance_id != base_instance_id:
+                raise ExecutionError("CELL intent identity does not match the planned physical instances")
+            self._motion_queue.queue(
+                intent,
+                observation=observation,
+                current=current,
+                observed_at_s=observed_at,
+                base_pose=oriented_pose_values(base_pose),
+            )
         except (ExecutionError, MotionIntentError, RuntimeError, ValueError) as error:
             self._hold(f"CELL semantic intent refused: {error}")
             return False
@@ -141,10 +161,22 @@ class GrootAssemblyController(AssemblyController):
 
     def _confirm_previous_endpoint(
         self,
+        observation: Observation,
         current: Waypoint,
         observed_at: float,
     ) -> Action | None:
-        return self._motion_queue.confirm_previous_endpoint(current, observed_at)
+        try:
+            return self._motion_queue.confirm_previous_endpoint(
+                observation,
+                current,
+                observed_at,
+            )
+        except GrootGuardTrip as error:
+            self._hold(f"GR00T watchdog trip: {error}")
+            return current.as_action()
+        except ExecutionError as error:
+            self._hold(f"GR00T watchdog refused: {error}")
+            return current.as_action()
 
     def _intent_from_state(
         self,

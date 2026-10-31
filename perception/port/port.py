@@ -204,8 +204,9 @@ class CellPerceptionPort:
                              self._geometry.table_surface_z_mm, self._corridor)
         fixtures = tuple(box_from_pose(f"base:{iid}", pose, self._cad.get(self._scanner.ledger.object_of(iid)))
                          for iid, pose in sorted(self._base_poses.items()))
-        return CollisionScene(observed_at, True, base_instance_id, base.contract_tuple(), moving_instance_id,
-                              attached, intruded, fixtures, self._part_boxes(moving_instance_id))
+        return CollisionScene(observed_at, True, base_instance_id, base.contract_tuple(), base.tilt_deg,
+                              moving_instance_id, attached, intruded, fixtures,
+                              self._part_boxes(moving_instance_id))
 
     def _require_resolved_obstacles(self) -> None:
         report = self._scanner.last_report

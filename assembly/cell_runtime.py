@@ -14,7 +14,7 @@ from enum import Enum
 from importlib import import_module
 
 from assembly.controller_ports import ExecutionTolerances
-from assembly.execution import EndpointSettleLimits
+from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
@@ -37,6 +37,20 @@ SATURDAY_ENDPOINT_SETTLE_LIMITS = EndpointSettleLimits(
     "PRELIMINARY",
     "Saturday conservative observation-to-settle limit (includes inference and dispatch latency); "
     "pending CSI TCP/gripper measurement",
+)
+SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
+    pick_insert_s=90.0,
+    release_retreat_s=30.0,
+    pull_out_s=60.0,
+    defect_drop_s=60.0,
+    inspection_s=30.0,
+    scene_interval_rows=5,
+    base_tilt_limit_deg=3.0,
+    status="PRELIMINARY",
+    source=(
+        "Claude PR 24 review minimum: 90 s combined pick/insert bound, recurring evidence every five rows, "
+        "and the existing 3 deg pose gate; pending CSI measurement"
+    ),
 )
 
 

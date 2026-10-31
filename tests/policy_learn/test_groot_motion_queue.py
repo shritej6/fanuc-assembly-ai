@@ -8,14 +8,31 @@ from typing import cast
 import pytest
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE
-from assembly.controller_ports import ExecutionTolerances
-from assembly.execution import EndpointSettleLimits, EndpointSettleTimeout, ExecutionError
+from assembly.controller_ports import CollisionScene, ExecutionTolerances, PerceptionTolerances
+from assembly.execution import (
+    EndpointSettleLimits,
+    EndpointSettleTimeout,
+    ExecutionError,
+    GrootWatchdogLimits,
+)
 from assembly.motion import MotionPhase, Waypoint
 from assembly.motion_intent import ContactEnvelope, MotionIntent, SemanticSkill
 from policy_learn.deploy.cell_executor import GrootExecutionResult
 from policy_learn.deploy.groot_queue import GrootGuardTrip, GrootMotionQueue
 
 SETTLE = EndpointSettleLimits(2.0, 3.0, "PRELIMINARY", "Saturday queue regression fixture")
+WATCHDOG = GrootWatchdogLimits(
+    90.0,
+    30.0,
+    60.0,
+    60.0,
+    30.0,
+    5,
+    3.0,
+    "MOCK",
+    "Saturday queue regression fixture",
+)
+BASE_POSE = (400.0, 20.0, -330.0, 0.0)
 
 
 def _intent() -> MotionIntent:
@@ -48,10 +65,12 @@ class _Executor:
 
     def __post_init__(self) -> None:
         self.intents: list[MotionIntent] = []
+        self.scenes: list[CollisionScene] = []
 
     def act(self, intent, *, observation, scene):
         del observation
-        assert scene is None
+        assert isinstance(scene, CollisionScene)
+        self.scenes.append(scene)
         self.intents.append(intent)
         return self.result
 
@@ -62,15 +81,59 @@ class _UnavailableExecutor:
         raise TimeoutError("fake GR00T server timed out")
 
 
+class _Perception:
+    def collision_scene(self, observation, moving_instance_id, base_instance_id):
+        return CollisionScene(
+            float(observation["t"]),
+            True,
+            base_instance_id,
+            BASE_POSE,
+            0.0,
+            moving_instance_id,
+            float(observation["joints"][6]) == 1.0,
+            False,
+        )
+
+
 def _observation(tcp: tuple[float, ...]) -> dict:
     return {"t": 1.0, "tcp_pose": list(tcp), "joints": [0.0] * 7}
+
+
+def _queue(executor) -> GrootMotionQueue:
+    return GrootMotionQueue(
+        executor,
+        ExecutionTolerances(0.3, 1.0),
+        SETTLE,
+        perception=_Perception(),
+        perception_tolerances=PerceptionTolerances(1.8, 3.0),
+        watchdog_limits=WATCHDOG,
+        clock=lambda: 0.0,
+    )
+
+
+def _start(queue: GrootMotionQueue, intent: MotionIntent | object = None) -> None:
+    current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    queue.queue(
+        _intent() if intent is None else intent,
+        observation=_observation(tuple(current.as_action()[:6])),
+        current=current,
+        observed_at_s=1.0,
+        base_pose=BASE_POSE,
+    )
+
+
+def _confirm(queue: GrootMotionQueue, current: Waypoint, observed_at_s: float) -> list[float] | None:
+    observation = _observation(tuple(current.as_action()[:6]))
+    observation["t"] = observed_at_s
+    observation["joints"][-1] = current.gripper
+    return queue.confirm_previous_endpoint(observation, current, observed_at_s)
 
 
 def test_queue_emits_only_the_executor_row_and_confirms_it_from_fresh_observation() -> None:
     action = (301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     executor = _Executor(GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ()))
-    queue = GrootMotionQueue(executor, ExecutionTolerances(0.3, 1.0), SETTLE)
-    queue.queue(_intent())
+    queue = _queue(executor)
+    _start(queue)
 
     emitted = queue.emit(
         observation=_observation((300.0, 0.0, -200.0, -180.0, 0.0, 0.0)),
@@ -80,14 +143,14 @@ def test_queue_emits_only_the_executor_row_and_confirms_it_from_fresh_observatio
 
     assert emitted == list(action)
     assert executor.intents == [_intent()]
-    queue.confirm_previous_endpoint(Waypoint(*action), 1.1)
+    _confirm(queue, Waypoint(*action), 1.1)
 
 
 def test_guard_trip_is_typed_and_never_becomes_a_motion_row() -> None:
     hold = [300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
     result = GrootExecutionResult(hold, MotionPhase.APPROACH, False, True, ("outside workspace",))
-    queue = GrootMotionQueue(_Executor(result), ExecutionTolerances(0.3, 1.0), SETTLE)
-    queue.queue(_intent())
+    queue = _queue(_Executor(result))
+    _start(queue)
 
     with pytest.raises(GrootGuardTrip, match="outside workspace"):
         queue.emit(
@@ -101,8 +164,8 @@ def test_guard_trip_is_typed_and_never_becomes_a_motion_row() -> None:
 
 def test_transport_failure_becomes_typed_hold_path_and_clears_authority() -> None:
     hold = [300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
-    queue = GrootMotionQueue(_UnavailableExecutor(), ExecutionTolerances(0.3, 1.0), SETTLE)
-    queue.queue(_intent())
+    queue = _queue(_UnavailableExecutor())
+    _start(queue)
 
     with pytest.raises(ExecutionError, match="GR00T boundary failed.*timed out"):
         queue.emit(
@@ -117,17 +180,17 @@ def test_transport_failure_becomes_typed_hold_path_and_clears_authority() -> Non
 def test_scripted_motion_chunks_are_never_accepted_as_cell_authority() -> None:
     action = [300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0]
     result = GrootExecutionResult(action, MotionPhase.APPROACH, False, False, ())
-    queue = GrootMotionQueue(_Executor(result), ExecutionTolerances(0.3, 1.0), SETTLE)
+    queue = _queue(_Executor(result))
 
     with pytest.raises(ExecutionError, match="MotionIntent only"):
-        queue.queue(cast(MotionIntent, ("scripted", "waypoints")))
+        _start(queue, cast(MotionIntent, ("scripted", "waypoints")))
 
 
 def test_endpoint_confirmation_polls_without_loosening_position_or_angle_gate() -> None:
     action = (301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     executor = _Executor(GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ()))
-    queue = GrootMotionQueue(executor, ExecutionTolerances(0.3, 1.0), SETTLE)
-    queue.queue(_intent())
+    queue = _queue(executor)
+    _start(queue)
     queue.emit(
         observation=_observation((300.0, 0.0, -200.0, -180.0, 0.0, 0.0)),
         current=Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0),
@@ -135,45 +198,41 @@ def test_endpoint_confirmation_polls_without_loosening_position_or_angle_gate() 
     )
 
     position_pending = Waypoint(300.69, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
-    assert queue.confirm_previous_endpoint(position_pending, 1.5) == position_pending.as_action()
+    assert _confirm(queue, position_pending, 1.5) == position_pending.as_action()
     angle_pending = Waypoint(301.0, 0.0, -200.0, 178.99, 0.0, 0.0, 0.0)
-    assert queue.confirm_previous_endpoint(angle_pending, 2.0) == angle_pending.as_action()
+    assert _confirm(queue, angle_pending, 2.0) == angle_pending.as_action()
 
     settled = Waypoint(300.71, 0.0, -200.0, 179.01, 0.0, 0.0, 0.0)
-    assert queue.confirm_previous_endpoint(settled, 2.5) is None
+    assert _confirm(queue, settled, 2.5) is None
     assert queue.pending_endpoint is None
     assert executor.intents == [_intent()]
 
 
 def test_gripper_settlement_reissues_only_gripper_at_measured_tcp() -> None:
     action = (300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 1.0)
-    queue = GrootMotionQueue(
-        _Executor(GrootExecutionResult(list(action), MotionPhase.GRIP, False, False, ())),
-        ExecutionTolerances(0.3, 1.0),
-        SETTLE,
+    queue = _queue(
+        _Executor(GrootExecutionResult(list(action), MotionPhase.GRIP, False, False, ()))
     )
-    queue.queue(_intent())
+    _start(queue)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     queue.emit(observation=_observation(tuple(current.as_action()[:6])), current=current, observed_at_s=1.0)
 
-    assert queue.confirm_previous_endpoint(current, 3.9) == [*current.as_action()[:6], 1.0]
+    assert _confirm(queue, current, 3.9) == [*current.as_action()[:6], 1.0]
 
 
 def test_endpoint_settle_deadline_never_resets_and_times_out_typed() -> None:
     action = (301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
-    queue = GrootMotionQueue(
-        _Executor(GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ())),
-        ExecutionTolerances(0.3, 1.0),
-        SETTLE,
+    queue = _queue(
+        _Executor(GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ()))
     )
-    queue.queue(_intent())
+    _start(queue)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     queue.emit(observation=_observation(tuple(current.as_action()[:6])), current=current, observed_at_s=1.0)
 
-    assert queue.confirm_previous_endpoint(current, 2.0) == current.as_action()
-    assert queue.confirm_previous_endpoint(current, 2.9) == current.as_action()
+    assert _confirm(queue, current, 2.0) == current.as_action()
+    assert _confirm(queue, current, 2.9) == current.as_action()
     with pytest.raises(EndpointSettleTimeout, match="0.3 mm / 1.0 deg"):
-        queue.confirm_previous_endpoint(current, 3.0)
+        _confirm(queue, current, 3.0)
 
     assert queue.active is False
     assert queue.pending_endpoint is None
@@ -184,8 +243,8 @@ def test_queue_refuses_another_model_row_while_endpoint_is_unsettled() -> None:
     executor = _Executor(
         GrootExecutionResult(list(action), MotionPhase.APPROACH, False, False, ())
     )
-    queue = GrootMotionQueue(executor, ExecutionTolerances(0.3, 1.0), SETTLE)
-    queue.queue(_intent())
+    queue = _queue(executor)
+    _start(queue)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     observation = _observation(tuple(current.as_action()[:6]))
 

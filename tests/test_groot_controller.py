@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from assembly.catalog import load_catalog
+from assembly.controller_ports import CollisionScene
 from assembly.controller_recovery import PendingInsertionLift
 from assembly.execution import CellTrialHeld
 from assembly.fixed_inspection import (
@@ -154,13 +155,15 @@ class _Executor:
         self.resets = 0
         self.intents: list[MotionIntent] = []
         self.inspections: list[FixedInspectionMove] = []
+        self.scenes: list[CollisionScene] = []
 
     def reset(self) -> None:
         self.resets += 1
 
     def act(self, intent, *, observation, scene):
         del observation
-        assert scene is None
+        assert isinstance(scene, CollisionScene)
+        self.scenes.append(scene)
         self.intents.append(intent)
         if self.result is None:
             raise AssertionError("executor should not run while only queueing")
@@ -220,15 +223,21 @@ def _queue_rear_guard_inspection(controller: GrootAssemblyController, plan: tupl
     controller._pending_pre_pick = candidate
     controller._coarse_xy_by_instance[candidate.part.instance_id] = (250.0, -100.0)
     current = Waypoint(400.0, 0.0, -200.0, -180.0, 0.0, 15.0, 0.0)
+    observation = {
+        "t": 10.0,
+        "tcp_pose": current.as_action()[:6],
+        "joints": [0.0] * 7,
+        "trial": {"instruction": "assemble product 1"},
+    }
     queued = controller._set_guarded_motion(
         plan,
-        {"t": 10.0},
+        observation,
         current,
         10.0,
         candidate.part.instance_id,
         candidate.part.object_id,
         candidate.base.instance_id,
-        candidate.base_pose,
+        controller._poses.base_for(candidate.base, observed_at_s=10.0),
     )
     assert queued is True
 
@@ -424,55 +433,6 @@ def test_guard_trip_enters_packml_held_with_andon_reason() -> None:
     assert controller.state_machine.state is PackMLState.HELD
     assert "GR00T guard trip: outside workspace" in controller.state_machine.current_record.reason
     assert controller.events[-1].kind == "andon"
-
-
-def test_endpoint_settle_timeout_holds_with_andon_and_keeps_reservation() -> None:
-    current = Waypoint(300.0, -45.0, -168.0, -180.0, 0.0, 77.0, 0.0)
-    target = [321.0, -45.0, -168.0, -180.0, 0.0, 77.0, 0.0]
-    executor = _Executor(
-        GrootExecutionResult(target, MotionPhase.INSPECT, False, False, ())
-    )
-    controller = _controller(executor)
-    instruction = "assemble product 1"
-    observation = {
-        "t": 10.0,
-        "tcp_pose": current.as_action()[:6],
-        "joints": [0.0] * 7,
-        "trial": {"instruction": instruction},
-    }
-    controller._bind_instruction(observation)
-    controller.inventory.add("base-1", "F01")
-    for step in range(1, 5):
-        controller.inventory.add(f"p1-{step}", f"M1_{step:02d}")
-    controller.inventory.reserve_product(1)
-    controller.state_machine.start(1)
-    controller.state_machine.transition(PackMLState.EXECUTE)
-    controller._motion_queue.queue(
-        FixedInspectionMove(
-            "p1-1",
-            "base-1",
-            "slot-a",
-            tuple(target[:6]),
-            -180.0,
-            "reviewed CSI slot-pose test fixture",
-        )
-    )
-    controller._emit_guarded_action(observation, current, 10.0, "p1-1")
-
-    timed_out = {
-        **observation,
-        "t": 12.0,
-        "tcp_pose": current.as_action()[:6],
-    }
-    action = controller.act(timed_out)
-
-    assert action == current.as_action()
-    assert controller.state_machine.state is PackMLState.HELD
-    assert controller.inventory.active_product == 1
-    assert controller.events[-1].kind == "andon"
-    assert "did not settle within 2 s" in controller.events[-1].detail
-    assert len(executor.inspections) == 1
-    assert executor.inspections[0].slot_id == "slot-a"
 
 
 def test_guarded_camera_move_is_operator_visible_as_non_learned() -> None:

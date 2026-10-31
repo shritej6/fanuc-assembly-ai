@@ -242,7 +242,7 @@ class AssemblyController(
             return current.as_action()
         self._resume_after_scan()
         try:
-            settle_action = self._confirm_previous_endpoint(current, observed_at)
+            settle_action = self._confirm_previous_endpoint(observation, current, observed_at)
         except EndpointSettleTimeout as error:
             self._hold(str(error))
             return current.as_action()
@@ -255,10 +255,11 @@ class AssemblyController(
 
     def _confirm_previous_endpoint(
         self,
+        observation: Observation,
         current: Waypoint,
         observed_at: float,
     ) -> Action | None:
-        del observed_at
+        del observation, observed_at
         self._motion_queue.confirm_previous_endpoint(current)
         return None
 

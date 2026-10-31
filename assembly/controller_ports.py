@@ -93,11 +93,17 @@ class CollisionScene:
     complete: bool
     base_instance_id: str
     base_pose: tuple[float, float, float, float]
+    base_tilt_deg: float
     moving_instance_id: str
     moving_attached: bool
     intrusion_detected: bool
     fixtures: tuple[AABB, ...] = ()
     parts: tuple[AABB, ...] = ()
+
+    def __post_init__(self) -> None:
+        tilt = _finite(self.base_tilt_deg, "base_tilt_deg")
+        if not 0.0 <= tilt <= 180.0:
+            raise ControllerPortError("base_tilt_deg must be between 0 and 180 degrees")
 
 
 @dataclass(frozen=True, slots=True)

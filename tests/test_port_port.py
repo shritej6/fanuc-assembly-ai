@@ -383,6 +383,33 @@ def test_collision_scene_has_measured_boxes_and_a_held_part():
     assert any(n.startswith("foreign:") for n in names) and not any(part.instance_id in n for n in names)
 
 
+def test_collision_scene_carries_the_refitted_base_tilt() -> None:
+    port, geometry, _, pose, _ = _world(detector=_clean_detector())
+    snapshot = _scanned(port)
+    part, base = _item(snapshot, "M1_02"), _item(snapshot, "F01")
+    pose.poses[("F01", "table")] = world_from_local(
+        450.0,
+        100.0,
+        TABLE_Z + 8.0,
+        0.0,
+        7.5,
+    )
+    held_at = world_from_local(400.0, 0.0, -150.0 - 11.4, 0.0)
+    geometry.wrist_cloud = top_points("M1_02", held_at, top_offset_mm=-12.0)
+
+    scene = port.collision_scene(
+        observation(
+            40.0,
+            tcp=(400.0, 0.0, -150.0, -180.0, 0.0, 0.0),
+            gripper=1.0,
+        ),
+        part.instance_id,
+        base.instance_id,
+    )
+
+    assert scene.base_tilt_deg == pytest.approx(7.5)
+
+
 def test_a_dropped_part_and_an_intrusion_are_reported():
     port, geometry, *_ = _world(detector=_clean_detector())
     snapshot = _scanned(port)

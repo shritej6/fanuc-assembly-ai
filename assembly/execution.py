@@ -58,6 +58,56 @@ class EndpointSettleLimits:
         return self.gripper_timeout_s if gripper_transition else self.tcp_timeout_s
 
 
+@dataclass(frozen=True, slots=True)
+class GrootWatchdogLimits:
+    """Sourced intent deadlines and recurring scene-check policy."""
+
+    pick_insert_s: float
+    release_retreat_s: float
+    pull_out_s: float
+    defect_drop_s: float
+    inspection_s: float
+    scene_interval_rows: int
+    base_tilt_limit_deg: float
+    status: Literal["PRELIMINARY", "MEASURED", "MOCK"]
+    source: str
+
+    def __post_init__(self) -> None:
+        durations = (
+            self.pick_insert_s,
+            self.release_retreat_s,
+            self.pull_out_s,
+            self.defect_drop_s,
+            self.inspection_s,
+        )
+        if any(isinstance(value, bool) or not math.isfinite(value) or value <= 0.0 for value in durations):
+            raise ValueError("GR00T watchdog durations must be finite and positive")
+        if isinstance(self.scene_interval_rows, bool) or not isinstance(self.scene_interval_rows, int):
+            raise TypeError("GR00T watchdog scene interval must be an integer")
+        if self.scene_interval_rows <= 0:
+            raise ValueError("GR00T watchdog scene interval must be positive")
+        if isinstance(self.base_tilt_limit_deg, bool) or not math.isfinite(self.base_tilt_limit_deg):
+            raise ValueError("GR00T watchdog base tilt limit must be finite")
+        if not 0.0 <= self.base_tilt_limit_deg <= 180.0:
+            raise ValueError("GR00T watchdog base tilt limit must be between 0 and at most 180 degrees")
+        if self.status not in ("PRELIMINARY", "MEASURED", "MOCK"):
+            raise ValueError("GR00T watchdog status must be PRELIMINARY, MEASURED, or MOCK")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("GR00T watchdog limits require a recorded source")
+
+    def timeout_s(self, skill: str) -> float:
+        try:
+            return {
+                "pick_insert_hold": self.pick_insert_s,
+                "release_retreat": self.release_retreat_s,
+                "pull_out": self.pull_out_s,
+                "defect_drop": self.defect_drop_s,
+                "fixed_inspection": self.inspection_s,
+            }[skill]
+        except KeyError as error:
+            raise ValueError(f"no watchdog deadline is defined for skill {skill!r}") from error
+
+
 class WorkAreaIntrusionError(ExecutionError):
     """A fresh scene reports an unexpected work-area intrusion."""
 

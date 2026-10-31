@@ -66,6 +66,7 @@ def _scene(**changes) -> CollisionScene:
         "complete": True,
         "base_instance_id": "base-1",
         "base_pose": (400.0, 20.0, -330.0, 0.0),
+        "base_tilt_deg": 0.0,
         "moving_instance_id": "part-1",
         "moving_attached": False,
         "intrusion_detected": False,

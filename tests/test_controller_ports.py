@@ -4,6 +4,7 @@ import pytest
 
 from assembly.catalog import load_catalog
 from assembly.controller_ports import (
+    CollisionScene,
     ControllerPortError,
     InventorySnapshot,
     ObservedInventoryItem,
@@ -118,6 +119,21 @@ def test_pose_agreement_uses_measured_distance_and_wrapped_yaw() -> None:
 
     assert pose_agrees(actual, expected, PerceptionTolerances(0.25, 0.2))
     assert not pose_agrees(actual, expected, PerceptionTolerances(0.1, 0.2))
+
+
+@pytest.mark.parametrize("tilt", [float("nan"), -0.1, 180.1])
+def test_collision_scene_rejects_invalid_base_tilt(tilt: float) -> None:
+    with pytest.raises(ControllerPortError, match="base_tilt_deg"):
+        CollisionScene(
+            observed_at_s=1.0,
+            complete=True,
+            base_instance_id="base-1",
+            base_pose=(400.0, 20.0, -330.0, 0.0),
+            base_tilt_deg=tilt,
+            moving_instance_id="part-1",
+            moving_attached=False,
+            intrusion_detected=False,
+        )
 
 
 def test_current_waypoint_normalizes_unsized_array_to_port_error() -> None:

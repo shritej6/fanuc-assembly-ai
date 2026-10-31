@@ -198,6 +198,7 @@ class ScriptedPerception:
             True,
             base_instance_id,
             base_pose,
+            0.0,
             moving_instance_id,
             attached,
             False,
