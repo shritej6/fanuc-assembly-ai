@@ -381,11 +381,18 @@ def test_closed_gripper_rechecks_attachment_during_each_settle_poll() -> None:
 
 
 def test_moved_or_tipped_base_blocks_before_another_model_row() -> None:
+    from assembly.cell_runtime import SATURDAY_GROOT_WATCHDOG_LIMITS
+
     clock = _Clock()
     executor = _Executor([_result(301.0)], clock)
-    moved = _scene(base_pose=(403.0, 20.0, -330.0, 0.0), base_tilt_deg=4.0)
+    moved = _scene(base_pose=BASE_POSE, base_tilt_deg=4.0)
     perception = _Perception([_scene(), _scene(), moved])
-    queue = _queue(executor, perception, clock, replace(WATCHDOG, scene_interval_rows=1))
+    queue = _queue(
+        executor,
+        perception,
+        clock,
+        replace(SATURDAY_GROOT_WATCHDOG_LIMITS, scene_interval_rows=1),
+    )
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     _start(queue, current)
     action = queue.emit(
@@ -395,7 +402,10 @@ def test_moved_or_tipped_base_blocks_before_another_model_row() -> None:
     )
     reached = Waypoint(*action)
 
-    with pytest.raises(GrootGuardTrip, match="base (moved|tilt)"):
+    with pytest.raises(
+        GrootGuardTrip,
+        match="active product base tilt exceeds the watchdog limit",
+    ):
         queue.confirm_previous_endpoint(
             _observation(1.1, reached),
             reached,
