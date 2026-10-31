@@ -9,8 +9,10 @@ cell_client.py are not edited; run.py's `from policy import Policy` global is sw
     uv run $DEPS python policy_direct.py --checkpoint groot://127.0.0.1:5555      # the slot: the approved run
 
 Every run.py flag passes through. DIRECT_ROLLOUT=<1..3> forces the placement.yaml rollout; DIRECT_PLACEMENT=<path>
-reads another placement file. After the run, every step event and guard hold is printed and written to
-direct_runtime_report.json (DIRECT_REPORT=<path> to change it).
+reads another placement file (both are read and validated, and every rollout is planned, when the Policy is built,
+before any trial). Empty-gripper detection is OFF on the cell (no gripper width in the observation).
+After the run, every step event and guard hold is printed and written to direct_runtime_report.json
+(DIRECT_REPORT=<path> to change it).
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parents[1])]
 
-from policy_learn.deploy.direct_runtime import DirectGrootRuntime  # noqa: E402
+from policy_learn.deploy.direct_runtime import EMPTY_GRIPPER_ON_CELL, DirectGrootRuntime  # noqa: E402
 
 INSTANCES: list[DirectGrootRuntime] = []
 
@@ -47,7 +49,12 @@ class Policy(DirectGrootRuntime):
 
 def report() -> None:
     out = Path(os.environ.get("DIRECT_REPORT", HERE / "direct_runtime_report.json"))
-    data = [{"runtime": p.runtime, "events": p.events, "guard_log": p.guard_log} for p in INSTANCES]
+    note = ("empty-gripper detection: OFF on the cell (the observation has no gripper width; joints[6] is binary), "
+            "so a part slipping out of closed fingers is not detected" if not EMPTY_GRIPPER_ON_CELL else "")
+    data = [{"runtime": p.runtime, "empty_gripper_detection": note or "on", "events": p.events,
+             "guard_log": p.guard_log} for p in INSTANCES]
+    if note:
+        print(f"  NOTE: {note}")
     for pol in data:
         for e in pol["events"]:
             if e["type"] in ("trial_start", "step_start", "grasped", "released", "step_done", "trial_end"):

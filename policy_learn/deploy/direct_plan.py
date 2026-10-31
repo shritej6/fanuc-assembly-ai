@@ -49,7 +49,10 @@ class Step:
     plan_target: tuple[float, ...]              # mimic/instructions.py: part x, y, yaw, roll, base x, y, yaw
     grasp_tcp: tuple[float, ...]                # [x, y, z, w, p, r] fingers closed on the pad
     seat_tcp: tuple[float, ...]                 # [x, y, z, w, p, r] part fully seated (CAD)
-    capture_mm: float                           # the insert's xy capture (objects.yaml)
+    capture_mm: float                           # the insert's xy capture (objects.yaml xy_capture_mm)
+    contact_z: float                            # TCP z when the part first engages its mate (seat z + engagement)
+    grasp_xy_tol_mm: float                      # the open fingers' slack around the pad: (16.5 - pad width) / 2
+    grasp_z_tol_mm: float                       # half the pad's contact height: the fingers still land on the pad
 
     @property
     def label(self) -> str:
@@ -128,7 +131,7 @@ def plan_rollout(rollout: Rollout) -> list[Step]:
     the runtime then holds instead of guessing a plan."""
     from sim.assembly_lab.env.layout import LayoutSolver
     from sim.assembly_lab.eval.cad import matrix_to_pose
-    from sim.assembly_lab.objects.planner import load_catalog, plan_pick, plan_place
+    from sim.assembly_lab.objects.planner import OPEN_GAP_MM, load_catalog, plan_pick, plan_place
 
     catalog, _ = load_catalog()
     solver = LayoutSolver()
@@ -146,7 +149,9 @@ def plan_rollout(rollout: Rollout) -> list[Step]:
                 why = g.reason if not g.feasible else (p.reason if p else "no place plan")
                 raise PlacementError(f"rollout {rollout.index + 1}: the planner refuses {part} on {base}: {why}")
             target = (*stl[part][[0, 1, 5]], g.r_deg, *stl[base][[0, 1, 5]])
+            pad = catalog[part]["grips"][0]
             steps.append(Step(product, part, base, tuple(float(v) for v in target), tuple(g.tcp), tuple(p.tcp),
-                              float(p.capture_mm or 0.0)))
+                              float(p.capture_mm or 0.0), float(p.contact_z),
+                              (OPEN_GAP_MM - float(pad["pad_width_mm"])) / 2.0, float(pad["contact_height_mm"]) / 2.0))
             _seat_in_scene(scene, part, base)
     return steps
