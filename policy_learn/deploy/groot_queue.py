@@ -105,8 +105,10 @@ class GrootMotionQueue:
         self._intent_started_at_s: float | None = None
         self._intent_deadline_s: float | None = None
         self._expected_base_pose: tuple[float, float, float, float] | None = None
+        self._watchdog_phase: str | None = None
         self._last_observed_gripper: float | None = None
         self._last_validated_scene: CollisionScene | None = None
+        self._last_scene_check_clock_s: float | None = None
         self._rows_since_scene = 0
         self._last_clock_s: float | None = None
         self._last_emitted_phase: MotionPhase | None = None
@@ -128,10 +130,12 @@ class GrootMotionQueue:
                 "fixed inspection requires FixedInspectionMove"
             )
         expected_base_pose = self._pose(base_pose)
-        timeout_s = self._watchdog_limits.timeout_s(self._watchdog_skill(intent))
+        skill = self._watchdog_skill(intent)
+        timeout_s = self._initial_timeout_s(skill)
         started_at = self._clock_time()
         self._intent = intent
         self._expected_base_pose = expected_base_pose
+        self._watchdog_phase = "pick" if skill == "pick_insert_hold" else skill
         self._intent_started_at_s = started_at
         self._intent_deadline_s = started_at + timeout_s
         self._last_observed_gripper = current.gripper
@@ -221,6 +225,12 @@ class GrootMotionQueue:
                     scene=scene,
                 )
             self._check_deadline(after_model=True)
+            self._check_watchdog(
+                observation,
+                current,
+                observed_at_s,
+                force_scene=True,
+            )
         except GrootGuardTrip:
             self.clear()
             raise
@@ -261,8 +271,10 @@ class GrootMotionQueue:
         self._intent_started_at_s = None
         self._intent_deadline_s = None
         self._expected_base_pose = None
+        self._watchdog_phase = None
         self._last_observed_gripper = None
         self._last_validated_scene = None
+        self._last_scene_check_clock_s = None
         self._rows_since_scene = 0
         self._last_clock_s = None
 
@@ -275,12 +287,14 @@ class GrootMotionQueue:
         force_scene: bool = False,
     ) -> CollisionScene:
         self._check_deadline()
-        due = self._rows_since_scene >= self._watchdog_limits.scene_interval_rows
+        force_scene = force_scene or current.gripper == 1.0
+        row_due = self._rows_since_scene >= self._watchdog_limits.scene_interval_rows
+        clock_due = self._scene_clock_due()
         observation_changed = (
             self._last_validated_scene is None
             or self._last_validated_scene.observed_at_s != self._time(observed_at_s)
         )
-        if not force_scene and not due and not observation_changed:
+        if not force_scene and not row_due and not clock_due and not observation_changed:
             return self._last_validated_scene
         scene = self._scene(observation, observed_at_s)
         try:
@@ -291,7 +305,9 @@ class GrootMotionQueue:
             detail = str(error).strip() or type(error).__name__
             raise GrootGuardTrip(f"CELL watchdog scene validation refused: {detail}") from error
         self._last_validated_scene = scene
+        self._last_scene_check_clock_s = self._last_clock_s
         self._rows_since_scene = 0
+        self._transition_to_insert(current)
         self._check_deadline()
         return scene
 
@@ -303,10 +319,32 @@ class GrootMotionQueue:
             return
         timeout_s = self._intent_deadline_s - self._intent_started_at_s
         suffix = "; late model row discarded" if after_model else ""
+        phase = self._watchdog_phase or "intent"
         raise GrootGuardTrip(
-            f"GR00T intent exceeded its {timeout_s:.3g} s time budget{suffix}; "
+            f"GR00T {phase} exceeded its {timeout_s:.3g} s time budget{suffix}; "
             f"source={self._watchdog_limits.source}"
         )
+
+    def _transition_to_insert(self, current: Waypoint) -> None:
+        if self._watchdog_phase != "pick" or current.gripper != 1.0:
+            return
+        now = self._clock_time()
+        self._watchdog_phase = "insert"
+        self._intent_started_at_s = now
+        self._intent_deadline_s = now + self._watchdog_limits.insert_timeout_s()
+
+    def _scene_clock_due(self) -> bool:
+        interval_s = self._watchdog_limits.scene_interval_s
+        if interval_s is None or self._last_scene_check_clock_s is None:
+            return False
+        if self._last_clock_s is None:
+            raise ExecutionError("CELL watchdog clock is unavailable for scene refresh")
+        return self._last_clock_s - self._last_scene_check_clock_s >= interval_s
+
+    def _initial_timeout_s(self, skill: str) -> float:
+        if skill == "pick_insert_hold":
+            return self._watchdog_limits.pick_timeout_s()
+        return self._watchdog_limits.timeout_s(skill)
 
     def _scene(self, observation: Observation, observed_at_s: float) -> CollisionScene:
         intent = self._intent

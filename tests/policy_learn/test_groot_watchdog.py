@@ -32,6 +32,13 @@ WATCHDOG = GrootWatchdogLimits(
     source="Claude PR 24 minimum; pending CSI measurement",
 )
 
+SPLIT_WATCHDOG = replace(
+    WATCHDOG,
+    pick_s=60.0,
+    insert_s=90.0,
+    scene_interval_s=1.0,
+)
+
 
 class _Clock:
     def __init__(self) -> None:
@@ -193,6 +200,54 @@ def test_model_row_finishing_after_intent_deadline_is_discarded() -> None:
     assert queue.pending_endpoint is None
 
 
+def test_pick_deadline_expires_at_sixty_seconds_before_gripper_close() -> None:
+    clock = _Clock()
+    executor = _Executor([_result(301.0)], clock)
+    queue = _queue(executor, _Perception(), clock, SPLIT_WATCHDOG)
+    current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    _start(queue, current)
+    clock.advance(60.0)
+
+    with pytest.raises(GrootGuardTrip, match="pick.*60.*time budget"):
+        queue.emit(
+            observation=_observation(1.0, current),
+            current=current,
+            observed_at_s=1.0,
+        )
+
+    assert executor.calls == 0
+    assert queue.active is False
+
+
+def test_first_observed_close_starts_one_nonresetting_insert_deadline() -> None:
+    clock = _Clock()
+    executor = _Executor(
+        [_result(301.0, grip=1.0), _result(302.0, grip=1.0), _result(303.0, grip=1.0)],
+        clock,
+    )
+    perception = _Perception([_scene(), _scene(moving_attached=True)])
+    queue = _queue(executor, perception, clock, SPLIT_WATCHDOG)
+    open_gripper = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    _start(queue, open_gripper)
+    clock.advance(10.0)
+    current = Waypoint(*open_gripper.as_action()[:6], 1.0)
+
+    current = _emit_and_confirm(queue, current, 1.0)
+    clock.advance(44.0)
+    current = _emit_and_confirm(queue, current, 1.0)
+    clock.advance(46.0)
+
+    with pytest.raises(GrootGuardTrip, match="insert.*90.*time budget"):
+        queue.emit(
+            observation=_observation(1.0, current),
+            current=current,
+            observed_at_s=1.0,
+        )
+
+    assert executor.calls == 2
+    assert queue.active is False
+
+
 def test_intent_deadline_keeps_running_during_endpoint_settlement() -> None:
     clock = _Clock()
     executor = _Executor([_result(301.0)], clock)
@@ -222,21 +277,66 @@ def test_scene_rechecks_every_n_rows_and_after_observed_gripper_close() -> None:
     results = [_result(301.0), _result(302.0), _result(302.0, grip=1.0)]
     executor = _Executor(results, clock)
     perception = _Perception(
-        [_scene(), _scene(), _scene(), _scene(), _scene(), _scene(moving_attached=True)]
+        [*[_scene() for _ in range(8)], _scene(moving_attached=True)]
     )
     queue = _queue(executor, perception, clock)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     _start(queue, current)
 
     current = _emit_and_confirm(queue, current, 1.0)
-    assert perception.calls == 2
+    assert perception.calls == 3
     current = _emit_and_confirm(queue, current, 2.0)
-    assert perception.calls == 4
+    assert perception.calls == 6
     current = _emit_and_confirm(queue, current, 3.0)
 
     assert current.gripper == 1.0
-    assert perception.calls == 6
+    assert perception.calls == 9
     assert executor.calls == 3
+
+
+def test_scene_rechecks_after_one_wall_clock_second_with_same_observation_time() -> None:
+    clock = _Clock()
+    limits = replace(SPLIT_WATCHDOG, scene_interval_rows=100)
+    executor = _Executor([_result(301.0)], clock)
+    perception = _ExactPerception([_scene(observed_at_s=1.0)])
+    queue = _queue(executor, perception, clock, limits)
+    current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    _start(queue, current)
+    assert perception.calls == 1
+
+    action = queue.emit(
+        observation=_observation(1.0, current),
+        current=current,
+        observed_at_s=1.0,
+    )
+    reached = Waypoint(*action)
+    calls_after_emit = perception.calls
+    clock.advance(1.01)
+    queue.confirm_previous_endpoint(_observation(1.0, reached), reached, 1.0)
+
+    assert perception.calls == calls_after_emit + 1
+
+
+def test_scene_is_revalidated_after_blocking_model_response_before_row_acceptance() -> None:
+    clock = _Clock()
+    moved = _scene(base_pose=(403.0, 20.0, -330.0, 0.0))
+    executor = _Executor([_result(301.0)], clock, delay_s=0.5)
+    perception = _ExactPerception([_scene(), moved])
+    queue = _queue(executor, perception, clock, SPLIT_WATCHDOG)
+    current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
+    _start(queue, current)
+
+    with pytest.raises(GrootGuardTrip, match="base moved"):
+        queue.emit(
+            observation=_observation(1.0, current),
+            current=current,
+            observed_at_s=1.0,
+        )
+
+    assert executor.calls == 1
+    assert perception.calls == 2
+    assert queue.active is False
+    assert queue.pending_endpoint is None
 
 
 def test_last_validated_scene_is_supplied_between_periodic_refreshes() -> None:
@@ -249,7 +349,7 @@ def test_last_validated_scene_is_supplied_between_periodic_refreshes() -> None:
 
     queue.emit(observation=_observation(1.0, current), current=current, observed_at_s=1.0)
 
-    assert perception.calls == 1
+    assert perception.calls == 2
     assert executor.scenes == [perception.scenes[0]]
 
 
@@ -257,7 +357,12 @@ def test_closed_gripper_rechecks_attachment_during_each_settle_poll() -> None:
     clock = _Clock()
     executor = _Executor([_result(302.0, grip=1.0)], clock)
     perception = _Perception(
-        [_scene(), _scene(moving_attached=True), _scene(moving_attached=False)]
+        [
+            _scene(),
+            _scene(),
+            _scene(moving_attached=True),
+            _scene(moving_attached=False),
+        ]
     )
     queue = _queue(executor, perception, clock)
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
@@ -271,7 +376,7 @@ def test_closed_gripper_rechecks_attachment_during_each_settle_poll() -> None:
     with pytest.raises(GrootGuardTrip, match="attachment.*lost"):
         queue.confirm_previous_endpoint(_observation(1.2, settling), settling, 1.2)
 
-    assert perception.calls == 3
+    assert perception.calls == 4
     assert executor.calls == 1
 
 
@@ -279,7 +384,7 @@ def test_moved_or_tipped_base_blocks_before_another_model_row() -> None:
     clock = _Clock()
     executor = _Executor([_result(301.0)], clock)
     moved = _scene(base_pose=(403.0, 20.0, -330.0, 0.0), base_tilt_deg=4.0)
-    perception = _Perception([_scene(), moved])
+    perception = _Perception([_scene(), _scene(), moved])
     queue = _queue(executor, perception, clock, replace(WATCHDOG, scene_interval_rows=1))
     current = Waypoint(300.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)
     _start(queue, current)
@@ -304,6 +409,12 @@ def test_moved_or_tipped_base_blocks_before_another_model_row() -> None:
 def test_watchdog_tilt_limit_cannot_exceed_physical_evidence_domain() -> None:
     with pytest.raises(ValueError, match="at most 180"):
         replace(WATCHDOG, base_tilt_limit_deg=180.1)
+
+
+@pytest.mark.parametrize("field", ("pick_s", "insert_s", "scene_interval_s"))
+def test_split_watchdog_durations_must_be_positive_and_finite(field: str) -> None:
+    with pytest.raises(ValueError, match="split watchdog durations"):
+        replace(WATCHDOG, **{field: 0.0})
 
 
 @pytest.mark.parametrize(

@@ -71,6 +71,9 @@ class GrootWatchdogLimits:
     base_tilt_limit_deg: float
     status: Literal["PRELIMINARY", "MEASURED", "MOCK"]
     source: str
+    pick_s: float | None = None
+    insert_s: float | None = None
+    scene_interval_s: float | None = None
 
     def __post_init__(self) -> None:
         durations = (
@@ -82,6 +85,13 @@ class GrootWatchdogLimits:
         )
         if any(isinstance(value, bool) or not math.isfinite(value) or value <= 0.0 for value in durations):
             raise ValueError("GR00T watchdog durations must be finite and positive")
+        optional_durations = (self.pick_s, self.insert_s, self.scene_interval_s)
+        if any(
+            value is not None
+            and (isinstance(value, bool) or not math.isfinite(value) or value <= 0.0)
+            for value in optional_durations
+        ):
+            raise ValueError("GR00T split watchdog durations must be finite and positive")
         if isinstance(self.scene_interval_rows, bool) or not isinstance(self.scene_interval_rows, int):
             raise TypeError("GR00T watchdog scene interval must be an integer")
         if self.scene_interval_rows <= 0:
@@ -106,6 +116,16 @@ class GrootWatchdogLimits:
             }[skill]
         except KeyError as error:
             raise ValueError(f"no watchdog deadline is defined for skill {skill!r}") from error
+
+    def pick_timeout_s(self) -> float:
+        """Return the pre-grasp budget, falling back for older configurations."""
+
+        return self.pick_insert_s if self.pick_s is None else self.pick_s
+
+    def insert_timeout_s(self) -> float:
+        """Return the post-grasp budget, falling back for older configurations."""
+
+        return self.pick_insert_s if self.insert_s is None else self.insert_s
 
 
 class WorkAreaIntrusionError(ExecutionError):

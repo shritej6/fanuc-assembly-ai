@@ -48,9 +48,12 @@ SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
     base_tilt_limit_deg=3.0,
     status="PRELIMINARY",
     source=(
-        "Claude PR 24 review minimum: 90 s combined pick/insert bound, recurring evidence every five rows, "
-        "and the existing 3 deg pose gate; pending CSI measurement"
+        "Claude PR 24 work order 2026-10-31: 60 s pre-grasp, 90 s post-grasp insertion, "
+        "and collision-scene evidence at least every 1 s; pending CSI measurement"
     ),
+    pick_s=60.0,
+    insert_s=90.0,
+    scene_interval_s=1.0,
 )
 
 
