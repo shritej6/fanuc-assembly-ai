@@ -338,6 +338,25 @@ def test_controller_instruction_matches_recorded_t18_task_byte_for_byte(row: dic
         assert intent.final_gripper == 0.0
 
 
+def test_product_five_on_interchangeable_f04_keeps_physical_goal_but_uses_f05_language() -> None:
+    row = next(
+        item
+        for item in T18_GOLDENS
+        if item["skill"] == "pick_insert" and item["object_id"] == "M5_01"
+    )
+    physical_f04 = {**row, "base_id": "F04"}
+
+    controller = _controller(_Executor())
+    prepared = _prepared_from_golden(physical_f04)
+    intent = controller._pick_insert_intent(prepared)
+    release = controller._release_intent(prepared)
+
+    assert intent.base_object_id == "F04"
+    assert intent.goal_pose == pytest.approx(row["goal_pose"])
+    assert semantic_instruction(intent) == row["expected"]
+    assert semantic_instruction(release) == row["expected"]
+
+
 def test_pull_out_without_calibrated_target_fails_closed() -> None:
     row = next(item for item in T18_GOLDENS if item["skill"] == "pull_out")
     prepared = _prepared_from_golden(row)

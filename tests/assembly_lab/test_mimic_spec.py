@@ -57,6 +57,30 @@ def test_instruction_carries_plan_target():
         instructions.instruction(ids, [1, 2, 3])
 
 
+def test_instruction_names_trained_base_for_an_interchangeable_physical_base():
+    target = [410, 162, -1, 179, 375, -132, -105]
+    expected = (
+        "pick M5_01 at (410, 162, -1) gripping Y at roll 179, "
+        "insert on F05 at (375, -132, -105)"
+    )
+
+    for physical in ("F04", "F06"):
+        ids = catalog.encode_plan_ids("pick_insert", "M5_01", physical, 0, "nominal")
+        assert instructions.instruction(ids, target) == expected
+
+    ids = catalog.encode_plan_ids("pick_insert", "M2_01", "F01", 0, "nominal")
+    assert "insert on F02 at" in instructions.instruction(ids, target)
+
+
+def test_instruction_with_the_trained_base_is_unchanged():
+    ids = catalog.encode_plan_ids("pick_insert", "M5_01", "F05", 0, "nominal")
+    text = instructions.instruction(ids, [332, -47, 30, 210, 420, 0, 45])
+    assert text == (
+        "pick M5_01 at (332, -47, 30) gripping Y at roll 210, "
+        "insert on F05 at (420, 0, 45)"
+    )
+
+
 def test_wpr_roundtrip_and_w_wrap():
     rng = np.random.default_rng(1)
     wpr = np.stack([rng.uniform(-269, 89, 200), rng.uniform(-80, 80, 200), rng.uniform(-179, 179, 200)], 1)

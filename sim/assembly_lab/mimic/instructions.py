@@ -6,11 +6,24 @@ from __future__ import annotations
 
 import numpy as np
 
-from .catalog import decode_plan_ids
+from .catalog import decode_plan_ids, product_bases
+
+# PLAN section 3.2 declares these physical fixtures interchangeable. Language
+# still names the canonical base seen in each product's training episodes.
+BASE_GROUPS = (("F01", "F02"), ("F03",), ("F04", "F05", "F06"))
 
 
 def _f(v: float) -> str:
     return f"{round(float(v))}"
+
+
+def _named_base(plan: dict) -> str:
+    """Return the trained base label without changing the physical goal pose."""
+    physical = plan["base_id"]
+    canonical = product_bases().get(plan["product"])
+    if canonical is None or physical == canonical:
+        return physical
+    return canonical if any(physical in group and canonical in group for group in BASE_GROUPS) else physical
 
 
 def instruction(plan_ids, plan_target) -> str:
@@ -26,7 +39,7 @@ def instruction(plan_ids, plan_target) -> str:
     if skill == "pick_insert":
         if p["base_id"] is None:
             raise ValueError("pick_insert needs a base id")
-        text = f"pick {part} {grip}, insert on {p['base_id']} at {goal}"
+        text = f"pick {part} {grip}, insert on {_named_base(p)} at {goal}"
     elif skill == "pull_out":
         text = f"pull out {part} {grip}, set it down at {goal}"
     elif skill == "place_free":
