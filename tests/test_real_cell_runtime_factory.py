@@ -14,12 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _dependency_bundle(runtime, perception: object):
+    from assembly.safety import SafetySupervisor
+
     assert hasattr(runtime, "RealCellDependencies")
     values = {
-        field.name: perception if field.name == "perception" else object()
+        field.name: (
+            perception
+            if field.name == "perception"
+            else object.__new__(SafetySupervisor)
+            if field.name == "safety"
+            else object()
+        )
         for field in fields(runtime.RealCellDependencies)
     }
     return runtime.RealCellDependencies(**values)
+
+
+def _executor_for(dependencies):
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+
+    executor = object.__new__(T09GrootExecutor)
+    executor._require_scene_safety = True
+    executor._safety = dependencies.safety
+    return executor
 
 
 def test_real_cell_runtime_factory_module_exists() -> None:
@@ -141,25 +158,30 @@ def test_public_real_factory_rejects_every_non_executor_object() -> None:
         runtime.build_groot_real_controller(object())
 
 
-def test_public_real_factory_uses_pinned_loader_and_names_missing_software_adapter() -> None:
+def test_public_real_factory_refuses_unverified_presence_by_default(monkeypatch) -> None:
     import robot.cell.t09_real_runtime as runtime
     from assembly import cell_runtime
+    from assembly.safety import SafetySupervisor
     from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.saturday_runtime_adapters import UNVERIFIED_PRESENCE_ENV
 
     executor = object.__new__(T09GrootExecutor)
+    executor._require_scene_safety = True
+    executor._safety = object.__new__(SafetySupervisor)
+    monkeypatch.delenv(UNVERIFIED_PRESENCE_ENV, raising=False)
 
     assert cell_runtime.REVIEWED_REAL_CELL_FACTORY is None
     assert hasattr(runtime, "REVIEWED_REAL_CELL_DEPENDENCY_LOADER")
     assert runtime.REVIEWED_REAL_CELL_DEPENDENCY_LOADER is runtime.load_saturday_real_cell_dependencies
     with pytest.raises(
         runtime.RealCellFactoryBlockedError,
-        match="robot.cell.saturday_runtime_adapters",
+        match="detector_presence_unverified",
     ) as captured:
         runtime.build_groot_real_controller(executor)
 
     message = str(captured.value)
-    assert "FoundationPose PoseEstimator" in message
-    assert "production IK/collision providers" in message
+    assert "model.safetensors" in message
+    assert UNVERIFIED_PRESENCE_ENV in message
 
 
 def test_saturday_adapter_boundary_imports_the_pinned_module(monkeypatch) -> None:
@@ -233,10 +255,9 @@ def test_real_dependency_bundle_names_every_controller_boundary_explicitly() -> 
 
 def test_internal_real_factory_rejects_non_cell_perception_before_construction() -> None:
     import robot.cell.t09_real_runtime as runtime
-    from policy_learn.deploy.cell_executor import T09GrootExecutor
 
-    executor = object.__new__(T09GrootExecutor)
     dependencies = _dependency_bundle(runtime, object())
+    executor = _executor_for(dependencies)
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="exact CellPerceptionPort"):
         runtime._build_groot_real_controller(executor, dependencies)
@@ -252,14 +273,127 @@ def test_internal_real_factory_rechecks_exact_executor_identity() -> None:
         runtime._build_groot_real_controller(object(), dependencies)
 
 
+def test_internal_real_factory_rejects_disabled_scene_safety(monkeypatch, tmp_path) -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.controller_ports import ExecutionTolerances
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.saturday_runtime_adapters import (
+        RUN_DIR_ENV,
+        UNVERIFIED_PRESENCE_ENV,
+    )
+
+    class ResetOnlyPolicy:
+        last_guard_result = None
+
+        def reset(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv(RUN_DIR_ENV, str(tmp_path))
+    dependencies = runtime.load_saturday_real_cell_dependencies()
+    executor = T09GrootExecutor(
+        policy=ResetOnlyPolicy(),
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+
+    with pytest.raises(
+        runtime.RealCellFactoryConfigurationError,
+        match="scene safety must be enabled",
+    ):
+        runtime._build_groot_real_controller(executor, dependencies)
+
+
+def test_internal_real_factory_binds_executor_to_dependency_safety(monkeypatch, tmp_path) -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.controller_ports import ExecutionTolerances
+    from assembly.safety import SafetySupervisor
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.saturday_runtime_adapters import (
+        RUN_DIR_ENV,
+        UNVERIFIED_PRESENCE_ENV,
+    )
+
+    class ResetOnlyPolicy:
+        last_guard_result = None
+
+        def reset(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv(RUN_DIR_ENV, str(tmp_path))
+    dependencies = runtime.load_saturday_real_cell_dependencies()
+    executor = T09GrootExecutor(
+        policy=ResetOnlyPolicy(),
+        safety=object.__new__(SafetySupervisor),
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=True,
+    )
+
+    with pytest.raises(
+        runtime.RealCellFactoryConfigurationError,
+        match="same SafetySupervisor",
+    ):
+        runtime._build_groot_real_controller(executor, dependencies)
+
+
+def test_public_real_factory_binds_scene_safety_before_controller_exists(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.controller_ports import ExecutionTolerances
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.saturday_runtime_adapters import (
+        RUN_DIR_ENV,
+        UNVERIFIED_PRESENCE_ENV,
+    )
+
+    class ResetOnlyPolicy:
+        last_guard_result = None
+
+        def reset(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv(RUN_DIR_ENV, str(tmp_path))
+    dependencies = runtime.load_saturday_real_cell_dependencies()
+    monkeypatch.setattr(
+        runtime,
+        "REVIEWED_REAL_CELL_DEPENDENCY_LOADER",
+        lambda: dependencies,
+    )
+    executor = T09GrootExecutor(
+        policy=ResetOnlyPolicy(),
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+
+    controller = runtime.build_groot_real_controller(executor)
+
+    assert controller.groot_executor is executor
+    assert executor._require_scene_safety is True
+    assert executor._safety is dependencies.safety
+
+
 def test_internal_real_factory_requires_the_exact_reviewed_layout_verifier() -> None:
     import robot.cell.t09_real_runtime as runtime
     from perception.port.port import CellPerceptionPort
-    from policy_learn.deploy.cell_executor import T09GrootExecutor
 
     perception = object.__new__(CellPerceptionPort)
     dependencies = _dependency_bundle(runtime, perception)
-    executor = object.__new__(T09GrootExecutor)
+    executor = _executor_for(dependencies)
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="ExpectedLayoutVerifier"):
         runtime._build_groot_real_controller(executor, dependencies)
@@ -269,7 +403,6 @@ def test_internal_real_factory_requires_the_exact_t38_inspection_registry() -> N
     import robot.cell.t09_real_runtime as runtime
     from assembly.catalog import load_catalog
     from perception.port.port import CellPerceptionPort
-    from policy_learn.deploy.cell_executor import T09GrootExecutor
     from robot.cell.real_layout import ExpectedLayoutVerifier, load_real_cell_layout
 
     catalog = load_catalog()
@@ -282,14 +415,13 @@ def test_internal_real_factory_requires_the_exact_t38_inspection_registry() -> N
     )
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="T38 fixed inspection"):
-        runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+        runtime._build_groot_real_controller(_executor_for(dependencies), dependencies)
 
 
 def test_internal_real_factory_requires_cell_layout_recovery_targets() -> None:
     import robot.cell.t09_real_runtime as runtime
     from assembly.catalog import load_catalog
     from perception.port.port import CellPerceptionPort
-    from policy_learn.deploy.cell_executor import T09GrootExecutor
     from robot.cell.real_layout import (
         ExpectedLayoutVerifier,
         load_real_cell_layout,
@@ -307,14 +439,13 @@ def test_internal_real_factory_requires_cell_layout_recovery_targets() -> None:
     )
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="RealCellRecoveryTargets"):
-        runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+        runtime._build_groot_real_controller(_executor_for(dependencies), dependencies)
 
 
 def test_internal_real_factory_requires_sourced_final_view_registry() -> None:
     import robot.cell.t09_real_runtime as runtime
     from assembly.catalog import load_catalog
     from perception.port.port import CellPerceptionPort
-    from policy_learn.deploy.cell_executor import T09GrootExecutor
     from robot.cell.real_layout import (
         ExpectedLayoutVerifier,
         load_real_cell_layout,
@@ -334,7 +465,7 @@ def test_internal_real_factory_requires_sourced_final_view_registry() -> None:
     )
 
     with pytest.raises(runtime.RealCellFactoryConfigurationError, match="FinalViewRegistry"):
-        runtime._build_groot_real_controller(object.__new__(T09GrootExecutor), dependencies)
+        runtime._build_groot_real_controller(_executor_for(dependencies), dependencies)
 
 
 def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatch) -> None:
@@ -378,14 +509,13 @@ def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatc
         )
 
     monkeypatch.setattr(runtime, "_load_saturday_runtime_adapters", load_test_adapters)
+    dependencies = runtime.load_saturday_real_cell_dependencies()
     executor = T09GrootExecutor(
         policy=ResetOnlyPolicy(),
-        safety=None,
+        safety=dependencies.safety,
         tolerances=ExecutionTolerances(0.3, 1.0),
-        require_scene_safety=False,
+        require_scene_safety=True,
     )
-
-    dependencies = runtime.load_saturday_real_cell_dependencies()
     controller = runtime._build_groot_real_controller(executor, dependencies)
 
     assert controller.runtime_authority is GrootControllerAuthority.REAL_CELL
@@ -393,6 +523,64 @@ def test_pinned_loader_builds_real_authority_with_typed_test_adapters(monkeypatc
     assert controller._execution_tolerances == ExecutionTolerances(0.3, 1.0)
     assert dependencies.startup_hold is None
     assert dependencies.perception.expected_layout_verifier is dependencies.expected_layout_verifier
+    views = dependencies.final_view_registry.views_for(
+        5,
+        "F05",
+        base_xy_mm=(420.0, 0.0),
+        max_distance_mm=10.0,
+    )
+    assert tuple(view.view_id for view in views) == ("B2-view-1", "B2-view-2")
+
+
+def test_pinned_loader_without_injection_builds_product_five_real_controller(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import robot.cell.t09_real_runtime as runtime
+    from assembly.controller_ports import ExecutionTolerances
+    from assembly.groot_controller import GrootControllerAuthority
+    from assembly.instruction import parse_requested_products
+    from policy_learn.deploy.cell_executor import T09GrootExecutor
+    from robot.cell.real_layout import load_real_cell_layout
+    from robot.cell.saturday_runtime_adapters import (
+        RUN_DIR_ENV,
+        UNVERIFIED_PRESENCE_ENV,
+    )
+
+    class ResetOnlyPolicy:
+        last_guard_result = None
+
+        def reset(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv(RUN_DIR_ENV, str(tmp_path))
+    dependencies = runtime.load_saturday_real_cell_dependencies()
+    executor = T09GrootExecutor(
+        policy=ResetOnlyPolicy(),
+        safety=dependencies.safety,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=True,
+    )
+    controller = runtime._build_groot_real_controller(executor, dependencies)
+
+    assert controller.runtime_authority is GrootControllerAuthority.REAL_CELL
+    assert controller.groot_executor is executor
+    assert controller._execution_tolerances == ExecutionTolerances(0.3, 1.0)
+    assert dependencies.startup_hold is None
+    assert dependencies.perception.expected_layout_verifier is dependencies.expected_layout_verifier
+    rollout = load_real_cell_layout().rollouts[0]
+    assert parse_requested_products(rollout.prompt, dependencies.catalog) == (5, 1, 2)
+    assert {item.object_id for item in rollout.objects} >= {
+        "F05",
+        "M5_01",
+        "M5_02",
+        "M5_03",
+        "M5_04",
+    }
     views = dependencies.final_view_registry.views_for(
         5,
         "F05",

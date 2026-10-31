@@ -159,9 +159,22 @@ class T09GrootExecutor:
         self._safety = safety
         self._tolerances = tolerances
         self._require_scene_safety = require_scene_safety
+        self._activated = False
+
+    def bind_scene_safety(self, safety: SafetySupervisor) -> None:
+        """Bind the reviewed supervisor once, before reset or motion is possible."""
+        if not isinstance(safety, SafetySupervisor):
+            raise TypeError("scene safety binding requires a SafetySupervisor")
+        if self._activated:
+            raise ValueError("scene safety cannot be rebound after executor activation")
+        if self._safety is not None or self._require_scene_safety:
+            raise ValueError("scene safety is already configured")
+        self._safety = safety
+        self._require_scene_safety = True
 
     def reset(self) -> None:
         """Start a fresh rollout in both the T09 and served-policy layers."""
+        self._activated = True
         self._policy.reset()
 
     def close(self) -> None:
@@ -175,6 +188,7 @@ class T09GrootExecutor:
         observation: dict,
         scene: CollisionScene | None,
     ) -> GrootExecutionResult:
+        self._activated = True
         if intent.skill not in _T18_EXECUTABLE_SKILLS:
             raise CellExecutionError(f"{intent.skill.value} is absent from the T18 dataset")
         current = _observed_waypoint(observation)

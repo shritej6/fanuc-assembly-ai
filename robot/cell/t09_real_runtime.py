@@ -362,7 +362,7 @@ def _missing_requirements_message() -> str:
     return f"no reviewed real-cell dependency loader is pinned; required inputs: {fields}"
 
 
-def _require_executor(executor: object) -> T09GrootExecutor:
+def _require_executor_type(executor: object) -> T09GrootExecutor:
     if type(executor) is not T09GrootExecutor:
         raise RealCellFactoryConfigurationError(
             "real CELL factory requires the exact T09GrootExecutor type"
@@ -370,13 +370,37 @@ def _require_executor(executor: object) -> T09GrootExecutor:
     return executor
 
 
+def _require_executor(executor: object) -> T09GrootExecutor:
+    safe_executor = _require_executor_type(executor)
+    if getattr(safe_executor, "_require_scene_safety", None) is not True:
+        raise RealCellFactoryConfigurationError(
+            "real CELL executor scene safety must be enabled"
+        )
+    if not isinstance(getattr(safe_executor, "_safety", None), SafetySupervisor):
+        raise RealCellFactoryConfigurationError(
+            "real CELL executor requires a SafetySupervisor"
+        )
+    return safe_executor
+
+
 def build_groot_real_controller(executor: object) -> GrootAssemblyController:
     """Build the exact physical controller, or fail before any motion authority exists."""
-    safe_executor = _require_executor(executor)
+    pending_executor = _require_executor_type(executor)
     loader = REVIEWED_REAL_CELL_DEPENDENCY_LOADER
     if loader is None:
         raise RealCellFactoryBlockedError(_missing_requirements_message())
-    return _build_groot_real_controller(safe_executor, loader())
+    dependencies = loader()
+    if not (
+        getattr(pending_executor, "_require_scene_safety", None) is True
+        and getattr(pending_executor, "_safety", None) is dependencies.safety
+    ):
+        try:
+            pending_executor.bind_scene_safety(dependencies.safety)
+        except (TypeError, ValueError) as error:
+            raise RealCellFactoryConfigurationError(
+                f"real CELL executor could not bind reviewed scene safety: {error}"
+            ) from error
+    return _build_groot_real_controller(pending_executor, dependencies)
 
 
 def _build_groot_real_controller(
@@ -387,6 +411,10 @@ def _build_groot_real_controller(
     if type(dependencies) is not RealCellDependencies:
         raise RealCellFactoryConfigurationError(
             "real CELL factory requires the exact RealCellDependencies type"
+        )
+    if getattr(safe_executor, "_safety", None) is not dependencies.safety:
+        raise RealCellFactoryConfigurationError(
+            "real CELL executor and dependency bundle must retain the same SafetySupervisor"
         )
     if type(dependencies.perception) is not CellPerceptionPort:
         raise RealCellFactoryConfigurationError(

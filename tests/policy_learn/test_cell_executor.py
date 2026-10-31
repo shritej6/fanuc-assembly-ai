@@ -11,6 +11,7 @@ from assembly.catalog import TRUSTED_GRASP_SOURCE
 from assembly.controller_ports import CollisionScene, ExecutionTolerances
 from assembly.motion import MotionPhase
 from assembly.motion_intent import ContactEnvelope, MotionIntent, SemanticSkill
+from assembly.safety import SafetySupervisor
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
 from policy_learn.deploy.guards import GuardLimits, GuardResult
@@ -232,6 +233,36 @@ def test_scene_safety_remains_fail_closed_by_default() -> None:
             safety=None,
             tolerances=ExecutionTolerances(0.3, 1.0),
         )
+
+
+def test_scene_safety_can_only_bind_once_before_executor_activation() -> None:
+    executor = T09GrootExecutor(
+        policy=_Policy((301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)),
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+    safety = object.__new__(SafetySupervisor)
+
+    executor.bind_scene_safety(safety)
+
+    assert executor._safety is safety
+    assert executor._require_scene_safety is True
+    with pytest.raises(ValueError, match="already configured"):
+        executor.bind_scene_safety(object.__new__(SafetySupervisor))
+
+
+def test_scene_safety_cannot_bind_after_executor_reset() -> None:
+    executor = T09GrootExecutor(
+        policy=_Policy((301.0, 0.0, -200.0, -180.0, 0.0, 0.0, 0.0)),
+        safety=None,
+        tolerances=ExecutionTolerances(0.3, 1.0),
+        require_scene_safety=False,
+    )
+    executor.reset()
+
+    with pytest.raises(ValueError, match="after executor activation"):
+        executor.bind_scene_safety(object.__new__(SafetySupervisor))
 
 
 @pytest.mark.parametrize("skill", [SemanticSkill.INSPECT_VIEW, SemanticSkill.PLACE_FREE])

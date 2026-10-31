@@ -180,6 +180,27 @@ def test_factory_rejects_groot_controller_bound_to_another_executor(
         )
 
 
+def test_real_factory_must_bind_scene_safety_before_returning_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+
+    def unsafe_factory(executor):
+        controller = object.__new__(GrootAssemblyController)
+        controller._groot_executor = executor
+        controller._runtime_authority = runtime.GrootControllerAuthority.REAL_CELL
+        return controller
+
+    monkeypatch.setattr(runtime, "_resolve_factory", lambda transport: unsafe_factory)
+
+    with pytest.raises(runtime.CellRuntimeBlockedError, match="scene safety"):
+        runtime.create_cell_policy(
+            checkpoint="groot://127.0.0.1:5555",
+            transport=runtime.CellTransport.REAL,
+        )
+
+
 def test_factory_rejects_groot_controller_subclass_that_can_override_motion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -237,3 +258,32 @@ def test_groot_url_arms_t09_semantic_controller_for_explicit_proof(
     assert policy.limits.max_tilt_deg == 6.0
     assert policy.limits.max_tilt_deg == adapter_module.TOOL_DOWN_TOLERANCE_DEG
     assert policy.resets == 1
+
+
+def test_reviewed_real_factory_pin_builds_public_cell_path_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from robot.cell.saturday_runtime_adapters import (
+        RUN_DIR_ENV,
+        UNVERIFIED_PRESENCE_ENV,
+    )
+
+    spec = "robot.cell.t09_real_runtime:build_groot_real_controller"
+    monkeypatch.delenv(runtime.SOFTWARE_PROOF_ENV, raising=False)
+    monkeypatch.setenv(runtime.CELL_FACTORY_ENV, spec)
+    monkeypatch.setenv(UNVERIFIED_PRESENCE_ENV, "1")
+    monkeypatch.setenv(RUN_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(runtime, "REVIEWED_REAL_CELL_FACTORY", spec)
+    monkeypatch.setattr(runtime, "GrootPolicy", _FakeGrootPolicy)
+
+    controller = runtime.create_cell_policy(
+        checkpoint="groot://127.0.0.1:5555",
+        transport=runtime.CellTransport.REAL,
+    )
+
+    executor = controller.groot_executor
+    assert controller.runtime_authority is runtime.GrootControllerAuthority.REAL_CELL
+    assert executor._require_scene_safety is True
+    assert executor._safety is controller._safety
+    assert executor._policy.resets == 1

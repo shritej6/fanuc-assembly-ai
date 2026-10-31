@@ -16,6 +16,7 @@ from importlib import import_module
 from assembly.controller_ports import ExecutionTolerances
 from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
+from assembly.safety import SafetySupervisor
 from policy_learn.deploy.cell_executor import T09GrootExecutor
 from policy_learn.deploy.groot_policy import GrootPolicy
 from policy_learn.deploy.guards import GuardLimits
@@ -221,6 +222,13 @@ def _validate_controller(
     if controller.runtime_authority is not expected_authority:
         raise CellRuntimeBlockedError(
             "CELL controller runtime authority does not match the selected transport"
+        )
+    if transport is CellTransport.REAL and (
+        getattr(executor, "_require_scene_safety", None) is not True
+        or not isinstance(getattr(executor, "_safety", None), SafetySupervisor)
+    ):
+        raise CellRuntimeBlockedError(
+            "real CELL controller factory returned without reviewed scene safety"
         )
 
 
