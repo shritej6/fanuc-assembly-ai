@@ -68,7 +68,8 @@ def _patched_runtime(cell: LaggyMock):
     from assembly.cell_runtime import SATURDAY_EXECUTION_TOLERANCES
 
     perception_cls = mock_runtime.MockPerception
-    saved = {name: getattr(perception_cls, name) for name in ("_configure_from_prompt", "pre_pick", "post_place")}
+    saved = {name: getattr(perception_cls, name)
+             for name in ("_configure_from_prompt", "pre_pick", "post_place", "collision_scene")}
     saved_kwargs = mock_runtime._controller_kwargs
     saved_env = {key: os.environ.get(key) for key in (FACTORY_ENV, PROOF_ENV)}
 
@@ -83,6 +84,13 @@ def _patched_runtime(cell: LaggyMock):
             return evidence
         return replace(evidence, seated=False, pose_agrees=False)
 
+    def collision_scene(self: Any, observation: dict, moving_instance_id: str, base_instance_id: str) -> Any:
+        # A wrist/table camera sees the held part, the 0/1 gripper does not: after a drop it is no longer attached.
+        scene = saved["collision_scene"](self, observation, moving_instance_id, base_instance_id)
+        if scene.moving_attached and cell.log.dropped_at is not None:
+            return replace(scene, moving_attached=False)
+        return scene
+
     def controller_kwargs(perception: Any) -> dict[str, object]:
         kwargs = saved_kwargs(perception)
         kwargs["execution_tolerances"] = SATURDAY_EXECUTION_TOLERANCES
@@ -90,6 +98,7 @@ def _patched_runtime(cell: LaggyMock):
 
     perception_cls._configure_from_prompt = configure
     perception_cls.post_place = post_place
+    perception_cls.collision_scene = collision_scene
     mock_runtime._controller_kwargs = controller_kwargs
     os.environ[FACTORY_ENV], os.environ[PROOF_ENV] = MOCK_FACTORY, "1"
     try:

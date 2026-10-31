@@ -107,7 +107,9 @@ SCENARIOS: tuple[Scenario, ...] = (
     Scenario("noisy_sensor_nominal", {**NOISY_IDEAL_ARM, "budget_s": 40.0}, expect_complete),  # fixed f01bbd9
     Scenario("ideal_arm_nominal", {**IDEAL_ARM, "budget_s": 45.0}, expect_complete),
     Scenario("ideal_arm_drop", {**IDEAL_ARM, "faults": CellFaults(drop_after_grasp_s=1.0), "budget_s": 45.0},
-             expect_drop_detected, "no drop/tip detection in CELL (gripper 0/1, scene=None, no per-intent budget)"),
+             expect_drop_detected),  # fixed 827a5c1 (attachment checked on every closed-gripper callback)
+    Scenario("real_arm_drop", {**REAL_ARM, "faults": CellFaults(drop_after_grasp_s=1.0), "budget_s": 60.0},
+             expect_drop_detected),
     Scenario("ideal_arm_low_offaxis_row", {**IDEAL_ARM, "inject_low_row": True, "budget_s": 45.0},
              expect_low_row_guarded),
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
