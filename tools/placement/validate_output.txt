@@ -1,0 +1,79 @@
+=== Rollout 1: products [1, 2, 3] (15 objects: 3 bases, 12 loose parts)
+prompt -> Codex parse_requested_products = (1, 2, 3)  OK
+work area / reach: OK  (centre radius 259..451 mm; footprint max radius 485 mm)
+min gap base_base: true footprint 105.0 mm (F01-F02), footprint-circle  89.3 mm (F01-F02); need >= 25  OK
+min gap base_part: true footprint  35.4 mm (F01-M1_01), footprint-circle  23.7 mm (F01-M1_01); need >= 8  OK
+min gap part_part: true footprint  41.5 mm (M1_01-M1_02), footprint-circle  32.8 mm (M1_01-M2_01); need >= 12  OK
+  M1_01  -> F01: pick ok k=0 r=165 J6~7 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M1_02  -> F01: pick ok k=0 r=200 J6~48 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M1_03  -> F01: pick ok k=0 r=160 J6~21 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M1_04  -> F01: pick ok k=0 r=190 J6~44 | insert ok k=0 r=180 J6~22 | same wrist turn: True | rolls within 180+-60: True
+  M2_01  -> F02: pick ok k=0 r=195 J6~21 | insert ok k=0 r=180 J6~0 | same wrist turn: True | rolls within 180+-60: True
+  M2_02  -> F02: pick ok k=0 r=170 J6~0 | insert ok k=0 r=180 J6~0 | same wrist turn: True | rolls within 180+-60: True
+  M2_03  -> F02: pick ok k=0 r=160 J6~-28 | insert ok k=0 r=180 J6~0 | same wrist turn: True | rolls within 180+-60: True
+  M2_04  -> F02: pick ok k=0 r=200 J6~10 | insert ok k=0 r=180 J6~0 | same wrist turn: True | rolls within 180+-60: True
+  M3_01  -> F03: pick ok k=0 r=190 J6~-23 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M3_02  -> F03: pick ok k=0 r=165 J6~-56 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M3_03  -> F03: pick ok k=0 r=200 J6~-8 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M3_04  -> F03: pick ok k=0 r=170 J6~-32 | insert ok k=0 r=180 J6~-22 | same wrist turn: True | rolls within 180+-60: True
+interchangeable bases x product orders: 12/12 sequences fully feasible
+placement tolerance (+-10 mm x/y, +-10 deg, one part at a time): 72/72 still feasible
+
+=== Rollout 2: products [4, 5, 6] (15 objects: 3 bases, 12 loose parts)
+prompt -> Codex parse_requested_products = (4, 5, 6)  OK
+work area / reach: OK  (centre radius 259..451 mm; footprint max radius 488 mm)
+min gap base_base: true footprint  89.5 mm (F04-F05), footprint-circle  89.3 mm (F04-F05); need >= 25  OK
+min gap base_part: true footprint  36.9 mm (F04-M4_01), footprint-circle  25.2 mm (F04-M4_01); need >= 8  OK
+min gap part_part: true footprint  28.7 mm (M6_01-M6_03), footprint-circle  26.4 mm (M6_01-M6_03); need >= 12  OK
+  M4_01  -> F04: pick ok k=1 r=205 J6~45 | insert ok k=1 r=225 J6~64 | same wrist turn: True | rolls within 180+-60: True
+  M4_02  -> F04: pick ok k=0 r=150 J6~-2 | insert ok k=0 r=135 J6~-24 | same wrist turn: True | rolls within 180+-60: True
+  M4_03  -> F04: pick ok k=0 r=160 J6~22 | insert ok k=0 r=135 J6~-25 | same wrist turn: True | rolls within 180+-60: True
+  M4_04  -> F04: pick ok k=0 r=145 J6~-1 | insert ok k=0 r=135 J6~-23 | same wrist turn: True | rolls within 180+-60: True
+  M5_01  -> F05: pick ok k=1 r=210 J6~36 | insert ok k=1 r=225 J6~43 | same wrist turn: True | rolls within 180+-60: True
+  M5_02  -> F05: pick ok k=0 r=155 J6~-15 | insert ok k=0 r=135 J6~-45 | same wrist turn: True | rolls within 180+-60: True
+  M5_03  -> F05: pick ok k=0 r=145 J6~-44 | insert ok k=0 r=135 J6~-47 | same wrist turn: True | rolls within 180+-60: True
+  M5_04  -> F05: pick ok k=0 r=160 J6~-30 | insert ok k=0 r=135 J6~-44 | same wrist turn: True | rolls within 180+-60: True
+  M6_01  -> F06: pick ok k=1 r=200 J6~-13 | insert ok k=1 r=225 J6~22 | same wrist turn: True | rolls within 180+-60: True
+  M6_02  -> F06: pick ok k=0 r=145 J6~-63 | insert ok k=0 r=135 J6~-66 | same wrist turn: True | rolls within 180+-60: True
+  M6_03  -> F06: pick ok k=0 r=155 J6~-69 | insert ok k=0 r=135 J6~-69 | same wrist turn: True | rolls within 180+-60: True
+  M6_04  -> F06: pick ok k=0 r=150 J6~-52 | insert ok k=0 r=135 J6~-65 | same wrist turn: True | rolls within 180+-60: True
+interchangeable bases x product orders: 36/36 sequences fully feasible
+placement tolerance (+-10 mm x/y, +-10 deg, one part at a time): 72/72 still feasible
+
+=== Rollout 3: products [1, 3, 5] (15 objects: 3 bases, 12 loose parts)
+prompt -> Codex parse_requested_products = (1, 3, 5)  OK
+work area / reach: OK  (centre radius 259..451 mm; footprint max radius 485 mm)
+min gap base_base: true footprint  96.9 mm (F03-F05), footprint-circle  89.3 mm (F01-F05); need >= 25  OK
+min gap base_part: true footprint  35.3 mm (F03-M3_01), footprint-circle  23.2 mm (F03-M3_01); need >= 8  OK
+min gap part_part: true footprint  38.8 mm (M5_01-M5_02), footprint-circle  34.3 mm (M1_01-M5_01); need >= 12  OK
+  M1_01  -> F01: pick ok k=0 r=200 J6~-2 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M1_02  -> F01: pick ok k=0 r=165 J6~-43 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M1_03  -> F01: pick ok k=0 r=190 J6~-24 | insert ok k=0 r=180 J6~-21 | same wrist turn: True | rolls within 180+-60: True
+  M1_04  -> F01: pick ok k=0 r=160 J6~-61 | insert ok k=0 r=180 J6~-22 | same wrist turn: True | rolls within 180+-60: True
+  M3_01  -> F03: pick ok k=0 r=170 J6~11 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M3_02  -> F03: pick ok k=0 r=195 J6~43 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M3_03  -> F03: pick ok k=0 r=200 J6~54 | insert ok k=0 r=180 J6~21 | same wrist turn: True | rolls within 180+-60: True
+  M3_04  -> F03: pick ok k=0 r=165 J6~26 | insert ok k=0 r=180 J6~22 | same wrist turn: True | rolls within 180+-60: True
+  M5_01  -> F05: pick ok k=1 r=205 J6~16 | insert ok k=1 r=225 J6~43 | same wrist turn: True | rolls within 180+-60: True
+  M5_02  -> F05: pick ok k=0 r=155 J6~-35 | insert ok k=0 r=135 J6~-45 | same wrist turn: True | rolls within 180+-60: True
+  M5_03  -> F05: pick ok k=0 r=145 J6~-26 | insert ok k=0 r=135 J6~-47 | same wrist turn: True | rolls within 180+-60: True
+  M5_04  -> F05: pick ok k=0 r=160 J6~-12 | insert ok k=0 r=135 J6~-44 | same wrist turn: True | rolls within 180+-60: True
+interchangeable bases x product orders: 6/6 sequences fully feasible
+placement tolerance (+-10 mm x/y, +-10 deg, one part at a time): 72/72 still feasible
+
+proposed inspection-slot registry: 12 boxes +-25 mm, overlaps none, base centres inside a box none; every loose part centre + CAD origin in exactly its own box
+  PN1: selection_bounds_xy_mm=(230, 280, -250, -200)  used by rollouts [1, 2, 3]
+  PF1: selection_bounds_xy_mm=(310, 360, -250, -200)  used by rollouts [1, 2, 3]
+  PN2: selection_bounds_xy_mm=(230, 280, -160, -110)  used by rollouts [1, 2, 3]
+  PF2: selection_bounds_xy_mm=(310, 360, -160, -110)  used by rollouts [1, 2, 3]
+  PN3: selection_bounds_xy_mm=(230, 280, -70, -20)  used by rollouts [1, 2, 3]
+  PF3: selection_bounds_xy_mm=(310, 360, -70, -20)  used by rollouts [1, 2, 3]
+  PN4: selection_bounds_xy_mm=(230, 280, 20, 70)  used by rollouts [1, 2, 3]
+  PF4: selection_bounds_xy_mm=(310, 360, 20, 70)  used by rollouts [1, 2, 3]
+  PN5: selection_bounds_xy_mm=(230, 280, 110, 160)  used by rollouts [1, 2, 3]
+  PF5: selection_bounds_xy_mm=(310, 360, 110, 160)  used by rollouts [1, 2, 3]
+  PN6: selection_bounds_xy_mm=(230, 280, 200, 250)  used by rollouts [1, 2, 3]
+  PF6: selection_bounds_xy_mm=(310, 360, 200, 250)  used by rollouts [1, 2, 3]
+
+OVERALL: PASS
+placement.yaml round-trip: OK
