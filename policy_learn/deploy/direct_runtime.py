@@ -16,9 +16,11 @@ What it does on each act(obs):
    the arm reports, with tolerances from the plan's CAD geometry:
    - "grasped": the gripper closed within the open fingers' slack around the pad ((16.5 - pad width) / 2 in xy) and
      within half the pad's contact height in z;
-   - "released on the seat": the gripper opened within the insert's xy capture (+ RELEASE_XY_MARGIN_MM) of the
-     seated TCP and at most SEATED_Z_MM above it (below the first-contact height), with the reported TCP no more
-     than JAM_MM above the last commanded row (higher = the part stopped on something: jammed, not seated);
+   - "released on the seat": the gripper opened at most SEATED_Z_MM above the seated TCP (below the first-contact
+     height), with the reported TCP no more than JAM_MM above the last commanded row (higher = the part stopped on
+     something: jammed, not seated). These two are the seated detector: the table z is fixed, and a part reaches
+     seat depth only if it is aligned with the ACTUAL base (capture 0.5-3 mm), wherever the base was hand-placed.
+     The xy check against the plan (HAND_PLACE_XY_MM) only bounds hand-placement error.
    - "done": fingers open and the TCP RETREAT_MM above the seat, within the retreat budget.
 
 It never moves the arm itself. Every failure ends the trial with the arm held where it is (current pose, gripper as
@@ -46,7 +48,7 @@ from policy_learn.deploy.guards import ContactTarget, GuardLimits, hold_row
 
 log = logging.getLogger(__name__)
 RETREAT_MM = 10.0  # sim/assembly_lab/eval/director.py RETREAT_MM: done only once this far above the goal
-RELEASE_XY_MARGIN_MM = 0.5  # PRELIMINARY: on top of the insert's xy capture (0.5-2 mm for the 14:00 parts)
+HAND_PLACE_XY_MM = 5.0      # PRELIMINARY: declared hand-placement accuracy of a base; release xy vs the planned seat
 SEATED_Z_MM = 1.5           # PRELIMINARY: release at most this above the seated TCP (first contact is 2-13 mm above)
 JAM_MM = 1.0                # PRELIMINARY: reported TCP this much above the commanded row at release = blocked
 EMPTY_GRIPPER_ON_CELL = False  # the cell's obs has no gripper width: see the module docstring
@@ -218,15 +220,16 @@ class DirectGrootRuntime(GrootPolicy):
 
     def _release_fault(self, step: Step, tcp: np.ndarray) -> str | None:
         """Why this release is not 'released on the seat', or None. Without perception the part is taken as seated
-        only if the fingers opened inside the insert's capture, below first contact, and the arm got where it was
-        sent (a part resting on a burr or a misaligned peg stops the arm above the commanded row)."""
+        only if the fingers opened at seat depth (below first contact) and the arm got where it was sent (a part
+        resting on a burr or a misaligned peg stops the arm above the commanded row). Seat depth is reachable only
+        when the part is aligned with the actual base, so the xy check is just the hand-placement bound."""
         s, row = step.seat_tcp, self._switch_row(False)
         at = tcp[:3] if row is None else row[:3]
-        dxy, xy_tol = float(np.hypot(at[0] - s[0], at[1] - s[1])), step.capture_mm + RELEASE_XY_MARGIN_MM
+        dxy, xy_tol = float(np.hypot(at[0] - s[0], at[1] - s[1])), HAND_PLACE_XY_MM
         z_max = min(s[2] + SEATED_Z_MM, step.contact_z - 0.5)
         if dxy > xy_tol or at[2] > z_max:
-            return (f"gripper opened at ({at[0]:.1f}, {at[1]:.1f}, {at[2]:.1f}), {dxy:.1f} mm from the seat (limit "
-                    f"{xy_tol:.1f}) and {at[2] - s[2]:+.1f} mm above it (limit {z_max - s[2]:+.1f}): not seated")
+            return (f"gripper opened at ({at[0]:.1f}, {at[1]:.1f}, {at[2]:.1f}), {dxy:.1f} mm from the planned seat (hand-"
+                    f"placement limit {xy_tol:.1f}) and {at[2] - s[2]:+.1f} mm above it (limit {z_max - s[2]:+.1f}): not seated")
         sent = self.progress.last_rows[-1] if self.progress.last_rows is not None else None
         if sent is not None and tcp[2] - sent[2] > JAM_MM:
             return (f"reported TCP z {tcp[2]:.1f} is {tcp[2] - sent[2]:.1f} mm above the commanded {sent[2]:.1f} "

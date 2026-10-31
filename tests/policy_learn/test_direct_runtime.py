@@ -346,11 +346,18 @@ def test_release_commanded_above_the_seated_height_is_not_seated():
     assert step.contact_z - s[2] > 2.0 and "not seated" in ended(pol)
 
 
-def test_release_outside_the_insert_capture_is_not_seated():
-    pol, _, _ = _grasp_then_release(SeatThenOpen(dxy=1.2))    # M5_01: capture 0.5 + margin 0.5 = 1.0 mm
-    assert pol.progress.steps[0].capture_mm == 0.5 and "not seated" in ended(pol)
-    pol, _, _ = _grasp_then_release(SeatThenOpen(dxy=0.8))
+def test_seated_release_on_a_base_placed_3_mm_off_completes_the_step():
+    """Seat depth is reached only when the part is aligned with the ACTUAL base, so a base hand-placed 3 mm off is
+    fine as long as the release is at seat depth and the arm was not blocked."""
+    pol, _, s = _grasp_then_release(SeatThenOpen(dxy=3.0))
     assert ended(pol) is None and pol.progress.phase == "retreat"
+    pol.act(obs([s[0] + 3.0, s[1], s[2] + RETREAT_MM, *s[3:]]))
+    assert ended(pol) is None and [e["part"] for e in pol.events if e["type"] == "step_done"] == ["M5_01"]
+
+
+def test_release_beyond_the_hand_placement_tolerance_holds():
+    pol, _, _ = _grasp_then_release(SeatThenOpen(dxy=6.0))    # HAND_PLACE_XY_MM = 5.0
+    assert "not seated" in ended(pol) and "hand-placement limit 5.0" in ended(pol)
 
 
 def test_grasp_tolerance_comes_from_the_pad_geometry():
