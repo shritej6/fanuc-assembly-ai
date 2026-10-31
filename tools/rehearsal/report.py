@@ -13,10 +13,11 @@ from typing import Any
 from tools.rehearsal.laggy_cell import CellFaults
 from tools.rehearsal.scenarios import Outcome, run_scenario
 
-DROP_DETECT_LIMIT_S = float(os.environ.get("REHEARSAL_DROP_DETECT_S", "5.0"))  # PRELIMINARY: before the insert
+DROP_DETECT_LIMIT_S = float(os.environ.get("REHEARSAL_DROP_DETECT_S", "2.0"))  # PRELIMINARY: ~1 s check + margin
 REAL_ARM = {"tau_s": 0.15, "noise_mm": 0.05}  # ~0.45 s to settle, +-0.05 mm measurement noise
 NOISY_IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.05}  # no lag, real-sensor noise only
 IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.0}  # official-mock arm (+0.5 s binary gripper): probes past freezes
+REAL_ARM_BUDGET_S = float(os.environ.get("REHEARSAL_REAL_ARM_BUDGET_S", "90.0"))  # test patience, not a guard
 Verdict = tuple[bool, str]
 
 
@@ -95,12 +96,9 @@ def expect_real_groot_safe(o: Outcome) -> Verdict:
 
 MISSING_TCP_RUN = {**IDEAL_ARM, "faults": CellFaults(missing_tcp_after_s=5.0), "n_trials": 2, "budget_s": 30.0}
 SCENARIOS: tuple[Scenario, ...] = (
-    Scenario("real_arm_nominal", {**REAL_ARM, "budget_s": 40.0}, expect_complete,
-             "settle-poll (8b47413 groot_queue.confirm_previous_endpoint) re-commands the OBSERVED pose while "
-             "waiting, stopping a lagging arm short of its endpoint -> settle timeout Held"),
-    Scenario("noisy_sensor_nominal", {**NOISY_IDEAL_ARM, "budget_s": 40.0}, expect_complete,
-             "fixed_inspection.next_inspection_leg uses exact 1e-9 xy/angle/z checks on the measured TCP; "
-             "+-0.05 mm noise livelocks inspection forever with no Held"),
+    # A real rollout lasts minutes; 40 s only fits the ideal arm (settle waits add ~0.5 s per guarded row).
+    Scenario("real_arm_nominal", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_complete),  # fixed 6e1cf41
+    Scenario("noisy_sensor_nominal", {**NOISY_IDEAL_ARM, "budget_s": 40.0}, expect_complete),  # fixed f01bbd9
     Scenario("ideal_arm_nominal", {**IDEAL_ARM, "budget_s": 45.0}, expect_complete),
     Scenario("ideal_arm_drop", {**IDEAL_ARM, "faults": CellFaults(drop_after_grasp_s=1.0), "budget_s": 45.0},
              expect_drop_detected, "no drop/tip detection in CELL (gripper 0/1, scene=None, no per-intent budget)"),
@@ -109,7 +107,8 @@ SCENARIOS: tuple[Scenario, ...] = (
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
     Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs,
              "every Held is final: acknowledge_resume is not wired in CELL, trial 2 never moves"),
-    Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": 40.0}, expect_real_groot_safe, tags=("groot",)),
+    Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_real_groot_safe,
+             tags=("groot",)),
     Scenario("real_groot_ideal_arm", {**IDEAL_ARM, "budget_s": 45.0}, expect_real_groot_safe, tags=("groot",)),
 )
 

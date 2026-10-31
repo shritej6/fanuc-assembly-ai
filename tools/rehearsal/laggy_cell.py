@@ -152,10 +152,15 @@ class LaggyMock(Mock):
             time.sleep(max(0.0, t_next - time.perf_counter()))
 
     def _physics(self) -> None:
+        # The lag uses the measured step, not the nominal period: a loaded host sleeps far longer than 5 ms, and a
+        # fixed alpha then turns tau=0.15 s into an effective ~1 s lag (a slower arm than the one being modelled).
         period = 1.0 / PHYSICS_HZ
-        alpha = 1.0 - math.exp(-period / self.tau_s) if self.tau_s > 0.0 else 1.0
+        last = time.monotonic()
         while True:
             time.sleep(period)
+            now = time.monotonic()
+            dt, last = now - last, now
+            alpha = 1.0 - math.exp(-dt / self.tau_s) if self.tau_s > 0.0 else 1.0
             with self.lock:
                 self._advance(alpha)
 
