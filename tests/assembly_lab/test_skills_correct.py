@@ -89,3 +89,18 @@ def test_record_keeps_correction_demos(tmp_path, scenario):
     summary = record.record(record.KinematicBackend(), scenario, [1], 2, tmp_path, 0, 5, lim)
     assert summary["1:M1_02"]["kept_or_would_keep"] == 2
     assert (tmp_path / "pick_insert" / "product_1.hdf5").exists()
+
+
+def test_give_up_after_stops_a_part_that_keeps_failing(tmp_path, monkeypatch):
+    """A part failing its gates every time must not burn every attempt of a job (fleet run 10/31: ~100 GPU-min)."""
+    lim = tmp_path / "limits.yaml"
+    lim.write_text(LIMITS)
+
+    def always_fails(*_a, **_k):
+        raise record.EpisodeFailed("force guard: M1_02 normal_N 3.0 > 2.5 at step 80")
+
+    monkeypatch.setattr(record, "_episode", always_fails)
+    stats = record.record(record.KinematicBackend(), "align_insert", [1], 6, tmp_path, 0, 10, lim,
+                          give_up_after=3)["1:M1_02"]
+    assert stats["attempts"] == 3 and stats["kept_or_would_keep"] == 0
+    assert "3 robot failures in a row" in stats["aborted"]
