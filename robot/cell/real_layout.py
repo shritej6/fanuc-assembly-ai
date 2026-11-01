@@ -1,8 +1,5 @@
-"""Reviewed CSI placement evidence and fixed camera poses for the real cell.
-
-The placement artifact describes where an operator should stage objects.  It is
-used only to reject a mismatched starting layout; detected poses remain the
-sole source for grasp and insertion commands.
+"""Reviewed placement evidence and fixed camera poses for the real cell.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

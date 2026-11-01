@@ -1,4 +1,6 @@
-"""Passive identity evidence for controller-owned physical final views."""
+"""Passive identity evidence for controller-owned physical final views.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

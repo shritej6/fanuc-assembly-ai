@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run exactly one T14 PatchCore part on Brev, benchmark first and production only after its measured gate.
+# Run one PatchCore part on Brev: benchmark first, production only after its measured gate.
+# Authored by Shritej Gunda.
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 

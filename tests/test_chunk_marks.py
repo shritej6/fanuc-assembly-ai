@@ -1,4 +1,6 @@
-"""Behavior tests for chunk completion: only a valid, complete chunk rendered from the same specs counts as done."""
+"""Behavior tests for chunk completion: only a valid, complete chunk rendered from the same specs counts as done.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

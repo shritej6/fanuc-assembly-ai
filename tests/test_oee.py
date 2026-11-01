@@ -1,3 +1,7 @@
+"""Tests for oee.
+Authored by Shritej Gunda.
+"""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest

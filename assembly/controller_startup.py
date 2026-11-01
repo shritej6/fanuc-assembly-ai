@@ -1,4 +1,6 @@
-"""Sourced fallback hold used before the first valid cell observation."""
+"""Sourced fallback hold used before the first valid cell observation.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import dataclass
 

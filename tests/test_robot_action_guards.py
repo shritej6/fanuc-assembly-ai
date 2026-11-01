@@ -1,4 +1,6 @@
-"""Regression tests for fail-closed joint and TCP action guards."""
+"""Regression tests for fail-closed joint and TCP action guards.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

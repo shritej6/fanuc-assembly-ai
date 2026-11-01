@@ -1,14 +1,5 @@
-"""act_tcp as an Isaac Lab action term: one action = one CellClient.act_tcp row [x, y, z, w, p, r, gripper]
-(UF0 mm / deg, gripper 0 open .. 1 closed), reached over one env step (CellEnvCfg.step_dt, default 0.1 s, the
-shortest dt the real cell accepts). Inside the step the TCP moves on a straight line (orientation slerp) from the
-previous commanded row, with IK every `ik_every` physics steps and PhysX joint PD in between, like step_tcp.
-
-Rows outside the PLAN 3.1 workspace box are clipped to it and counted in `clipped` (the real cell would refuse them;
-scripted demos never send one, Mimic noise can).
-
-Batched over the env's cells: one action row per env; q_cmd / tcp_cmd (E, 6), grip_cmd / clipped / force_open (E,).
-IK runs per env (numpy); the jaw squeeze is vectorised. With one env an IK failure raises TcpError as before;
-with several, the failing env holds its last joint command and the error is kept in `ik_errors[env]` for the caller.
+"""Isaac Lab action term that turns one act_tcp row into joint targets for the arm.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

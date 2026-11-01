@@ -1,4 +1,6 @@
-"""Watchdog behaviour on fake chunk folders: sampled QA, incomplete chunks, bounded retries, render plan."""
+"""Watchdog behaviour on fake chunk folders: sampled QA, incomplete chunks, bounded retries, render plan.
+Authored by Shritej Gunda.
+"""
 
 import json
 

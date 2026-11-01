@@ -1,4 +1,6 @@
-"""Behavioral tests for deterministic replenishment and defect analytics."""
+"""Behavioral tests for deterministic replenishment and defect analytics.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import asdict
 

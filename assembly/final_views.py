@@ -1,4 +1,6 @@
-"""Sourced fixed camera views required before production may complete a product."""
+"""Sourced fixed camera views required before production may complete a product.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

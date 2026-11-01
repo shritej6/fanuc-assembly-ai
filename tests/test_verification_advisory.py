@@ -1,4 +1,6 @@
-"""PatchCore and FoundationPose advisory-authority regressions."""
+"""PatchCore and FoundationPose advisory-authority regressions.
+Authored by Shritej Gunda.
+"""
 
 import pytest
 

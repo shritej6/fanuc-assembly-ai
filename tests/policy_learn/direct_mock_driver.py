@@ -1,7 +1,5 @@
-"""Test driver (run in robot/cell's environment by test_direct_runtime.py): the official `run.py --mock` with
-robot/cell/policy_direct.Policy, its GR00T replaced by the test-only ScriptedGroot. Never for the arm.
-
-    cd robot/cell && uv run python ../../tests/policy_learn/direct_mock_driver.py <trial seconds> <report.json>
+"""Shared helpers for direct mock driver tests.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 

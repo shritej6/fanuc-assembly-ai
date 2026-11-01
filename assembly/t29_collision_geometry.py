@@ -1,4 +1,6 @@
-"""Conservative held-part sweeps derived from T29 frames and printed CAD STLs."""
+"""Conservative held-part sweeps built from grasp frames and printed CAD STLs.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -134,7 +136,7 @@ def _load_frames(path: Path) -> tuple[dict[str, object], bytes, str]:
 
 
 class HeldPartSTLSweepSource:
-    """Bound any held-part rotation by its T29 TCP-centred CAD sphere."""
+    """Bound any held-part rotation by its TCP-centred CAD sphere."""
 
     def __init__(self, grasp_frames: Path, stl_by_object: Mapping[str, Path]) -> None:
         frame_path = grasp_frames.resolve()

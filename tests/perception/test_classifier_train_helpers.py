@@ -1,3 +1,7 @@
+"""Tests for classifier train helpers.
+Authored by Shritej Gunda.
+"""
+
 import json
 from pathlib import Path
 from types import SimpleNamespace

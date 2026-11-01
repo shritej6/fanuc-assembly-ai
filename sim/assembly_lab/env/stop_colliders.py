@@ -1,10 +1,5 @@
-"""Exact box colliders for the sharp-cornered capture features on a base's top (the unchamfered 3 mm stops).
-
-The bases collide through an SDF, which rounds sharp corners by about one SDF cell and lets a contact sink
-0.2-0.25 mm: a part offset 1 mm slid off the 0.5 mm ledge of an unchamfered stop and seated, where CAD jams anything
-beyond the 0.5 mm clearance (measured, force_validate.py). This module finds every raised top feature from the STL
-height map, keeps the ones with a flat top and vertical walls (no chamfer; the chamfered pegs stay SDF-only) and
-splits each into axis-aligned boxes whose edges snap to the STL vertices, so a box collider reproduces it exactly.
+"""Build exact box colliders for the sharp-cornered stop features on top of a base.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

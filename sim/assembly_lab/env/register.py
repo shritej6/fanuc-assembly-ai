@@ -1,19 +1,5 @@
-"""Gym registration of the cell for the official Isaac Lab Mimic scripts (annotate_demos.py, generate_dataset.py).
-
-    isaaclab.sh -p scripts/imitation_learning/isaaclab_mimic/generate_dataset.py \
-        --external_callback sim.assembly_lab.env.register.register_tasks \
-        --task Isaac-T12-Cell-PickInsert-Mimic-v0 --input_file annotated.hdf5 --output_file generated.hdf5 ...
-
-(the repo root must be on PYTHONPATH; isaaclab_run.sh sets it). Task ids: Isaac-T12-Cell-{PickInsert,PullOut,
-PlaceFree,DefectDrop}-Mimic-v0, one per skill (the subtask signals and success term differ).
-
-The env cfg is built when the script calls parse_env_cfg, from environment variables:
-- T12_POOL: comma-separated object instances (default: all 30 + one spare copy of each part). It MUST equal the
-  pool of the env that recorded the source demos, because reset_to restores rigid_object/<prim> states by name.
-- T12_CAMERAS: comma-separated subset of table,side,wrist (default all three; empty string = none).
-- T12_IMAGE: WxH (default 640x360). T12_SAMPLER: "module:function" for reset() without a layout (optional).
-- T12_CONTACT_YAML: physics contact file (default sim/assembly_lab/physics/contact.yaml).
-- T12_JITTER: "cam_pos_mm,cam_rot_deg,light_frac" per-episode camera / light jitter (default off), e.g. "2,0.3,0.15".
+"""Register the cell tasks with Gym for the Isaac Lab Mimic scripts.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

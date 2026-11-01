@@ -1,4 +1,6 @@
-"""The GR00T proxy only attests the exact immutable checkpoint it fronts."""
+"""The GR00T proxy only attests the exact immutable checkpoint it fronts.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

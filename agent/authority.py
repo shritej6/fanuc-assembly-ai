@@ -1,4 +1,6 @@
-"""Trusted trial-instruction evidence for operator task authorization."""
+"""Trusted trial-instruction evidence for operator task authorization.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

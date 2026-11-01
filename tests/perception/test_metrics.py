@@ -1,3 +1,7 @@
+"""Tests for metrics.
+Authored by Shritej Gunda.
+"""
+
 import pytest
 
 from perception.metrics import MetricInputError, classification_report

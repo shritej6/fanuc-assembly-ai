@@ -1,4 +1,6 @@
-"""The Slurm render wrapper succeeds only when the chunk itself is complete, whatever Isaac's exit code says."""
+"""The Slurm render wrapper succeeds only when the chunk itself is complete, whatever Isaac's exit code says.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +28,6 @@ case "$FAKE_ISAAC" in
 esac
 exit 0
 """
-
 
 def _run(tmp_path: Path, isaac: str) -> tuple[int, Path, str]:
     data, bin_dir = tmp_path / "data", tmp_path / "bin"

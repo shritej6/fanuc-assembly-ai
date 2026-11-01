@@ -1,4 +1,5 @@
-"""Seeded prompt, layout, and fault generation for the T17 scenario fleet."""
+"""Seeded prompt, layout and fault generation for the scenario fleet.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -18,10 +19,11 @@ TAXONOMY_PATH = Path(__file__).resolve().parents[1] / "contracts" / "taxonomy.js
 
 
 class FleetInputError(ValueError):
-    """A fleet request is incomplete or cannot generate a valid scenario."""
+    """Raised when a fleet request is incomplete or cannot make a valid scenario."""
 
 
 class FaultKind(StrEnum):
+    """Kinds of fault a scenario can inject."""
     CLEAN = "clean"
     DEFECT = "defect"
     FALLEN = "fallen"
@@ -32,7 +34,7 @@ class FaultKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class FleetBounds:
-    """Caller-supplied mock geometry; values are never real-cell calibration."""
+    """Mock geometry supplied by the caller, never real cell calibration."""
 
     x_mm: tuple[float, float]
     y_mm: tuple[float, float]
@@ -56,6 +58,7 @@ class FleetBounds:
 
 @dataclass(frozen=True, slots=True)
 class ScenarioObject:
+    """One object placed in a generated scenario."""
     instance_id: str
     object_id: str
     owner_product: int
@@ -69,6 +72,7 @@ class ScenarioObject:
 
 @dataclass(frozen=True, slots=True)
 class Scenario:
+    """One generated scenario: prompt, objects and injected faults."""
     scenario_id: str
     products: tuple[int, ...]
     instruction: str
@@ -79,15 +83,17 @@ class Scenario:
 
     @property
     def hazardous_objects(self) -> tuple[ScenarioObject, ...]:
+        """Return the objects that are hazards in this scenario."""
         return tuple(item for item in self.objects if item.hazardous)
 
     @property
     def layout_signature(self) -> tuple[tuple[str, tuple[float, float, float, float]], ...]:
+        """Return a key that identifies this layout."""
         return tuple(sorted((item.instance_id, item.pose) for item in self.objects))
 
 
 def parse_instruction_products(instruction: object, catalog: Catalog) -> tuple[int, ...]:
-    """Parse product ids only from the current trial instruction."""
+    """Return the product ids named in the current trial instruction."""
     if not isinstance(instruction, str) or not instruction.strip():
         raise FleetInputError("trial instruction must be a non-empty string")
     match = re.fullmatch(r"\s*assemble\s+products?\s+(.+?)\.?\s*", instruction, re.IGNORECASE)
@@ -103,7 +109,7 @@ def parse_instruction_products(instruction: object, catalog: Catalog) -> tuple[i
 
 
 class ScenarioGenerator:
-    """Generate reproducible scenarios without a product trio or layout registry."""
+    """Generate reproducible scenarios from a seed."""
 
     def __init__(self, catalog: Catalog, *, bounds: FleetBounds, seed: int) -> None:
         if isinstance(seed, bool) or not isinstance(seed, int):
@@ -118,6 +124,7 @@ class ScenarioGenerator:
         self._part_products, self._lookalikes = _taxonomy_parts()
 
     def generate(self, count: int) -> tuple[Scenario, ...]:
+        """Return `count` generated scenarios."""
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
             raise FleetInputError("scenario count must be a positive integer")
         faults = self._fault_schedule(count)

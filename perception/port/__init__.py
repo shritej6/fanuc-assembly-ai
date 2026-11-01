@@ -1,4 +1,5 @@
-"""T30 PerceptionPort adapter: the real cameras and trained models behind the T09 controller's PerceptionPort."""
+"""PerceptionPort adapter that puts the real cameras and models behind the controller.
+Authored by Shritej Gunda."""
 
 from perception.port.port import CellPerceptionPort
 

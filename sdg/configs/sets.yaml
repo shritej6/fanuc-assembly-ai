@@ -1,5 +1,5 @@
-# Synthetic image sets (docs/PLAN.md section 6, docs/SDG_PLAN.md). Counts are images, not scenes.
-# s_per_image is an ESTIMATE (5.5 s on a T4, real-time render) until the pilot measures it.
+# Synthetic image sets; counts are images, not scenes.
+# Authored by Shritej Gunda.
 
 defaults:
   chunk_size: 500
@@ -7,7 +7,7 @@ defaults:
   image_size: {table: [1920, 1080], side: [1920, 1080], wrist: [1280, 720]}
   depth: {table: [640, 400], wrist: [848, 480]}   # what the real cell can send (DEPTH=True)
   material: black_pla
-  spares: [M2_03, M2_02, M1_03, M6_02, M3_03, M4_04]   # RISK_RANKING_v0 print list (PRELIMINARY)
+  spares: [M2_03, M2_02, M1_03, M6_02, M3_03, M4_04]   # RISK_RANKING_v0 print list (estimate)
   defect_types: [snapped_tab, missing_feature, scale_97, scale_103, warp, layer_split]
   foreign_objects: [screw_m3, tape_roll, cube_10mm]
 
@@ -102,7 +102,7 @@ sets:
 
   # ---------------------------------------------------------------- edge-case sets (docs/SDG_PLAN.md section 11)
   # Same models as A-D, trained on the union. Each set pushes one axis past the nominal ranges, so the models see
-  # the bad cases the real cell can produce. E stays reserved for GR00T demos (T12).
+  # the bad cases the real cell can produce. E stays reserved for GR00T demos.
 
   F:                       # detector under bad light, bad sensor and a drifted camera mount
     images: 8000
@@ -294,7 +294,7 @@ sets:
       arm_in_view_prob: 0.3
     wrist: {standoff_mm: [100.0, 240.0], tilt_deg: [0.0, 20.0], target_offset_mm: 10.0}
 
-  # ---------------------------------------------------------------- test-bed sets (T25, user 2026-10-28)
+  # ---------------------------------------------------------------- test-bed sets
   # The arm only picks and places straight down and cannot turn a part over, so on the real test-bed every loose part
   # (and every spare) stands exactly as it sits in its product, at any yaw: pose_sampling: installed. A fallen_prob
   # share lies in another resting pose (label rest: fallen); the planner rejects those and takes a spare.
@@ -410,7 +410,7 @@ sets:
       spares_any_part: true     # a few spares of any of the 24 parts, never a base
       fallen_prob: 0.5
 
-  S:                       # weak spots measured on the T27 test set and real CSI photos 2026-10-29 (user order)
+  S:                       # weak spots measured on the test set and real CSI photos
     images: 3000           # small parts + M3 screw, connector products 4-6 standing and fallen, defects, and the
     seed: 19000            # CSI marker cards / camera housing as unlabelled not-a-part objects
     model: detector (Faster R-CNN or RT-DETR)

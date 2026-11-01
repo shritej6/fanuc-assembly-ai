@@ -1,10 +1,5 @@
-"""Force guard: a demo whose contact peak exceeds physics/limits.yaml is discarded (never saved).
-
-Reads `obs["sim"]["contact_peak"]` (the peak over the whole `step_tcp` chunk, which the env should report so short
-spikes between control steps are not missed) and falls back to `obs["sim"]["contact"]` (the value at the end of the
-step). Per object: `normal_N` is checked against `axial_N`, `lateral_N` against `lateral_N`, `torque_Nm` against
-`torque_Nm`, and the optional `grip_N` (finger squeeze on the held part) against the optional `grip_N` limit, which
-keeps the gripper from crushing parts. There are no built-in default limits: the guard refuses to run without the file.
+"""Force guard that discards any demo whose contact peak exceeds physics/limits.yaml.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -73,9 +68,7 @@ class ForceGuard:
     pre_touch_violations: list[Violation] = field(default_factory=list)  # a bad scene: the episode is reset_invalid
 
     def observe(self, step: int, obs: dict) -> None:
-        """Main's rule (2026-10-30): before the robot's first contact, peaks are logged as pre_touch_peaks and an
-        over-limit one makes the episode reset_invalid (bad scene, never a demo); from first contact on the guard
-        applies in full."""
+        """Log pre-contact peaks as scene checks and apply the force guard in full from first contact."""
         sim = obs.get("sim") or {}
         contact = sim.get("contact_peak", sim.get("contact"))
         if contact is None:

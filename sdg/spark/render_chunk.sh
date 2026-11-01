@@ -1,11 +1,6 @@
 #!/bin/bash
-# Render chunks on the GB10 (DGX Spark, arm64) with the official Isaac Sim 6.0.0 container.
-# Same generator and specs as Rosie; one chunk at a time (one GPU).
-#
-#   sdg/spark/render_chunk.sh C 0 1 2        # set C, chunks 0 1 2
-#   LIMIT=3 sdg/spark/render_chunk.sh B 0    # smoke test: first 3 scenes only
-#   RENDER_ARGS="--rt-subframes 8" sdg/spark/render_chunk.sh K 0   # extra generator flags; works on any Docker GPU host
-#   DOCKER_GPUS=device=1 sdg/spark/render_chunk.sh G 0              # pin to one GPU on a multi-GPU host (Brev 2x L40S)
+# Render chunks on the GB10 with the Isaac Sim 6.0.0 container.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

@@ -1,23 +1,5 @@
-"""Mimic generation on N cloned cells in one process (agent 9's AssemblyCellEnv(num_envs=N), BATCH_API.md).
-
-Each env is a lane: one thread running the same per-env attempt loop as a single-env worker (agent 3's
-EpisodeRecorder, gates and force guard; this package's source choice, subtask progress, accept / reject). Lanes
-talk to the cells only through the Hub, which owns the env on the main thread:
-
-    step    a lane's EpisodeRecorder plays one act_tcp chunk; the hub waits until every live lane that is not
-            resetting asked for a step (or an end / reset), then makes ONE step_tcp_many call. A cell that is
-            recording is never given a hold step it did not ask for (BATCH_API hub rules 1 and 2).
-    end     the lane's episode is over: meta line + end_episode(k, ok) are served at once, before the next step, in
-            the order the lanes ask (Hub.lock), so <file>.meta.jsonl lines follow the recorder's export order.
-    reset   the lane wants a new layout. With per-env reset (env.begin_reset) the cell starts settling at once and
-            the others keep stepping; the lane gets its obs from ready_resets() after a later step_tcp_many ({} when
-            every live cell is settling). The first reset of all is always a lockstep reset_many, which builds the
-            env's observation buffers. Without begin_reset the hub resets every cell together when every live lane waits
-            for one (reset_many) and rotates the recorder file there, when no cell has an episode in progress.
-
-With per-env reset the recorder file rotates between calls whenever no lane is between its meta line and its end
-(Hub.lock is free): in-progress episodes stay in memory until end_episode (BATCH_API rotate). A lane that finished its
-target retires: its cell holds; at a lockstep reset it gets its previous layout and is ended at once.
+"""Run Mimic generation on several cloned cells in one process, one lane thread per cell.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -60,6 +42,7 @@ class Hub:
 
     # --- lane side ------------------------------------------------------------------------------------------
     def request(self, k: int, req: tuple):
+        """Send a request from lane k to the env thread and return its result."""
         with self.cv:
             if self.error is not None:
                 raise LaneFailed(f"env failed: {self.error}") from self.error
@@ -72,6 +55,7 @@ class Hub:
             return lane.result
 
     def retire(self, k: int) -> None:
+        """Remove lane k from the live lanes."""
         with self.cv:
             self.live.discard(k)
             self.cv.notify_all()
@@ -171,19 +155,23 @@ class LaneEnv:
         self.hub, self.k = hub, k
 
     def reset(self, layout: dict, frames_fn=None) -> dict:
+        """Reset this lane's cell to the layout and return the first observation."""
         return self.hub.request(self.k, ("reset", layout, frames_fn))
 
     def step_tcp(self, rows, dt: float) -> dict:
+        """Step this lane's cell with TCP rows and return the observation."""
         obs = self.hub.request(self.k, ("step", rows, dt))
         if obs.get("ik_error"):  # with one env AssemblyCellEnv raises TcpError (a ValueError); keep that contract
             raise ValueError(f"env {self.k}: {obs['ik_error']}")
         return obs
 
     def end_episode(self, ok: bool) -> None:
+        """End this lane's episode as passed or failed."""
         self.hub.request(self.k, ("end", bool(ok)))
 
     @property
     def placements(self) -> dict:
+        """Return the object placements of this lane's cell."""
         return self.hub.env.env.eps[self.k].placements
 
     def close(self) -> None:
@@ -191,13 +179,13 @@ class LaneEnv:
 
 
 def lane_backend(hub: Hub, k: int, scenario: str, product: int, record_path: str):
-    """agent 3's IsaacBackend for one lane: its own layout sampling, planning and frames (plans per lane), on the
-    shared env through LaneEnv; finish() ends this cell's episode, rotate()/close() are the hub's business."""
+    """Return a backend for one lane that drives the shared env through its LaneEnv."""
     from ..objects import planner
     from ..skills.frames import LocalFrameEnv
     from ..skills.isaac_backend import IsaacBackend
 
     class LaneBackend(IsaacBackend):
+        """Backend for one lane that shares the hub's env."""
         def __init__(self):  # no env of its own (IsaacBackend.__init__ would build one)
             self.planner, self.scenario, self.products = planner, scenario, (product,)
             self.raw = LaneEnv(hub, k)
@@ -206,12 +194,15 @@ def lane_backend(hub: Hub, k: int, scenario: str, product: int, record_path: str
             self.installed, self.plans, self.refusal = {}, None, None
 
         def finish(self, ok: bool) -> None:
+            """End this cell's episode."""
             self.raw.end_episode(ok)
 
         def rotate(self, next_path: str) -> None:
+            """Refuse to rotate: the hub rotates the shared recorder file."""
             raise RuntimeError("a lane does not rotate the shared recorder file: the hub does at lockstep resets")
 
         def close(self, annotate_path=None) -> None:
+            """Retire this lane from the hub."""
             hub.retire(k)
 
     return LaneBackend()

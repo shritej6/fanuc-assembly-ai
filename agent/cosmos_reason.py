@@ -1,4 +1,6 @@
-"""Poka-yoke final-build gate: deterministic recipe check plus Cosmos Reason 2."""
+"""Poka-yoke final-build gate: deterministic recipe check plus Cosmos Reason 2.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

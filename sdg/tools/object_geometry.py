@@ -1,19 +1,5 @@
-"""Measure, from CAD, how every object rests loose on the table and where it sits when installed.
-
-Writes `sdg/data/object_geometry.json`, which the scene sampler reads. Run with the CAD venv (cadquery + trimesh):
-
-    ~/cad-workspace/.venv/bin/python sdg/tools/object_geometry.py --cad-dir ~/cad-workspace/FANUC_PRINT_FIRST/cad
-
-* Stable poses come from `trimesh.poses.compute_stable_poses` (quasi-static drop probability per resting face).
-  Each pose stores its table footprint (circle) and height, measured on the posed mesh, not on a bounding box.
-* Installed poses come from the product's `build()` in the CAD scripts: the STL (print frame) is registered onto the
-  assembled solid over all 24 axis-aligned rotations, and the residual is recorded so a bad match is visible.
-* `installed_rest` is the part standing on the table exactly as it sits in its product (the installed rotation,
-  lowered to z=0). The arm only picks and places straight down and cannot turn a part over, so on the real test-bed
-  every loose part stands like this, at any yaw (user, 2026-10-28). Not every installed orientation is a likely drop
-  pose (M1/M2/M3_04 stand on an 8 mm edge), so it is measured here instead of picked from `stable_poses`.
-
-    python sdg/tools/object_geometry.py --add-installed-rest   # adds only that field to the existing JSON
+"""Measure from CAD how every object rests on the table and where it sits when installed.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -59,11 +45,7 @@ def assembled_mesh(part) -> trimesh.Trimesh:
 
 
 def register(stl: trimesh.Trimesh, target: trimesh.Trimesh) -> tuple[np.ndarray, float]:
-    """Best rigid transform (axis rotation + translation) taking the STL onto the assembled solid.
-
-    The rotation is chosen by nearest-vertex distance; the reported residual is the mean STL-vertex-to-surface
-    distance of the winner, which does not depend on how either mesh was tessellated.
-    """
+    """Return the best rigid transform taking the STL onto the assembled solid, and its residual."""
     tree = cKDTree(target.vertices)
     lo, hi = target.bounds
     best = (None, np.inf)

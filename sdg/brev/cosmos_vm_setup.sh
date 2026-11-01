@@ -1,12 +1,6 @@
 #!/bin/bash
-# Prepare a rented Brev GPU VM (Ubuntu 22.04, sudo, NVIDIA driver older than 580) for sdg/brev/cosmos_worker.sh.
-# Cosmos here needs CUDA 13 (sdg/cosmos/pod_setup.sh): datacenter GPUs run it on the old driver through NVIDIA's
-# forward-compatibility package, and transformer-engine finds the CUDA runtime libraries through ldconfig, which
-# RunPod images ship and these VMs do not (found on a driver-550 A100 box, 2026-10-29). The largest empty disk
-# becomes /data for the models, the Cosmos repo and the bundles. The Hugging Face token goes to /data/hf/token
-# (~/.cache/huggingface links there): the first run stops after the mount if it is missing; copy it, run again.
-# Then start the workers with
-#   LD_LIBRARY_PATH=/usr/local/cuda-13.0/compat REPO_DIR=/data/cosmos-transfer2.5 sdg/brev/cosmos_worker.sh
+# Prepare a rented Brev GPU VM to run the Cosmos workers.
+# Authored by Shritej Gunda.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 

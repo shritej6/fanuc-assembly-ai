@@ -1,4 +1,6 @@
-"""Explicit verdict and identity-agreement regressions for T09."""
+"""Explicit verdict and identity-agreement regressions for .
+Authored by Shritej Gunda.
+"""
 
 from assembly.verification import VerificationOutcome, VerificationReason
 from tests.test_verification import _detection, _failed_inspection, _inspection, _verify_post, _verify_pre

@@ -1,4 +1,5 @@
-"""Stable label mappings derived from the shared taxonomy contract."""
+"""Stable label mappings derived from the shared taxonomy contract.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ def fallen_label(object_id: str) -> str:
 
 @dataclass(frozen=True)
 class Ontology:
-    """Immutable class order and evaluation groups for T13."""
+    """Immutable class order and evaluation groups for training."""
 
     classifier_labels: tuple[str, ...]
     detector_labels: tuple[str, ...]
@@ -33,10 +34,12 @@ class Ontology:
 
     @property
     def classifier_label2id(self) -> dict[str, int]:
+        """Return the classifier label to index map."""
         return {label: index for index, label in enumerate(self.classifier_labels)}
 
     @property
     def detector_label2id(self) -> dict[str, int]:
+        """Return the detector label to index map."""
         return {label: index for index, label in enumerate(self.detector_labels)}
 
 
@@ -64,10 +67,7 @@ def _connected_groups(
 
 
 def load_ontology(path: Path, fallen_classes: bool = False) -> Ontology:
-    """Load class order and reject ambiguous look-alike graphs.
-
-    With `fallen_classes` the detector also gets one `<part>__fallen` class per product part, so a single RT-DETR box
-    carries both the exact identity and the fallen flag of the test-bed sets."""
+    """Load the class order and reject ambiguous look-alike graphs."""
     data = json.loads(path.read_text())
     objects = data["objects"]
     labels = tuple(item["object_id"] for item in objects)

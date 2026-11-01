@@ -1,9 +1,5 @@
-"""SIM-ONLY scripted baseline model for the evaluator: executes the director's current step from its CAD targets.
-
-It reads the director's task (oracle), so it is never a deployable policy; it exists to (1) check the eval pipeline,
-director and gates end to end, and (2) give a scripted reference number next to GR00T's on the same layouts.
-Motion: above the grasp -> down -> close -> up -> above the goal -> down (slow last 5 mm) -> open -> up. Straight
-down, no tilt-touch-level insertion (that is agent 3's skill); speeds sit inside the real-arm guard limits.
+"""Sim-only scripted baseline that executes the director's current step from CAD targets.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -68,9 +64,11 @@ class ScriptedOracleModel:
         self.key, self.rows, self.cursor, self.last = None, None, 0, 0
 
     def reset(self) -> None:
+        """Clear the current step."""
         self.key, self.rows, self.cursor, self.last = None, None, 0, 0
 
     def predict(self, obs: dict) -> np.ndarray:
+        """Return the next action chunk for the director's current step."""
         t = self.director_ref().current
         tcp = np.asarray(obs["tcp_pose"], float)[:6]
         key = (t.uid, t.skill, t.attempts, t.started_s)

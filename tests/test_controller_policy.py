@@ -1,4 +1,6 @@
-"""Policy-selection behavior independent of the assembly scenarios."""
+"""Policy-selection behavior independent of the assembly scenarios.
+Authored by Shritej Gunda.
+"""
 
 from pathlib import Path
 

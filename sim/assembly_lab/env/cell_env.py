@@ -1,40 +1,5 @@
-"""AssemblyCellEnv: the thin CellClient-style layer over the Isaac Lab Mimic env (mimic_env.CellMimicEnv).
-
-    env = AssemblyCellEnv(CellEnvCfg(pool=[...], cameras=(...)))   # starts Isaac Sim via Isaac Lab's AppLauncher
-    obs = env.reset(layout, frames_fn=None)      # layout: INTERFACES.md; frames_fn(poses) -> Mimic frames (optional)
-    obs = env.step_tcp(rows, dt)                 # rows (N, 7) [x, y, z, w, p, r, gripper], exactly CellClient.act_tcp
-    env.close()
-
-Every row is played as round(dt / step_dt) env steps (straight-line sub-targets, step_dt = 0.1 s), so the Isaac Lab
-recorder and Mimic see one act_tcp action per 0.1 s whatever dt the skill used.
-
-frames_fn(poses) gets {uid: 4x4 UF0 mm} after the layout settled and returns {"grasp_frame", "seat_frame",
-"spot_frame": 4x4 UF0 mm TCP poses}; they become kinematic markers in the scene (so the initial state the recorder
-writes contains them) and drive the subtask signals. Without it the signals stay false.
-
-Observation = CellClient.observe keys (images, optional depth, joints (7), tcp_pose, instruction) plus `sim`:
-object_poses {uid: [x y z w p r]} (body = STL frame, UF0 mm / deg); contact {uid: {normal_N, lateral_N, torque_Nm
-(about the object's insert axis, body +Z), torque3d_Nm (full magnitude, logging)}} now; contact_peak (same keys, max
-over every physics step of this step_tcp call); robot_touch {uid: peak N between any robot link and that object during
-this call}; signals (instantaneous) and signals_latched; frames; tcp_cmd; settled / settle_s / settle_detail (reset
-steps physics until every object rests: < 1 mm/s, < 0.5 deg/s, contact forces changing < 0.05 N, for 0.5 s; cap 5 s,
-settled False if the cap is hit). Layout x, y place each object's CAD local origin (objects/objects.yaml).
-CellEnvCfg(disturbances=True) adds the eval hooks inject_foreign(x, y, yaw), block_holes(part, base),
-force_release(), inject_intruder(x, y) / clear_intruder() (mimic_env.py).
-Policies never read `sim` (INTERFACES.md).
-
-Several cells in one process (CellEnvCfg(num_envs=N)); the full contract is BATCH_API.md:
-
-    obs = env.reset_many([layout_0, ..., layout_N-1], [frames_fn_0, ...])   # all cells at once, settled together
-    env.begin_reset({k: (layout, frames_fn)})          # per-env reset: env k settles while the others keep stepping
-    out = env.step_tcp_many({0: (rows, dt), 3: (rows, dt)})                # {env: obs} for the envs asked
-    ready = env.ready_resets()                         # {k: reset obs} for envs whose reset finished
-    key = env.end_episode(k, ok, attrs)                # recorder: mark + export env k's episode now -> "demo_<n>"
-
-step_tcp_many plays every listed env's rows at once; an env that runs out of rows (or is not listed) holds its last
-TCP command until the longest list is done. Hold steps are recorded into a live episode, so end_episode an env as
-soon as its episode is over; whatever it records after that is dropped at its next reset. An IK failure in one env
-does not stop the others: that env holds and its obs carries "ik_error" (with one env, TcpError is raised as before).
+"""Thin CellClient-style layer over the Isaac Lab Mimic cell env.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -153,9 +118,7 @@ class AssemblyCellEnv:
         return [self._observe(e) for e in range(self.cfg.num_envs)]
 
     def begin_reset(self, resets: dict) -> None:
-        """{env: (layout, frames_fn)}: place those cells now; each settles during the following step_tcp_many calls
-        (holding home) while the other cells keep running, then shows up in ready_resets(). Its recorder episode
-        starts at the settled scene (the settle steps are not recorded)."""
+        """Place the given cells now and let them settle while the other cells keep running."""
         if self._obs is None:
             raise RuntimeError("begin_reset needs one reset_many() first: the observation and recorder buffers only "
                                "exist after Isaac Lab's env.reset()")
@@ -185,9 +148,7 @@ class AssemblyCellEnv:
         return {k: got[k] for k in want}
 
     def end_episode(self, env_id: int, ok: bool, attrs: dict | None = None) -> str | None:
-        """Mark env_id's recorder episode succeeded / failed, export it now and write `attrs` on its demo group.
-        Returns the demo key written ("demo_<n>"), or None (no recorder, empty episode, or not exported by the
-        recorder's export mode)."""
+        """Mark env_id's recorder episode succeeded / failed, export it now and write `attrs` on its demo group."""
         import torch
 
         self._ended.add(int(env_id))

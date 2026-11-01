@@ -1,6 +1,8 @@
 # Live OEE and Andon dashboard
 
-T16 provides a read-only operations interface backed by an append-only JSONL run log. It never sends robot commands,
+Authored by Shritej Gunda.
+
+The dashboard provides a read-only operations interface backed by an append-only JSONL run log. It never sends robot commands,
 and it keeps `mock`, `sim`, `replay`, and `cell` sources visibly distinct.
 
 ## Metrics
@@ -8,7 +10,7 @@ and it keeps `mock`, `sim`, `replay`, and `cell` sources visibly distinct.
 - Availability = PackML `Execute` seconds / elapsed planned-production seconds.
 - Performance = sum of measured ideal cycle seconds for completed products / PackML `Execute` seconds.
 - Quality = good products / completed products.
-- OEE = Availability × Performance × Quality.
+- OEE = Availability x Performance x Quality.
 - First-pass yield = `good_first_pass` / completed products.
 - Final yield = (`good_first_pass` + `good_after_rebuild`) / completed products.
 - Builds per assist = good products / recorded assists.
@@ -20,7 +22,7 @@ time for every product represented in the reporting window. Values are not cappe
 
 Each line has exactly `version`, `source`, `event`, `timestamp`, `run_id`, `rollout`, and `payload`. Supported sources
 are `mock`, `sim`, `replay`, and `cell`; one log cannot mix sources or run IDs. Rollout identity lets one log retain
-multiple T09 histories even though the official controller creates a new state machine on every reset.
+multiple controller histories even though the official controller creates a new state machine on every reset.
 
 ```json
 {"version":1,"source":"mock","event":"packml","timestamp":"2026-10-29T15:00:00Z","run_id":"run-001","rollout":0,"payload":{"state":"Execute","reason":null,"product":1}}
@@ -35,8 +37,8 @@ dashboard never infers one from a rejected product.
 
 ## Record a live run
 
-`ControllerRunLogRecorder` is the producer boundary between T09 and the dashboard. It synchronizes public
-`PackMLStateMachine.history`, validates terminal records with T15's public validator plus its semantic result rules, and
+`ControllerRunLogRecorder` is the producer boundary between the controller and the dashboard. It synchronizes public
+`PackMLStateMachine.history`, validates terminal records with the birth certificate module's public validator plus its semantic result rules, and
 records an explicit evaluation escape. The writer is local, append-only, file-locked, bounded to 16 MiB by default,
 source/run-pure, timestamp-ordered,
 and synced to disk before returning. A `(run_id, rollout, product)` terminal identity can be recorded only once and
@@ -62,7 +64,7 @@ recorder.record_product_result(validated_birth_certificate, recorded_at=finished
 recorder.record_heartbeat(recorded_at=observed_at)
 ```
 
-Create a new recorder with the next rollout number after every actual T09 `controller.reset()`. Call `sync_packml` after
+Create a new recorder with the next rollout number after every actual `controller.reset()`. Call `sync_packml` after
 each state transition and once during startup. On restart it verifies that PackML events for that rollout are an exact
 prefix of the controller history before appending anything; a divergent history fails closed. Schedule
 `record_heartbeat` periodically while the controller process is healthy, at an interval shorter than `--stale-after-s`.

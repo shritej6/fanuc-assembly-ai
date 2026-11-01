@@ -1,4 +1,6 @@
-"""Correction demos (skills/correct.py): the staged wrong pose is masked and comes first, the fix is learned."""
+"""Correction demos (skills/correct.py): the staged wrong pose is masked and comes first, the fix is learned.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -92,7 +94,7 @@ def test_record_keeps_correction_demos(tmp_path, scenario):
 
 
 def test_give_up_after_stops_a_part_that_keeps_failing(tmp_path, monkeypatch):
-    """A part failing its gates every time must not burn every attempt of a job (fleet run 10/31: ~100 GPU-min)."""
+    """A part failing its gates every time must not burn every attempt of a job."""
     lim = tmp_path / "limits.yaml"
     lim.write_text(LIMITS)
 

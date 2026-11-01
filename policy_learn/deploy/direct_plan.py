@@ -1,19 +1,5 @@
-"""The 14:00 fallback plan: every pick-insert step of one rollout, from placement.yaml, with no pose perception.
-
-    from policy_learn.deploy.direct_plan import load_placement, plan_rollout
-    rollouts = load_placement("robot/cell/submission/placement.yaml")
-    steps = plan_rollout(rollouts[0])          # products in prompt order, parts in assembly-sheet order
-
-Each `Step` carries what `GrootPolicy.set_plan` needs, computed exactly as the training data and the sim eval do:
-- the part and base poses are the env's STL-frame poses for a part standing at the placement spot
-  (sim/assembly_lab/env/layout.py `LayoutSolver.table_tf`, the transform the demos were spawned with), so the
-  instruction numbers mean what they meant in training (mimic/instructions.py: part x, y, yaw, roll, base x, y, yaw);
-- the grasp TCP and the seated TCP come from agent 2's planner (sim/assembly_lab/objects/planner.py `plan_pick`,
-  `plan_place`), run in sheet order with every earlier part already seated, as tools/placement/validate.py checked it.
-  The grasp roll is chosen near r = 180 (validate.py NEUTRAL_R: the T18 training rolls span 93..266).
-
-The positions are where the operator was asked to put the parts by hand: nothing here measures where they really are.
-"""
+"""Fallback plan: every pick-insert step of one rollout from placement.yaml, without pose perception.
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 import math
@@ -25,16 +11,17 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_PLACEMENT = REPO / "robot" / "cell" / "submission" / "placement.yaml"
-NEUTRAL_R = 180.0  # tools/placement/validate.py: the planner's reference roll for the 14:00 placement
+NEUTRAL_R = 180.0  # tools/placement/validate.py: the planner's reference roll for the fallback placement
 _PRODUCTS_RE = re.compile(r"products?\s+([\d,\sand]+?)\s+on", re.IGNORECASE)
 
 
 class PlacementError(ValueError):
-    """placement.yaml is missing a rollout, an object, or a prompt the runtime needs."""
+    """Raised when placement.yaml lacks a rollout, object or prompt the runtime needs."""
 
 
 @dataclass(frozen=True)
 class Rollout:
+    """One rollout read from placement.yaml."""
     index: int                                  # 0-based, the order in placement.yaml
     prompt: str
     products: tuple[int, ...]                   # prompt order: the build order
@@ -43,6 +30,7 @@ class Rollout:
 
 @dataclass(frozen=True)
 class Step:
+    """One planned pick-insert step."""
     product: int
     object_id: str                              # e.g. M5_01
     base_id: str                                # e.g. F05
@@ -56,6 +44,7 @@ class Step:
 
     @property
     def label(self) -> str:
+        """Return a short label for this step."""
         return f"{self.object_id} on {self.base_id}"
 
 
@@ -71,6 +60,7 @@ def _products(prompt: str) -> tuple[int, ...]:
 
 
 def load_placement(path: str | Path | None = None) -> list[Rollout]:
+    """Load and return the placement file."""
     path = Path(path or DEFAULT_PLACEMENT)
     data = yaml.safe_load(path.read_text()) or {}
     entries = data.get("rollouts") or []
@@ -85,8 +75,7 @@ def load_placement(path: str | Path | None = None) -> list[Rollout]:
 
 
 def _centre_to_origin(oid: str, catalog: dict, cx: float, cy: float, yaw: float) -> tuple[float, float]:
-    """placement.yaml gives the footprint centre; the planner and the env take the CAD local origin
-    (the same conversion as tools/placement/validate.py origin_from_centre)."""
+    """Return the CAD local origin for a footprint centre."""
     if oid.startswith("F"):
         return cx, cy  # validate.py places bases by their spot centre directly
     b = catalog[oid]["bbox_mm"]
@@ -127,8 +116,7 @@ def _seat_in_scene(scene: dict, part: str, base: str) -> None:
 
 
 def plan_rollout(rollout: Rollout) -> list[Step]:
-    """Every pick-insert step of the rollout in build order. Raises PlacementError if the planner refuses a step:
-    the runtime then holds instead of guessing a plan."""
+    """Return every pick-insert step of the rollout in build order."""
     from sim.assembly_lab.env.layout import LayoutSolver
     from sim.assembly_lab.eval.cad import matrix_to_pose
     from sim.assembly_lab.objects.planner import OPEN_GAP_MM, load_catalog, plan_pick, plan_place

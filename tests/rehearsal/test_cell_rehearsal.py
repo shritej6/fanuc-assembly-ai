@@ -1,8 +1,5 @@
-"""Real-cell rehearsal of Codex's CELL runtime against a lagging, noisy, faulty arm.
-
-Opt-in (several minutes): ``REHEARSAL=1 uv run pytest -q tests/rehearsal`` or ``tools/rehearsal/run.sh``.
-Tests documenting a CURRENT blocker are ``xfail(strict=True)``: when Codex fixes it they XPASS and the run
-fails, which is the signal to re-review and drop the marker.
+"""Tests for cell rehearsal.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -62,7 +59,7 @@ def test_saturday_tilt_cone_allows_three_plus_two_degree_wiggle() -> None:
 
 
 def test_saturday_base_tilt_limit_stays_three_degrees() -> None:
-    """The product BASE must sit flat (3 deg); the 6 deg cone is the tool's, never the base's (PR 24, W3)."""
+    """The product BASE must sit flat (3 deg); the 6 deg cone is the tool's, never the base's."""
     from assembly.cell_runtime import SATURDAY_GROOT_WATCHDOG_LIMITS
 
     assert SATURDAY_GROOT_WATCHDOG_LIMITS.base_tilt_limit_deg == 3.0

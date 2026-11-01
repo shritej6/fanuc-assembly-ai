@@ -1,11 +1,5 @@
-"""Check the cell through the same path the official Mimic scripts use: register_tasks -> parse_env_cfg -> gym.make.
-
-    T12_POOL=F04,M4_01 T12_CAMERAS=table,side,wrist isaaclab_run.sh sim/assembly_lab/env/mimic_check.py \
-        --out ~/t12_data/mimic_check [--task Isaac-T12-Cell-PickInsert-Mimic-v0] [--device cuda:0]
-
-Measures (report.json): Mimic API round trips (target_eef_pose_to_action <-> action_to_target_eef_pose), the
-get_object_poses / get_subtask_term_signals keys over a scripted CAD-grasp pick, scene get_state -> reset_to
-restoring every pose, and env steps per second.
+"""Check the cell through the same register, parse and make path the Isaac Lab Mimic scripts use.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

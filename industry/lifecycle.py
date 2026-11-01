@@ -1,4 +1,6 @@
-"""Shared PackML lifecycle evidence rules for terminal run events."""
+"""Shared PackML lifecycle evidence rules for terminal run events.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,10 +1,5 @@
 """Quality gates for rendered chunks (docs/SDG_PLAN.md section 7). Runs on any host with the chunk folders.
-
-    uv run python -m sdg.qa $DATA_ROOT/synthetic/A/chunk_0000 [more chunks...] --sheet qa_A0.png
-    uv run python -m sdg.qa <chunk> --sample 40          # random 40 scenes per chunk (the watchdog's check)
-
-Checks every scene: all files present, boxes inside the image and equal to the mask extent, depth sane.
-Exit code 1 if any check fails. The overlay sheet (boxes + ids on 12 images) is for the by-eye gate.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -19,7 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 DEPTH_RANGE_MM = {"table": (400, 2000), "wrist": (60, 900)}   # plausible median depth per camera
-# Render noise: median |Laplacian| over background pixels. Measured 2026-10-28: denoised frames 0-7, frames rendered
+# Render noise: median |Laplacian| over background pixels. Denoised frames measure 0-7, frames rendered
 # without the RTX denoiser 9-77. Only judged on scenes whose own added sensor noise is small.
 RENDER_NOISE_MAX, QUIET_SENSOR_SIGMA = 8.0, 0.005
 COLOURS = {"base": (40, 140, 255), "part": (40, 220, 90), "trap": (255, 60, 60), "spare": (250, 200, 0),
@@ -66,8 +61,7 @@ def render_noise(rgb_path: Path, seg: np.ndarray) -> float:
 
 
 def _check_render_noise(idx: str, cam: str, rgb_path: Path, seg: np.ndarray, spec: dict) -> list[str]:
-    """Catches a renderer whose denoiser did not run (every frame speckled). Skipped when the scene itself adds
-    visible sensor noise or blur, which raises the same measure on purpose."""
+    """Flag a frame whose denoiser did not run, unless the scene adds visible sensor noise."""
     post = spec.get("post")
     if not post or post["motion_blur"] or post["gaussian_noise_sigma"] >= QUIET_SENSOR_SIGMA:
         return []

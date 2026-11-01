@@ -1,4 +1,6 @@
-"""Behavioral tests for observed live inventory and recipe reservation."""
+"""Behavioral tests for observed live inventory and recipe reservation.
+Authored by Shritej Gunda.
+"""
 
 import pytest
 

@@ -1,13 +1,5 @@
-"""Run the GR00T policy on every eval scenario in the Isaac Lab cell; write KPIs JSON and short videos.
-
-    # on the sim box, GR00T server reachable on :5555 (agent 5's serve_policy.sh, or an ssh tunnel)
-    CUDA_VISIBLE_DEVICES=3 ./isaaclab.sh -p sim/assembly_lab/eval/run_eval.py --run groot_e1 \
-        --policy groot://127.0.0.1:5555 [--only nominal_M4 crowded] [--layouts 2]
-    python -m sim.assembly_lab.eval.run_eval --run check --dry      # host: layouts only, checked by the env's solver
-
-Output: ~/t12_data/eval/<run>/results.json (per episode, per scenario, per product, per case) and videos/*.mp4.
-Every chunk goes through policy_learn/deploy/guards.py exactly as on the real arm. A scenario whose requirement the
-env or director lacks is SKIPPED with the reason; skips never count as passes.
+"""Run a policy on every eval scenario in the Isaac Lab cell and write KPIs and videos.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -30,9 +22,8 @@ from sim.assembly_lab.eval import cad, kpis, layouts
 from sim.assembly_lab.eval.director import Director
 
 OUT_ROOT = Path.home() / "t12_data" / "eval"
-# The real cell's home (robot/cell/mock_cell.py HOME, "same API, limits and timing as the real cell"): TCP about
-# (300, 0, -90) with the fingers straight down. The sim default (scene_config HOME_POSE_DEG) puts the TCP at about
-# (87, 0, -216) tilted 50 deg, outside the workspace box, so every episode would start from a pose the real arm never has.
+# Start from the real cell's home: TCP about (300, 0, -90), fingers straight down. The sim default pose
+# lies outside the workspace box, so episodes would start from a pose the real arm never has.
 CELL_HOME_DEG = {"J1": -0.0065, "J2": 3.2909, "J3": -11.8967, "J4": -0.0007, "J5": -74.8218, "J6": -0.0286}
 
 
@@ -51,10 +42,12 @@ def video_backend() -> str | None:
 
 
 class Video:
+    """Write eval frames to an MP4 file."""
     def __init__(self, path: Path, fps: float):
         self.path, self.fps, self.writer = path, fps, None
 
     def add(self, obs: dict) -> None:
+        """Add one observation's camera frames."""
         import cv2
 
         imgs = obs["images"]
@@ -66,6 +59,7 @@ class Video:
         self.writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
     def close(self) -> None:
+        """Close the video file."""
         if self.writer is not None:
             self.writer.release()
 
@@ -82,6 +76,7 @@ def progress(line: str) -> None:
 
 
 def missing_requirement(ev_reqs: list[str], env, custom_director: bool) -> str | None:
+    """Return why a scenario cannot run here, or None."""
     for req in ev_reqs:
         kind, _, name = req.partition(":")
         if kind == "env" and not hasattr(env, name):
@@ -101,6 +96,7 @@ def seat_gap(obs, task) -> dict | None:
 
 
 def run_episode(env, policy: GrootPolicy, ev, limit: float, limits: dict, director, video: Video | None) -> dict:
+    """Run one eval episode and return its result row."""
     t0 = time.time()
     obs = env.reset(ev.layout)
     policy.reset()
@@ -160,6 +156,7 @@ def run_episode(env, policy: GrootPolicy, ev, limit: float, limits: dict, direct
 
 
 def rate(rows: list[dict]) -> dict:
+    """Return the pass count and rate of result rows."""
     ran = [r for r in rows if not r.get("skipped")]
     ok = sum(r["success"] for r in ran)
     return {"pass": ok, "ran": len(ran), "skipped": len(rows) - len(ran),
@@ -170,6 +167,7 @@ def rate(rows: list[dict]) -> dict:
 
 
 def aggregate(results: list[dict], products_of: dict) -> dict:
+    """Return pass rates by scenario, case and product."""
     by_s, by_c, by_p = defaultdict(list), defaultdict(list), defaultdict(list)
     for r in results:
         by_s[r["scenario"]].append(r)
@@ -181,6 +179,7 @@ def aggregate(results: list[dict], products_of: dict) -> dict:
 
 
 def make_director(spec: str | None, ev, task_time_s: float):
+    """Return the director for one eval layout."""
     if not spec or spec == "oracle":
         return Director.for_layout(ev, task_time_s)
     mod, _, cls = spec.partition(":")
@@ -210,6 +209,7 @@ def dry(evs: list) -> int:
 
 
 def main() -> int:
+    """Parse the command line, run the eval and return the exit code."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", required=True)
     ap.add_argument("--policy", help="groot://host:port, scripted (sim-only oracle baseline) or stub (plumbing)")

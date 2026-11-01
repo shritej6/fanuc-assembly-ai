@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Rehearse path B (T39 robot/cell/policy_direct.py, DirectGrootRuntime) against the laggy real-arm double.
+# Rehearse the DirectGrootRuntime entry point (robot/cell/policy_direct.py) against the laggy real-arm double.
+# Authored by Shritej Gunda.
 #
-#   tools/rehearsal/run_b.sh [--groot] [--ref origin/feature/T39-direct-groot-runtime]
+#   tools/rehearsal/run_b.sh [--groot] [--ref <git ref>]
 #
-# --groot  also drives the real GR00T server at 127.0.0.1:5555 (an existing ssh tunnel to fa-eval; not opened here).
-# Exit code is non-zero when a scenario FAILs. KNOWN = a documented limitation (drop not detected on the cell).
+# --groot  also drives the real GR00T server at 127.0.0.1:5555 through an existing SSH tunnel.
+# Exits non-zero when a scenario FAILs. KNOWN = a documented limitation (drop not detected on the cell).
 set -eu
 
 REF="origin/feature/T39-direct-groot-runtime"

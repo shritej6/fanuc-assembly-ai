@@ -1,4 +1,6 @@
-"""Fail-closed parsing of products requested by the trial prompt."""
+"""Fail-closed parsing of products requested by the trial prompt.
+Authored by Shritej Gunda.
+"""
 
 import re
 

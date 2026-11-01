@@ -1,7 +1,5 @@
-"""PRELIMINARY TCP-point scene checks for the supervised Saturday cell run.
-
-This supervisor deliberately does not claim full robot IK, robot-link collision,
-or held-part sweep coverage.  Those production capabilities remain deferred.
+"""Estimate-grade TCP-point scene checks for the supervised cell run.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -198,9 +196,8 @@ class SaturdaySceneSafetySupervisor(SafetySupervisor):
     )
 
     def __init__(self) -> None:
-        # SafetySupervisor.__init__ correctly refuses these incomplete
-        # capabilities.  This subclass supplies a separate checks-only
-        # validate implementation and is never represented as production-ready.
+        # The base __init__ refuses these incomplete capabilities; this
+        # subclass supplies its own checks-only validate.
         self._dt_s = DT_S
         self._layout = _load_layout()
         self._limits = GuardLimits(

@@ -1,10 +1,5 @@
-"""Run the official `run.py --mock` check with GrootPolicy in place of robot/cell/policy.py (no robot/cell edits).
-
-    cd robot/cell && GROOT_POLICY=stub uv run python ../../policy_learn/deploy/mock_check.py [--trials 3 ...]
-    cd robot/cell && GROOT_POLICY=groot://127.0.0.1:5555 uv run python ../../policy_learn/deploy/mock_check.py
-
-Every run.py flag is passed through; --mock is added. The verdict ("Ready for the real robot") is run.py's own.
-"""
+"""Run the official run.py --mock check with GrootPolicy in place of the stock policy.
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 import sys

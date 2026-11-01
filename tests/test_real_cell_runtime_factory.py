@@ -1,4 +1,6 @@
-"""The real-cell controller factory exists but remains fail-closed until reviewed."""
+"""The real-cell controller factory exists but remains fail-closed until reviewed.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

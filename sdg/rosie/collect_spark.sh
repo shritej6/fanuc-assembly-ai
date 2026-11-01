@@ -1,10 +1,6 @@
 #!/bin/bash
-# Pull the GB10's rendered chunks and specs into Rosie's data folder, so training reads every set from one place.
-# Only finished chunks are copied (rsync re-runs are cheap); the Rosie watchdog then lists them in status.json.
-#
-#   sdg/rosie/collect_spark.sh            # run on the Rosie login node; safe to repeat
-#
-# Needs: SSH key ~/.ssh/av_gb10 for hackathon1@spark1 (present), DATA_ROOT (default ~/fanuc-assembly-data).
+# Copy finished GB10 chunks and specs into the Rosie data folder.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-assembly-data}"

@@ -1,4 +1,6 @@
-"""Build a participant release with an explicit file set and integrity manifest."""
+"""Build a participant release with an explicit file set and integrity manifest.
+Authored by Shritej Gunda.
+"""
 
 import argparse
 import hashlib

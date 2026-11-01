@@ -1,12 +1,5 @@
-"""A deterministic, PolicyServer-compatible stand-in for GR00T (rehearsal only).
-
-It answers the same ZMQ endpoints as the real server (ping/describe/reset/get_action) and proposes rows that
-would complete one pick-insert of the mock-calibrated M<p>_0<s> step: approach the grasp, close, carry to the
-insert pose, open, retreat. Steps are sized to the live guard limits so the guard has nothing to refuse on the
-nominal path; the slow zone uses the guard's *current* contact target, whatever radius Codex's envelope uses.
-
-``inject_low_row`` makes it emit, once, a row 0.5 mm off-axis and ``low_row_below_floor_mm`` below the contact
-floor while it carries the part over the insert target.
+"""Deterministic, PolicyServer-compatible stand-in for GR00T, for rehearsal only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -33,7 +26,7 @@ GuardTargetFn = Callable[[], Any]
 
 
 def attestation_envelope() -> dict[str, object]:
-    """The same software-proof attestation Codex's CELL_PROOF fake server returns."""
+    """Return the same software-proof attestation as the CELL_PROOF fake server."""
     return {
         "protocol": ATTESTATION_PROTOCOL,
         "attestation": {

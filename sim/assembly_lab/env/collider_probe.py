@@ -1,10 +1,5 @@
-"""Print every collider under the objects root at runtime: approximation, SDF settings, offsets, mesh size, filters.
-
-    isaaclab_run.sh sim/assembly_lab/env/collider_probe.py [--pool F04,M4_01]
-
-For each collision prim: approximation (sdf / convexHull / ... / none), SDF resolution / margin / narrow band, contact
-and rest offset, mesh point and triangle counts with the z extent in mm (pegs present in the collision mesh?), and
-any collision-group or filtered-pair relationship that could switch object-object contact off.
+"""Print every collider under the objects root with its approximation, SDF settings and filters.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

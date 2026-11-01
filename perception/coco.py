@@ -1,4 +1,6 @@
-"""Convert frozen detector records to COCO detection JSON."""
+"""Convert frozen detector records to COCO detection JSON.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

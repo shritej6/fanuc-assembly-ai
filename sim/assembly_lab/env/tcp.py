@@ -1,9 +1,5 @@
-"""act_tcp rows -> ER-4iA joint targets. numpy only; reuses the starter's verified FK and damped least-squares IK.
-
-TCP = UTOOL1, the fingertip point (tip plane of the Team V NBR pads, 293 mm from the J6 wrist centre: the CSI TCP
-length kept by the Team V fingers). TCP frame: z = approach (flange TOOL_AXIS), y = jaw closing axis, so fingers
-straight down are w, p, r = -180, 0, r. The same solver and seeds produced the synthetic data's wrist poses
-(`sdg/wrist_ik.py`).
+"""Turn act_tcp rows into ER-4iA joint targets using the starter FK and damped least-squares IK.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

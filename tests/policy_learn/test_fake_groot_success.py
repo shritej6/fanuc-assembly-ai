@@ -1,4 +1,6 @@
-"""Positive software proof for guarded T09-to-GR00T execution."""
+"""Positive software proof for guarded to-GR00T execution.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

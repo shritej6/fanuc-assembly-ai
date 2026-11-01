@@ -1,4 +1,6 @@
-"""Loopback-only asyncua publisher for PLC-style FANUC cell telemetry."""
+"""Loopback-only asyncua publisher for PLC-style FANUC cell telemetry.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -87,7 +89,7 @@ def _is_loopback(host: str) -> bool:
 
 
 class OpcUaCellServer:
-    """Publish T09 state and queue validated non-motion requests through asyncua."""
+    """Publish controller state and queue validated non-motion requests through asyncua."""
 
     NODE_PREFIX = "TeamV.Cell"
 

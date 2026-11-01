@@ -1,15 +1,5 @@
-"""Validate the force-guard numbers against known loads: every resting object's normal_N must equal its weight, and a
-known external push must read back, both within 5 %.
-
-    isaaclab_run.sh sim/assembly_lab/env/force_validate.py --out ~/t12_data/force_validate.json
-
-1. All 30 product objects stand upright on the table (one reset, 70 mm grid, no robot contact); after settling, normal_N
-   and lateral_N (net contact force minus robot-link forces, contact_metrics.py) are averaged over 10 env steps and
-   compared with m g and 0. env_contact_coverage (per-contact sum / net) is reported next to them.
-2. A permanent external wrench (Isaac Lab wrench composer, world frame, at the COM) presses chosen objects down with
-   5 N plus a 1 N sideways push and a 0.02 N m twist about z (all below the friction limit, so nothing slides):
-   normal_N must read m g + 5, lateral_N 1.0, and the ungated per-contact torque torque_raw_Nm 0.02.
-Exits non-zero on any failure.
+"""Validate the force guard numbers against known resting and pushing loads.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -148,9 +138,7 @@ def peg_clearance_deg(base: str, part: str) -> float:
 
 
 def seated_twist(env, pairs: list[tuple[str, str]], twist: float) -> list[dict]:
-    """Seat each part on its (held) base, press it down and twist it about z. The pegs must stop it within the CAD
-    clearance (0.5 mm per side over ~15.6 mm: <= 1.8 deg relative to the base) or it must lift >= 2 mm to ride over
-    them; once stopped, the base's peg walls carry the twist, so torque_raw_Nm should read it (per-contact check)."""
+    """Seat each part on its (held) base, press it down and twist it about z."""
     hold = _seat(env, pairs, "fv seated twist")
     for _, part in pairs:
         wrench(env, part, True, side=False, down=args.seated_down, twist=twist)
@@ -179,9 +167,7 @@ def seated_twist(env, pairs: list[tuple[str, str]], twist: float) -> list[dict]:
 
 
 def offset_insert(env, pairs: list[tuple[str, str]], offset_mm: float) -> list[dict]:
-    """Drop each FREE part from 4 mm above its seat, offset `offset_mm` sideways (+x), and press it down 3 N for 2 s.
-    CAD capture (height maps of the STLs): up to 0.5 mm offset in x the part goes in (< 0.3 mm high); from 0.6 mm the
-    unchamfered 3 mm front stops block it, so it must jam (>= 2 mm high)."""
+    """Drop each FREE part from 4 mm above its seat, offset `offset_mm` sideways (+x), and press it down 3 N for 2 s."""
     hold = _seat(env, pairs, "fv offset insert")
     e = env.env
     seats = {part: e.solver.seat_tf_for(part, base, e.object_poses_mm()) for base, part in pairs}

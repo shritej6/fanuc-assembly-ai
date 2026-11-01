@@ -1,9 +1,5 @@
-"""
-Damped least-squares IK for the ER-4iA, on top of the verified fk.py.
-
-Position plus approach-direction only: the tool's roll about its own axis is left
-free, which is the right call for a 2-finger gripper on a symmetric cube and
-keeps the problem well conditioned.
+"""Damped least-squares IK for the ER-4iA built on fk.py.
+Authored by Shritej Gunda.
 """
 
 import numpy as np
@@ -29,14 +25,7 @@ def solve(
     w_rot=0.35,
     spread_dir=None,
 ):
-    """Return (q, converged). approach = desired world direction of TOOL_AXIS.
-
-    spread_dir optionally pins the wrist roll by also demanding a world
-    direction for FINGER_SPREAD_AXIS -- i.e. which way the jaws close. Leaving
-    it None keeps roll free, which is fine for a cube but not for a cylinder:
-    parallel jaws closing along a screw's length push it away instead of
-    gripping it.
-    """
+    """Return (q, converged)."""
     if spread_dir is not None:
         return _solve_full(
             q0,

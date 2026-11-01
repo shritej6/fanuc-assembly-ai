@@ -1,24 +1,5 @@
-"""Real-arm safety guard for `act_tcp` chunks (pure Python + numpy; no robot or sim imports).
-
-Every chunk the learned policy outputs passes through `guard_chunk` before it reaches the cell. The guard never
-passes a bad chunk silently:
-
-- Hard violations REFUSE the chunk from the first refused row on. The rows before it are sent only if that prefix on
-  its own passes every check below (the arm then stops at its last row and the policy is asked again from a new
-  pose, instead of being re-asked forever from a pose that never changes); with no valid prefix the guard returns one
-  safe HOLD row (the current pose, the current gripper state, so a held part stays held). Either way the reasons are
-  reported. A malformed chunk (shape, NaN/inf, dt) is always held whole. Refused: wrong shape, NaN/inf, dt outside
-  0.1-1.0 s, a target outside the
-  workspace box, fingers tilted past the fingers-down limit, a target more than `floor_clamp_mm` below the contact
-  floor (seated height - 1 mm) near the current insertion target, a gripper value that is neither open nor closed, gripper chatter, a
-  gripper change while moving, or a step more than `refuse_factor` times the speed limit (a model glitch).
-- Steps a little too fast (up to `refuse_factor` times the limit) are CLAMPED to the limit, and targets up to
-  `floor_clamp_mm` below the contact floor are RAISED to it; every clamp is reported as a reason. Inside the slow zone (the last 5 mm above the contact target, or above the table floor) the
-  slow limit applies.
-
-Units: mm, degrees, seconds; frame UF0 (identical to `CellClient.act_tcp`). Fingers straight down: w, p, r = -180, 0, R.
-The speed limits are PRELIMINARY engineering choices, not measured values; tune them only with the user.
-"""
+"""Real-arm safety guard for act_tcp chunks (numpy only, no robot or sim imports).
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -32,20 +13,20 @@ DT_RANGE = (0.1, 1.0)
 
 @dataclass(frozen=True)
 class GuardLimits:
-    """Limits the guard enforces. Workspace and dt come from the official client (PLAN section 3.1)."""
+    """Limits the guard enforces; workspace and dt come from the official client."""
 
     x_mm: tuple[float, float] = (150.0, 650.0)
     y_mm: tuple[float, float] = (-450.0, 450.0)
     z_mm: tuple[float, float] = (-334.0, 300.0)
     max_abs_wpr_deg: float = 360.0          # the official client's check on w, p, r
     max_tilt_deg: float = 6.0               # fingers-down cone: insertion tilts about 3 deg plus a +-2 deg twist margin
-    max_speed_mm_s: float = 150.0           # PRELIMINARY
-    slow_speed_mm_s: float = 10.0           # PRELIMINARY: the last 5 mm before contact
-    max_rot_deg_s: float = 60.0             # PRELIMINARY
-    slow_rot_deg_s: float = 15.0            # PRELIMINARY
+    max_speed_mm_s: float = 150.0           # estimate
+    slow_speed_mm_s: float = 10.0           # estimate: the last 5 mm before contact
+    max_rot_deg_s: float = 60.0             # estimate
+    slow_rot_deg_s: float = 15.0            # estimate
     slow_zone_mm: float = 5.0               # ROBOT_BRAIN section 2: the last 5 mm is slow
     floor_margin_mm: float = 1.0            # ROBOT_BRAIN section 2: never lower than seated height - 1 mm
-    floor_clamp_mm: float = 3.0             # PRELIMINARY: up to 3 mm under the floor is raised to it, deeper is refused
+    floor_clamp_mm: float = 3.0             # estimate: up to 3 mm under the floor is raised to it, deeper is refused
     refuse_factor: float = 3.0              # a step over 3x the limit is a glitch: refuse instead of clamp
     gripper_snap: float = 0.1               # 0.93 counts as closed; 0.5 is refused
     gripper_change_max_step_mm: float = 2.0  # the gripper opens/closes only while (nearly) still
@@ -56,11 +37,7 @@ DEFAULT_LIMITS = GuardLimits()
 
 @dataclass(frozen=True)
 class ContactTarget:
-    """The planner's current insertion (or grasp) target, for the contact floor and the slow zone.
-
-    z_contact_mm is the TCP z at the seated (or grasp) pose. Within radius_mm of (x_mm, y_mm), no target may go below
-    z_contact_mm - floor_margin, and the last slow_zone_mm above z_contact_mm is slow.
-    """
+    """Current insertion or grasp target, used for the contact floor and slow zone."""
 
     x_mm: float
     y_mm: float
@@ -71,6 +48,7 @@ class ContactTarget:
 
 @dataclass(frozen=True)
 class GuardResult:
+    """Guarded rows plus the reasons any check fired."""
     rows: np.ndarray                  # (N, 7) rows safe to send
     passed: bool                      # True: the chunk went through unchanged
     held: bool                        # True: the chunk was refused and `rows` is one hold row
@@ -79,7 +57,7 @@ class GuardResult:
 
 
 def wpr_to_matrix(w: float, p: float, r: float) -> np.ndarray:
-    """FANUC fixed-angle convention: R = Rz(r) @ Ry(p) @ Rx(w), degrees."""
+    """Return the rotation matrix for FANUC w, p, r in degrees."""
     w, p, r = np.radians([w, p, r])
     cw, sw, cp, sp, cr, sr = np.cos(w), np.sin(w), np.cos(p), np.sin(p), np.cos(r), np.sin(r)
     rx = np.array([[1, 0, 0], [0, cw, -sw], [0, sw, cw]])
@@ -89,6 +67,7 @@ def wpr_to_matrix(w: float, p: float, r: float) -> np.ndarray:
 
 
 def matrix_to_wpr(rot: np.ndarray) -> tuple[float, float, float]:
+    """Return FANUC w, p, r in degrees for a rotation matrix."""
     p = np.degrees(np.arcsin(np.clip(-rot[2, 0], -1.0, 1.0)))
     w = np.degrees(np.arctan2(rot[2, 1], rot[2, 2]))
     r = np.degrees(np.arctan2(rot[1, 0], rot[0, 0]))
@@ -96,7 +75,7 @@ def matrix_to_wpr(rot: np.ndarray) -> tuple[float, float, float]:
 
 
 def tilt_deg(w: float, p: float, r: float) -> float:
-    """Angle between the tool z axis and straight down."""
+    """Return the angle between the tool z axis and straight down."""
     z_axis = wpr_to_matrix(w, p, r)[:, 2]
     return float(np.degrees(np.arccos(np.clip(-z_axis[2], -1.0, 1.0))))
 
@@ -106,7 +85,7 @@ def _wrap180(a: np.ndarray | float) -> np.ndarray | float:
 
 
 def hold_row(current_pose, gripper: float, limits: GuardLimits | None = None) -> np.ndarray:
-    """Stay where the arm is, keep the gripper as it is. Clipped into the box so the cell accepts it."""
+    """Return a hold row at the current pose, clipped into the workspace."""
     limits = limits or DEFAULT_LIMITS
     pose = np.asarray(current_pose, dtype=float)[:6].copy()
     for k, (lo, hi) in enumerate((limits.x_mm, limits.y_mm, limits.z_mm)):
@@ -116,16 +95,18 @@ def hold_row(current_pose, gripper: float, limits: GuardLimits | None = None) ->
 
 
 class ChunkGuard:
-    """Checks one chunk against the current pose; stateless between calls except for the contact target."""
+    """Check one chunk against the current pose."""
 
     def __init__(self, limits: GuardLimits | None = None):
         self.limits = limits or DEFAULT_LIMITS
         self.target: ContactTarget | None = None
 
     def set_target(self, target: ContactTarget | None) -> None:
+        """Set the contact target for the next chunks."""
         self.target = target
 
     def guard(self, rows, current_pose, current_gripper: float, dt: float) -> GuardResult:
+        """Return the guarded rows for one chunk."""
         reasons = _check_shape(rows, dt)
         if reasons:
             return GuardResult(hold_row(current_pose, current_gripper, self.limits), False, True, tuple(reasons))
@@ -133,8 +114,7 @@ class ChunkGuard:
         res = self._guard_chunk(raw.copy(), current_pose, current_gripper, dt)
         if not res.held:
             return res
-        # Every check is per row or along the path from the start, so a prefix of a valid chunk is valid: the longest
-        # valid prefix is found by shortening one row at a time, and it is re-checked on its own in full.
+        # Every check is per row, so a prefix of a valid chunk is valid: keep the longest and recheck it.
         for k in range(len(raw) - 1, 0, -1):
             pre = self._guard_chunk(raw[:k].copy(), current_pose, current_gripper, dt)
             if not pre.held:
@@ -146,7 +126,7 @@ class ChunkGuard:
         return GuardResult(res.rows, False, True, (*res.reasons, *(f"no valid prefix: {r}" for r in first.reasons)))
 
     def _guard_chunk(self, chunk: np.ndarray, current_pose, current_gripper: float, dt: float) -> GuardResult:
-        """All checks on one well-formed chunk (modified in place by the clamps); refused -> one hold row."""
+        """Run every check on one chunk and return the result or one hold row."""
         hold = hold_row(current_pose, current_gripper, self.limits)
         floor_reasons = self._clamp_floor(chunk)
         hard = (self._check_box(chunk) + self._check_orientation(chunk) + self._check_floor(chunk)
@@ -191,7 +171,7 @@ class ChunkGuard:
         return np.hypot(chunk[:, 0] - t.x_mm, chunk[:, 1] - t.y_mm) <= t.radius_mm
 
     def _clamp_floor(self, chunk: np.ndarray) -> list[str]:
-        """Raise rows a little under the contact floor up to it (the policy aims ~1-3 mm low); deeper rows stay."""
+        """Raise rows slightly under the contact floor up to it."""
         if self.target is None:
             return []
         floor = self.target.z_contact_mm - self.limits.floor_margin_mm

@@ -1,7 +1,5 @@
-"""Fine-tune RT-DETR on a frozen T13 COCO manifest.
-
-Heavy ML dependencies are imported only after argument, configuration, and
-checkpoint-provenance validation so ordinary repository tests stay lightweight.
+"""Fine-tune RT-DETR on a frozen COCO manifest.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -51,6 +49,7 @@ class DetectorTrainError(RuntimeError):
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Return the command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--coco-dir", type=Path, required=True)
@@ -72,6 +71,7 @@ def build_run_provenance(
     config: dict[str, Any],
     coco_dir: Path,
 ) -> dict[str, Any]:
+    """Return the provenance record for this run."""
     model = config["model"]
     provenance = provenance_from_manifest(
         metadata,
@@ -240,11 +240,7 @@ def _gather_for_metrics(accelerator: Any, value: Any) -> Any:
 
 
 def _keep_metric_outputs(outputs: tuple[Any, ...], labels: Any) -> tuple[Any, ...]:
-    """Drop RT-DETR's encoder and intermediate-layer outputs before Trainer accumulates them on the GPU.
-
-    The metric reads only indices 1 and 2 (logits, pred_boxes); the rest (per-anchor encoder logits, six decoder
-    layers) grows with the eval set and ran 8xH100 out of memory at 1280 px on 3540 validation images.
-    """
+    """Keep only the logits and boxes the metric needs, to save GPU memory during evaluation."""
     return outputs[:3]
 
 
@@ -294,6 +290,7 @@ def metric_function(processor: Any, id2label: dict[int, str]):
     from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
     def compute(evaluation_results):
+        """Return the COCO metrics for one evaluation pass."""
         prediction_batches, target_batches = evaluation_results.predictions, evaluation_results.label_ids
         image_sizes, targets = _targets_for_metrics(target_batches)
         predictions = _predictions_for_metrics(prediction_batches, image_sizes, processor)
@@ -336,7 +333,7 @@ def _load_model(config: dict[str, Any], labels: list[str]):
 
 
 def _init_model(model_config: dict[str, Any], id2label: dict[int, str]):
-    """Continue from a trained detector (fine-tune): its weights must hash to init_sha256 and keep the same classes."""
+    """Load a trained detector to fine-tune after checking its hash and classes."""
     import hashlib
 
     from transformers import RTDetrForObjectDetection
@@ -424,10 +421,12 @@ def _build_trainer(
     from transformers import Trainer, TrainingArguments
 
     class DetectionTrainer(_RTDetrCheckpointMixin, Trainer):
+        """Trainer with safe RT-DETR checkpoint restore and trimmed evaluation outputs."""
         def _gather_detection_metrics(self, value: Any) -> Any:
             return _gather_for_metrics(self.accelerator, value)
 
         def evaluation_loop(self, *loop_args: Any, **loop_kwargs: Any):
+            """Run evaluation with the detection metric gather function set."""
             self.gather_function = self._gather_detection_metrics
             try:
                 return super().evaluation_loop(*loop_args, **loop_kwargs)
@@ -478,6 +477,7 @@ def _run_ml(
 
 
 def main() -> None:
+    """Validate the run, train the detector and write the measured reports."""
     args = build_parser().parse_args()
     config = load_training_config(args.config, smoke=args.smoke)
     config = apply_smoke_step_override(config, smoke=args.smoke, max_steps=args.max_steps)

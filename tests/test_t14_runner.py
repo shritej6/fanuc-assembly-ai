@@ -1,3 +1,7 @@
+"""Tests for runner.
+Authored by Shritej Gunda.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -47,7 +51,6 @@ else
   printf '{{"part":"%s","status":"measured","test":{{"image_AUROC":0.75,"image_F1Score":0.5}},"o_test_false_alarm_share":0.0,"model":{{"path":"%s","format":"anomalib-lightning-ckpt","size_bytes":5,"config":{{"backbone":"wide_resnet50_2","layers":["layer2","layer3"],"coreset_sampling_ratio":0.1,"num_neighbors":9}}}}}}\n' "$part" "$rel" > "$out/$part/metrics.json"
 fi
 """
-
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()

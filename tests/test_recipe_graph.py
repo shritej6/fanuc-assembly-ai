@@ -1,4 +1,6 @@
-"""Behavioral tests for catalog lookup and recipe traversal."""
+"""Behavioral tests for catalog lookup and recipe traversal.
+Authored by Shritej Gunda.
+"""
 
 from copy import deepcopy
 from pathlib import Path

@@ -1,4 +1,6 @@
-"""Deterministic absolute-UF0 pick-and-insert motion compilation."""
+"""Deterministic absolute-UF0 pick-and-insert motion compilation.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

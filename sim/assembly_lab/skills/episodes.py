@@ -1,11 +1,5 @@
-"""One recorded episode per skill, in the shape agent 4's mimic/skills.yaml expects.
-
-Every episode starts at the scan (home) pose and ends back there:
-- pick_insert : approach_grasp -> grasped -> carry_insert -> seated -> release_retreat
-- pull_out    : approach_grasp -> grasped -> pull_free -> pulled -> carry_set_down -> placed -> release_retreat
-- place_free  : approach_grasp -> grasped -> carry_set_down -> placed -> release_retreat
-- defect_drop : approach_grasp -> grasped -> carry_drop -> dropped -> retreat
-The instruction carries the planner's target (mimic/instructions.py) so GR00T follows the plan.
+"""Build one recorded episode per skill in the shape the Mimic skill config expects.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

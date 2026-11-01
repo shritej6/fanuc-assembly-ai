@@ -1,4 +1,6 @@
-"""Every contract schema is valid draft 2020-12, and the shared taxonomy data conforms to its schema."""
+"""Tests for contracts.
+Authored by Shritej Gunda.
+"""
 
 import json
 from pathlib import Path

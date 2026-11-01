@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Run a Python script inside the Isaac Lab 3.0.0-beta2 (Isaac Sim 6.0.0) container on fa-sim / fa-mimic.
+# Run a Python script inside the Isaac Lab 3.0.0-beta2 (Isaac Sim 6.0.0) container.
+# Authored by Shritej Gunda.
 #
-#   GPU=0 REPO=~/t12_data/repo_env ~/t12_data/repo_env/sim/assembly_lab/env/isaaclab_run.sh \
-#       sim/assembly_lab/env/env_smoke.py --out ~/t12_data/env_smoke --minimal
+#   GPU=0 REPO=~/t12_data/repo_env sim/assembly_lab/env/isaaclab_run.sh sim/assembly_lab/env/env_smoke.py --minimal
 #
-# GPU   one GPU index (default 0). Each container sees only that GPU, as cuda:0.
-# REPO  a repo checkout on the host (default ~/t12_data/repo_env); mounted at /workspace/repo, which is the cwd.
-# REPO is also mounted at its own host path, and ~/t12_data at /root/t12_data and at $HOME/t12_data, so host paths work
-# inside. PYTHONPATH has the repo root (generate_dataset.py --external_callback sim.assembly_lab.env.register.register_tasks).
-# T12_POOL / T12_CAMERAS / T12_IMAGE / T12_SAMPLER / T12_CONTACT_YAML / T12_JITTER are passed through when set (register.py).
-# Kit / shader caches persist per GPU under ~/t12_data/.isaac_cache/gpu$GPU$CACHE_TAG (first start compiles shaders, minutes).
+# GPU   one GPU index (default 0), seen inside the container as cuda:0.
+# REPO  repo checkout on the host, mounted at /workspace/repo and used as the cwd.
+# The T12_* settings read by register.py are passed through when set. Shader caches persist per GPU.
 set -euo pipefail
 GPU="${GPU:-0}"
 REPO="$(realpath "${REPO:-$HOME/t12_data/repo_env}")"

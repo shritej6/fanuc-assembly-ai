@@ -1,15 +1,5 @@
-"""Scene model for the planner: object instances on the table or on a base, in UF0 (mm, deg). Pure numpy.
-
-Scene dict (same shape as the env layout, INTERFACES.md):
-    {"objects": [{"id": "M4_02", "x": 420, "y": -60, "yaw": 35, "state": "installed"},       # standing on the table
-                 {"id": "F04", "x": 380, "y": 120, "yaw": 10, "state": "installed"},
-                 {"id": "M4_01", "state": "on:F04"},                                         # sits on that base
-                 {"id": "M4_03", "x": 500, "y": 0, "yaw": 0, "state": "fallen"},
-                 {"key": "junk1", "id": "UNKNOWN", "x": 300, "y": 0, "yaw": 0, "bbox_mm": [30, 20, 15]}],
-     "spares": [{"id": "M4_02", "x": ..., "y": ..., "yaw": ...}], "table_z_mm": -335.0}
-`state` "installed" means standing in its installed orientation on the table (DECISIONS 2026-10-28); "on:<key>" puts
-the part at that base's pose + its installed_origin_mm. `key` (default: id; spares get "<id>#spare<n>") names an
-instance, because a spare can repeat an id.
+"""Scene model for the planner: object instances on the table or on a base, in UF0.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

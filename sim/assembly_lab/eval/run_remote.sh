@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Sync this worktree to the sim box and run the evaluator in agent 1's Isaac Lab container (env/isaaclab_run.sh).
+# Sync this checkout to the sim box and run the evaluator in the Isaac Lab container (env/isaaclab_run.sh).
+# Authored by Shritej Gunda.
 #   sim/assembly_lab/eval/run_remote.sh <run-name> <policy> [run_eval.py args...]
 #   e.g. sim/assembly_lab/eval/run_remote.sh scripted_v1 scripted
 #        sim/assembly_lab/eval/run_remote.sh groot_e1 groot://127.0.0.1:5555
 # Env: HOST (fa-mimic), GPU (3), IMAGE (isaac-lab-base:3.0.0b2p1-sim6.0.0), REMOTE_DIR (t12_agent6/FANUC_T32),
-#      SKIP_READY=1 to run before agent 1 writes ~/ISAACLAB_READY.
+#      SKIP_READY=1 to run before ~/ISAACLAB_READY exists.
 set -euo pipefail
 RUN=${1:?run name}; POLICY=${2:?policy}; shift 2
 HOST=${HOST:-fa-mimic}; GPU=${GPU:-3}; IMAGE=${IMAGE:-isaac-lab-base:3.0.0b2p1-sim6.0.0}

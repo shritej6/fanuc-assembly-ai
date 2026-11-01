@@ -1,8 +1,5 @@
-"""Your policy. Edit this file.
-
-act(obs) returns the arm's next target, or a list of targets to play in order. When they have been played, act is
-called again with a new observation. act has no time limit: the arm holds still while it runs.
-"""
+"""Cell policy entry point: act(obs) returns the next guarded target or list of targets.
+Authored by Shritej Gunda, on the organiser's policy.py template."""
 
 from __future__ import annotations
 
@@ -45,8 +42,8 @@ class Policy:
     IMAGE_SIZE = (640, 360)  # (width, height) of the images you get: the whole 16:9 camera frame, resized
     # (not cropped), as in the sim and the recorded datasets
     IMAGE_FORMAT = "png"  # or "jpeg": about 7x smaller, for a slow connection
-    ACTION = "tcp"  # T12 GR00T emits absolute UF0 fingertip targets
-    DT = 0.2  # T12 controller cadence: one guarded row per callback
+    ACTION = "tcp"  # GR00T emits absolute UF0 fingertip targets
+    DT = 0.2  # controller cadence: one guarded row per callback
     PREFETCH = False  # True: if act returns many actions at once, plan the next ones while
     # these still play, so the arm does not stop between them
     DEPTH: ClassVar[list[str]] = ["table", "wrist"]

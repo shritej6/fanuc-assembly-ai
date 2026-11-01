@@ -1,4 +1,6 @@
-"""Loopback integration tests for the asyncua PLC-style address space."""
+"""Loopback integration tests for the asyncua PLC-style address space.
+Authored by Shritej Gunda.
+"""
 
 import asyncio
 import json

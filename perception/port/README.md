@@ -169,8 +169,8 @@ and source.
 | Measured `CloseupThresholds` (classifier min, fit min) for the deployed models | T27 / T28 |
 | Defect-head loader code merged (`feature/T27-newset-training` `d869bad`) | main (merge) |
 | Measured FoundationPose bounds (wrist, table) to certify the 0.3 mm / 1° gates | first real-cell minutes (main) |
-| Sourced arm-corridor radius or a robot-link model for intrusion | T09 / Codex (robot-link provider) |
-| Controller motion for the second look (`ViewRequest` → safety-approved TCP) and an Andon hook | T09 / Codex |
+| Sourced arm-corridor radius or a robot-link model for intrusion | Cell controller (robot-link provider) |
+| Controller motion for the second look (`ViewRequest` → safety-approved TCP) and an Andon hook | Cell controller |
 
 ## Proposed contract / Protocol changes (doc only; `contracts/` and `assembly/` are unchanged)
 

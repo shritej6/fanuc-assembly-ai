@@ -1,4 +1,6 @@
-"""Recipe planning from validated inventory into the shared plan-step contract."""
+"""Recipe planning from validated inventory into the shared plan-step contract.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

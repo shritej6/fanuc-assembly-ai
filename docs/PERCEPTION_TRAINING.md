@@ -1,6 +1,8 @@
-# T13 Rosie Training Runbook
+# Perception training runbook (Rosie cluster)
 
-T13 trains two separate perception models from frozen synthetic manifests:
+Authored by Shritej Gunda.
+
+This runbook trains two separate perception models from frozen synthetic manifests:
 
 - RT-DETR sees the 30 designed identities, three measured foreign distractors, and one fallen class for each of the
   24 movable parts (57 labels total).
@@ -26,8 +28,7 @@ Set `REPO`, `DATA_ROOT`, `ARTIFACT_ROOT`, and `RUN_ROOT` when the checkout or st
 
 Run this once on Rosie. The script uses Python 3.12 `venv` and replays the checked-in CUDA 12.6 artifact lock with
 `--no-index --require-hashes --only-binary=:all:`. Every dependency is an exact HTTPS wheel URL with SHA-256; the
-script disables the pip download cache, verifies installed dependencies, and does not rely on Rosie's broken snap
-`uv` executable.
+script disables the pip download cache, verifies installed dependencies, and does not depend on the cluster's `uv` install.
 
 ```bash
 cd ~/fanuc-assembly-ai
@@ -35,13 +36,12 @@ bash perception/rosie/setup_ml.sh
 ```
 
 The fixed environment uses PyTorch `2.14.1+cu126`, torchvision `0.29.1+cu126`, and Transformers `5.21.0`. These
-versions clear the dependency audit used by T13. The T4 nodes' measured driver `610.43.02` supports this runtime;
-the V100 nodes' measured driver `525.105.17` does not, so T13 must not be submitted to `dgx` with this environment.
+versions clear the dependency audit. The T4 nodes' measured driver `610.43.02` supports this runtime;
+the V100 nodes' measured driver `525.105.17` does not, so training must not be submitted to `dgx` with this environment.
 
 ## 2. Run the bounded native smoke gate
 
-Native-only preparation is legal only when `SMOKE=1`. To keep this gate bounded and avoid the known G completion-
-metadata mismatch, it validates and freezes the first 128 scenes from detector set N and classifier set O. Those
+Native-only preparation is legal only when `SMOKE=1`. To keep this gate bounded , it validates and freezes the first 128 scenes from detector set N and classifier set O. Those
 scenes contain train/validation/test assignments; the trainers select at most 16 training and 8 evaluation samples.
 Partial Cosmos files are explicitly excluded from this artifact.
 
@@ -74,7 +74,7 @@ SMOKE=1 DRY_RUN=1 bash perception/rosie/detector.sbatch
 
 ## 3. Freeze Cosmos-complete production inputs
 
-Wait for T11 to finish importing accepted Cosmos variants. Production preparation has no native-only override: it
+Run this after the accepted Cosmos variants are imported. Production preparation has no native-only override: it
 requires exactly 40 N chunks, 20 R chunks, 8 Q chunks, and 48 O chunks. It rejects missing/extra chunks and requires
 the measured Cosmos shares: 20-30% for N/R/Q and 45-55% for O.
 
@@ -122,13 +122,13 @@ test split; smoke runs skip only this class-completeness gate.
 - each run's `run_provenance.json`, `trainer_state.json`, checkpoints, and measured metric JSON
 - observed Slurm job IDs, node/log paths, package versions, and the repository commit
 
-Do not call a run successful because Slurm says `COMPLETED`; verify the metric files and checkpoint/global-step gate.
+A run counts as complete only after verifying the metric files and checkpoint/global-step gate.
 
-## Measured completion retained on Rosie
+## Measured results
 
 The completed test-bed run is retained under
 `~/fanuc-t27-results/fanuc-t27-runs/main/full/{detector,classifier}`. These values were read from the retained metric,
-provenance, and model files on 2026-10-30:
+provenance, and model files:
 
 - RT-DETR (20 epochs): test mAP `0.715298`, mAP50 `0.776050`, mAR100 `0.922475`; model SHA-256
   `b054f9aa224f56081998a77b778ff6336985a65bfbc2bb658b1036fc0d3fd785`.
@@ -140,5 +140,5 @@ provenance, and model files on 2026-10-30:
   `0.974729`, and locks `0.718147`.
 
 The retained provenance binds the derived data and final models, but old source chunk metadata records
-`code_commits: ["unknown"]` and source-side transfer hashes were not retained. This limitation is recorded rather
-than silently upgraded into an immutable-source claim.
+`code_commits: ["unknown"]` and source-side transfer hashes were not retained. Source-level provenance is therefore
+documented as partial.

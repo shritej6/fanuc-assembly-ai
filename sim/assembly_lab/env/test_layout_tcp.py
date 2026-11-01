@@ -1,4 +1,6 @@
-"""Off-Isaac tests for the env's layout solver and TCP / IK layer:  uv run pytest sim/assembly_lab/env -q"""
+"""Off-Isaac tests for the layout solver and the TCP and IK layer.
+Authored by Shritej Gunda.
+"""
 
 import sys
 from pathlib import Path
@@ -40,7 +42,7 @@ def test_ik_reaches_poses_within_tolerance():
 
 
 def test_fallback_seed_keeps_j6_on_the_current_turn(monkeypatch):
-    # agent 3, check10: the current-joint seed failed at J6 near -180 deg, HOME (J6 = 0) converged and the wrist
+    # Regression: the current-joint seed failed at J6 near -180 deg, HOME (J6 = 0) converged and the wrist
     # spun 352 deg to the far turn; the answer must stay the turn nearest the current joints
     pose = [400, 0, -250, -180, 0, -1]             # J6 = +179 deg from the HOME seed
     cur = tcp.solve(pose)

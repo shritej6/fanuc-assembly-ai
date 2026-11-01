@@ -1,13 +1,5 @@
-"""Check every exported file and every assembly, then write BUILD_SUMMARY.txt.
-
-    uv run python cad/products/validate_outputs.py        (run after build_all.py)
-
-Per file : exists, STEP re-opens (CadQuery and FreeCAD), STL re-opens, watertight,
-           positive volume, one connected body, bounding box, mass estimate.
-Per assembly (exported STEP files re-placed at their installed offsets):
-           no static intersections, 1.0 mm sampled vertical insertion/removal paths,
-           finger clearance around each grip pad when that part is next to be removed.
-Exit code 0 only if everything passes.
+"""Check every exported CAD file and assembly, then write BUILD_SUMMARY.txt.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -99,10 +91,7 @@ def static_check(world: dict, order: list[str]) -> list[str]:
 
 
 def path_check(world: dict, order: list[str]) -> tuple[list[str], int]:
-    """Lift each part straight up in 1 mm steps past everything installed before it.
-
-    Insertion is the same straight line travelled downward, so one sweep covers both directions.
-    """
+    """Lift each part up in 1 mm steps past the parts below; return the failures and the sample count."""
     fails, samples = [], 0
     for i, name in enumerate(order[1:], start=1):
         below = [world[n] for n in order[:i]]

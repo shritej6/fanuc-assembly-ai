@@ -1,4 +1,6 @@
-"""Tabletop square pose from Cosmos top-edge pixels, refined using image only."""
+"""Estimate a tabletop square pose from Cosmos top-edge pixels.
+Authored by Shritej Gunda.
+"""
 
 import cv2
 import numpy as np

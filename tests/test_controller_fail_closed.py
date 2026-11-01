@@ -1,4 +1,6 @@
-"""Regression tests for fail-closed runtime and perception boundaries."""
+"""Regression tests for fail-closed runtime and perception boundaries.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 from dataclasses import replace

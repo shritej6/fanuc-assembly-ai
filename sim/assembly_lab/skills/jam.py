@@ -1,15 +1,5 @@
-"""Jam / twist watch for the insert contact phases, independent of torque_Nm.
-
-Agent 1 (2026-10-30): torque_Nm on peg and jam loads is a lower bound (PhysX peg-wall normals are incomplete, it reads
-2-10x low), so a twist that wedges the part or a push that jams it cannot be caught by the torque limit alone.
-
-twist  From the first twist row on, the part's turn about world z must follow the TCP's turn within the CAD yaw play
-       (objects.yaml insertion.yaw_tol_deg; a yaw-free fit is not checked). A larger difference means the part slipped
-       in the fingers or wedged against the bore.
-jam    Over JAM_ROWS rows commanded downward (slide / push), the part sank less than JAM_MIN_SINK_FRAC of the commanded
-       travel while its axial contact rose by JAM_RISE_N, it is still above its seat and inside the capture (xy): it is
-       stuck in the bore, not seating. A part outside the capture sits on the rim; the soft stop and the seated check
-       handle that (the one retry).
+"""Watch for jams and twists during the insert contact phases.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

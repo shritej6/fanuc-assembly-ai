@@ -1,8 +1,5 @@
-"""Count how often every scenario appears across all scene specs, and fail if any planned case is missing.
-
-    uv run python -m sdg.coverage            # writes docs/SDG_COVERAGE.md
-
-Counts come from the specs themselves (the exact scenes that will be rendered), not from the config.
+"""Count how often each scenario appears in the scene specs and fail if a planned case is missing.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

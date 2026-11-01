@@ -1,4 +1,6 @@
-"""Identity-scoped run events shared by the OEE calculator and JSONL boundary."""
+"""Identity-scoped run events shared by the OEE calculator and JSONL boundary.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

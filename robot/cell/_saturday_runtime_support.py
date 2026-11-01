@@ -1,4 +1,6 @@
-"""Typed, non-authoritative support adapters for the Saturday CELL loader."""
+"""Typed, non-authoritative support adapters for the cell loader.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

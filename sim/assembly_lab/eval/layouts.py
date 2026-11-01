@@ -1,8 +1,5 @@
-"""Scenario -> explicit unseen layouts (INTERFACES.md layout dicts) plus truth labels and expectations (numpy only).
-
-Each layout is reproducible from (seed_base, scenario index, layout index). Every entry names its pool `uid`
-(loose part = type id, spare = type id + "#2"), so the expectations can name objects exactly.
-The extra key `eval` is ignored by the env (env/layout.py reads objects / spares / defects only).
+"""Build reproducible unseen eval layouts, truth labels and expectations from scenarios.yaml.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -32,6 +29,7 @@ class ScenarioError(ValueError):
 
 @dataclass
 class Scenario:
+    """One eval scenario from scenarios.yaml."""
     index: int
     id: str
     case: str
@@ -44,6 +42,7 @@ class Scenario:
 
 @dataclass
 class EvalLayout:
+    """One eval layout with its truth labels and expectations."""
     scenario: str
     case: str
     seed: int
@@ -52,6 +51,7 @@ class EvalLayout:
 
 
 def load(path: Path = HERE / "scenarios.yaml") -> tuple[dict, list[Scenario]]:
+    """Load scenarios.yaml and return the raw config and the scenarios."""
     raw = yaml.safe_load(Path(path).read_text())
     base, n = int(raw["seed_base"]), int(raw["layouts_per_scenario"])
     if base <= int(raw["mimic_seed"]) < base + 100 * (len(raw["scenarios"]) + 1):
@@ -85,14 +85,17 @@ class _Placer:
 
     @staticmethod
     def radius(tid: str) -> float:
+        """Return the footprint radius of a part type."""
         return float(cad.geometry()[cad.type_id(tid)]["upright"]["footprint_r"])
 
     def free(self, x: float, y: float, r: float, gap: float) -> bool:
+        """Return True if a circle at x, y is in reach and clear of placed parts."""
         if not (self.rmin <= math.hypot(x, y) <= self.rmax):
             return False
         return all(math.hypot(x - tx, y - ty) >= r + tr + gap for tx, ty, tr in self.taken)
 
     def place(self, tid: str, gap: float | None = None) -> tuple[float, float, float]:
+        """Place a part on a free spot and return x, y and yaw."""
         r, g = self.radius(tid), self.gap if gap is None else gap
         if tid.startswith("F"):
             g = max(g, cad.cell_layout()["clearance"]["base_gap_mm"])
@@ -122,6 +125,7 @@ class _Placer:
 
 
 def build(raw: dict, sc: Scenario, k: int) -> EvalLayout:
+    """Build layout k of a scenario."""
     seed = int(raw["seed_base"]) + 100 * sc.index + k
     rng = np.random.default_rng(seed)
     gap = float(sc.options.get("part_gap_mm", raw["part_gap_mm"]))
@@ -168,7 +172,7 @@ def build(raw: dict, sc: Scenario, k: int) -> EvalLayout:
 
 
 def _overlaps(scene: dict, key: str, margin_mm: float = 0.5) -> bool:
-    """True if `key`'s footprint cells (agent 2's height maps) come within ~margin of any other object's cells."""
+    """Return True if key's footprint comes within margin of any other object."""
     from ..objects.planner import load_catalog
     from ..objects.scene import build_instances, solid_of
 
@@ -191,8 +195,7 @@ def _overlaps(scene: dict, key: str, margin_mm: float = 0.5) -> bool:
 
 
 def _crowd(placer: _Placer, lay: dict, target: str, blocker: str) -> dict:
-    """Put the blocker where agent 2's finger model (objects/planner.py blockers()) says the target cannot be gripped
-    at any wrist turn until the blocker moves (a genuinely crowded part), without touching any object's real shape."""
+    """Put a blocker where the target cannot be gripped until the blocker moves."""
     from ..objects.planner import blockers
 
     tx, ty, tr = placer.where[target]
@@ -288,6 +291,7 @@ def expectations(sc: Scenario, bases: dict, labels: dict, case_parts: dict) -> d
 
 
 def all_layouts(path: Path = HERE / "scenarios.yaml", only: list[str] | None = None) -> list[EvalLayout]:
+    """Return every eval layout, optionally filtered by scenario id or case."""
     raw, scs = load(path)
     return [build(raw, sc, k) for sc in scs if not only or sc.id in only or sc.case in only
             for k in range(sc.layouts)]

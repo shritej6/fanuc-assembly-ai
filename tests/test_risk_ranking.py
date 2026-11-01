@@ -1,4 +1,6 @@
-"""Behavior tests for the CAD risk ranking: complete input or nothing written, rank direction, real print layers."""
+"""Behavior tests for the CAD risk ranking: complete input or nothing written, rank direction, real print layers.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

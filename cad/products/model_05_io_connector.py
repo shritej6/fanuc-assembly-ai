@@ -1,6 +1,5 @@
-"""Model 5 - Control I/O Connector Module: housing, I/O insert, alignment guide, service lock.
-
-M5_02 shares its outer body and seating with M6_02 on purpose (wrong-part recovery test).
+"""Model 5, Control I/O Connector Module: housing, I/O insert, alignment guide and service lock.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

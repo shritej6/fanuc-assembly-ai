@@ -1,18 +1,5 @@
-"""Fallback 14:00 entry point: the official run.py with DirectGrootRuntime as its Policy. run.py, policy.py and
-cell_client.py are not edited; run.py's `from policy import Policy` global is swapped before run.main() reads it
-(the same way policy_learn/deploy/mock_check.py does).
-
-    cd robot/cell
-    DEPS="--with pyzmq --with msgpack --with msgpack-numpy"
-    uv run $DEPS python policy_direct.py --mock --checkpoint groot://127.0.0.1:5555 --trials 1 --trial-s 120 \
-        --instruction "$(python -c 'import yaml;print(yaml.safe_load(open("submission/placement.yaml"))["rollouts"][0]["prompt"])')"
-    uv run $DEPS python policy_direct.py --checkpoint groot://127.0.0.1:5555      # the slot: the approved run
-
-Every run.py flag passes through. DIRECT_ROLLOUT=<1..3> forces the placement.yaml rollout; DIRECT_PLACEMENT=<path>
-reads another placement file (both are read and validated, and every rollout is planned, when the Policy is built,
-before any trial). Empty-gripper detection is OFF on the cell (no gripper width in the observation).
-After the run, every step event and guard hold is printed and written to direct_runtime_report.json
-(DIRECT_REPORT=<path> to change it).
+"""Entry point that runs the official run.py with DirectGrootRuntime as its Policy.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -30,11 +17,7 @@ INSTANCES: list[DirectGrootRuntime] = []
 
 
 class Policy(DirectGrootRuntime):
-    """checkpoint: "groot://127.0.0.1:5555" (the GR00T server through the ssh tunnel); None reads $GROOT_POLICY.
-
-    Works with both run.py versions: the upstream one (Policy(checkpoint)) and PR #24's (Policy(checkpoint,
-    runtime="mock" | "cell"), then policy.close()). `runtime` only labels the report: this policy behaves the same
-    on the mock and on the cell."""
+    """DirectGrootRuntime as the run.py Policy; checkpoint is a groot:// URL or None to read $GROOT_POLICY."""
 
     def __init__(self, checkpoint: str | None = None, runtime: str | None = None, **kw):
         super().__init__(checkpoint, **kw)

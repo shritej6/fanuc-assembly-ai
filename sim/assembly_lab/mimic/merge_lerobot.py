@@ -1,11 +1,5 @@
-"""Merge LeRobot datasets written by export_lerobot into one (one per skill for training).
-
-Each host and incremental export made its own small dataset; prepare_dataset holds out at least one episode per
-source and cannot split a 1-episode source, so many small sources waste training data. Episodes are re-indexed in
-input order, tasks are re-numbered, videos are hard-linked (copied across filesystems), global stats are recomputed
-from the parquet rows and meta/t12_episodes.jsonl keeps each episode's provenance plus its source dataset.
-
-    python -m sim.assembly_lab.mimic.merge_lerobot --src ~/t12_data/lerobot/n2_pick_insert_* --out ~/merged/pick_insert
+"""Merge several LeRobot datasets written by export_lerobot into one dataset.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -45,6 +39,7 @@ def _link(a: Path, b: Path) -> None:
 
 
 def merge(sources: list[Path], out: Path) -> dict:
+    """Merge the source datasets into out and return a summary."""
     layouts = {_layout(s) for s in sources}
     if len(layouts) != 1:
         raise MergeError(f"sources differ in (fps, size, robot): {sorted(layouts)}")
@@ -88,6 +83,7 @@ def merge(sources: list[Path], out: Path) -> dict:
 
 
 def main() -> None:
+    """Parse the command line and merge the datasets."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--src", type=Path, nargs="+", required=True)
     ap.add_argument("--out", type=Path, required=True)

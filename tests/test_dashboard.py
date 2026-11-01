@@ -1,3 +1,7 @@
+"""Tests for dashboard.
+Authored by Shritej Gunda.
+"""
+
 import base64
 import hashlib
 import json

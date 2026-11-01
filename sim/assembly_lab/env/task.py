@@ -1,15 +1,5 @@
-"""Task state of one episode: the target part, its base, the three Mimic frames, and the subtask signals.
-
-The frames (grasp_frame, seat_frame, spot_frame; TCP poses, UF0) live in the scene as kinematic markers, so they are
-part of the recorded scene state and come back with `reset_to`. The target and base are re-inferred from the restored
-poses (`infer`), which is what makes annotate_demos / replays work without extra episode metadata.
-
-Signals (all from sim truth, never shown to a policy):
-- grasped: both finger bodies push the target with >= GRASP_N and the gripper command is closed
-- seated:  the target is within agent 3's seat gates of its CAD installed pose on the base
-- pulled:  the target is >= PULL_MM above where it started while grasped
-- placed:  the target is within agent 3's spot gates of the pose the spot frame implies, and no robot link touches it
-- dropped: the target rests within DROP_RADIUS_MM of the spot frame (defect area) and no robot link touches it
+"""Task state of one episode: target part, base, Mimic frames and subtask signals.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

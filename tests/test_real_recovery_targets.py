@@ -1,4 +1,6 @@
-"""Real recovery poses use only reviewed cell-layout and pinned CAD/T29 facts."""
+"""Real recovery poses use only reviewed cell-layout and pinned CAD/facts.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

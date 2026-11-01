@@ -1,4 +1,6 @@
-"""Fail-closed parsing for the pinned T29 grasp artifact."""
+"""Fail-closed parsing for the pinned grasp-frame artifact.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import dataclass
 from math import isfinite
@@ -6,12 +8,12 @@ from typing import Any
 
 
 class GraspSourceError(ValueError):
-    """Raised when a T29 grasp cannot authorize one atomic turn/TCP pair."""
+    """Raised when a grasp frame cannot authorize one atomic turn/TCP pair."""
 
 
 @dataclass(frozen=True, slots=True)
 class PreferredGrasp:
-    """The sole T29 turn/TCP pair authorized for CELL execution."""
+    """The sole turn/TCP pair authorized for CELL execution."""
 
     turn_deg: float
     tcp_local_mm: tuple[float, float, float]
@@ -19,7 +21,7 @@ class PreferredGrasp:
 
 @dataclass(frozen=True, slots=True)
 class GraspSource:
-    """Immutable provenance for the T29 source artifact."""
+    """Immutable provenance for the grasp-frame source artifact."""
 
     file: str
     generator: str

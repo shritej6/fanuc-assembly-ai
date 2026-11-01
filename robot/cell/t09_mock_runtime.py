@@ -1,8 +1,5 @@
-"""Opt-in T09 controller fixture for the official local mock only.
-
-The perception and calibration ports in this module are deterministic contract
-fixtures. They do not read simulator ground truth and are not valid for a real
-cell, model evaluation, or physical safety decisions.
+"""Opt-in controller fixture with contract-only ports for the official local mock.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -437,7 +434,7 @@ def build_groot_mock_controller(
     final_verifier=None,
     final_view_registry=None,
 ) -> AssemblyController:
-    """Software-proof fixture: real T09 states with GR00T as sole row source."""
+    """Software-proof fixture with real controller states and GR00T as the only row source."""
     from assembly.cell_runtime import (
         SATURDAY_ENDPOINT_SETTLE_LIMITS,
         SATURDAY_GROOT_WATCHDOG_LIMITS,

@@ -1,4 +1,6 @@
-"""Behavior tests for the assembly sheets: what each page tells the operator, checked against the CAD and taxonomy."""
+"""Tests for assembly sheets.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

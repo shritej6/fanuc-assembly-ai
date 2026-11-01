@@ -1,13 +1,5 @@
-"""Grasp contact diagnostics and regression check: where the fingers touch a held part, how hard, how deep, and how
-far the part slips through a lift, a carry and a pull out of a tight fit.
-
-    isaaclab_run.sh sim/assembly_lab/env/grasp_diag.py --parts M1_02,M3_04 --pull F01:M1_01+M1_02+M1_03,F03:M3_01+M3_02
-
-Per part: CAD grasp from the table, close, lift 60 mm, carry 150 mm and back (tcp_track_check.carry_test motion),
-then an axial force ramp on the CoM (the grip's friction capacity). Per pull case: the stack seated on the base, CAD
-grasp of the top part, close, pull 60 mm up. Every few env steps it logs the jaw positions, the jaw actuation and
-transmitted forces, and per jaw body the contacts with the part from the PhysX contact view (normal force, deepest
-penetration, point spread in the TCP frame). One [verdict] line checks LIMITS (slip, pivot, pinch, penetration).
+"""Diagnose grasp contacts on a held part and check them against regression limits.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -36,9 +28,7 @@ from grip_load import part_in_tcp, pivot_deg
 
 
 def finger_contacts(env, part: str, obs_tcp) -> dict:
-    """Per jaw body, contacts with the part from the robot contact sensor's PhysX view: normal force, deepest
-    penetration (separation < 0) and where the points sit in the TCP frame (z along the tool, 0 = TCP; the NBR pad
-    spans the last 3.7 mm above the fingertip, the PLA finger body everything above it)."""
+    """Return per-jaw contacts with the part: normal force, deepest penetration and TCP-frame position."""
     as_np = lambda a: a.numpy() if hasattr(a, "numpy") and not hasattr(a, "cpu") else a.cpu().numpy()
     nf = len(env.env.names)
     fi = env.env.pool.index(part)

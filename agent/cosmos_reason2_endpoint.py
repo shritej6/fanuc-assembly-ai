@@ -1,14 +1,5 @@
-"""Production Cosmos Reason 2 (8B) port for the final-build gate, over vLLM's OpenAI-compatible API.
-
-The endpoint is the official ``nvidia/Cosmos-Reason2-8B`` weights at a pinned revision, served by vLLM with
-``--served-model-name Cosmos-Reason2-8B`` (serving/cosmos_reason2/serve.sh). The server runs without a reasoning
-parser: the model may or may not open a ``<think>`` block, and vLLM's qwen3 parser files a think-less answer as
-reasoning with no content (seen on 2026-10-30), so the port splits ``<think>...</think>`` itself. No JSON-schema
-constraint is sent either, because it would force JSON from the first token and remove the reasoning. The
-port sends the captured image (looked up by capture ID, its SHA-256 re-checked) and a recipe-derived prompt, and turns
-the model's final JSON answer into a ``CosmosReasonResult``. Anything it cannot verify, such as a digest mismatch,
-transport failure, truncated or unparseable answer or a different served model, raises ``CosmosReasonUnavailable``,
-which the gate turns into Hold/Andon. It never guesses a verdict.
+"""Cosmos Reason 2 (8B) final-build gate client over a vLLM OpenAI-compatible endpoint.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -66,8 +57,7 @@ class CaptureImageSource(Protocol):
 class EndpointConfig:
     base_url: str = "http://127.0.0.1:8000/v1"
     timeout_s: float = 120.0
-    # Measured on the Spark (2026-10-30, 39 set D answers): reasoning <= ~500 tokens, <= 39 s; one crop looped to
-    # 4096 tokens in 299 s. 1024 tokens (~75 s at ~14 tok/s) bounds that case; a cut-off answer is unavailable (Hold).
+    # Normal answers use about 500 tokens; 1024 caps runaway generations. A cut-off answer means Hold.
     max_tokens: int = 1024
     temperature: float = 0.0
     attempts: int = 3

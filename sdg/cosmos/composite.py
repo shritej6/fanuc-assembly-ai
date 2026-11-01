@@ -1,16 +1,5 @@
 """Put rendered parts back into a Cosmos-restyled image where Cosmos changed them.
-
-Cosmos Transfer makes the table, robot, background and light look real, but it often redraws the fine features of
-small parts (pins and recesses moved, merged or invented; pale discs erased) at every setting tried on 2026-10-28:
-default and lowest edge threshold, vis control, guided generation with the part masks. The labels describe the
-rendered parts, so an object keeps its Cosmos pixels only when Cosmos kept both its shape and its colour:
-- per-object edge F-score >= KEEP_COSMOS_MIN (60-image calibration, 1,211 objects: at that level shapes looked
-  unchanged by eye, at 0.6-0.75 they often did not);
-- mean colour within MAX_COLOUR_SHIFT of the relit render in every channel. Edges alone missed recolouring: Cosmos
-  turned red foreign objects black, brown, yellow or white and greyed black parts with the outline intact (shifts
-  36-137 in the calibration, every one wrong by eye; shifts up to 35 looked like the new light).
-Every other object (and every object too small to judge) is pasted back from the render, relit with the light change
-Cosmos made to the background, with a feathered margin.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -40,9 +29,7 @@ def box_blur(a: np.ndarray, r: int) -> np.ndarray:
 
 
 def light_change(source: np.ndarray, restyled: np.ndarray, background: np.ndarray) -> np.ndarray:
-    """Per-channel gain that maps the render's background onto Cosmos's (least squares through zero). Light scales
-    what a surface reflects, so a gain is the physical model; an offset fit on the near-uniform white table is not
-    determined and pushed black parts to 0 in testing."""
+    """Return the per-channel gain that maps the render background onto the Cosmos image."""
     src = source[background].astype(np.float64)
     out = restyled[background].astype(np.float64)
     if len(src) > MAX_FIT_PIXELS:
@@ -59,8 +46,7 @@ def colour_shift(relit: np.ndarray, restyled: np.ndarray, mask: np.ndarray) -> f
 
 
 def composite(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> tuple[np.ndarray, list[int]]:
-    """Cosmos image with every object Cosmos changed replaced by its relit render pixels (exact inside the mask).
-    Returns the image and the seg ids that kept their Cosmos look."""
+    """Return the Cosmos image with changed objects replaced by relit render pixels, and the kept ids."""
     if source.shape != restyled.shape or source.shape[:2] != seg.shape:
         raise ValueError(f"sizes differ: source {source.shape}, restyled {restyled.shape}, seg {seg.shape}")
     gain = light_change(source, restyled, ~dilate(seg > 0, 2 * FEATHER_PX))

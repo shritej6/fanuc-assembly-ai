@@ -1,3 +1,7 @@
+"""Tests for training config.
+Authored by Shritej Gunda.
+"""
+
 import tomllib
 from pathlib import Path
 

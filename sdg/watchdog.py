@@ -1,15 +1,5 @@
 """Unattended watchdog for a render host: QA every finished chunk on a sample, retry failed chunks, catch hangs.
-
-    python -m sdg.watchdog --host spark --plan C:0-15 D:0-11 A:0-31 --loop 600
-    python -m sdg.watchdog --host rosie --loop 600
-    python -m sdg.watchdog --host brev --loop 600      # QA + status only: sdg/brev/render_queue.sh retries itself
-
-Each pass appends one status line to $DATA_ROOT/watchdog/log.txt and rewrites watchdog/status.json.
-Per finished chunk: `_QA.json` (random 40 scenes checked + scene count) and watchdog/sheets/<set>_<chunk>.png.
-A failed chunk (`_FAILED.txt`) is moved to `_FAILED_retry<n>.txt` and re-rendered, at most MAX_RETRIES times; the
-generator skips scenes that already have labels, so a retry only renders what is missing.
-spark (one GPU, serial): the watchdog also starts the next unfinished chunks of `--plan` whenever nothing renders,
-and kills a render whose chunk wrote no label for HANG_MIN minutes (recorded as a failure, so it is retried).
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -114,8 +104,7 @@ def last_activity(chunk: Path) -> float:
 
 
 def spark_hang_check(events: list[str]) -> None:
-    """Kill each render that wrote nothing for HANG_MIN minutes; the chunk is then retried. Checked per chunk:
-    several queues share the GPU, so one stalled render must not hide behind the others' progress."""
+    """Kill each render that wrote nothing for HANG_MIN minutes so its chunk is retried."""
     for spec, cid in render_containers().items():
         chunk = chunk_path(spec.split("/")[0], int(spec.split("_")[1].split(".")[0]))
         if chunk.exists() and time.time() - last_activity(chunk) > HANG_MIN * 60:

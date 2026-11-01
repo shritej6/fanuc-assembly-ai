@@ -1,17 +1,8 @@
-"""Real-cell placement for the CSI slot 2026-10-31 14:00 CT: generate, validate, render.
-
-Run from the repo root (the planner is imported from it):
-    cd /Users/shritej/Desktop/FANUC_T32 && uv run --group dev --with h5py --python 3.13 python <this file>
-
-Writes next to this file: placement.yaml, rollout_{1,2,3}.png, positions.md, validate_output.txt.
-
-Positions: x, y = centre of the part's footprint (bounding box seen from above), UF0 mm; yaw = deg from robot +x
-(towards the front edge) turning towards +y, i.e. the direction of the part's CAD local +x axis (arrow in the PNGs).
-The planner (sim/assembly_lab/objects/planner.py) takes the CAD local origin, so every check converts centre -> origin.
+"""Generate, validate and render the real-cell placement layout.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
-import copy
 import itertools
 import math
 import subprocess
@@ -26,8 +17,8 @@ REPO = Path("/Users/shritej/Desktop/FANUC_T32")
 OUT = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
 
-from sim.assembly_lab.objects.planner import load_catalog, plan_pick, plan_place  # noqa: E402
-from sim.assembly_lab.objects.scene import build_instances, solid_of  # noqa: E402
+from sim.assembly_lab.objects.planner import load_catalog, plan_pick, plan_place
+from sim.assembly_lab.objects.scene import build_instances, solid_of
 
 CAT, MAPS = load_catalog()
 CELL = yaml.safe_load((REPO / "sdg/configs/cell_layout.yaml").read_text())
@@ -38,7 +29,7 @@ WX, WY = CELL["work_area"]["x"], CELL["work_area"]["y"]
 RMIN, RMAX = CELL["reach_radius_min"], CELL["reach_radius_max"]
 GAP = CELL["clearance"]
 PART_GAP_MM = 12.0          # sim/assembly_lab/eval/scenarios.yaml part_gap_mm (cell_layout allows 0)
-NEUTRAL_R = 180.0           # planner reference roll; T18 training rolls span 93..266 (dataset task strings)
+NEUTRAL_R = 180.0           # planner reference roll; training rolls span 93..266
 ROLL_BAND = 60.0            # "moderate": |r - 180| <= this at pick and at insert
 SLOT_HALF_MM = 25.0         # proposed InspectionSlotPose selection box half-size
 
@@ -73,7 +64,7 @@ def pretty(oid: str) -> str:
 # Per rollout: product -> base spot, and per part (spot, yaw offset from its base yaw).
 # Housings of type C (grip roll offset 0) get a negative offset, the rest positive, so pick and insert rolls stay
 # on the same wrist turn and inside 180 +- 60.
-DESIGN = {  # product 5 first in every rollout (user priority 2026-10-31: one full product, best demo yield)
+DESIGN = {  # product 5 first in every rollout: one full product gives the best demo yield
     1: {"products": [5, 1, 2], "base_spot": {5: "B2", 1: "B1", 2: "B3"},
         "parts": {5: [("F", 0, -15), ("N", 0, 20), ("F", 1, 10), ("N", 1, 25)],
                   1: [("F", 1, -15), ("N", 1, 20), ("N", 0, -20), ("F", 0, 10)],
@@ -216,21 +207,21 @@ def zone_report(objs: list[dict], pts: dict[str, np.ndarray]) -> list[str]:
     return bad
 
 
-def codex_parser():
-    """Codex's fail-closed prompt parser from origin/feature/T37-saturday-cell-integration, with a stub catalog."""
+def instruction_parser():
+    """Return the fail-closed prompt parser from the integration branch, with a stub catalog."""
     src = subprocess.run(["git", "-C", str(REPO), "show",
                           "origin/feature/T37-saturday-cell-integration:assembly/instruction.py"],
                          check=True, capture_output=True, text=True).stdout
     src = src.replace("from assembly.catalog import Catalog", "Catalog = object")
     ns: dict = {}
-    exec(compile(src, "codex_instruction.py", "exec"), ns)
+    exec(compile(src, "instruction.py", "exec"), ns)  # noqa: S102  # trusted repo source
 
     class _P:
         def __init__(self, n):
             self.product = n
 
     class _C:
-        products = [_P(n) for n in range(1, 7)]
+        products = [_P(n) for n in range(1, 7)]  # noqa: RUF012
     return lambda text: ns["parse_requested_products"](text, _C())
 
 
@@ -272,7 +263,7 @@ def render(n: int, objs: list[dict], pts: dict[str, np.ndarray], rolls: dict[str
     ax.add_patch(Rectangle((rz["y"][0], rz["x"][0]), rz["y"][1] - rz["y"][0], rz["x"][1] - rz["x"][0],
                            fc="#f4cccc", ec="#c66", lw=0.8))
     ax.text(np.mean(rz["y"]), np.mean(rz["x"]), "reject zone\n(leave empty)", ha="center", va="center", fontsize=7)
-    for k, (sx, sy) in PART_SPOTS.items():
+    for (sx, sy) in PART_SPOTS.values():
         ax.add_patch(Rectangle((sy - SLOT_HALF_MM, sx - SLOT_HALF_MM), 2 * SLOT_HALF_MM, 2 * SLOT_HALF_MM,
                                fill=False, ec="#ccd", lw=0.6, ls=":"))
     inst = build_instances(scene_of(objs), CAT)
@@ -284,12 +275,12 @@ def render(n: int, objs: list[dict], pts: dict[str, np.ndarray], rolls: dict[str
         v = rot(o["yaw"]) @ np.array([1.0, 0.0])
         L = 34 if o["id"].startswith("F") else 22
         ax.annotate("", xy=(o["cy"] + L * v[1], o["cx"] + L * v[0]), xytext=(o["cy"], o["cx"]),
-                    arrowprops=dict(arrowstyle="-|>", color="#c0392b", lw=1.4))
+                    arrowprops={"arrowstyle": "-|>", "color": "#c0392b", "lw": 1.4})
         ax.plot(o["cy"], o["cx"], "+", color="#c0392b", ms=7)
         label = f"{o['id']}\n({o['cx']:.0f}, {o['cy']:.0f}) {o['yaw']:.0f}°"
         ax.text(o["cy"], o["cx"] + (46 if o["id"].startswith("F") else 30), label, ha="center", va="top",
                 fontsize=7.5, color="#123" if o["id"].startswith("F") else "#222",
-                bbox=dict(fc="white", ec="none", alpha=0.75, pad=0.6))
+                bbox={"fc": "white", "ec": "none", "alpha": 0.75, "pad": 0.6})
     ax.set_xlim(-420, 420)
     ax.set_ylim(510, -40)
     ax.set_aspect("equal")
@@ -307,12 +298,12 @@ def render(n: int, objs: list[dict], pts: dict[str, np.ndarray], rolls: dict[str
 
 def positions_md(rollouts: dict[int, list[dict]], rolls: dict[int, dict]) -> str:
     out = ["# CSI real-cell placement, 2026-10-31 14:00 CT", "",
-           "x, y = centre of the part's footprint (mm, robot frame UF0, as obs[\"tcp_pose\"]). x grows towards the front "
-           "edge (away from the robot); +y is to the right in table_plan.png and in the PNGs here.",
-           "yaw = direction of the part's CAD local +x axis (red arrow in rollout_N.png), degrees from +x turning towards "
-           "+y. Every part stands in its installed orientation. Match the silhouette in the PNG.", "",
-           "Bases sit on spots B1 (420, -165), B2 (420, 0), B3 (420, 165); loose parts on a fixed 2 x 6 grid "
-           "(rows x 255 / 335, columns y -225, -135, -45, 45, 135, 225). Reject zone and spare store stay empty.", ""]
+           ("x, y = centre of the part's footprint (mm, robot frame UF0, as obs[\"tcp_pose\"]). x grows towards the front "
+           "edge (away from the robot); +y is to the right in table_plan.png and in the PNGs here."),
+           ("yaw = direction of the part's CAD local +x axis (red arrow in rollout_N.png), degrees from +x turning towards "
+           "+y. Every part stands in its installed orientation. Match the silhouette in the PNG."), "",
+           ("Bases sit on spots B1 (420, -165), B2 (420, 0), B3 (420, 165); loose parts on a fixed 2 x 6 grid "
+           "(rows x 255 / 335, columns y -225, -135, -45, 45, 135, 225). Reject zone and spare store stay empty."), ""]
     for n, objs in rollouts.items():
         out += [f"## Rollout {n}: products {', '.join(map(str, DESIGN[n]['products']))}", "",
                 f"Prompt: `{PROMPT.format(*DESIGN[n]['products'])}`", "",
@@ -331,7 +322,7 @@ def positions_md(rollouts: dict[int, list[dict]], rolls: dict[int, dict]) -> str
 def main() -> int:
     log: list[str] = []
     say = log.append
-    parse = codex_parser()
+    parse = instruction_parser()
     rollouts = {n: build_rollout(n) for n in DESIGN}
     all_ok = True
     rolls_md: dict[int, dict] = {}
@@ -341,7 +332,7 @@ def main() -> int:
         say(f"=== Rollout {n}: products {prods} ({len(objs)} objects: {sum(o['id'].startswith('F') for o in objs)} "
             f"bases, {sum(not o['id'].startswith('F') for o in objs)} loose parts)")
         got = parse(PROMPT.format(*prods))
-        say(f"prompt -> Codex parse_requested_products = {got}  {'OK' if list(got) == prods else 'MISMATCH'}")
+        say(f"prompt -> parse_requested_products = {got}  {'OK' if list(got) == prods else 'MISMATCH'}")
         all_ok &= list(got) == prods
         pts = footprint_points(objs)
         zb = zone_report(objs, pts)

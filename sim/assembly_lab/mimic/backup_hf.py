@@ -1,17 +1,5 @@
-"""Incremental backup of closed data files to a private Hugging Face dataset repo (runs on the gather host).
-
-Brev deletes a box and its disk when the credit runs out, so every kept file must already be on HF. Each call uploads
-only files that are new or changed since the last verified push, then checks that every uploaded path is listed in the
-repo before recording it in the manifest (<remote path> -> md5, size, mtime). The token comes from the standard HF
-cache (huggingface-cli login); it is never read or printed here.
-
-    python -m sim.assembly_lab.mimic.backup_hf --repo shritej81632/fanuc-t12-lerobot \\
-        --root ~/t12_data/a7/raw:raw/gen:closed --root ~/t12_data/demos:raw/demos --root ~/t12_data/lerobot:raw/lerobot
-
-A root is <local dir>:<remote prefix>[:closed]. ":closed" marks a tree that only ever receives closed files (the
-gathered generator chunks). Elsewhere an .hdf5 file is uploaded only once it is listed in a *closed*.txt file of that
-root or has not changed for --min-idle-s (agent 3 and the exporter write HDF5 in place); other files go up whenever
-their md5 changes.
+"""Back up closed data files incrementally to a private Hugging Face dataset repo.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -33,12 +21,14 @@ class BackupError(RuntimeError):
 
 @dataclass(frozen=True)
 class Root:
+    """A local directory to back up and its prefix in the repo."""
     local: Path
     prefix: str
     closed: bool = False
 
     @classmethod
     def parse(cls, spec: str) -> Root:
+        """Parse a <dir>:<prefix>[:closed] root spec."""
         parts = spec.split(":")
         if len(parts) not in (2, 3) or (len(parts) == 3 and parts[2] != "closed"):
             raise argparse.ArgumentTypeError(f"root must be <dir>:<prefix>[:closed], got {spec!r}")
@@ -46,7 +36,7 @@ class Root:
 
 
 def closed_names(root: Path) -> set[str]:
-    """File names listed in the root's *closed*.txt files (agent 3's run10_closed.txt lists closed demo files)."""
+    """Return the file names listed in the root's closed lists."""
     names: set[str] = set()
     for lst in root.glob("*closed*.txt"):
         names |= {Path(line.strip()).name for line in lst.read_text().splitlines() if line.strip()}
@@ -67,6 +57,7 @@ def candidates(root: Root, now: float, min_idle_s: float) -> dict[str, Path]:
 
 
 def md5_of(path: Path) -> str:
+    """Return the md5 hex digest of a file."""
     h = hashlib.md5()
     with path.open("rb") as fh:
         for block in iter(lambda: fh.read(1 << 22), b""):
@@ -120,6 +111,7 @@ def push(api, repo: str, todo: dict[str, dict], manifest: dict, max_bytes: int) 
 
 
 def main() -> None:
+    """Parse the command line and back up new or changed files."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", required=True)
     ap.add_argument("--root", type=Root.parse, action="append", required=True)

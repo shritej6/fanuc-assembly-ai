@@ -1,7 +1,5 @@
-"""Write a LeRobot v2.1 dataset as policy_learn/groot/DATA_FORMAT.md (agent 5) asks:
-meta/{info.json, episodes.jsonl, episodes_stats.jsonl, tasks.jsonl, stats.json} (no modality.json: agent 5's
-prepare_dataset.py writes it),
-data/chunk-XXX/episode_XXXXXX.parquet, videos/chunk-XXX/observation.images.<cam>/episode_XXXXXX.mp4.
+"""Write the files of a LeRobot v2.1 dataset: meta, parquet data and MP4 videos.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -22,7 +20,7 @@ ACTION_NAMES = ["x", "y", "z", "w", "p", "r", "gripper"]
 LANG_COLUMN = "annotation.human.task_description"
 STATS_KEYS = ("mean", "std", "min", "max", "q01", "q99")
 
-# How the 13 / 7 vectors split (agent 5's prepare step writes the real meta/modality.json; used only to self-check).
+# How the 13 / 7 vectors split (used only to self-check; the real meta/modality.json is written later).
 MODALITY = {
     "state": {"joints": {"start": 0, "end": 6}, "gripper": {"start": 6, "end": 7},
               "tcp_xyz": {"start": 7, "end": 10}, "tcp_wpr": {"start": 10, "end": 13}},
@@ -34,14 +32,17 @@ MODALITY = {
 
 
 def chunk_of(episode_index: int) -> int:
+    """Return the chunk index of an episode."""
     return episode_index // CHUNK_SIZE
 
 
 def parquet_path(root: Path, ep: int) -> Path:
+    """Return the parquet path of an episode."""
     return root / f"data/chunk-{chunk_of(ep):03d}/episode_{ep:06d}.parquet"
 
 
 def video_path(root: Path, ep: int, cam: str) -> Path:
+    """Return the video path of an episode for one camera."""
     return root / f"videos/chunk-{chunk_of(ep):03d}/observation.images.{cam}/episode_{ep:06d}.mp4"
 
 
@@ -63,6 +64,7 @@ def encode_mp4(frames: np.ndarray, path: Path, fps: int) -> None:
 
 
 def array_stats(x: np.ndarray) -> dict:
+    """Return per-dimension mean, std, min, max and quantiles of an array."""
     x = np.asarray(x, dtype=np.float32).reshape(len(x), -1)
     return {"mean": x.mean(0).tolist(), "std": x.std(0).tolist(), "min": x.min(0).tolist(),
             "max": x.max(0).tolist(), "q01": np.quantile(x, 0.01, axis=0).tolist(),
@@ -115,6 +117,7 @@ def features(image_size: tuple[int, int], fps: int) -> dict:
 def write_meta(root: Path, episodes: list[dict], tasks: list[str], image_size: tuple[int, int], fps: int,
                robot_type: str,
                all_state: np.ndarray, all_action: np.ndarray, all_ts: np.ndarray) -> None:
+    """Write the meta files of the dataset."""
     meta = root / "meta"
     meta.mkdir(parents=True, exist_ok=True)
     feats = features(image_size, fps)

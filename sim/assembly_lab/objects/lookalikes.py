@@ -1,11 +1,5 @@
-"""Sizes that tell look-alike objects apart, from the printed meshes' top-down height maps (numpy only).
-
-Two members of a look-alike group are compared on one grid in their installed local frame (both built in the same
-product frame, so a standing part seen from above lines up after the yaw is removed). Every connected region where
-their top surfaces differ by more than 0.4 mm is a cue. A cue's size is the smallest of its width, length and height
-step: that is the dimension the wrist camera / depth has to resolve to see it. The pair's best cue is the largest
-such size, also counting bounding-box differences; the group's minimum measurable difference is the smallest best
-cue over its pairs. 0 means identical meshes (no size can separate them).
+"""Measure the sizes that tell look-alike objects apart from their top-down height maps.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

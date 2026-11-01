@@ -1,33 +1,5 @@
-"""Per-object contact numbers from Isaac Lab contact sensors, accumulated every physics step on the sim device.
-
-- robot_contact_<link>: each robot link (arm links, gripper body, both finger bodies) against every pool object
-  (force matrix + mean contact point per link-object pair), read together as `self.robot` (SensorGroup).
-- object_contact: net contact force on every object.
-- object_env_contact_<name>: each object against every non-robot collider (per contact point, friction).
-PhysX pairs a filter with one sensor body per env, so every filtered sensor is one body; SensorGroup concatenates them
-along the body axis.
-
-Per object:
-- robot_touch_N: the largest force any single robot link puts on it (the "touched only the target" gate).
-- jaw_n: (JawL, JawR) force magnitudes (grasp signal).
-- contact: the force from everything except the robot: normal_N = |vertical| (insertion is vertical), lateral_N =
-  horizontal magnitude, of (net NORMAL force (object_contact.net_forces_w, which PhysX/Isaac Lab report without
-  friction) minus the robot links' normal forces) + the friction forces from every non-robot shape
-  (object_env_contact.friction_forces_w, summed over filters). Without the friction term a 1 N sideways push held by
-  table friction read lateral_N 0.0 (measured, force_validate.py); torque_Nm = |torque of the robot-link forces about the
-  object's centre of mass| (quasi-static: it balances what the base and table put on the part).
-  torque_Nm: torque from the NON-robot contacts only (other objects, table, mat, floor; every contact point and
-  friction anchor, contact_torque.py) about the object's insert axis (body +Z), the axis physics/limits.yaml caps;
-  a part held in the air reads 0. It is gated to parts the robot loads this physics step (a robot link touches it,
-  or it touches a part a robot link touches): an untouched part at rest reads 0 (measured by agent 3 in run7: the
-  ungated value read 0.12-2.33 N m on a resting M1_04). torque_raw_Nm: the ungated value (logging only).
-  torque3d_Nm: full magnitude of the gated torque. torque_robot_est_Nm: the old estimate (|torque of the robot-link
-  forces about the COM|, logging only: the pinch couple fires in the air).
-Peaks are kept per env step (reset by begin_step) and per episode chunk (reset by the thin layer).
-Every quantity is per env (leading dim E = num_envs); current / chunk / substep_log / raw_env_contacts take env_id.
-With T12_SUBSTEP_LOG=1 every physics substep's [normal_N, lateral_N, torque_Nm, robot_touch_N] per object is also kept
-for the last env step (substep_log(); obs["sim"]["substep_contact"]), to see seat-contact impulses (costs a GPU sync
-per substep, so it is off by default).
+"""Accumulate per-object contact numbers from Isaac Lab contact sensors every physics step.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

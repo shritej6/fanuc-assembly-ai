@@ -1,4 +1,6 @@
-"""Model 4 - Sensor Connector Module: housing, sensor insert, upper guide, top lock."""
+"""Model 4, Sensor Connector Module: housing, sensor insert, upper guide and top lock.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -30,8 +32,7 @@ MODEL_DIR = "MODEL_04_SENSOR_CONNECTOR"
 CAV_X, CAV_Y = 25.0, 19.0
 INSERT_X, INSERT_Y = 24.0, 18.0
 # unequal internal guide ribs (projection 1.0): (side, width in Y, centre Y).
-# User-approved change: the spec put the right rib at Y -4, which is point-symmetric with the
-# left rib, so a 180-degree turned insert still fitted. Both ribs at Y +4 block reversal.
+# Both ribs sit at Y +4 so a 180-degree turned insert cannot fit.
 GUIDE_RIBS = ((-1, 3.0, 4.0), (1, 2.0, 4.0))
 
 

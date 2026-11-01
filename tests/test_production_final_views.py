@@ -1,4 +1,6 @@
-"""Production completion views require sourced CSI poses; there are no defaults."""
+"""Production completion views require sourced CSI poses; there are no defaults.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

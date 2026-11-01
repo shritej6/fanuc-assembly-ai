@@ -1,4 +1,6 @@
-"""Mimic HDF5 -> GR00T LeRobot export: success + force guard filtering, units, wrap handling, format checks."""
+"""Mimic HDF5 -> GR00T LeRobot export: success + force guard filtering, units, wrap handling, format checks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ T, SIM_DT, FPS = 60, 0.2, 5
 
 
 def _demo(g, success: bool, contact_peak: float, yaws: np.ndarray, rng) -> None:
-    """Agent 3's layout (skills/hdf5_io.py): actions are act_tcp rows in mm / deg; obs joints / tcp_pose API units."""
+    """The layout (skills/hdf5_io.py): actions are act_tcp rows in mm / deg; obs joints / tcp_pose API units."""
     g.attrs["success"] = success
     g.attrs["num_samples"] = T
     xyz = np.stack([np.linspace(300.0, 400.0, T), np.linspace(-50.0, 50.0, T), np.full(T, -300.0)], 1)
@@ -135,7 +137,7 @@ def test_generation_rollup_measures_from_worker_stats(tmp_path):
 
 @needs_ffmpeg
 def test_agent5_prepare_accepts_export(setup, tmp_path):
-    """The binding check: agent 5's prepare_dataset.py (DATA_FORMAT.md) must accept the export unchanged."""
+    """The binding check: the prepare_dataset.py (DATA_FORMAT.md) must accept the export unchanged."""
     prep = pytest.importorskip("policy_learn.groot.prepare_dataset")
     path, limits, out = setup
     E.export([str(path)], out, SIM_DT, FPS, (64, 36), None, workers=1, limits_path=limits)

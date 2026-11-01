@@ -1,11 +1,5 @@
-"""USD side of the sim cell. Runs inside Isaac Sim (pxr), after the Isaac Lab SimulationContext exists.
-
-- `build_cell(stage)`: the starter cell the synthetic data was rendered with (`sim/starter/cell.py`: ER-4iA, SMC
-  MHZL2-16D2 body and jaws, wrist camera, table, white backdrop, lights, the three calibrated CSI cameras), then the
-  starter's aluminium AA fingers are swapped for the Team V printed fingers (`assets/fingers/*.stl`, exported from the
-  Team V STEP files in the gripper frame) with their NBR pads.
-- `write_object_usd(...)`: one rigid-body USD per product object from the printed CAD STL (`cad/stl`), mass = PLA
-  1.24 g/cm3 x CAD volume, SDF mesh collision so pegs (0.5 mm clearance per side, 1.5 mm chamfers) really mate.
+"""Build the USD assets of the sim cell inside Isaac Sim.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -166,13 +160,7 @@ def build_cell(stage, contact: dict) -> None:
 
 
 def install_teamv_fingers(stage, contact: dict) -> None:
-    """Replace the starter fingers on JawL / JawR with the Team V finger + NBR pad meshes.
-
-    Jaw prims sit at the carriage start, (carriage_x, sign * (JAW_OPEN + FINGER_WIDTH / 2), 0) in J6_link, at joint
-    q = 0 (fully open). STEP (X, Y, Z) maps to J6_link (-Z, Y, X) with the STEP tip plane on the CSI TCP
-    (TOOL_LENGTH = 293 mm from the J6 origin), so the open pad gap is the CAD 16.5 mm and the 6 mm stroke per jaw
-    closes it to 4.5 mm.
-    """
+    """Replace the starter fingers on JawL / JawR with the Team V finger + NBR pad meshes."""
     carriage_x, _ = cell.gripper_layout()
     step_to_j6 = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]])
     shift_x_mm = C.TOOL_LENGTH * 1000.0 - TEAMV_TIP_Z_MM
@@ -216,11 +204,7 @@ def install_teamv_fingers(stage, contact: dict) -> None:
 
 
 def set_jaw_force(stage, max_force_n: float) -> None:
-    """Cap both independent jaw drives at max_force_n (scene.JAW_EFFORT_X x the per-finger force; scene.py sets the
-    same limit on the actuator). actions.TcpAction synchronises them in software like the real SMC MHZL2 rack-and-pinion: every physics
-    step both target mean(|q_l|, |q_r|) plus a lead, stiffness * lead = the per-finger force. A PhysX mimic joint
-    (hard q_r = -q_l constraint) did keep the jaws symmetric but put 500-690 N m of spurious torque on J5 (0.73 mm
-    TCP error); two plain drives without the retargeting rested asymmetric (-5.6 / +3.9 mm)."""
+    """Cap both jaw drives at max_force_n; the action term keeps them in sync in software."""
     for side in ("L", "R"):
         joint = stage.GetPrimAtPath(f"{cell.FLANGE}/Gripper/{cell.JAW_JOINTS[side]}")
         UsdPhysics.DriveAPI.Get(joint, "linear").GetMaxForceAttr().Set(float(max_force_n))
@@ -228,10 +212,7 @@ def set_jaw_force(stage, max_force_n: float) -> None:
 
 # ---------------------------------------------------------------- objects
 def write_object_usd(out: Path, stl: Path, contact: dict) -> float:
-    """One rigid body (defaultPrim /Object) with an SDF collider and the black PLA look. Returns the mass (kg).
-
-    Written to a private temp file and renamed into place: parallel workers that find the same cache entry missing
-    otherwise read each other's half-written USD (measured: 'Invalid prim null prim' in add_object)."""
+    """One rigid body (defaultPrim /Object) with an SDF collider and the black PLA look."""
     tris = read_binary_stl(stl)
     mass, com_mm = pla_mass_kg(stl)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -330,7 +311,7 @@ def robot_physics(stage, contact: dict) -> None:
     add_gripper_body_mass(stage)
 
 
-# SMC MHZL2-16D: 135 g (catalog listings: RS Online 841-2331, sparepartsnow, IMS Supply; confirmed by Main 2026-10-30).
+# SMC MHZL2-16D: 135 g from catalog listings.
 # The robot USD gives J6_link only the bare flange (13.8 g) and each actuator jaw C.JAW_MASS (blade + carriage); the
 # body carries the rest. A 14 g J6_link under two 32 g jaws left the PhysX articulation ill-conditioned: jaw_r's
 # drive force partly vanished (14 N reached the part for a 53 N drive) and a mimic joint put ~500 N m on J5.
@@ -390,7 +371,7 @@ def add_marker(stage, prim_path: str, pos_m) -> None:
     mass.CreateDiagonalInertiaAttr(Gf.Vec3f(1e-8, 1e-8, 1e-8))
 
 
-# ---------------------------------------------------------------- disturbance props (eval, agent 6)
+# ---------------------------------------------------------------- disturbance props (eval)
 EXTRAS = {   # name: (size_mm, kinematic) -- boxes; parked out of every camera until a scenario injects them
     "Foreign": ((30.0, 20.0, 15.0), False),      # an unknown printed piece (not one of the 30), PLA density
     "Plug": ((8.0, 8.0, 4.0), True),             # blocks a seat: the part stops 4 mm high (won't-seat case)

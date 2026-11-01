@@ -1,11 +1,5 @@
-"""Reset settling for several cells at once: step physics until every object of every resetting env is at rest.
-
-Criteria (coordinator spec, mimic_env.SETTLE): motion is the displacement over a sliding window_s window (position
-change / window < 1 mm/s, rotation change / window < 0.5 deg/s), so a one-step solver velocity spike is not motion but
-sustained motion still fails; every object's net contact force must change < 0.05 N between physics steps. An env is
-settled once it has been calm for hold_s and at least min_s has passed; it gives up at cap_s. Each env is judged on its
-own objects only; the loop runs until every env settled or the cap. On failure an env's detail names the worst object
-and value for each quantity. Robot joint targets are held (whatever the caller wrote) during the loop.
+"""Step physics after a reset until every object in every resetting env is at rest.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -82,12 +76,7 @@ def settle(env, env_ids: list[int], spec: dict, min_s: float) -> dict[int, tuple
 
 
 class SettleTracker:
-    """Settle some envs inside the normal env.step while the others keep running (per-env reset).
-
-    start(env_id) after the cell was placed; tick() once per physics step (TcpAction.apply_actions, i.e. after the
-    previous physics step); envs that settled or hit the cap come back from tick() as (env_id, settled, sim seconds,
-    detail). Same criteria and counting as settle(): the first tick after start is the placement itself and is skipped,
-    so sample k is the state after k physics steps. One GPU->CPU sync per physics step while any env settles."""
+    """Settle some envs inside the normal env.step while the others keep running (per-env reset)."""
 
     def __init__(self, env, spec: dict):
         self.env, self.spec = env, spec

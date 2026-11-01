@@ -1,3 +1,7 @@
+"""Tests for training data.
+Authored by Shritej Gunda.
+"""
+
 import hashlib
 import json
 import sys

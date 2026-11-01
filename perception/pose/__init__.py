@@ -1,1 +1,2 @@
-"""Nominal CAD asset and pose-estimation boundaries."""
+"""Nominal CAD asset and pose-estimation boundaries.
+Authored by Shritej Gunda."""

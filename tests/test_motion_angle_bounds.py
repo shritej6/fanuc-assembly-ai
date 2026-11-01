@@ -1,4 +1,6 @@
-"""Official TCP-bound regressions for equivalent tool-angle interpolation."""
+"""Official TCP-bound regressions for equivalent tool-angle interpolation.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

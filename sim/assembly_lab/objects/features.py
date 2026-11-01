@@ -1,10 +1,5 @@
-"""Pegs, holes and mates of the 30 printed objects, from the CAD that was printed (needs cadquery: cad group).
-
-Every number comes from cad/products/parameters.py or a model module's constants, i.e. the inputs of the `build()`
-that wrote the STLs. Positions are in the object's installed local frame (origin = centre of its lowest seating
-plane, the product frame shifted by `installed_origin_mm`). `check_features` then tests each feature against the
-printed mesh (a peg centre must be inside material, a hole centre must be empty), so a CAD change that moves a
-feature fails the build instead of silently writing a wrong position.
+"""Extract the pegs, holes and mates of the printed objects from their CAD.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

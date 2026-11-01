@@ -1,10 +1,5 @@
-"""Replay a `plan_assembly.py` plan in Isaac Sim and write captioned video frames. Runs under Isaac's python.
-
-The scene is rebuilt from the same label spec with the SDG stage code, so parts, base, lights and cameras match the
-training renders. Joints are set per frame (kinematic replay, no contact physics); the held part follows the plan.
-Each frame: table camera (large), side camera and wrist camera, with the plan step as a caption.
-
-    $ISAAC_PY sim/demo/render_assembly.py --plan plan.json --out frames/
+"""Replay an assembly plan in Isaac Sim and write captioned video frames.
+Authored by Shritej Gunda.
 """
 
 import argparse

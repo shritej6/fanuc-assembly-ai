@@ -1,11 +1,5 @@
-"""Turn waypoints into `act_tcp` rows `[x, y, z, w, p, r, gripper]` at a fixed control step.
-
-Every skill builds its motion through `Motion`, which enforces, for every row it emits:
-- the workspace box (PLAN 3.1),
-- the seated-height floor (never below `floor_z`, which skills set to seated TCP z - 1 mm),
-- the slow last 5 mm above the active contact height,
-- per-row step limits, so the speed is the same in every demo (one fixed dt for GR00T),
-- the tool never more than 6 deg from straight down (the real-arm guard rejects more).
+"""Turn waypoints into act_tcp rows at a fixed control step.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

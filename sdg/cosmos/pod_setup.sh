@@ -1,8 +1,6 @@
 #!/bin/bash
-# One-time Cosmos Transfer 2.5 setup on an x86 GPU pod (A100/H100, driver >= 580 for CUDA 13), no Docker inside.
-# Same Cosmos commit as the GB10 image, so every host renders with the same code. CUDA 13 (cu130): the repo pins
-# Python 3.13 and the cu128 flash-attn wheel exists only for Python 3.10 (RunPod A100, 2026-10-28). Then:
-#   RUNNER=venv BUNDLE=/workspace/<bundle> bash sdg/cosmos/run_transfer.sh
+# One-time Cosmos Transfer 2.5 setup on an x86 GPU pod without Docker.
+# Authored by Shritej Gunda.
 set -euo pipefail
 REPO_DIR=${REPO_DIR:-$HOME/cosmos-transfer2.5}
 COSMOS_COMMIT=2ff49d0

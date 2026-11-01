@@ -1,10 +1,6 @@
 #!/bin/bash
-# Cosmos side of the render -> Cosmos pipeline (sdg/brev/hub.sh): one worker per GPU on a multi-GPU Cosmos host.
-# The hub drops each rendered chunk's bundle into ~/fa-cosmos/inbox/; a free GPU claims it (an atomic mv), restyles
-# it with sdg/cosmos/run_transfer.sh and moves it to ~/fa-cosmos/done/, where the hub fetches the results.
-# A bundle that fails three times goes to ~/fa-cosmos/failed/ for a look. Needs sdg/cosmos/pod_setup.sh first.
-#
-#   nohup sdg/brev/cosmos_worker.sh > ~/fa-cosmos/workers.log 2>&1 &     # stops when ~/fa-cosmos/STOP exists
+# Run one Cosmos restyle worker per GPU, claiming bundles from the inbox.
+# Authored by Shritej Gunda.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

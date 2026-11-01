@@ -1,18 +1,5 @@
-"""Open-loop check of ANY policy server (ACT, SmolVLA or GR00T) on held-out episodes, through the evaluator's path.
-
-    python -m policy_learn.baselines.openloop --policy groot://127.0.0.1:5561 --dataset ~/baseline_data/val \
-        [--episodes 10] [--out report.json]
-
-Every 16th frame of each held-out episode is sent exactly as the sim evaluator sends it: `GrootPolicy(spec)`
-(`policy_learn/deploy/groot_policy.py`) -> agent 5's GR00T client -> the server, and the chunk comes back through the
-real-arm guard. The guarded rows are compared with the recorded `act_tcp` targets of the same frames:
-- xyz error (mm, per row, mean over rows the recording has),
-- rotation error (deg, angle of R_pred^T R_rec),
-- gripper agreement (fraction of rows with the same open / closed state),
-- guard holds (a held query is counted, not scored: its row is the current pose) and clamps.
-Because GR00T's own server answers the same protocol, the same command gives GR00T's number on the same frames.
-This is an open-loop (teacher-forced) check, not a task success rate; the sim evaluator measures that.
-"""
+"""Open-loop check of any policy server (ACT, SmolVLA or GR00T) on held-out episodes.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -30,7 +17,7 @@ FINGERS_DOWN_WPR = np.array([-180.0, 0.0, 0.0])
 
 
 def cell_obs(item: dict) -> dict:
-    """A LeRobot view frame -> the observation dict the evaluator gives GrootPolicy.act."""
+    """Return the evaluator observation dict for one LeRobot frame."""
     state = item["observation.state"].numpy().astype(np.float64)   # [eef_9d, gripper, J1..J6]
     images = {cam: (item[f"observation.images.{cam}"].numpy().transpose(1, 2, 0) * 255.0).round().astype(np.uint8)
               for cam in CAMERAS}
@@ -40,7 +27,7 @@ def cell_obs(item: dict) -> dict:
 
 
 def compare(rows: np.ndarray, recorded: np.ndarray) -> dict:
-    """rows (N, 7) guarded act_tcp; recorded (M, 10) [eef_9d, gripper] targets of the same frames."""
+    """Return the error metrics between guarded rows and the recorded targets."""
     n = min(len(rows), len(recorded))
     rows, recorded = rows[:n], recorded[:n]
     xyz = np.linalg.norm(rows[:, :3] - recorded[:, :3], axis=1)
@@ -51,6 +38,7 @@ def compare(rows: np.ndarray, recorded: np.ndarray) -> dict:
 
 
 def run(policy_spec: str, dataset: Path, episodes: int, stride: int) -> dict:
+    """Run the open-loop check and return the summary."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     ds = LeRobotDataset("local/fanuc_val", root=dataset, video_backend="pyav",
@@ -86,6 +74,7 @@ def run(policy_spec: str, dataset: Path, episodes: int, stride: int) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse arguments and run the open-loop check."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--policy", required=True, help="groot://host:port (ACT, SmolVLA or GR00T server)")
     ap.add_argument("--dataset", type=Path, required=True, help="lerobot_view.py output split, e.g. <out>/val")

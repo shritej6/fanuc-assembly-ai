@@ -1,4 +1,6 @@
-"""Check portable model discovery without CUDA or development-machine paths."""
+"""Tests for portable model discovery without CUDA or machine-specific paths.
+Authored by Shritej Gunda.
+"""
 
 import json
 import os

@@ -1,4 +1,6 @@
-"""Opt-in official-mock wiring for the T09 AssemblyController."""
+"""Opt-in official-mock wiring for the AssemblyController.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

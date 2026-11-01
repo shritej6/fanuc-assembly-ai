@@ -1,4 +1,6 @@
-"""PlannerRuntime: the planner drives every step from placement.yaml through the same guard; GR00T is never asked."""
+"""Tests for planner runtime.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 from itertools import pairwise
@@ -47,7 +49,7 @@ def test_planner_completes_on_a_lagging_arm():
 
 
 def test_a_lagging_arm_far_above_the_pad_descends_fast_to_the_slow_zone_edge():
-    """Real cell 16:07: the arm lagged 40 mm behind, and the rows crawled at slow-zone speed all the way down."""
+    """On the real cell the arm lagged 40 mm behind, and the rows crawled at slow-zone speed all the way down."""
     pol = PlannerRuntime(model=NeverAskedGroot(), exec_horizon=8)
     pol._plan_contact = -324.6
     pose = np.array([373.8, 183.8, -284.6, -180.0, 0.0, 150.0])

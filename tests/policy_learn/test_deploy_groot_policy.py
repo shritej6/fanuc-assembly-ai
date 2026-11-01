@@ -1,4 +1,6 @@
-"""GrootPolicy: official policy interface, model output always guarded, instruction routing, GR00T I/O mapping."""
+"""GrootPolicy: official policy interface, model output always guarded, instruction routing, GR00T I/O mapping.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -126,8 +128,7 @@ def test_set_plan_uses_the_training_instruction_format():
 
 
 def test_model_rows_across_r_180_are_one_small_turn_not_a_hold():
-    """A 6D-rotation decode flips r between +179.8 and -179.9; the adapter sends the same orientation next to the
-    reported r, so the arm makes a 0.3 deg turn instead of freezing on a guard hold (or spinning J6)."""
+    """A 6D-rotation decode flips r between +179.8 and -179.9."""
     tcp = [300.0, 0.0, -90.0, -180.0, 0.0, -179.9]
     pol = GrootPolicy(model=Fixed([[300, 1, -90, 180.0, 0, 179.8, 0], [300, 2, -90, -180.0, 0, -179.7, 0]]))
     pol.reset()

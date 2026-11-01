@@ -1,4 +1,6 @@
-"""T28: reject spots and store slots are reachable, used one at a time, and release parts above the table."""
+"""Reject spots and store slots are reachable, used one at a time, and release parts above the table.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

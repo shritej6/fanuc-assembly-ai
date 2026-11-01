@@ -1,10 +1,5 @@
-"""KINEMATIC TEST DOUBLE: no physics. It exists so the skill -> runner -> HDF5 pipeline can be exercised on any host
-before the Isaac Lab env (agent 1) and the planner (agent 2) exist. Nothing it produces is a demo or a measurement:
-`record.py --backend kinematic` refuses to write under ~/t12_data/demos and stamps every file KINEMATIC_DRY_RUN.
-
-The part attaches when the fingers close within 1.5 mm of its grip TCP, follows the TCP rigidly, and on release rests
-on its seat (if it is within the seat's capture tolerance) or on top of the pegs / the table. Contact force is a
-spring on how far the TCP pushes a part below its support (10 N/mm), so the force guard path runs end to end.
+"""Kinematic test double with no physics, for exercising the skill to HDF5 pipeline anywhere.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

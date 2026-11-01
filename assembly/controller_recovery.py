@@ -1,4 +1,6 @@
-"""Recovery flow mixed into the cell controller to keep orchestration focused."""
+"""Recovery flow mixed into the cell controller to keep orchestration focused.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

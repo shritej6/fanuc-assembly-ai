@@ -1,20 +1,5 @@
-"""
-Scene parameters for the FANUC ER-4iA grasping cell.
-
-Coordinate frame: origin at the robot base mounting face (on the table top),
-+X pointing away from the robot toward the work area / camera side,
-+Y to the robot's left, +Z up. Meters and degrees, matching the asset
-(metersPerUnit = 1, upAxis = Z).
-
-Provenance tags:
-  EXACT     - read out of the NVIDIA/FANUC SimReady USD, or a vendor datasheet
-  SCAN      - measured off the Scaniverse site scan (CSI-site-digital-model.zip,
-              "204107.glb"), registered to the robot by its base-plate bolts
-  VIDEO     - measured in the real-cell video (pick_m6_scrwes_CSI_hackathon26.mov),
-              mapped onto the scan by a homography through printed mat features
-              (~2 mm RMS), or scaled against a part of known size
-  PHOTO     - estimated from the 2026-09 bench photos of the gripper
-  GUESS     - not observable; placeholder pending measurement
+"""Scene parameters for the FANUC ER-4iA grasping cell.
+Authored by Shritej Gunda.
 """
 
 # ------------------------------------------------------------------ robot
@@ -42,7 +27,7 @@ MAX_REACH = 0.55  # ~ UPPER_ARM + FOREARM
 # VIDEO: arm hangs forward and down over the work area between moves.
 HOME_POSE_DEG = {"J1": 0.0, "J2": 35.0, "J3": -25.0, "J4": 0.0, "J5": -80.0, "J6": 0.0}
 
-# PHOTO-FIT 2026-10-08: same pose for all three camera captures. Solved with
+# Photo fit: same pose for all three camera captures. Solved with
 # fk.py from the fitted wrist view and the existing rigid camera mount.
 # Visual pose estimate, not recorded encoder data.
 WRIST_PHOTO_POSE_DEG = {
@@ -107,7 +92,7 @@ BOTTLE_R = 0.018
 BOTTLE_H = 0.058
 
 # ------------------------------------------------------------------ gripper
-# PHOTO 2026-10-09: PXL_20261008_154537672.jpg. Bare machined aluminium
+# From site photos: PXL_20261008_154537672.jpg. Bare machined aluminium
 # fingers with an AA-sized circular recess; no tape on the working profile.
 # Operator update: soft contact tips, modeled separately below.
 # AA diameter anchors the recess independently of the earlier camera fit.
@@ -200,12 +185,12 @@ TOOL_AXIS = (1.0, 0.0, 0.0)
 FINGER_SPREAD_AXIS = (0.0, 1.0, 0.0)
 
 # ------------------------------------------------------------------ wrist camera
-# PHOTO 2026-10-09: compact grey industrial camera (~50 × 50 × 32 mm body) on a
-# small bracket to one side of the tool.  NO ring light — the earlier Banner
+# From site photos: compact grey industrial camera (~50 x 50 x 32 mm body) on a
+# small bracket to one side of the tool.  NO ring light, the earlier Banner
 # LEDRR70X70 ring-light model was wrong; the real install is just the camera.
 CAMBODY = (0.050, 0.050, 0.032)  # PHOTO estimate: square grey camera housing
 CAMBODY_GREY = (0.50, 0.50, 0.52)  # medium grey housing colour
-# Offset and height estimated from 7672; optical direction retains the 90° mount.
+# Offset and height estimated from 7672; optical direction retains the 90 deg mount.
 WRISTCAM_LATERAL = 0.0979
 # Reference: PXL_20261008_154537672.jpg. Rotate the fitted camera assembly
 # +90 degrees about flange +X (tool axis), independently of the jaws.
@@ -234,7 +219,7 @@ LASER_LENGTH = 0.032
 SCREWS = []
 
 # -- cube (cube.usda, 16 mm)
-# PHOTO 2026-10-08: real scene has 2 cubes, both yellow.
+# From site photos: real scene has 2 cubes, both yellow.
 CUBE_EDGE = 0.010  # hackathon: 2 mm clearance inside measured 12 mm open gap
 # The bottom of the open-ended AA socket remains separated at full closure.
 # Target contact at the hooked ends, allowing 0.3 mm per-jaw seating travel.
@@ -251,9 +236,9 @@ SORT_CUBES = [
 
 # -- vial (vial.usda, 27.18 mm dia x 203 mm long)
 # Each entry: (x_ctr, y, yaw_deg) where yaw_deg is the angle of the vial
-# long-axis from world +X in the XY plane (0° = along +X, 90° = along +Y).
-# cell.py: RotateY(+90°) maps local Z→world X, then RotateZ(yaw_deg) tilts it.
-# Translation accounts for the offset: T = (x_ctr - L/2·cos(yaw), y - L/2·sin(yaw)).
+# long-axis from world +X in the XY plane (0 deg = along +X, 90 deg = along +Y).
+# cell.py: RotateY(+90 deg) maps local Z -> world X, then RotateZ(yaw_deg) tilts it.
+# Translation accounts for the offset: T = (x_ctr - L/2*cos(yaw), y - L/2*sin(yaw)).
 VIAL_RADIUS = 0.017 / 2  # RENDER-FIT: reduce tube silhouette width
 VIAL_LENGTH = 0.1400  # PHOTO-FIT: 140 mm, conditional on table prior
 VIAL_MASS = 0.020
@@ -289,11 +274,7 @@ CUBE_LAYOUT_SEED = 20261009
 
 
 def hackathon_cubes(seed):
-    """Reproducible random additions, separated from objects and the tower site.
-
-    Sample a conservative workspace; host validation checks grasp/hover IK.
-    The original two yellow cubes retain their calibrated positions.
-    """
+    """Reproducible random additions, separated from objects and the tower site."""
     import random
     import math
 
@@ -339,7 +320,7 @@ MAT_T = 0.002  # slab thickness; independent of signed base-to-surface offset
 SURFACE_DZ = -0.0051
 
 # ------------------------------------------------------------------ sort bins
-# PHOTO 2026-10-08: sort bins and fixture are NOT present in the real calibration
+# From site photos: sort bins and fixture are NOT present in the real calibration
 # scene. Set these to True once placed on the table.
 SHOW_BINS = False
 SHOW_FIXTURE = False
@@ -435,7 +416,7 @@ WORK_AREA_CENTER = (0.40, 0.0, 0.0)
 # CAD visuals scale with their colliders; source USDs stay intact.
 SHOW_BACKDROP = True
 BACKDROP_WIDTH = 0.94
-# User update 2026-10-09: paper was cut and laid flat. Retain the previous
+# Site update: paper was cut and laid flat. Retain the previous
 # tabletop footprint; the exact cut dimensions have not been measured.
 BACKDROP_X = (0.18, TABLE_X[1] - EDGE_BAND_W)
 BACKDROP_ROUGHNESS = 0.30

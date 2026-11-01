@@ -1,13 +1,6 @@
 #!/bin/bash
-# Render -> Cosmos pipeline hub, run on the render host. Renders with sdg/brev/render_queue.sh and, as each chunk
-# finishes, exports a Cosmos share of it (sdg.cosmos.restyle export --chunks), sends the bundle to a Cosmos host
-# (sdg/brev/cosmos_worker.sh, the least loaded host in ~/fa-cosmos-hosts.txt, one ssh target per line; hosts can be added
-# while it runs), fetches finished bundles and imports them (--min-fscore 0.85: edge F gate + per-part composite).
-# Writes $DATA_ROOT/PIPELINE_DONE when every chunk is rendered and every sent bundle is imported.
-#
-#   nohup sdg/brev/hub.sh "N:0-19 O:0-23 ..." "R:0-19 P:0-23 ..." > ~/hub.log 2>&1 &
-#   (arguments go to render_queue.sh: one render plan per GPU)
-#   NO_RENDER=1 nohup sdg/brev/hub.sh > ~/hub.log 2>&1 &     # restart the hub only; the render queue keeps running
+# Render to Cosmos pipeline hub: render chunks, send them to Cosmos hosts and import the results.
+# Authored by Shritej Gunda.
 set -uo pipefail
 shopt -s nullglob   # no chunk rendered yet = nothing to send, not a literal "*" path
 

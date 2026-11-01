@@ -1,4 +1,6 @@
-"""Fresh, complete runtime inputs required by the assembly controller."""
+"""Fresh, complete runtime inputs required by the assembly controller.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -139,7 +141,7 @@ class PerceptionTolerances:
 
 
 class PerceptionPort(Protocol):
-    """T27-shaped inference boundary; tests may inject deterministic evidence."""
+    """Perception inference boundary; tests may inject deterministic evidence."""
 
     def scan(self, observation: Observation) -> InventorySnapshot: ...
 

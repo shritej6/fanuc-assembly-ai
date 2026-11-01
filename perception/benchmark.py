@@ -1,4 +1,6 @@
-"""Dependency-light timing and projection helpers for guarded ML benchmarks."""
+"""Timing and projection helpers for guarded training benchmarks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -129,10 +131,12 @@ class SynchronizedStepTimer:
     _previous_step_ended: float | None = None
 
     def step_begin(self) -> None:
+        """Mark the start of one optimizer step."""
         self.synchronize()
         self._step_started = self.clock()
 
     def step_end(self, completed_step: int) -> None:
+        """Record the timings of one finished optimizer step."""
         if self._step_started is None:
             raise BenchmarkError("step_end called without step_begin")
         self.synchronize()
@@ -145,6 +149,7 @@ class SynchronizedStepTimer:
         self._step_started = None
 
     def summary(self) -> dict[str, float | int]:
+        """Return the median step timings, or raise when too few were measured."""
         values = self.end_to_end_seconds
         if len(values) < 5 or any(not math.isfinite(value) or value <= 0 for value in values):
             raise BenchmarkError("benchmark requires at least 5 finite positive step timings")
@@ -168,6 +173,7 @@ def cuda_timing_callback(timer: SynchronizedStepTimer) -> tuple[Any, dict[str, A
     }
 
     class TimingCallback(TrainerCallback):
+        """Trainer callback that feeds the step timer and records CUDA memory peaks."""
         def on_train_begin(self, args, state, control, **kwargs):
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()

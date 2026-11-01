@@ -1,11 +1,5 @@
-"""Stage agent 3's closed seed demos for Mimic generation (stdlib only; runs on the gather host, fa-mimic).
-
-    python3 -m sim.assembly_lab.mimic.stage_seeds --demos ~/t12_data/demos --out ~/t12_data/a7/seed_stage
-
-Copies every file listed in <demos>/run10_closed.txt (closed and annotated by agent 3; files not listed may still be
-written) with its .meta.jsonl into <out>/<skill>/, and writes <file>.drop.json with the meta lines that
-<demos>/run10_drop_tags.jsonl tags as bad sources. mimicgen.load_sources honours the drop list and also skips sources
-whose carry in-hand drift is over 0.5 mm. Prints kept episodes per skill and product.
+"""Stage closed seed demos and their drop tags for Mimic generation.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -18,6 +12,7 @@ from pathlib import Path
 
 
 def closed_files(demos: Path, listing: str) -> list[Path]:
+    """Return the files listed as closed in the listing."""
     out = []
     for line in (demos / listing).read_text().splitlines():
         line = line.strip()
@@ -32,6 +27,7 @@ def closed_files(demos: Path, listing: str) -> list[Path]:
 
 
 def drop_tags(demos: Path, name: str) -> dict[str, list[int]]:
+    """Return the drop tags per file name."""
     tags: dict[str, list[int]] = {}
     path = demos / name
     if not path.exists():
@@ -44,6 +40,7 @@ def drop_tags(demos: Path, name: str) -> dict[str, list[int]]:
 
 
 def stage(demos: Path, out: Path, listing: str, tags_name: str) -> dict:
+    """Copy the closed seed files into out by skill and return the counts."""
     tags = drop_tags(demos, tags_name)
     counts: Counter = Counter()
     for f in closed_files(demos, listing):
@@ -65,6 +62,7 @@ def stage(demos: Path, out: Path, listing: str, tags_name: str) -> dict:
 
 
 def main() -> None:
+    """Parse the command line and stage the seeds."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--demos", type=Path, default=Path("~/t12_data/demos"))
     ap.add_argument("--out", type=Path, default=Path("~/t12_data/a7/seed_stage"))

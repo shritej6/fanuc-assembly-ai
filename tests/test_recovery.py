@@ -1,4 +1,6 @@
-"""Behavioral tests for bounded insertion recovery decisions."""
+"""Behavioral tests for bounded insertion recovery decisions.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import FrozenInstanceError
 

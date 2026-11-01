@@ -1,9 +1,6 @@
 #!/bin/bash
-# Build an Isaac Sim 6.0.0 sandbox (unpacked container) owned by the user.
-# Why: /data/containers/isaac-sim-6.1.0.sif has /isaac-sim readable only by root, and the stack pins 6.0.
-# An unprivileged sandbox build extracts every file as the calling user, so the result is readable.
-#
-#   sbatch sdg/rosie/build_isaac_sandbox.sbatch        # then: export ISAAC_SIF=~/containers/isaac-sim-6.0.0
+# Build a user-owned Isaac Sim 6.0.0 sandbox container on Rosie.
+# Authored by Shritej Gunda.
 #SBATCH --job-name=fa-isaac-build
 #SBATCH --partition=teaching
 #SBATCH --cpus-per-task=8

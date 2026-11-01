@@ -1,20 +1,5 @@
-"""Real-arm safety guard for `act_tcp` chunks (pure Python + numpy; no robot or sim imports).
-
-Every chunk the learned policy outputs passes through `guard_chunk` before it reaches the cell. The guard never
-passes a bad chunk silently:
-
-- Hard violations REFUSE the whole chunk and return one safe HOLD row (the current pose, the current gripper state, so
-  a held part stays held) plus the reasons: wrong shape, NaN/inf, dt outside 0.1-1.0 s, a target outside the workspace
-  box, fingers tilted past the fingers-down limit, a target more than `floor_clamp_mm` below the contact floor (seated
-  height - 1 mm) near the current insertion target, a gripper value that is neither open nor closed, gripper chatter,
-  a gripper change while moving, or a step more than `refuse_factor` times the speed limit (a model glitch).
-- Steps a little too fast (up to `refuse_factor` times the limit) are CLAMPED to the limit, and targets up to
-  `floor_clamp_mm` below the contact floor are RAISED to it; every clamp is reported as a reason. Inside the slow zone
-  (the last 5 mm above the contact target, or above the table floor) the slow limit applies.
-
-Units: mm, degrees, seconds; frame UF0 (identical to `CellClient.act_tcp`). Fingers straight down: w, p, r = -180, 0, R.
-The speed limits are PRELIMINARY engineering choices, not measured values; tune them only with the user.
-"""
+"""Real-arm safety guard for act_tcp chunks (numpy only, no robot or sim imports).
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -50,11 +35,11 @@ _LIMIT_FIELDS = (
 
 
 class UnsafeHoldError(RuntimeError):
-    """The observed TCP cannot be represented as a zero-motion official hold command."""
+    """Raised when the observed TCP cannot be turned into a zero-motion hold."""
 
 
 class InvalidGuardLimitsError(ValueError):
-    """Guard limits are non-finite, inverted, or internally inconsistent."""
+    """Raised when guard limits are non-finite, inverted or inconsistent."""
 
 
 def _finite_scalar(value: object) -> bool:
@@ -80,20 +65,20 @@ def _read_regular_bytes(path: Path, label: str) -> bytes:
 
 @dataclass(frozen=True)
 class GuardLimits:
-    """Limits the guard enforces. Workspace and dt come from the official client (PLAN section 3.1)."""
+    """Limits the guard enforces; workspace and dt come from the official client."""
 
     x_mm: tuple[float, float] = (150.0, 650.0)
     y_mm: tuple[float, float] = (-450.0, 450.0)
     z_mm: tuple[float, float] = (-334.0, 300.0)
     max_abs_wpr_deg: float = 360.0  # the official client's check on w, p, r
     max_tilt_deg: float = 6.0  # fingers-down cone: insertion tilts about 3 deg plus a +-2 deg twist margin
-    max_speed_mm_s: float = 150.0  # PRELIMINARY
-    slow_speed_mm_s: float = 10.0  # PRELIMINARY: the last 5 mm before contact
-    max_rot_deg_s: float = 60.0  # PRELIMINARY
-    slow_rot_deg_s: float = 15.0  # PRELIMINARY
+    max_speed_mm_s: float = 150.0  # estimate
+    slow_speed_mm_s: float = 10.0  # estimate: the last 5 mm before contact
+    max_rot_deg_s: float = 60.0  # estimate
+    slow_rot_deg_s: float = 15.0  # estimate
     slow_zone_mm: float = 5.0  # ROBOT_BRAIN section 2: the last 5 mm is slow
     floor_margin_mm: float = 1.0  # ROBOT_BRAIN section 2: never lower than seated height - 1 mm
-    floor_clamp_mm: float = 3.0  # PRELIMINARY: bounded model undershoot raised to the contact floor
+    floor_clamp_mm: float = 3.0  # estimate: bounded model undershoot raised to the contact floor
     refuse_factor: float = 3.0  # a step over 3x the limit is a glitch: refuse instead of clamp
     gripper_snap: float = 0.1  # 0.93 counts as closed; 0.5 is refused
     gripper_change_max_step_mm: float = 2.0  # the gripper opens/closes only while (nearly) still
@@ -142,6 +127,7 @@ class GuardLimits:
 
     @property
     def production_ready(self) -> bool:
+        """Return True when every limit came from a calibration report."""
         return (
             self.status == "MEASURED"
             and bool(self.source.strip())
@@ -151,12 +137,12 @@ class GuardLimits:
 
     @property
     def calibration_sha256(self) -> str | None:
-        """Digest of the report that supplied every limit, absent for direct constructors."""
+        """Return the digest of the calibration report, if any."""
         return self._calibration_sha256
 
     @classmethod
     def from_calibration(cls, path: str | Path, expected_sha256: str) -> GuardLimits:
-        """Load every production limit from one immutable measured report."""
+        """Load every production limit from one measured calibration report."""
         report = Path(path)
         raw = _read_regular_bytes(report, "calibration report")
         measured = hashlib.sha256(raw).hexdigest()
@@ -187,11 +173,7 @@ DEFAULT_LIMITS = GuardLimits()
 
 @dataclass(frozen=True)
 class ContactTarget:
-    """The planner's current insertion (or grasp) target, for the contact floor and the slow zone.
-
-    z_contact_mm is the TCP z at the seated (or grasp) pose. Within radius_mm of (x_mm, y_mm), no target may go below
-    z_contact_mm - floor_margin, and the last slow_zone_mm above z_contact_mm is slow.
-    """
+    """Current insertion or grasp target, used for the contact floor and slow zone."""
 
     x_mm: float
     y_mm: float
@@ -202,6 +184,7 @@ class ContactTarget:
 
 @dataclass(frozen=True)
 class GuardResult:
+    """Guarded rows plus the reasons any check fired."""
     rows: np.ndarray  # (N, 7) rows safe to send
     passed: bool  # True: the chunk went through unchanged
     held: bool  # True: the chunk was refused and `rows` is one hold row
@@ -209,7 +192,7 @@ class GuardResult:
 
 
 def wpr_to_matrix(w: float, p: float, r: float) -> np.ndarray:
-    """FANUC fixed-angle convention: R = Rz(r) @ Ry(p) @ Rx(w), degrees."""
+    """Return the rotation matrix for FANUC w, p, r in degrees."""
     w, p, r = np.radians([w, p, r])
     cw, sw, cp, sp, cr, sr = np.cos(w), np.sin(w), np.cos(p), np.sin(p), np.cos(r), np.sin(r)
     rx = np.array([[1, 0, 0], [0, cw, -sw], [0, sw, cw]])
@@ -219,6 +202,7 @@ def wpr_to_matrix(w: float, p: float, r: float) -> np.ndarray:
 
 
 def matrix_to_wpr(rot: np.ndarray) -> tuple[float, float, float]:
+    """Return FANUC w, p, r in degrees for a rotation matrix."""
     p = np.degrees(np.arcsin(np.clip(-rot[2, 0], -1.0, 1.0)))
     w = np.degrees(np.arctan2(rot[2, 1], rot[2, 2]))
     r = np.degrees(np.arctan2(rot[1, 0], rot[0, 0]))
@@ -226,7 +210,7 @@ def matrix_to_wpr(rot: np.ndarray) -> tuple[float, float, float]:
 
 
 def tilt_deg(w: float, p: float, r: float) -> float:
-    """Angle between the tool z axis and straight down."""
+    """Return the angle between the tool z axis and straight down."""
     z_axis = wpr_to_matrix(w, p, r)[:, 2]
     return float(np.degrees(np.arccos(np.clip(-z_axis[2], -1.0, 1.0))))
 
@@ -236,7 +220,7 @@ def _wrap180(a: np.ndarray | float) -> np.ndarray | float:
 
 
 def hold_row(current_pose, gripper: float, limits: GuardLimits | None = None) -> np.ndarray:
-    """Stay exactly where the arm is; never turn an invalid observation into commanded motion."""
+    """Return a hold row at the observed pose, never a commanded motion."""
     limits = limits or DEFAULT_LIMITS
     try:
         pose = np.asarray(current_pose, dtype=float)
@@ -254,7 +238,7 @@ def hold_row(current_pose, gripper: float, limits: GuardLimits | None = None) ->
 
 
 def observed_gripper_state(value: object, limits: GuardLimits | None = None) -> float:
-    """Return a binary observed state only when the sensor value is unambiguous."""
+    """Return the binary gripper state only when the sensor value is clear."""
     del limits  # command snapping is not valid authority for observed sensor state
     if isinstance(value, bool):
         raise UnsafeHoldError("observed gripper state must be numeric, not boolean")
@@ -270,16 +254,18 @@ def observed_gripper_state(value: object, limits: GuardLimits | None = None) -> 
 
 
 class ChunkGuard:
-    """Checks one chunk against the current pose; stateless between calls except for the contact target."""
+    """Check one chunk against the current pose."""
 
     def __init__(self, limits: GuardLimits | None = None):
         self.limits = limits or DEFAULT_LIMITS
         self.target: ContactTarget | None = None
 
     def set_target(self, target: ContactTarget | None) -> None:
+        """Set the contact target for the next chunks."""
         self.target = target
 
     def guard(self, rows, current_pose, current_gripper: float, dt: float) -> GuardResult:
+        """Return the guarded rows for one chunk."""
         hold = hold_row(current_pose, current_gripper, self.limits)
         reasons = _check_shape(rows, dt)
         if reasons:
@@ -309,7 +295,7 @@ class ChunkGuard:
         return GuardResult(chunk, not clamped, False, tuple(clamped))
 
     def static_reasons(self, rows, dt: float) -> tuple[str, ...]:
-        """Check a final target without treating its distance as one control step."""
+        """Return the reasons a final target is unsafe, ignoring step size."""
         reasons = _check_shape(rows, dt)
         if reasons:
             return tuple(reasons)
@@ -348,7 +334,7 @@ class ChunkGuard:
         return np.hypot(chunk[:, 0] - t.x_mm, chunk[:, 1] - t.y_mm) <= t.radius_mm
 
     def _clamp_floor(self, chunk: np.ndarray) -> list[str]:
-        """Raise a bounded raw model undershoot to the contact floor."""
+        """Raise a small model undershoot up to the contact floor."""
         if self.target is None:
             return []
         floor = self.target.z_contact_mm - self.limits.floor_margin_mm

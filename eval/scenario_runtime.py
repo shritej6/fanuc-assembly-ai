@@ -1,4 +1,5 @@
-"""Scripted perception boundary and mock action follower for T17 scenarios."""
+"""Scripted perception boundary and mock action follower for scenario runs.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -37,11 +38,12 @@ from robot.adapter import CellAdapter, Observation
 
 
 class ControllerFactory(Protocol):
+    """Callable that builds a controller for one scenario."""
     def __call__(self, runtime: ScenarioRuntime) -> AssemblyController: ...
 
 
 class ScriptedPerceptionPort:
-    """Contract-shaped evidence generated only from the scripted camera boundary."""
+    """Perception port that returns evidence from the scripted cameras only."""
 
     def __init__(self, scenario: Scenario, state: ScenarioPoseState) -> None:
         self._scenario = scenario
@@ -51,6 +53,7 @@ class ScriptedPerceptionPort:
         self.physical_events: list[ScenarioPhysicalEvent] = []
 
     def scan(self, observation: Observation) -> InventorySnapshot:
+        """Return the scripted scan evidence."""
         self._state.observed_pose_by_instance = dict(self._state.pose_by_instance)
         items = tuple(
             ObservedInventoryItem(
@@ -65,6 +68,7 @@ class ScriptedPerceptionPort:
         return InventorySnapshot(float(observation["t"]), True, items)
 
     def pre_pick(self, observation: Observation, part: InventoryItem) -> EvidencePair:
+        """Return the scripted evidence before a pick."""
         self.physical_events.append(ScenarioPhysicalEvent(ScenarioPhysicalEventKind.PRE_PICK, part.instance_id))
         scripted = self._scripted(part.instance_id)
         return EvidencePair(
@@ -74,6 +78,7 @@ class ScriptedPerceptionPort:
         )
 
     def post_place(self, observation: Observation, part: InventoryItem) -> PlacementEvidence:
+        """Return the scripted evidence after a place."""
         target = self._state.target_by_object[part.object_id]
         self._state.pose_by_instance[part.instance_id] = target
         scripted = self._scripted(part.instance_id)
@@ -91,6 +96,7 @@ class ScriptedPerceptionPort:
         part: InventoryItem,
         target_zone: InventoryZone,
     ) -> RecoveryTransferEvidence:
+        """Return the scripted evidence after a transfer."""
         key = (part.instance_id, target_zone)
         expected = self._state.transfer_by_key[key]
         actual = self._state.transfer_result_by_key.get(key, expected)
@@ -117,6 +123,7 @@ class ScriptedPerceptionPort:
         moving_instance_id: str,
         base_instance_id: str,
     ) -> CollisionScene:
+        """Return the collision scene for the current state."""
         base_pose = observed_pose(self._state, base_instance_id)
         attached = float(observation["joints"][6]) == 1.0  # type: ignore[index]
         return CollisionScene(
@@ -183,7 +190,7 @@ class ScriptedPerceptionPort:
 
 
 class ScenarioRuntime:
-    """Bind one generated scenario to perception, calibration, and recovery ports."""
+    """Bind one generated scenario to perception, calibration and recovery ports."""
 
     def __init__(self, scenario: Scenario) -> None:
         self.scenario = scenario
@@ -205,6 +212,7 @@ class ScenarioRuntime:
         zone: InventoryZone,
         pose: tuple[float, float, float, float],
     ) -> None:
+        """Script the observation seen after a transfer."""
         if instance_id not in self._state.pose_by_instance:
             raise FleetInputError(f"unknown transfer instance {instance_id!r}")
         if zone not in {InventoryZone.REJECT, InventoryZone.STAGED}:
@@ -213,6 +221,7 @@ class ScenarioRuntime:
         self._state.transfer_result_by_key[(instance_id, zone)] = values
 
     def observation(self, timestamp: float) -> Observation:
+        """Return the current scripted observation."""
         home = self.scenario.bounds.home_pose
         return {
             "t": timestamp,
@@ -224,6 +233,7 @@ class ScenarioRuntime:
 
 
 class FleetRunner:
+    """Run a fleet of scenarios and collect the report."""
     def __init__(self, controller_factory: ControllerFactory, *, max_callbacks: int, dt_s: float) -> None:
         if isinstance(max_callbacks, bool) or not isinstance(max_callbacks, int) or max_callbacks < 1:
             raise FleetInputError("max_callbacks must be a positive integer")
@@ -235,6 +245,7 @@ class FleetRunner:
         self._catalog: Catalog = load_catalog()
 
     def run(self, scenarios: tuple[Scenario, ...]) -> FleetReport:
+        """Run every scenario and return the fleet report."""
         return FleetReport(tuple(self._run_one(scenario) for scenario in scenarios))
 
     def _run_one(self, scenario: Scenario) -> ScenarioResult:

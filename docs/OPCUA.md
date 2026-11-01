@@ -1,6 +1,8 @@
-# OPC UA integration tags (T19)
+# OPC UA integration tags
 
-`robot.opcua.OpcUaCellServer` publishes the T09 controller's public state through `asyncua`. It is an
+Authored by Shritej Gunda.
+
+`robot.opcua.OpcUaCellServer` publishes the the assembly controller's public state through `asyncua`. It is an
 integration-ready PLC/HMI boundary, not a direct Rockwell integration and not a second robot-control path.
 
 ## Safety boundary
@@ -29,7 +31,7 @@ All application nodes use namespace URI `urn:team-v:fanuc:assembly-cell` and sta
 |---|---|
 | `PackML` | `State`, `StateTimestamp`, `CurrentProduct`, `CurrentStep`, `AlarmActive`, `ActiveFault` |
 | `Counts` | `Good`, `Reject`, `Assist` |
-| `Inventory` | `Total`, one count per T09 inventory zone, and deterministic `ItemsJson` |
+| `Inventory` | `Total`, one count per controller inventory zone, and deterministic `ItemsJson` |
 | `Commands` | `PendingCount`, `LastQueuedId`, `LastQueuedName`, `LastError`, and `SubmitCommand` |
 | `Health` | `Healthy`, `LastPublishError`, `SnapshotSequence` |
 
@@ -38,7 +40,7 @@ progress, and clients should accept a snapshot only when the same even value is 
 
 ## Thread ownership and embedding
 
-The synchronous controller owns all mutable T09 state. It creates and updates a
+The synchronous controller owns all mutable controller state. It creates and updates a
 `ControllerSnapshotMailbox` from its own thread after a controller cycle. The async OPC UA task receives only the
 mailbox and reads immutable `ControllerSnapshot` values under a lock; it never reads the live controller across
 threads. The mailbox records its constructing thread and rejects `update_from()` on every other thread.
@@ -65,7 +67,7 @@ async def serve() -> None:
     await gateway.run(stop_event)
 ```
 
-The controller object used to update the mailbox must expose the public T09 interfaces described by
+The controller object used to update the mailbox must expose the public controller interfaces described by
 `robot.opcua_model.ControllerStatusSource`. A snapshot-build or OPC UA write failure marks health false and stops
 `run()`; a process supervisor may restart the loop only after resolving the fault. Tests use deterministic model stubs
 and a loopback OPC UA client; they do not connect to the real cell.

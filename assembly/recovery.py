@@ -1,4 +1,6 @@
-"""Staged, inventory-consistent dismantle and rebuild orchestration."""
+"""Staged, inventory-consistent dismantle and rebuild orchestration.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

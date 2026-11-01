@@ -1,15 +1,5 @@
-"""Layout dict -> UF0 poses for every object in the sim cell. numpy only (runs and is tested off Isaac).
-
-Frames (INTERFACES.md): API = UF0 mm / deg. The sim world is metres with the robot base mount at (0, 0, TABLE_TOP_Z)
-and UF0's origin 330 mm above the base mount, the same mapping `sdg/isaac/stage.py` renders with:
-    world_m = (x / 1000, y / 1000, TABLE_TOP_Z + 0.330 + z / 1000)
-
-Object poses reuse `sdg/data/object_geometry.json` (the geometry the synthetic data was rendered with):
-- `installed`: the part stands in its assembled orientation (`installed_rest`), any yaw.
-- `fallen`: the most likely stable pose whose up axis differs from the installed one.
-- `on:<base uid>`: seated on that base (`installed_in_base_frame`), i.e. already assembled.
-- a base is always placed upright (`bounds_mm` lifted to the table).
-x, y in a layout entry is where the STL origin of the posed part lands, exactly as `sdg/scene_sampler.py` does.
+"""Turn a layout dict into UF0 poses for every object in the sim cell, using numpy only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -35,7 +25,7 @@ OBJECTS_YAML = REPO / "sim/assembly_lab/objects/objects.yaml"
 
 
 def load_local_origins() -> dict:
-    """{part type: installed_origin_mm in its base frame} from agent 2's objects.yaml (layout x, y = that origin)."""
+    """Return each part type's installed origin in its base frame from objects.yaml."""
     if not OBJECTS_YAML.exists():
         return {}
     objs = (yaml.safe_load(OBJECTS_YAML.read_text()) or {}).get("objects", {})
@@ -189,8 +179,7 @@ class LayoutSolver:
         return float(self.cell["table_z"])
 
     def rest_tf(self, tid: str, state: str) -> np.ndarray:
-        """Local transform that sets the object on z = 0 in the requested orientation, with the object's CAD local
-        origin (objects/objects.yaml, agent 2's convention) on the layout x, y."""
+        """Return the local transform that rests the object on z = 0 in the requested orientation."""
         geo = self.geometry[tid]
         if tid.startswith("F"):
             return translation(0, 0, -geo["bounds_mm"][0][2])
@@ -220,12 +209,7 @@ class LayoutSolver:
         return translation(x, y, self.table_z) @ rot_z(yaw) @ self.rest_tf(tid, state)
 
     def seat_tf_for(self, part: str, base: str, poses: dict) -> np.ndarray:
-        """CAD installed pose (4x4 UF0 mm) of `part` on the base instance `base`, given the current body poses.
-
-        `installed_in_base_frame` is in the base's STL frame, which is the base body frame (sdg/scene_sampler.py and
-        sdg/tools/build_clearance.py apply it the same way; F0x STL z = 0 is the seating face). An earlier version
-        also multiplied by inv(rest_tf(base)), which put every seated part 8 mm low, inside the base (measured: the
-        spawned M4_01 touched the mat through F04 with 3.9 mm SDF penetration and never settled)."""
+        """CAD installed pose (4x4 UF0 mm) of `part` on the base instance `base`, given the current body poses."""
         seat = np.array(self.geometry[type_id(part)]["installed_in_base_frame"])
         return poses[base] @ seat
 
@@ -302,8 +286,7 @@ class LayoutSolver:
 
 
 def default_pool(geometry: dict, spare_copies: int = 1) -> list[str]:
-    """All 30 objects once, plus `spare_copies` extra instances of each of the 24 parts (never a base) for the spare
-    store and the defect area (user 2026-10-28: spares are any part, never a base)."""
+    """Return all 30 objects once plus `spare_copies` extra instances of each part, never a base."""
     pool = sorted(geometry)
     for k in range(2, 2 + spare_copies):
         pool += [f"{tid}#{k}" for tid in sorted(geometry) if tid.startswith("M")]

@@ -1,10 +1,5 @@
-"""One wrist close-up of one part: depth points -> FoundationPose -> wrist box -> classifier -> size measurement.
-
-The detector never saw wrist images, so the part's wrist box is the FoundationPose-posed CAD bbox projected through the
-wrist calibration (perception/cell/localize.py `wrist_bbox`, the boxes the wrist classifier was trained on). The part's
-depth points are those near the expected centre, above the support by two depth-noise bounds, in the largest
-connected group (the same grouping T28 uses on the table), so a neighbour reaching into the radius is left out.
-"""
+"""Inspect one part from one wrist close-up: pose, box, classifier and size.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -33,6 +28,7 @@ ImageSink = Callable[[str, np.ndarray], str]
 
 @dataclass(frozen=True, slots=True)
 class WristView:
+    """Everything measured in one wrist close-up."""
     observed_at_s: float
     camera_tcp: tuple[float, float, float, float, float, float]
     image_ref: str
@@ -64,6 +60,7 @@ def _mask(shape: tuple[int, ...], pixels: np.ndarray) -> np.ndarray:
 
 
 class WristInspector:
+    """Takes one wrist close-up of one part."""
     def __init__(self, geometry: CellGeometry, pose_estimator: PoseEstimator, classifier: WristClassifier,
                  cad: CadCatalog, uncertainty: SizeUncertainty, image_sink: ImageSink) -> None:
         self._geometry = geometry
@@ -75,6 +72,7 @@ class WristInspector:
 
     def look(self, observation: Observation, object_id: str, center_xy: tuple[float, float],
              support_z_mm: float) -> WristView:
+        """Inspect the part near the centre and return the wrist view."""
         observed_at = observation_time(observation)
         cad = self._cad.get(object_id)
         radius = math.hypot(*cad.size_mm[:2]) / 2.0 + SEARCH_MARGIN_MM

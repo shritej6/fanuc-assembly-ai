@@ -1,5 +1,6 @@
-"""DirectGrootRuntime: the 14:00 fallback. GR00T drives every motion through the guard; the runtime only sequences
-placement.yaml's steps, advances on the observed TCP + gripper, and otherwise holds."""
+"""DirectGrootRuntime fallback runtime.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 import json
@@ -84,7 +85,7 @@ def test_every_rollout_plans_in_prompt_then_sheet_order():
     for r in ROLLOUTS:
         steps = plan_rollout(r)
         assert [s.object_id for s in steps] == [f"M{p}_0{k}" for p in r.products for k in range(1, 5)]
-        assert r.products == (5,) and len(steps) == 4  # agent A's 434f488: product 5 alone, like the training scenes
+        assert r.products == (5,) and len(steps) == 4  # product 5 alone, like the training scenes
 
 
 def test_rollout_1_first_step_is_product_5_part_1():
@@ -104,8 +105,7 @@ def test_instruction_is_the_training_format():
 
 
 def test_identical_prompts_fall_back_to_the_trial_index_then_resets(monkeypatch):
-    """434f488: all 3 rollouts have the same prompt and layout. The cell's trial index picks the rollout; without
-    one, the count of resets does. Any choice is the same layout, so none of them holds."""
+    """All 3 rollouts have the same prompt and layout."""
     assert len({r.prompt for r in ROLLOUTS}) == 1 and len({tuple(r.objects.items()) for r in ROLLOUTS}) == 1
     pol, _ = runtime()
     pol.act(obs(HOME_TCP, index=1))
@@ -244,8 +244,6 @@ def test_full_product_5_with_a_scripted_groot_in_process():
 
 
 def test_full_product_5_through_run_py_mock(tmp_path):
-    """The official run.py --mock (mock_cell.py over HTTP) with policy_direct.Policy and the scripted GR00T, in
-    robot/cell's own environment (opencv, requests), as the slot will run it."""
     report = tmp_path / "report.json"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("DIRECT_", "VIRTUAL_ENV", "GROOT_"))}
     proc = subprocess.run(["uv", "run", "--project", str(REPO / "robot" / "cell"), "python",
@@ -282,8 +280,7 @@ def test_a_chunk_that_closes_on_the_pad_then_lifts_is_a_grasp():
 
 
 def test_exec_horizon_cuts_the_chunk_and_a_close_inside_it_is_still_a_grasp():
-    """GROOT_EXEC_HORIZON=3: only rows 0-2 of the 7-row chunk go out (open, close, lift 2 mm), and the close inside
-    them is still found as the grasp."""
+    """GROOT_EXEC_HORIZON=3: only rows 0-2 of the 7-row chunk go out (open, close, lift 2 mm), and the close inside them is still found as the grasp."""
     g = None
 
     class CloseThenLift(Echo):
@@ -331,8 +328,6 @@ def test_a_chunk_that_opens_on_the_seat_then_rises_finishes_the_step():
 
 
 def test_cell_entry_point_fits_both_run_py_versions():
-    """robot/cell/policy_direct.Policy: upstream run.py calls Policy(checkpoint); PR #24's calls
-    Policy(checkpoint, runtime=...) and then close()."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("policy_direct", REPO / "robot" / "cell" / "policy_direct.py")
@@ -345,8 +340,7 @@ def test_cell_entry_point_fits_both_run_py_versions():
 
 
 class SeatThenOpen(Echo):
-    """Once `seat` is set and the part is held: creeps (1.5 mm rows, inside the slow limit) from the observed pose to
-    the seat (+ dxy, dz) and opens there, in one chunk. Otherwise stands still."""
+    """Once `seat` is set and the part is held."""
 
     def __init__(self, dxy=0.0, dz=0.0):
         super().__init__()
@@ -390,8 +384,7 @@ def test_release_commanded_above_the_seated_height_is_not_seated():
 
 
 def test_seated_release_on_a_base_placed_3_mm_off_completes_the_step():
-    """Seat depth is reached only when the part is aligned with the ACTUAL base, so a base hand-placed 3 mm off is
-    fine as long as the release is at seat depth and the arm was not blocked."""
+    """Seat depth is reached only when the part is aligned with the ACTUAL base, so a base hand-placed 3 mm off is fine as long as the release is at seat depth and the arm was not blocked."""
     pol, _, s = _grasp_then_release(SeatThenOpen(dxy=3.0))
     assert ended(pol) is None and pol.progress.phase == "retreat"
     pol.act(obs([s[0] + 3.0, s[1], s[2] + RETREAT_MM, *s[3:]]))

@@ -1,4 +1,6 @@
-"""Physical-to-inventory commit boundary regressions."""
+"""Physical-to-inventory commit boundary regressions.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 from dataclasses import replace

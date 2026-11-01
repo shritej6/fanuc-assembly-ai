@@ -1,8 +1,5 @@
-"""Independent STEP re-open check using FreeCAD's own kernel. Run by validate_outputs.py through:
-
-    freecadcmd -c "exec(open('<this file>').read())"
-
-Reads the STEP list from the JSON file named in env FC_CHECK_IN and writes results to FC_CHECK_OUT.
+"""Re-open STEP files with the FreeCAD kernel as an independent check.
+Authored by Shritej Gunda.
 """
 
 import json

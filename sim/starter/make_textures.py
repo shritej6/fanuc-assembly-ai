@@ -1,13 +1,5 @@
-"""
-Generate the procedural texture set used by the metal materials.
-
-    ~/fanuc_er4ia_sim/.venv/bin/python make_textures.py
-
-Writes tileable maps into textures/. Machined aluminium is not a flat grey: it
-carries fine directional tool marks that break up the specular highlight, and
-that break-up is most of what makes it read as metal. A constant-roughness
-metallic surface under a featureless dome renders as dead grey no matter what
-the metallic value is, which is why the environment map below matters too.
+"""Generate the procedural textures used by the metal materials.
+Authored by Shritej Gunda.
 """
 
 import os
@@ -21,12 +13,7 @@ rng = np.random.default_rng(7)
 
 
 def _streaks(n, along=220, across=1.1, seed=0):
-    """Tileable anisotropic noise: heavily blurred along X, barely across Y.
-
-    OpenCV rejects BORDER_WRAP for separable filters, so tile 3x3 and crop the
-    centre instead -- the blur then sees real neighbours on every edge and the
-    result tiles cleanly.
-    """
+    """Tileable anisotropic noise: heavily blurred along X, barely across Y."""
     r = np.random.default_rng(seed)
     f = r.normal(0, 1, (n, n)).astype(np.float32)
     f = np.tile(f, (3, 3))

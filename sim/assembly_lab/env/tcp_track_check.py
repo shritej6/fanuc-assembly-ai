@@ -1,10 +1,5 @@
-"""Stationary TCP tracking: joint error (q - q_cmd), TCP error (FK(q) - commanded) and per-joint drive torque.
-
-    T12_POOL=... isaaclab_run.sh sim/assembly_lab/env/tcp_track_check.py [--products 1,4]
-
-Per product: CAD grasp of M<p>_01, carry to 10 mm above its seat on F0<p>, hold 2 s, then report. Also the same
-pose with empty open jaws (no part). Robot links ignore gravity, so any steady joint error is drive torque from
-contacts or constraints: torque = stiffness * error. Also prints the robot link masses / inertias.
+"""Measure stationary TCP tracking error and per-joint drive torque.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -74,9 +69,7 @@ def carry_test(env, part: str) -> tuple[float, float]:
 
 
 def grip_tests(env, part: str, hold_row: list) -> float:
-    """Pinch per finger, then slip of the part in the gripper: 15 N axial / 4.5 N lateral pushes at the CAD grip
-    point (friction) and at the part's CoM (adds torque r x F about the grip), a 3 deg wrist tilt, and a torsion
-    ramp about the closing axis (the grip's torque capacity)."""
+    """Run pinch, push, tilt and torsion tests on the held part and return the grip result."""
     env.step_tcp([hold_row], 0.5)
     q = env.env.scene["robot"].data
     jaw = q.joint_pos.torch[0].cpu().numpy()[env.term.jaw_ids] * 1000.0

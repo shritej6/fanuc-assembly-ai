@@ -1,19 +1,5 @@
-"""Make the defect meshes the renderer needs (T06): every part x every defect type, in the part's print frame.
-
-    python sdg/tools/defect_variants.py                     # regenerate + verify against cad/defects/manifest.json
-    python sdg/tools/defect_variants.py --write-manifest    # after an intended geometry change
-
-Needs trimesh + manifold3d. The STLs (about 70 MB) are not committed: each render host regenerates them
-deterministically, and the run fails if any volume or size differs from the committed manifest.
-The STLs are in the print frame (z = build direction), so a layer split follows real 0.2 mm layers.
-
-These are geometric stand-ins for each defect class, placed by rule (not hand-modelled per feature):
-  snapped_tab      an upper corner broken off along a 30 degree fracture plane
-  missing_feature  one end of the part (tab / pin / lip) absent over its full height
-  layer_split      a 0.5 mm open delamination gap on a layer boundary, 65 % across the part
-  warp             corners lifted (bed adhesion warp), 0.8 mm at the far corners
-  scale_97/103     uniform 97 % / 103 % about the bed centre (wrong printer scale)
-Every variant is checked: watertight, one body, and a removed / changed volume inside the class's band.
+"""Generate the defect meshes the renderer needs for every part and defect type.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

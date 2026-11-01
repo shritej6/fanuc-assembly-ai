@@ -1,16 +1,5 @@
 """Cosmos Transfer restyling of rendered images: pick scenes, export a bundle, import the checked results.
-
-    python -m sdg.cosmos.restyle export --sets A B C --fraction 0.15 --out bundle/        # on Rosie
-    python -m sdg.cosmos.restyle export --sets A B C --count 4 --out pilot/                # a fixed number per set
-    python -m sdg.cosmos.restyle export --sets N --chunks chunk_0003 --fraction 0.55 --out b/  # one rendered chunk
-    (bundle/ is restyled on an H100 by sdg/cosmos/run_transfer.sh, which writes bundle/out/<name>.jpg)
-    python -m sdg.cosmos.restyle import bundle/ --min-fscore 0.85                          # on Rosie
-
-Cosmos Transfer 2.5 image-to-image (edge + vis control) restyles the whole frame; every part Cosmos changed is then
-put back from the render (sdg/cosmos/composite.py), so a restyled image keeps the render's labels exactly. The import
-gate is the whole-image edge F-score of the Cosmos frame (is the scene still where the render put it); the worst
-single object and how many objects kept their Cosmos look are recorded too. Accepted images go to <chunk>/rgb_cosmos/<cam>/<idx>.jpg at the render's size, every result to
-<chunk>/_COSMOS.json. Training reads rgb_cosmos as extra images with the same labels.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -30,14 +19,14 @@ from sdg.cosmos.drift import edge_fscore, worst_object
 DATA_ROOT = Path.home() / "fanuc-assembly-data"
 # Edge control pins every shape; vis control (the blurred input) keeps every colour: the yellow robot and tape, the
 # black parts, the coloured foreign objects. The prompt only adds real-camera look, so Cosmos changes nothing else.
-# (Edge control alone took colours from the prompt and painted the yellow robot black: pilot 2026-10-28.)
+# Edge control alone took colours from the prompt and painted the yellow robot black.
 SCENE = ("A real photograph of a FANUC robot cell. Every object keeps exactly the shape, position and colour it has in "
          "the input: matte 3D-printed plastic parts with fine visible layer lines, a white table, real materials.")
 LIGHTS = ["Cool fluorescent ceiling light, soft shadows.", "Warm LED work light from one side, firm shadows.",
           "Mixed daylight from a window and ceiling light.", "Dim overhead light, slight sensor noise and grain."]
 # very_low: Cosmos's default Canny threshold dropped the faint inner edges of black parts and pale objects, and Cosmos
-# painted smooth surfaces there (base plates lost their pins and recesses); the lowest preset keeps them (sweep
-# 2026-10-28, worst-object edge F-score 0-0.2 -> 0.6-0.8). An edge map made from the render was worse: it kept the
+# painted smooth surfaces there (base plates lost their pins and recesses); the lowest preset keeps them
+# (worst-object edge F-score 0-0.2 -> 0.6-0.8). An edge map made from the render was worse: it kept the
 # render's sensor noise as edges, which Cosmos drew as serrated rims.
 CONTROLS = {"edge": {"control_weight": 1.0, "preset_edge_threshold": "very_low"}, "vis": {"control_weight": 0.5}}
 CAMERAS = {"table": "Shot from an overhead industrial camera.", "side": "Shot from a fixed side camera.",
@@ -55,8 +44,7 @@ def parse_name(name: str) -> tuple[str, str, str, str]:
 
 def pick(data_root: Path, set_name: str, amount: float, seed: int,
          chunks: list[str] | None = None) -> list[tuple[str, str, str, str]]:
-    """A fixed random share of the set's scenes (amount < 1: fraction, else count), one camera per scene in turn.
-    With chunks, only those chunks (so each chunk can go to Cosmos as soon as it is rendered)."""
+    """Return a fixed random share of the set's scenes, one camera per scene in turn."""
     picks = []
     for chunk in sorted((data_root / "synthetic" / set_name).glob("chunk_*")):
         if chunks is not None and chunk.name not in chunks:

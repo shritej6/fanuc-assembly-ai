@@ -1,7 +1,5 @@
-"""pull_out(plan): straight, slow lift with a ±1 deg wiggle, then up the planner's clear path.
-
-Used to dismantle only to fix an error (reverse sheet order) and to back a part out after a failed insert retry
-(`holding=True`: the part is already in the fingers, so no approach or grasp).
+"""Pull-out skill: slow straight lift with a small wiggle, then up the planner's clear path.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -13,8 +11,8 @@ from .motion import APPROACH, CLOSED, FREE, OPEN, SLOW, Motion, Segment, above
 from .plan import PULL_WIGGLE_DEG, SEAT_FLOOR_MM, SLOW_ZONE_MM, PullOutPlan
 
 WIGGLE_STEPS = 4  # +1, -1, +1, 0 deg while backing out of the engagement
-# (deg, steps) of the wiggle; record.py --pull-wiggle sets it for the main-approved A/B on second-layer pulls (run10
-# probe M1_03: the stack under the pulled part shifted 1-1.5 mm). Default = the user's ±1 deg in 4 steps.
+# (deg, steps) of the wiggle; record.py --pull-wiggle sets it for an A/B test on second-layer pulls (run10
+# probe M1_03: the stack under the pulled part shifted 1-1.5 mm). Default = +-1 deg in 4 steps.
 WIGGLE = (PULL_WIGGLE_DEG, WIGGLE_STEPS)
 
 

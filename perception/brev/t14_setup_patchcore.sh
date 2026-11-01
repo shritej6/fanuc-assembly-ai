@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build a hash-linked T14 PatchCore environment on the dedicated Brev L4 VM.
+# Build a hash-linked PatchCore environment on the dedicated Brev L4 VM.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 : "${RUN_ROOT:?set RUN_ROOT to the isolated T14 Brev runtime directory}"

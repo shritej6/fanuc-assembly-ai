@@ -1,4 +1,6 @@
-"""Copy, independently verify, and retire the dedicated Brev T14 instance."""
+"""Copy, verify and retire the dedicated Brev PatchCore instance.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -389,7 +391,7 @@ def collect_and_shutdown(
     lifecycle: Lifecycle = _brev_lifecycle,
     resolve_instance: ResolveInstance = _brev_resolve_instance_id,
 ) -> Path:
-    """Collect one approved generation and retire only the dedicated T14 instance."""
+    """Collect one approved run, retire the dedicated instance and return the destination."""
     if args.instance_name != INSTANCE_NAME or not re.fullmatch(r"[a-z0-9]+", args.instance_id):
         raise CollectionError("collector is restricted to the exact fa-t14 instance identity")
     if args.confirm_delete != INSTANCE_NAME:
@@ -441,6 +443,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Parse arguments, collect the results and print the destination."""
     result = collect_and_shutdown(_parser().parse_args())
     print(json.dumps({"status": "collected_and_deleted", "destination": str(result)}, sort_keys=True))
 

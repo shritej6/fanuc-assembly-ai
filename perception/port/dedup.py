@@ -1,19 +1,5 @@
 """Class-agnostic duplicate suppression for RT-DETR boxes: one physical object, one box.
-
-RT-DETR is NMS-free per class, but with 57 classes (30 objects + 3 foreign + 24 `__fallen`) it often puts two boxes
-of *different* look-alike classes on one part (the T31 fair eval counted about 18.9k duplicate boxes against 77k
-objects; the real-capture visual count in ~/fanuc-cell-captures/r20261029-995508/detector_check_new shows the same).
-Per-class NMS cannot remove those, so suppression here ignores the label:
-
-- boxes are taken highest score first; a box is a duplicate of a kept box when IoU >= `iou` or when the smaller box
-  lies mostly inside the larger one (intersection / smaller area >= `containment`), which catches a part box nested
-  in a base box only when nearly all of it is covered;
-- the kept box's label is the top-1 label of its group; the suppressed labels stay attached as `alternatives`, so
-  a close runner-up of a different shape is reported as contested (the wrist close-up decides), not silently lost.
-
-`iou` and `containment` are chosen parameters, not measurements; the effect on the real captures is reported in
-perception/port/README.md.
-"""
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -29,6 +15,7 @@ CONTESTED_RATIO = 0.8
 
 @dataclass(frozen=True, slots=True)
 class RawBox:
+    """One raw detector box with its label and score."""
     label: str
     score: float
     bbox_px: tuple[float, float, float, float]

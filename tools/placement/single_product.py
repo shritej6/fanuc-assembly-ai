@@ -1,15 +1,5 @@
-"""One-product real-cell placement for the CSI slot 2026-10-31 14:00 CT (supersedes the 3-product layout).
-
-GR00T was trained on scenes with ONE product (its base + 4 loose parts, ~5 objects); on the 15-object table it goes to
-the same wrong spot whatever the prompt says. So every rollout here is a single product laid out like the training
-scenes: footprint centres uniform in x 220..470 / y -270..270 inside the 180..490 mm reach ring, spacing as the Mimic
-sampler (base radius 40, part radius 26), yaw uniform. A seeded search keeps the first layout that also passes every
-validate.py check (work area, gaps, planner pick+insert without re-grip, rolls within 180+-60, +-10 mm/+-10 deg
-robustness) and whose part inspection boxes (+-25 mm) do not overlap. Rollouts 2 and 3 repeat rollout 1 exactly: the
-same product on the same spots gives the operator one layout to place and Codex one 4-slot inspection registry.
-
-Run from the repo root, like validate.py:
-    cd /Users/shritej/Desktop/FANUC_T32 && uv run --group dev --with h5py --python 3.13 python <this file>
+"""Generate a one-product-per-rollout real-cell placement layout.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -25,7 +15,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import validate as V
 
-PRODUCTS = {1: 5, 2: 5, 3: 5}            # rollout -> product (user priority: product 5, best demo yield)
+PRODUCTS = {1: 5, 2: 5, 3: 5}            # rollout -> product (product 5 gives the best demo yield)
 SEED0 = {1: 1100, 2: 2200, 3: 3300}
 WORK_X, WORK_Y = (220.0, 470.0), (-270.0, 270.0)   # sim/assembly_lab/env/sampler.py (training spawn)
 SPACING = {"F": 40.0, "M": 26.0}
@@ -109,7 +99,7 @@ def choose(n: int, prod: int, taken: list[tuple]) -> tuple[list[dict], int, int]
 
 
 def main() -> int:
-    parse = V.codex_parser()
+    parse = V.instruction_parser()
     log: list[str] = []
     rollouts: dict[int, list[dict]] = {}
     taken: list[tuple] = []
@@ -127,7 +117,7 @@ def main() -> int:
         got = parse(PROMPT.format(prod))
         log.append(f"=== Rollout {n}: product {prod}, training-like layout from seed {seed} ({tries} tries), "
                    f"{len(objs)} objects")
-        log.append(f"prompt -> Codex parse_requested_products = {got}  {'OK' if list(got) == [prod] else 'MISMATCH'}")
+        log.append(f"prompt -> parse_requested_products = {got}  {'OK' if list(got) == [prod] else 'MISMATCH'}")
         if list(got) != [prod]:
             return 1
     # Reuse validate.py's full report + renderer on the chosen layouts.

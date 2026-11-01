@@ -1,4 +1,6 @@
-"""Adapter callback behavior and robot-action safety tests."""
+"""Adapter callback behavior and robot-action safety tests.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Behavioral tests for the CAD-derived product catalog and recipe graph."""
+"""Behavioral tests for the CAD-derived product catalog and recipe graph.
+Authored by Shritej Gunda.
+"""
 
 import hashlib
 import json

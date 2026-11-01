@@ -1,4 +1,6 @@
-"""Scenario catalogue, expected-safe verdicts, and the short table printed by run.sh."""
+"""Scenario catalogue, expected-safe verdicts and the summary table printed by run.sh.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +15,12 @@ from typing import Any
 from tools.rehearsal.laggy_cell import CellFaults
 from tools.rehearsal.scenarios import Outcome, run_scenario
 
-DROP_DETECT_LIMIT_S = float(os.environ.get("REHEARSAL_DROP_DETECT_S", "2.0"))  # PRELIMINARY: ~1 s check + margin
+DROP_DETECT_LIMIT_S = float(os.environ.get("REHEARSAL_DROP_DETECT_S", "2.0"))  # estimate: ~1 s check + margin
 REAL_ARM = {"tau_s": 0.15, "noise_mm": 0.05}  # ~0.45 s to settle, +-0.05 mm measurement noise
 NOISY_IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.05}  # no lag, real-sensor noise only
 IDEAL_ARM = {"tau_s": 0.0, "noise_mm": 0.0}  # official-mock arm (+0.5 s binary gripper): probes past freezes
 REAL_FACTORY_MOVE_S = 10.0  # the real factory must reach real motion (trial 0, product 5) without an early Held
-FULL_PRODUCT_BUDGET_S = float(os.environ.get("REHEARSAL_FULL_PRODUCT_BUDGET_S", "600.0"))  # PRELIMINARY
+FULL_PRODUCT_BUDGET_S = float(os.environ.get("REHEARSAL_FULL_PRODUCT_BUDGET_S", "600.0"))  # estimate
 REAL_ARM_BUDGET_S = float(os.environ.get("REHEARSAL_REAL_ARM_BUDGET_S", "90.0"))  # test patience, not a guard
 Verdict = tuple[bool, str]
 
@@ -112,22 +114,22 @@ def expect_real_groot_safe(o: Outcome) -> Verdict:
 MISSING_TCP_RUN = {**IDEAL_ARM, "faults": CellFaults(missing_tcp_after_s=5.0), "n_trials": 2, "budget_s": 30.0}
 SCENARIOS: tuple[Scenario, ...] = (
     # A real rollout lasts minutes; 40 s only fits the ideal arm (settle waits add ~0.5 s per guarded row).
-    Scenario("real_arm_nominal", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_complete),  # fixed 6e1cf41
-    # All 4 parts of product 1 on the lagging arm with the scripted GR00T stand-in. PRELIMINARY 600 s budget.
+    Scenario("real_arm_nominal", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_complete),
+    # All 4 parts of product 1 on the lagging arm with the scripted GR00T stand-in (600 s budget, estimate).
     Scenario("real_arm_full_product_M1", {**REAL_ARM, "budget_s": FULL_PRODUCT_BUDGET_S, "installs": 4},
              expect_complete),
-    Scenario("noisy_sensor_nominal", {**NOISY_IDEAL_ARM, "budget_s": 40.0}, expect_complete),  # fixed f01bbd9
+    Scenario("noisy_sensor_nominal", {**NOISY_IDEAL_ARM, "budget_s": 40.0}, expect_complete),
     Scenario("ideal_arm_nominal", {**IDEAL_ARM, "budget_s": 45.0}, expect_complete),
     Scenario("ideal_arm_drop", {**IDEAL_ARM, "faults": CellFaults(drop_after_grasp_s=1.0), "budget_s": 45.0},
-             expect_drop_detected),  # fixed 827a5c1 (attachment checked on every closed-gripper callback)
+             expect_drop_detected),  # attachment checked on every closed-gripper callback
     Scenario("real_arm_drop", {**REAL_ARM, "faults": CellFaults(drop_after_grasp_s=1.0), "budget_s": 60.0},
              expect_drop_detected),
     Scenario("ideal_arm_low_offaxis_row", {**IDEAL_ARM, "inject_low_row": True, "budget_s": 45.0},
              expect_low_row_guarded),
     Scenario("ideal_arm_missing_tcp", MISSING_TCP_RUN, expect_trial_contained),
     Scenario("ideal_arm_missing_tcp_next_trial", MISSING_TCP_RUN, expect_next_trial_runs),  # trial 2 installs
-    # Fixed 8f11633 (placement-derived inventory). Next stop in this double: the wrist close-up needs >= 12 depth
-    # pixels on the part, and the mock's synthetic depth has none; the real wrist camera is needed past that point.
+    # The wrist close-up needs >= 12 depth pixels on the part and the mock's synthetic depth has none,
+    # so the real wrist camera is needed past this point.
     Scenario("real_factory_trial0_product5", {**REAL_ARM, "budget_s": 15.0, "real_factory": True},
              expect_real_factory_moves),
     Scenario("real_groot_real_arm", {**REAL_ARM, "budget_s": REAL_ARM_BUDGET_S}, expect_real_groot_safe,

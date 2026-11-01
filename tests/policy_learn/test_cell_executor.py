@@ -1,4 +1,6 @@
-"""A learned CELL row remains subordinate to T09 identity, release, and scene gates."""
+"""A learned CELL row remains subordinate to identity, release, and scene gates.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

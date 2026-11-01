@@ -1,6 +1,5 @@
-# Table zones for synthetic scenes and for the real cell. UF0 frame, mm / deg.
-# PROPOSED 2026-10-27 from the TCP box, the ~550 mm reach and the table-camera footprint.
-# Verify on the real cell (mock run + one slot photo) before T22 writes placement.yaml.
+# Table zones for synthetic scenes and the real cell, in the UF0 frame (mm, deg).
+# Authored by Shritej Gunda.
 
 frame: UF0
 table_z: -335.0            # table surface in UF0 (z_UF0 = z_base - 330; base face ~5 mm above the table)

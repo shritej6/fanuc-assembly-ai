@@ -1,4 +1,6 @@
-"""HybridRuntime: GR00T approaches and carries, the planner takes the final grasp and insert, through the same guard."""
+"""Tests for hybrid runtime.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -23,8 +25,7 @@ class OffsetGroot(ScriptedGroot):
 
 
 class LaggyCell(TinyCell):
-    """While the planner drives, each chunk gets the arm only 60 % of the way to its last row (the real arm lags the
-    5 Hz rows). The scripted GR00T stand-in is open-loop, so its own approach stays exact."""
+    """While the planner drives, each chunk gets the arm only 60 % of the way to its last row (the real arm lags the 5 Hz rows)."""
 
     pol = None
 

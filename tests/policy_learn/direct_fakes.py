@@ -1,8 +1,5 @@
-"""Test-only stand-ins for the direct runtime tests: a scripted GR00T and a tiny in-process cell. Never for the arm.
-
-ScriptedGroot plays what a well-trained GR00T would for the runtime's current step (it reads the step from the
-runtime, which the real model cannot): over the pad, down, close, up, over the seat, down, open, up. Every row
-stays inside the guard's speed limits, so the guard has nothing to refuse on this path.
+"""Test-only stand-ins for the direct runtime tests: a scripted GR00T and a tiny in-process cell.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 

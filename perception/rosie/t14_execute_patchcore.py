@@ -1,4 +1,5 @@
-"""Execute one immutable T14 PatchCore part run and emit hash-linked evidence."""
+"""Run one PatchCore part model and write hash-linked evidence for it.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ BREV_PROVENANCE_PREFIXES = ("python", "uv", "bootstrap_", "platform_identity")
 
 
 class RunBoundaryError(ValueError):
-    """Raised when a T14 run input or result cannot be proven safe."""
+    """Raised when a PatchCore run input or result cannot be proven safe."""
 
 
 def _sha256(path: Path) -> str:
@@ -491,6 +492,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     print(json.dumps(execute(_parser().parse_args()), allow_nan=False, sort_keys=True))
 
 

@@ -1,4 +1,6 @@
-"""Box annotations for frozen manifests: bbox checks, detector label names and test-bed rest states."""
+"""Box annotations for frozen manifests: bbox checks, detector labels and rest states.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ def annotation(
     rest: str | None = None,
     fallen_classes: bool = False,
 ) -> Annotation:
+    """Return one checked box annotation for a raw label object."""
     object_id = raw.get("object_id")
     if object_id not in label2id:
         raise ManifestError(f"unknown object_id {object_id!r} in {context}")
@@ -58,7 +61,7 @@ def annotation(
 
 
 def rest_by_uid(spec: dict[str, Any], context: str) -> dict[str, str | None]:
-    """Test-bed labels keep `rest` (installed | fallen) on the scene objects, not on the per-camera boxes."""
+    """Return the rest state (installed or fallen) of each scene object by uid."""
     rest = {}
     for item in spec.get("objects", []):
         value = item.get("rest")
@@ -69,7 +72,7 @@ def rest_by_uid(spec: dict[str, Any], context: str) -> dict[str, str | None]:
 
 
 def build_state_annotation(raw: dict[str, Any], width: int, height: int, context: str) -> Annotation:
-    """Set P target: the class is how the part sits on its pegs, the object stays the exact part."""
+    """Return a set P annotation whose class is the build state of the part."""
     state = raw.get("build_state")
     if state not in BUILD_STATES:
         raise ManifestError(f"unknown build_state {state!r} in {context}")

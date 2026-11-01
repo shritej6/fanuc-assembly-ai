@@ -1,4 +1,5 @@
-"""Validated YAML configuration for T13 training jobs."""
+"""Validated YAML configuration for the detector and classifier training jobs.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -114,7 +115,7 @@ def apply_smoke_step_override(
 
 
 def load_training_config(path: Path, smoke: bool = False) -> dict[str, Any]:
-    """Load, overlay optional smoke limits, and enforce fixed T13 choices."""
+    """Load the config, apply optional smoke limits, enforce fixed choices and return it."""
     try:
         payload = yaml.safe_load(path.read_text())
     except (OSError, yaml.YAMLError) as exc:

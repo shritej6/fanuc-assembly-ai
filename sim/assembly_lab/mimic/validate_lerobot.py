@@ -1,9 +1,5 @@
-"""Check a T12 LeRobot export (LeRobot v2.1, the layout Isaac-GR00T N1.7 reads).
-
-Structural self-check of the export. The binding check is agent 5's `policy_learn/groot/prepare_dataset.py`
-(DATA_FORMAT.md), which must also pass before a dataset is handed over.
-
-    python -m sim.assembly_lab.mimic.validate_lerobot ~/t12_data/lerobot/t12_p4_small
+"""Run a structural check on a LeRobot v2.1 export before it is used for training.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -96,6 +92,7 @@ def _check_episode(root: Path, info: dict, ep: dict, tasks: dict, check_video: b
 
 
 def validate(root: Path, check_video_every: int = 1) -> dict:
+    """Check the dataset at root and return a summary."""
     info, episodes, _ = _check_meta(root)
     tasks = {t["task_index"]: t["task"] for t in _jsonl(root / "meta/tasks.jsonl")}
     if len(episodes) != info["total_episodes"]:
@@ -107,6 +104,7 @@ def validate(root: Path, check_video_every: int = 1) -> dict:
 
 
 def main() -> None:
+    """Parse the command line and validate a dataset."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", type=Path)
     ap.add_argument("--video-every", type=int, default=1, help="ffprobe every k-th episode (1 = all)")

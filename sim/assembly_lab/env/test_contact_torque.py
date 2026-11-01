@@ -1,4 +1,6 @@
-"""Seating torque from non-robot contacts (contact_torque.py), on numpy arrays."""
+"""Tests for the seating torque computed from non-robot contacts.
+Authored by Shritej Gunda.
+"""
 
 import sys
 from pathlib import Path

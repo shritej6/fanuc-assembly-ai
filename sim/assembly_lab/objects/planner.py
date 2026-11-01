@@ -1,32 +1,5 @@
-"""Grasp / place / pull-out planner for the 30 printed objects (pure Python + numpy, no Isaac).
-
-    from sim.assembly_lab.objects.planner import plan_pick, plan_place, plan_pull_out, blockers
-    g = plan_pick(scene, "M4_02", current_r=180.0)        # GraspPlan; g.feasible, g.path rows [x,y,z,w,p,r,grip]
-    p = plan_place(scene, "M4_02", "F04", flip=g.flip)    # PlacePlan onto that base (any base of the right type)
-
-Rules (docs/ROBOT_BRAIN.md, coord/DECISIONS.md 2026-10-29):
-- Grip only the CAD pad (objects.yaml `grips`, from cad/grasp_frames.json). Wrist roll r = yaw + roll_offset + 180 k,
-  k in {0, 1}; the one nearest the current r whose J6 stays inside the limits and whose fingers clear every
-  neighbour. Fingers straight down: w, p = -180, 0.
-- Crowded (no k clears): `blockers()` lists what to move first. Never push. Bases never move.
-- Fallen parts are not picked for assembly (reject + spare); unknown pieces have no CAD grip.
-- Build in sheet order; a part goes on only when every lower step is on that base and nothing above it is.
-  Dismantle in reverse order, straight up.
-
-J6: limits +-360 deg (sim/starter/scene_config.py JOINT_LIMITS_DEG, "EXACT (er4ia_physics.usd)"). With fingers straight
-down and J4 = 0 the twin's chain (sim/starter/fk.py) gives r = J1 + J6 + 180 (mod 360), so J6 ~ r - J1 - 180,
-continued from the current J6. This is the twin's kinematics; the real controller chooses its own turn numbers.
-Finger envelope: Team V fingers (cad/fingers/README.md, the STEP-frame STLs in sim/assembly_lab/env/assets/fingers):
-rubber gap 16.5 open, NBR pad 0.4 proud. The finger is NOT symmetric about the TCP. In the STEP frame (= TCP frame:
-x = v, y = closing, z = along the fingers) the TCP is on the flange axis (X = 0) and the pad / contact centre is at
-X = -1.8 mm; the tip 12 mm of the finger spans X -6.0 .. +2.4 (5.35 thick beyond the pad), the spine above it
-X -6.0 .. +6.0 (7.8 thick). Team V's validated grasp frames (cad/fingers/product_grasp_frames.json) put the gripper
-origin 1.8 mm along +X from the contact centre, and the env mounts the same STLs with TCP x = STEP X
-(env/assets.py install_teamv_fingers), so all three agree. Two consequences, both measured in Isaac on 2026-10-30
-(agent 3, run3): the commanded TCP is the CAD contact centre + 1.8 mm along v (else the pads land 1.8 mm off the
-pad), and the finger body reaches 6 mm on the -v side, so with an edge pad one wrist turn presses the finger onto the
-target part itself (M1_01 r - yaw = -90: 8/8 attempts, M4_01 r - yaw = 0: 5/5). finger_hits therefore checks the
-target's own body beyond the pad faces as well as every neighbour.
+"""Grasp, place and pull-out planner for the printed objects, without Isaac.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -145,10 +118,7 @@ def tcp_for_contact(contact, r: float) -> np.ndarray:
 
 
 def finger_hits(solids: list[Solid], tcp: np.ndarray, r: float, pad_width: float, target: Solid | None = None) -> list[str]:
-    """Instances that any finger region touches between the open approach and closing on a pad of this width.
-    `tcp` is the commanded TCP (flange axis). The target's own body counts beyond its pad faces (cells farther than
-    half the pad width from the closing centre line, where the closing fingers travel) at grid resolution: the CAD
-    clearances there are 0.1-0.9 mm, so the 1 mm neighbour margin would refuse every validated grasp."""
+    """Instances that any finger region touches between the open approach and closing on a pad of this width."""
     c_dir = np.array([math.sin(math.radians(r)), -math.cos(math.radians(r))])
     v = v_dir(r)
     m = XY_MARGIN_MM + CELL_MM * 0.71

@@ -1,4 +1,5 @@
-"""Versioned attestation endpoint in front of the pinned Isaac-GR00T server."""
+"""Versioned attestation endpoint in front of the pinned Isaac-GR00T server.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ _HASH_FORMAT = b"fanuc-checkpoint-tree-v1\0"
 
 
 class AttestationLoadError(RuntimeError):
-    """The deployment manifest cannot prove the checkpoint served by this process."""
+    """Raised when the manifest cannot prove the checkpoint this process serves."""
 
 
 def _checkpoint_files(root: Path) -> list[Path]:
@@ -58,7 +59,7 @@ def _hash_regular_file(path: Path, digest: Any) -> None:
 
 
 def checkpoint_tree_sha256(checkpoint: str | Path) -> str:
-    """Hash relative paths and bytes so a checkpoint tree has one reproducible identity."""
+    """Return one reproducible hash over a checkpoint tree's paths and bytes."""
     supplied = Path(checkpoint)
     if supplied.is_symlink():
         raise AttestationLoadError("checkpoint root cannot be a symlink")
@@ -87,7 +88,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 
 def load_verified_envelope(checkpoint: str | Path, manifest: str | Path) -> dict[str, Any]:
-    """Bind manifest identity to checkpoint bytes and derive the server verification flag."""
+    """Return the manifest envelope after checking it against the checkpoint bytes."""
     attestation = _load_manifest(Path(manifest))
     measured = checkpoint_tree_sha256(checkpoint)
     if attestation["checkpoint_sha256"] != measured:
@@ -97,13 +98,14 @@ def load_verified_envelope(checkpoint: str | Path, manifest: str | Path) -> dict
 
 
 class AttestedProxy:
-    """Expose local attestation and forward every model operation byte-for-byte upstream."""
+    """Proxy that answers attestation locally and forwards model calls upstream."""
 
     def __init__(self, upstream_socket: Any, envelope: Mapping[str, Any]):
         self._upstream = upstream_socket
         self._envelope = dict(envelope)
 
     def handle(self, request_bytes: bytes) -> bytes:
+        """Handle one request and return the reply."""
         from policy_learn.groot.groot_client import pack, unpack
 
         request = unpack(request_bytes)
@@ -116,7 +118,7 @@ class AttestedProxy:
 
 
 def serve(bind: str, upstream: str, envelope: Mapping[str, Any], timeout_ms: int) -> None:
-    """Serve until interrupted; an upstream timeout is returned as a typed server error."""
+    """Serve until interrupted."""
     import zmq
 
     from policy_learn.groot.groot_client import pack
@@ -155,6 +157,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Parse arguments and start the attested proxy."""
     args = _parse_args()
     envelope = load_verified_envelope(args.checkpoint, args.attestation)
     if not args.verify_only:

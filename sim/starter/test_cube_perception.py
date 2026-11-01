@@ -1,4 +1,6 @@
-"""Check that focused Cosmos replies preserve coordinates across colour groups."""
+"""Tests that focused Cosmos replies keep coordinates across colour groups.
+Authored by Shritej Gunda.
+"""
 
 import tempfile
 import unittest

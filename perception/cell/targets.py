@@ -1,10 +1,5 @@
-"""Where the robot puts parts it takes out of the build: reject drop spots and spare-store slots, in UF0.
-
-Reject spots are a fixed grid inside the reject zone (sdg/configs/cell_layout.yaml) used one at a time, so a
-rejected part never lands on an earlier one; a full zone raises and the controller asks the operator. Store slots
-come from the same file. A part is released with its lowest point RELEASE_GAP_MM above the table: the caller gives
-how far the held part reaches below the fingertips (grasp frame or FoundationPose of the held part). Every spot's
-release and approach poses must pass the arm's IK at every gripper roll (sdg/wrist_ik.py), or loading fails.
+"""Reject drop spots and spare-store slots, in UF0, for parts the robot takes out of a build.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -31,6 +26,7 @@ class TargetError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Release:
+    """Where to release a part and the height to approach from."""
     x_mm: float
     y_mm: float
     z_mm: float
@@ -53,6 +49,7 @@ def _check_reach(label: str, x: float, y: float) -> None:
 
 
 class CellTargets:
+    """Reject spots and store slots, checked for reach, handed out one at a time."""
     def __init__(self, zones: CellZones) -> None:
         self.reject_spots = _grid(zones.reject_x, zones.reject_y)
         self.slots = {slot_id: (x, y) for slot_id, x, y in zones.slots}
@@ -63,7 +60,7 @@ class CellTargets:
         self._used = 0
 
     def next_reject(self, held_below_tcp_mm: float) -> Release:
-        """The next free reject spot for a part reaching `held_below_tcp_mm` below the fingertips."""
+        """Return the next free reject spot for a part held this far below the fingertips."""
         if self._used >= len(self.reject_spots):
             raise TargetError(f"reject zone full ({len(self.reject_spots)} spots); operator must empty it")
         x, y = self.reject_spots[self._used]
@@ -72,6 +69,7 @@ class CellTargets:
         return release
 
     def slot(self, slot_id: str, held_below_tcp_mm: float) -> Release:
+        """Return the release point for one spare-store slot."""
         if slot_id not in self.slots:
             raise TargetError(f"no store slot {slot_id!r}")
         return _release(*self.slots[slot_id], held_below_tcp_mm)

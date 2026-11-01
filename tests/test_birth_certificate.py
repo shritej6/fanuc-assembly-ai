@@ -1,4 +1,6 @@
-"""Behavioral coverage for immutable JSON/PDF product traceability."""
+"""Behavioral coverage for immutable JSON/PDF product traceability.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

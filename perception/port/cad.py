@@ -1,13 +1,5 @@
-"""The CAD facts the port measures against, from pinned, hash-checked snapshots (no hand-typed dimensions).
-
-- `sources/objects.74d749a.yaml` is `sim/assembly_lab/objects/objects.yaml` at origin/feature/T12-mimic commit 74d749a
-  (T12 agent 2, built from the printed STLs + cad/grasp_frames.json): installed-frame bbox, seated heights, insertion
-  clearances, look-alike groups, `distinguishing_dims_mm` (with the top-surface cues) and `size_twins_within_1mm`.
-- `sdg/data/object_geometry.json` @5a24e10 (the same file Codex pins as assembly/sources/object_geometry.5a24e10.json):
-  the stable resting poses, used for the fallen threshold. With `T_local_from_stl` from the T12 snapshot, the
-  smallest tilt between the installed pose and any other stable pose is 69.4 deg (M3_02, M1_02, M2_02); a part tilted
-  more than half of its own smallest tilt cannot be resting on its installed face.
-"""
+"""CAD facts the port measures against, loaded from pinned, hash-checked snapshots.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -42,6 +34,7 @@ class TopCue:
 
 @dataclass(frozen=True, slots=True)
 class ObjectCad:
+    """CAD facts for one object."""
     object_id: str
     bbox_min_mm: tuple[float, float, float]
     bbox_max_mm: tuple[float, float, float]
@@ -56,16 +49,19 @@ class ObjectCad:
 
     @property
     def size_mm(self) -> tuple[float, float, float]:
+        """Return the installed-frame bounding box size in mm."""
         return tuple(hi - lo for lo, hi in zip(self.bbox_min_mm, self.bbox_max_mm, strict=True))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True, slots=True)
 class CadCatalog:
+    """CAD facts for every object."""
     objects: dict[str, ObjectCad]
     size_twins: tuple[tuple[str, str], ...]
     source: str
 
     def get(self, object_id: str) -> ObjectCad:
+        """Return the CAD facts of one object."""
         try:
             return self.objects[object_id]
         except KeyError as error:
@@ -155,8 +151,7 @@ def _object(object_id: str, entry: dict, stable: dict, authorized: dict[str, flo
 
 
 def _add_twin_cues(objects: dict[str, ObjectCad], twin: dict) -> None:
-    """Size twins outside a taxonomy group (M1_01/M3_01, M1_02/M2_03) carry their top cues only in
-    `size_twins_within_1mm`; add them both ways unless the group table already has that pair."""
+    """Add size-twin top cues both ways unless the group table already has the pair."""
     a, b = twin["a"], twin["b"]
     cues = [TopCue(tuple(c["region_xy_mm"]), float(c["area_mm2"]), float(c["top_z_here_mm"]), float(c["top_z_other_mm"]))
             for c in twin.get("top_cue") or ()]
@@ -168,6 +163,7 @@ def _add_twin_cues(objects: dict[str, ObjectCad], twin: dict) -> None:
 
 @cache
 def load_cad(path: Path = OBJECTS_SNAPSHOT, expected_sha: str = OBJECTS_SHA256) -> CadCatalog:
+    """Load and verify the CAD snapshot and return the catalog."""
     raw = _read_snapshot(path, expected_sha)
     stable = json.loads(STABLE_POSES.read_text())["objects"]
     authorized = _authorized_tcp_heights()

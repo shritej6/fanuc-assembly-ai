@@ -1,8 +1,5 @@
-"""Typed access to CAD-local assembly recipes.
-
-Insertion offsets are expressed in the detected fixture's CAD-local frame.
-They require a measured fixture-pose transform and are never absolute UF0
-robot targets.
+"""Typed access to CAD-local assembly recipes and their insertion offsets.
+Authored by Shritej Gunda.
 """
 
 import json

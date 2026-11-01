@@ -1,8 +1,5 @@
-"""What the port needs from the trained models and the calibration, as typed protocols plus the real adapters.
-
-Tests inject deterministic fakes; the cell runtime injects the adapters below (torch and transformers load lazily, on
-the GPU host). Every reading is validated here, so a malformed model output is a typed error, never a silent pass.
-"""
+"""Typed protocols for the models and calibration the port needs, plus the real adapters.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -51,10 +48,12 @@ class PoseFit:
 
 
 class Detector(Protocol):
+    """Detector that returns raw boxes for an image."""
     def __call__(self, image: np.ndarray) -> list[RawBox]: ...
 
 
 class WristClassifier(Protocol):
+    """Wrist classifier that reads one part box."""
     def __call__(self, image: np.ndarray, bbox_px: tuple[float, float, float, float]) -> WristReading: ...
 
 
@@ -65,7 +64,7 @@ class PoseEstimator(Protocol):
 
 
 class CellGeometry(Protocol):
-    """Calibration-backed geometry of the real cell (CalibratedCellGeometry wraps robot/cell/calibration + T28)."""
+    """Calibration-backed geometry of the real cell."""
 
     table_surface_z_mm: float
     work_area: tuple[tuple[float, float], tuple[float, float]]   # UF0 x and y bounds (sdg/configs/cell_layout.yaml)
@@ -96,7 +95,7 @@ class CellGeometry(Protocol):
 
 
 class RtDetrDetector:
-    """perception/cell/models.Detector (RT-DETR r50vd run dir, T27/T31 weights) on an observation image."""
+    """Run the trained RT-DETR detector on an observation image."""
 
     def __init__(self, run_dir: Path, min_score: float) -> None:
         from perception.cell.models import Detector as CellDetector
@@ -109,7 +108,7 @@ class RtDetrDetector:
 
 
 class DefectHeadClassifier:
-    """T27 wrist ResNet-18 with the defect head (32 logits: 30 identity, then ok/defect), classifier_defect_v100."""
+    """Wrist ResNet-18 classifier with the defect head: 30 identity logits, then ok and defect."""
 
     def __init__(self, run_dir: Path, labels: tuple[str, ...], image_size: int) -> None:
         import json

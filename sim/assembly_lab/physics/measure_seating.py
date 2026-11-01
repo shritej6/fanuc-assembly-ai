@@ -1,20 +1,5 @@
-"""Measure in PhysX (Isaac Sim 6.0) the force needed to seat every mating pair, aligned and misaligned. GPU box only.
-
-    /isaac-sim/python.sh sim/assembly_lab/physics/measure_seating.py --jobs sim/assembly_lab/physics/seating_jobs.json \
-        --out /root/t12_data/physics/seating_raw.jsonl [--only M4_02] [--conditions aligned,offset_x_1.0]
-
-Set-up per pair (seating_jobs.json): the base and every lower sheet step are kinematic SDF colliders at their CAD
-installed pose; the moving part is a dynamic SDF body (mass from CAD, PLA friction from contact.yaml) held by a D6
-joint to the world, the gripper model:
-- rotations locked at the condition's tilt (a stiff wrist);
-- x, y driven by a 2 N/mm spring to the hand position (rubber-pad shear compliance: ASSUMPTION, not measured),
-  which carries the condition's misalignment;
-- z driven by a stiff 20 N/mm drive whose force is CAPPED; the hand descends at 10 mm/s from 3 mm above first
-  engagement to 1 mm below the seat (the real-arm guard floor), then holds 0.2 s.
-Contact forces on the moving part come from the PhysX contact report (impulse / dt), split into axial (z), lateral
-(xy) and torque about z through the part origin. Per condition the caps are tried from 15 N down until one fails to
-seat; the smallest cap that seats brackets the seating force. "Seated" = final origin z within 0.3 mm of the CAD
-seat (INTERFACES.md precision gate). Results are SIM_MEASURED for this model only.
+"""Measure in PhysX the force needed to seat every mating pair, aligned and misaligned.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

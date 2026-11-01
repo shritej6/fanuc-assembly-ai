@@ -1,4 +1,5 @@
-"""Freeze validated T13 manifests and export detector/classifier datasets."""
+"""Freeze validated manifests and export the detector and classifier datasets.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -13,8 +14,8 @@ from perception.manifest import ManifestConfig, build_manifests
 
 DETECTOR_SETS = ("A", "F", "G")
 CLASSIFIER_SETS = ("B", "H", "K")
-# Test-bed sets (user 2026-10-28: train only on these): parts stand as in their product, fallen ones are labelled.
-# Cosmos restyled one camera of half the scenes in N/R/Q (measured 0.25 of images) and half the wrist images in O.
+# Test-bed sets: parts stand as in their product and fallen ones are labelled.
+# Cosmos restyled about a quarter of the N/R/Q images and half the wrist images in O.
 TESTBED = {
     "detector_sets": ("N", "R", "Q"),
     "classifier_sets": ("O",),
@@ -26,8 +27,7 @@ TESTBED_BUILD = {
     "classifier_sets": ("P",),
     "cosmos_ranges": (("P", 0.45, 0.55),),
 }
-# Test-bed sets plus the weak-spot sets S (detector) and T (wrist look-alikes) from T31 (user 2026-10-29: render the
-# cases the T27 models miss and retrain fast; S and T skip Cosmos by that order, so their range is exactly zero).
+# Test-bed sets plus the weak-spot sets S (detector) and T (wrist look-alikes); S and T skip Cosmos.
 TESTBED_WEAK = {
     "detector_sets": ("N", "R", "Q", "S"),
     "classifier_sets": ("O", "T"),
@@ -118,6 +118,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     args = _parser().parse_args()
     plan = preparation_plan(args.data_root, args.output_root, args.taxonomy, args.smoke, args.profile)
     print(json.dumps(plan, indent=2, sort_keys=True))

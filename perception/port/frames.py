@@ -1,11 +1,5 @@
-"""FoundationPose STL-frame poses to the canonical installed-local frame the T09 controller consumes.
-
-FoundationPose fits the printed STL, so its output is `world_from_stl` (UF0, mm). The controller's
-`MeasuredRecipePoses.grasp_from_foundationpose` requires the installed-local origin and yaw (its
-`FoundationPoseFrameBoundary` docstring): world_from_local = world_from_stl @ inverse(T_local_from_stl), the same
-composition `assembly/calibrated_poses.py::_world_from_local` uses for targets. Tilt is the angle between the part's
-local +z and UF0 +z; yaw is only defined while the local x axis is not vertical.
-"""
+"""Convert FoundationPose STL-frame poses to the installed-local frame the controller uses.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -33,12 +27,15 @@ class InstalledPose:
     tilt_deg: float
 
     def contract_pose(self) -> dict[str, float]:
+        """Return the pose as a contract dict."""
         return {"x": self.x_mm, "y": self.y_mm, "z": self.z_mm, "yaw": self.yaw_deg}
 
     def contract_tuple(self) -> tuple[float, float, float, float]:
+        """Return the pose as an (x, y, z, yaw) tuple."""
         return (self.x_mm, self.y_mm, self.z_mm, self.yaw_deg)
 
     def to_local(self, points_uf0_mm: np.ndarray) -> np.ndarray:
+        """Return UF0 points in the part's installed-local frame."""
         inverse = np.linalg.inv(self.world_from_local)
         return points_uf0_mm @ inverse[:3, :3].T + inverse[:3, 3]
 
@@ -54,6 +51,7 @@ def _require_rigid(matrix: np.ndarray) -> None:
 
 
 def installed_pose(world_from_stl: np.ndarray, cad: ObjectCad) -> InstalledPose:
+    """Return the installed-local pose of a FoundationPose STL fit."""
     world_from_stl = np.asarray(world_from_stl, dtype=float)
     _require_rigid(world_from_stl)
     world_from_local = world_from_stl @ np.linalg.inv(np.array(cad.local_from_stl))

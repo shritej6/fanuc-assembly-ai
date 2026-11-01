@@ -1,16 +1,5 @@
-"""A real-arm-like test double for the official mock cell (rehearsal only, never motion authority).
-
-The official ``robot/cell/mock_cell.py`` jumps the TCP to each row the instant it is dequeued and flips the
-gripper the same tick. A real FANUC ER-4iA does neither. ``LaggyMock`` keeps the exact HTTP protocol, limits and
-queue timing of the official mock (it subclasses it and reuses its handler), but:
-
-* the measured TCP follows the commanded row with first-order lag (time constant ``tau_s``; about 3*tau to
-  settle, 0.3-0.6 s for the defaults) plus uniform +-``noise_mm`` measurement noise; ``tau_s=0`` is an ideal
-  arm (at the row on dequeue, like the official mock) used to probe behaviour past a lag-induced freeze;
-* the gripper reaches a new command only after ``gripper_delay_s`` and reports only 0 or 1;
-* optional faults: drop the held part (gripper keeps reading 1), drop ``tcp_pose`` from one observation.
-
-Every commanded row is recorded so a scenario can prove what actually reached the arm.
+"""Real-arm-like test double for the official mock cell, for rehearsal only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Prepare only the host environment and locally generated materials.
+# Authored by Shritej Gunda.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"

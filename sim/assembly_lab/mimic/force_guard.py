@@ -1,5 +1,5 @@
-"""Force guard for generated demos: keep a demo only if its contact force never exceeded the limits over its whole
-length (docs/ROBOT_BRAIN.md section 2). Limits come from agent 2's `physics/limits.yaml`; nothing is defaulted.
+"""Force guard that keeps a demo only if its contact forces stay within the limits.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ class ForceLimitError(ValueError):
 
 @dataclass(frozen=True)
 class ForceLimits:
+    """Contact force limits and their status."""
     axial_N: float
     lateral_N: float
     torque_Nm: float
@@ -27,10 +28,12 @@ class ForceLimits:
     source: str
 
     def as_array(self) -> np.ndarray:
+        """Return the limits as an array [axial, lateral, torque]."""
         return np.array([self.axial_N, self.lateral_N, self.torque_Nm], dtype=np.float64)
 
 
 def load_limits(path: str | Path) -> ForceLimits:
+    """Load the force limits from a YAML file."""
     path = Path(path)
     if not path.exists():
         raise ForceLimitError(f"{path} not found: agent 2 must publish the force limits before demos are accepted")
@@ -49,6 +52,7 @@ def load_limits(path: str | Path) -> ForceLimits:
 
 @dataclass(frozen=True)
 class GuardResult:
+    """Force guard result for one episode."""
     ok: bool
     peak: np.ndarray  # [normal_N, lateral_N, torque_Nm] over the episode
     first_violation_step: int | None

@@ -1,9 +1,5 @@
-"""Sim body frames -> CAD installed local frames, and sim truth -> the planner's scene.
-
-The env reports each rigid body in its STL frame (the mesh is spawned as-is). The planner, objects.yaml and every
-gate use the CAD installed local frame (origin = centre of the lowest seating plane, z up when installed):
-T_world_local = T_world_stl @ inv(T_local_from_stl). `LocalFrameEnv` rewrites `obs["sim"]["object_poses"]` into
-local frames and keeps the raw body poses under `object_poses_body` (what Isaac Lab replays from the HDF5 states).
+"""Convert sim body frames to CAD installed frames and sim truth to the planner scene.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -55,7 +51,7 @@ def body_to_local(uid: str, body_pose) -> np.ndarray:
 
 
 class LocalFrameEnv:
-    """Wraps agent 1's env so every skill, check and gate sees CAD local frames."""
+    """Wrap the env so every skill, check and gate sees CAD local frames."""
 
     def __init__(self, env):
         self.env = env

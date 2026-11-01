@@ -1,16 +1,5 @@
-"""
-Stage 3: turn Cosmos3-Nano's 2D detections into a 3D pick-and-place plan.
-
-    .venv/bin/python plan_grasps.py --run run/
-
-Steps:
-  1. back-project each detection onto the table plane (exact -- we own the camera)
-  2. optionally refine the centre with a colour/intensity blob inside the
-     detection's own box ("VLM proposes, classical vision refines")
-  3. score everything against ground truth so the accuracy is visible, not assumed
-  4. emit an ordered pick-and-place plan into the bin
-
-Writes run/plan.json and run/detections_overlay.png.
+"""Turn Cosmos3-Nano 2D detections into a 3D pick-and-place plan.
+Authored by Shritej Gunda.
 """
 
 import argparse, json, os, sys
@@ -46,13 +35,7 @@ _EXPECT = {
 
 
 def _blob_axis(mask_xy):
-    """Given a screw blob's pixel coordinates, return its centroid and long axis.
-
-    The grasp is across the MIDDLE of the shank. The M6 screws are countersunk:
-    their head is a 90 deg cone, and parallel jaws closing on a cone push the
-    part out along its axis rather than gripping it. The shank is a plain 6 mm
-    cylinder, and the silhouette centroid of a 30 mm countersunk screw lies on it.
-    """
+    """Given a screw blob's pixel coordinates, return its centroid and long axis."""
     pts = mask_xy.astype(np.float32)
     c = pts.mean(0)
     u, sdv, vt = np.linalg.svd(pts - c, full_matrices=False)
@@ -60,16 +43,7 @@ def _blob_axis(mask_xy):
 
 
 def detect_coord_convention(det, W, H):
-    """Work out which coordinate space the model used, from the whole reply.
-
-    Cosmos3-Nano is not consistent between runs on the same prompt: one run
-    returned [0.43, 0.71], the next [439, 714]. The latter is the Qwen-VL
-    0..1000 grid its understanding tower inherits, NOT absolute pixels -- reading
-    it as pixels puts every object out by ~100 mm.
-
-    Decided once over every number in the reply rather than per detection, since
-    a single object's coordinates are often ambiguous on their own.
-    """
+    """Work out which coordinate space the model used, from the whole reply."""
     vals = []
 
     def add(values):
@@ -113,15 +87,7 @@ def make_as_pixels(convention, divisor, W, H):
 
 
 def refine_centre(img, cam, det, as_pixels, pad=1.6):
-    """Snap a detection centre to the object's own pixels.
-
-    The VLM localises to roughly a cube-width; good enough to say what is where,
-    not good enough to close a 20 mm gripper on it. Searching a window around the
-    reported box for the matching blob recovers the rest.
-    Returns (u, v, method) in pixels. method is "refined", "raw" (no blob found)
-    or "rejected" (a blob was found but its size/shape does not match the class,
-    which usually means the detection itself is wrong).
-    """
+    """Snap a detection centre to the object's own pixels."""
     H, W = img.shape[:2]
     cu, cv_ = as_pixels(det["center"])
     bb = det.get("bbox")

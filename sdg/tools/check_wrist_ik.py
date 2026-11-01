@@ -1,9 +1,5 @@
 """Solve every arm pose of the given sets offline, as the render host will. Exit 1 if any pose has no solution.
-
-The sampler already redraws unreachable poses (`sdg.wrist_ik.reachable`); this re-checks the final specs before a
-set is queued, because the renderer stops a whole chunk at the first pose it cannot solve.
-
-    uv run python -m sdg.tools.check_wrist_ik A B C D
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

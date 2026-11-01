@@ -1,1 +1,3 @@
-"""Cosmos Transfer restyling of rendered images (T11): pick, export, shape-drift check, import."""
+"""Cosmos Transfer restyling of rendered images.
+Authored by Shritej Gunda.
+"""

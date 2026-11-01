@@ -1,10 +1,5 @@
-"""Smoke test for AssemblyCellEnv: one product's base + parts loose, IK moves, all cameras, contact forces, step rate.
-
-    (inside the Isaac Lab container, see ~/ISAACLAB_READY on fa-sim)
-    python sim/assembly_lab/env/env_smoke.py --out ~/t12_data/env_smoke [--product 4] [--minimal]
-
---minimal spawns only the base and the housing (the first part), the fastest end-to-end check.
-Writes <out>/<phase>_<camera>.png and <out>/report.json (measured numbers only).
+"""Smoke test for the cell env: parts, IK moves, cameras, contact forces and step rate.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

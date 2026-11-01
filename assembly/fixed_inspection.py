@@ -1,4 +1,6 @@
-"""Typed non-learned camera positioning for the CELL inspection gate."""
+"""Typed non-learned camera positioning for the CELL inspection gate.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

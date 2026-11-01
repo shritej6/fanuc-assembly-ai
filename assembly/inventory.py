@@ -1,7 +1,5 @@
-"""Observed inventory for one-at-a-time recipe ownership.
-
-Only perception-facing instance and identity data enter this module. Simulator
-ground-truth poses or privileged object state are neither accepted nor stored.
+"""Observed inventory that tracks which parts each recipe owns.
+Authored by Shritej Gunda.
 """
 
 from dataclasses import dataclass, replace

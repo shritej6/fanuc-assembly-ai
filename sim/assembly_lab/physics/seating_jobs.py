@@ -1,9 +1,5 @@
-"""Write the seating-study jobs (one per mating pair) from objects.yaml, for measure_seating.py. Host side, no Isaac.
-
-    PYTHONPATH=. uv run python sim/assembly_lab/physics/seating_jobs.py      # -> physics/seating_jobs.json
-
-Each job: the moving part and every lower sheet step of its product (base first) as fixed receivers, all at their
-installed pose (product frame, base top at z = 0), with mesh file, T_local_from_stl, mass and the seat height.
+"""Write the seating study jobs, one per mating pair, for measure_seating.py.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

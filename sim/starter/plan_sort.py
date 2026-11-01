@@ -1,4 +1,6 @@
-"""Plan sorting from Cosmos observations; ground truth is used only for scoring."""
+"""Plan sorting from Cosmos observations, using ground truth only for scoring.
+Authored by Shritej Gunda.
+"""
 
 import argparse
 import json
@@ -59,11 +61,7 @@ def cap_silhouette(cam, xy, orientation, shape, origin=(0, 0)):
 
 
 def refine_cap(img, cam, obj, seed):
-    """Fit known cap silhouette to yellow pixels in the VLM's own local box.
-
-    Orientation comes exclusively from Cosmos; the fit only refines translation.
-    Modeling both heights avoids back-projecting a flange centroid as a top face.
-    """
+    """Fit known cap silhouette to yellow pixels in the VLM's own local box."""
     H, W = img.shape[:2]
     bb = np.array(obj.get("bbox", []), float)
     if bb.shape != (4,) or not np.all(np.isfinite(bb)):

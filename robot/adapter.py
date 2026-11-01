@@ -1,4 +1,6 @@
-"""Passive callback adapters shared by simulation, mock, and cell runtimes."""
+"""Passive callback adapters shared by the simulation, mock and cell runtimes.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -43,7 +45,7 @@ TCP_LIMITS = (
     (-360.0, 360.0, "degrees"),
     (0.0, 1.0, "state"),
 )
-# Source: robot/cell/mock_cell.py LIMITS, the vendored official cell contract.
+# Matches LIMITS in the official robot/cell/mock_cell.py.
 JOINT_LIMITS = (
     (-170.0, 170.0, "degrees"),
     (-110.0, 120.0, "degrees"),
@@ -53,9 +55,8 @@ JOINT_LIMITS = (
     (-360.0, 360.0, "degrees"),
     (0.0, 1.0, "state"),
 )
-# Source: supervised Saturday CELL decision (2026-10-31): the T12 insert
-# trajectory is about 3 degrees with a +/-2 degree correction; enforce one
-# true fingers-down cone rather than independent W/P boxes.
+# The insert trajectory tilts about 3 degrees with a +/-2 degree correction,
+# so enforce one fingers-down cone rather than separate W/P boxes.
 TOOL_DOWN_TOLERANCE_DEG = 6.0
 DT_LIMITS = (0.1, 1.0)
 MAX_ACTION_CHUNK = 100

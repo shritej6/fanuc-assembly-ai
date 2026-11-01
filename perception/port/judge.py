@@ -1,21 +1,5 @@
-"""One wrist close-up -> the contract inspection verdict plus the typed next step (ROBOT_BRAIN section 3).
-
-Inputs are already-validated readings: the wrist classifier (identity + defect head), advisory FoundationPose output,
-and the size gate. Order of the authoritative rules (first match wins):
-
-1. Size fits none of the 30 objects and the classifier is not confident -> `foreign` / reject.
-2. Defect head p >= 0.994 -> `print_defect` / reject (DEFECT_HEAD_INSPECTION.md mapping, no contract edit).
-3. Classifier below its measured minimum -> unsure.
-4. Classifier names another shape: size agrees with that shape -> `wrong_part` / reject; otherwise unsure.
-5. Size contradicts the expected object, fits nothing, or could not be measured -> unsure (LOOKALIKES.md s3: missing
-   depth is "unsure").
-6. Defect head in the careful band 0.5 <= p < 0.994 -> unsure.
-7. Otherwise `ok` / use.
-
-"Unsure" is `uncertain` / `ask_operator` with checks_agree false, which the controller's verify_pre_pick turns into
-HOLD_ANDON. The port's CloseupReport says whether that is a SECOND_LOOK (first view) or the ANDON (second view).
-Low-fit or non-upright FoundationPose output only clears `checks_agree` and adds a warning to the reason.
-"""
+"""Turn one wrist close-up into the contract inspection verdict and the next step.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -33,6 +17,7 @@ from perception.port.size_gate import SizeOutcome, SizeVerdict
 
 
 class NextStep(StrEnum):
+    """Next step the controller should take after a close-up."""
     USE = "use"
     REJECT = "reject"
     SECOND_LOOK = "second_look"
@@ -58,7 +43,7 @@ class CloseupThresholds:
 
     @classmethod
     def load(cls, path: Path) -> CloseupThresholds:
-        """The T28 thresholds file format (classifier_min, pose_fit_min, source)."""
+        """Load the thresholds file (classifier_min, pose_fit_min, source) and return it."""
         try:
             raw = json.loads(path.read_text())
             return cls(raw["classifier_min"], raw["pose_fit_min"], raw["source"])
@@ -68,6 +53,7 @@ class CloseupThresholds:
 
 @dataclass(frozen=True, slots=True)
 class Judgement:
+    """Inspection verdict and next step for one close-up."""
     verdict: str
     action: str
     object_id: str | None
@@ -137,5 +123,6 @@ def _with_advisories(judgement: Judgement, advisories: tuple[str, ...]) -> Judge
 
 def judge(expected: str, reading: WristReading, fit_score: float, side: str, size: SizeVerdict,
           thresholds: CloseupThresholds) -> Judgement:
+    """Return the judgement for one wrist close-up."""
     judgement = _authoritative_judgement(expected, reading, size, thresholds)
     return _with_advisories(judgement, _foundationpose_advisories(fit_score, side, thresholds))

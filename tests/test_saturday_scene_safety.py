@@ -1,4 +1,6 @@
-"""Checks-only Saturday scene-safety regression tests."""
+"""Checks-only scene-safety regression tests.
+Authored by Shritej Gunda.
+"""
 
 import pytest
 

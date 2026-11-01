@@ -1,8 +1,8 @@
-# T17 seeded scenario fleet
+# Seeded scenario fleet
 
 `eval.scenario_fleet` generates deterministic, randomized three-product prompts and table layouts from the validated
 catalog. It does not read `placement.yaml`, choose a fixed product trio, or pass simulator ground truth to the
-controller. Each generated object enters T09 through `ScriptedPerceptionPort`; calibrated mock poses remain unavailable
+controller. Each generated object enters the planner through `ScriptedPerceptionPort`; calibrated mock poses remain unavailable
 until a scan has observed them. A 20-scenario run covers every unordered three-of-six product combination exactly once;
 a 60-scenario run covers each combination three times. Seeded shuffling changes order, faults, and XY layouts without
 changing that coverage.

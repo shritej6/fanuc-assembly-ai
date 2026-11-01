@@ -1,4 +1,6 @@
-"""Export deterministic wrist-target crops from frozen classifier records."""
+"""Export deterministic wrist-target crops from frozen classifier records.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

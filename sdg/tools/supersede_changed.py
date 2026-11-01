@@ -1,13 +1,5 @@
 """After a sampler fix: mark rendered scenes whose spec changed so the generator renders them again.
-
-    python -m sdg.tools.supersede_changed ~/fanuc-assembly-data/synthetic/D/chunk_*
-    python -m sdg.tools.supersede_changed --restore ~/fanuc-assembly-data/synthetic/D/chunk_*
-
-Each label stores the spec it was rendered from. A scene whose current spec differs has its label moved to
-<chunk>/superseded/ (the generator then re-renders it and overwrites its images); the chunk's _DONE.json and
-_QA.json move there too, so the chunk is rendered and QA'd again. Unchanged scenes are left alone.
---restore moves back every superseded label whose spec matches the current one (it was rendered from it), and the
-chunk's _DONE.json / _QA.json when the chunk is then complete again.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

@@ -1,4 +1,6 @@
-"""T12 agent 2: the grasp / place / pull-out planner on crowded and ordered layouts."""
+"""Tests for objects planner.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -172,11 +174,7 @@ def _alone(oid: str, yaw: float = 0.0):
 
 
 def test_asymmetric_finger_reproduces_the_isaac_press():
-    """Isaac run3 commanded the TCP at the CAD contact centre. M1_01 at r - yaw = -90 pressed the finger onto the part
-    every time (8/8), +90 never did; M4_01 at r - yaw = 0 pressed it every time (5/5). With that TCP the finger model
-    says the same about the target's own body. (M4_01 at 180 also clips one small feature by up to 1.8 mm in the
-    model; Isaac showed no press there but 3 of its 5 torque spikes came right at the close, so it is not asserted
-    clear.)"""
+    """An Isaac run commanded the TCP at the CAD contact centre."""
     own, contact, pad = _alone("M1_01")
     assert planner.finger_hits([], contact, -90.0, pad, own) == ["M1_01"]
     assert planner.finger_hits([], contact, 90.0, pad, own) == []
@@ -186,8 +184,7 @@ def test_asymmetric_finger_reproduces_the_isaac_press():
 
 @pytest.mark.parametrize("oid, turns", [("M1_01", (-90.0, 90.0)), ("M4_01", (0.0, 180.0))])
 def test_corrected_tcp_puts_the_pad_on_the_contact_and_clears_both_turns(oid, turns):
-    """TCP = contact + 1.8 mm along v (STEP contact centre X = -1.8): pads on the CAD pad, both wrist turns clear,
-    and the plan's TCP is that point."""
+    """TCP = contact + 1.8 mm along v (STEP contact centre X = -1.8)."""
     own, contact, pad = _alone(oid)
     for r in turns:
         tcp = planner.tcp_for_contact(contact, r)
@@ -206,7 +203,7 @@ def test_a_turned_closing_axis_hits_the_part_itself():
 
 
 def test_planner_tcp_is_the_grasp_frames_tcp_for_both_turns_on_every_part():
-    """cad/grasp_frames.json (T29) publishes the commanded TCP per wrist turn; the planner must command exactly it."""
+    """cad/grasp_frames.json publishes the commanded TCP per wrist turn; the planner must command exactly it."""
     import json
 
     from sim.assembly_lab.objects.scene import build_instances

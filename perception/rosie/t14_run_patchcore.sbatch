@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run one independently auditable T14 PatchCore part. Submit as --array=0-23 after data and env approval.
+# Run one independently auditable PatchCore part. Submit as --array=0-23.
+# Authored by Shritej Gunda.
 #   sbatch --array=0-23 --export=ALL,RUN_ROOT,CODE_ROOT,SOURCE_COMMIT,DATASET_DIR,DATASET_ARTIFACT,\
 #     ENV_DIR,ENV_ARTIFACT,ENV_AUDIT perception/rosie/t14_run_patchcore.sbatch
 #SBATCH --job-name=fa-t14-pc-run

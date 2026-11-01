@@ -1,6 +1,5 @@
 """Execute the Cosmos sort plan with physical grasps and pose-based reporting.
-
-Run ./run_sort_pipeline.sh RUN_DIR to capture, perceive, plan, render and encode.
+Authored by Shritej Gunda.
 """
 
 import argparse

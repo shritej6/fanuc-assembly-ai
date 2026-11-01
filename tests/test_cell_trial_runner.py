@@ -1,4 +1,6 @@
-"""A missing measured TCP holds one CELL trial without terminating the run."""
+"""A missing measured TCP holds one CELL trial without terminating the run.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

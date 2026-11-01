@@ -1,4 +1,6 @@
-"""Seeded scenario-fleet regression coverage for the T09 controller."""
+"""Seeded scenario-fleet regression coverage for the controller.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

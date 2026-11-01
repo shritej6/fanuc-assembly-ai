@@ -1,15 +1,5 @@
-"""Benchmark the live Cosmos Reason 2 8B build-check endpoint on rendered set D scenes (sim only).
-
-    uv run --with pillow python -m eval.cosmos_reason2_bench prepare --set-dir <D> --out <dir> --per-state 10
-    uv run python -m eval.cosmos_reason2_bench run --out <dir> [--base-url http://127.0.0.1:8000/v1]
-
-``prepare`` picks scenes whose labelled product (the one with a ``build_state`` on its top installed part) has only
-``ok`` parts, crops that product from the camera where it is most visible and writes ``captures/<id>.jpg`` plus
-``manifest.jsonl``. Ground truth: ``seated`` should pass; ``high``, ``tilted`` and ``wrong_part`` should fail.
-``run`` sends every capture through ``CosmosReason2Endpoint.check`` (the production port) and writes
-``results.jsonl`` and ``summary.json``: latency p50/p95, how many answers parsed, and the verdict confusion table.
-Real-cell images may be benchmarked the same way for evaluation only, never for training.
-"""
+"""Benchmark the Cosmos Reason 2 8B build-check endpoint on rendered set D scenes (sim only).
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -92,6 +82,7 @@ def _write_capture(sample: dict, rgb_root: Path, out: Path) -> dict:
 
 
 def prepare(set_dir: Path, out: Path, per_state: int) -> None:
+    """Copy the labelled set D captures and write their manifest."""
     (out / "captures").mkdir(parents=True, exist_ok=True)
     taken: Counter[str] = Counter()
     rows = []
@@ -140,6 +131,7 @@ def _summary(results: list[dict]) -> dict:
 
 
 def run(out: Path, base_url: str) -> None:
+    """Score every captured case against the live endpoint and write the results."""
     catalog = load_catalog()
     endpoint = CosmosReason2Endpoint(EndpointConfig(base_url=base_url), DirectoryImageSource(out / "captures"), catalog)
     rows = [json.loads(line) for line in (out / "manifest.jsonl").read_text().splitlines()]
@@ -155,6 +147,7 @@ def run(out: Path, base_url: str) -> None:
 
 
 def main() -> None:
+    """Parse arguments, run the benchmark and write the results file."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare")

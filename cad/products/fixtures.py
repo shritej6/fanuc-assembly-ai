@@ -1,4 +1,6 @@
-"""One generator for the six reusable printed fixtures (60 x 50 x 8 plate, top at Z = 0)."""
+"""Generate the six reusable printed fixtures.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

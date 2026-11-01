@@ -1,3 +1,7 @@
+"""Tests for operator compatibility.
+Authored by Shritej Gunda.
+"""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest

@@ -1,4 +1,6 @@
-"""Shared measured metrics derived from T09 controller events."""
+"""Shared measured metrics derived from controller events.
+Authored by Shritej Gunda.
+"""
 
 from assembly.controller_ports import ControllerEvent
 

@@ -1,4 +1,6 @@
-"""Host checks of the Mimic plan (skills.yaml), plan-id catalog, instructions, pose conversions and force guard."""
+"""Host checks of the Mimic plan (skills.yaml), plan-id catalog, instructions, pose conversions and force guard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,7 +1,5 @@
-"""T18 GR00T pipeline on CPU: pose conversion, dataset prepare/checks, client wire format.
-
-The GR00T cross-checks run against a real Isaac-GR00T checkout when GROOT_SRC points at one (pure-numpy parts of
-`gr00t`: pose, stats, StateActionProcessor, MsgSerializer); they are skipped otherwise.
+"""GR00T pipeline on CPU: pose conversion, dataset prepare/checks, client wire format.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

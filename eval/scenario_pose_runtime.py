@@ -1,4 +1,5 @@
-"""Mock-only calibrated pose and recovery-target providers for T17."""
+"""Mock calibrated pose and recovery-target providers for scenario runs.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ Pose4 = tuple[float, float, float, float]
 
 @dataclass(slots=True)
 class ScenarioPoseState:
+    """Mutable pose state for one scenario run."""
     pose_by_instance: dict[str, Pose4]
     observed_pose_by_instance: dict[str, Pose4]
     target_by_object: dict[str, Pose4]
@@ -25,6 +27,7 @@ class ScenarioPoseState:
 
 
 def observed_pose(state: ScenarioPoseState, instance_id: str) -> Pose4:
+    """Return the observed pose of one object."""
     try:
         return state.observed_pose_by_instance[instance_id]
     except KeyError as error:
@@ -32,11 +35,13 @@ def observed_pose(state: ScenarioPoseState, instance_id: str) -> Pose4:
 
 
 class ScenarioPoseProvider:
+    """Pose provider that answers from the scripted scenario."""
     def __init__(self, state: ScenarioPoseState, tcp_local_mm: tuple[float, float, float]) -> None:
         self._state = state
         self._tcp_local_mm = tcp_local_mm
 
     def grasp_for(self, part: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
+        """Refuse a grasp that has no FoundationPose evidence."""
         del part, observed_at_s
         raise ControllerPortError("FoundationPose wrist evidence required for every part grasp")
 
@@ -47,6 +52,7 @@ class ScenarioPoseProvider:
         *,
         observed_at_s: float,
     ) -> OrientedPartPose:
+        """Return the grasp pose built from a FoundationPose estimate."""
         del observed_at_s
         if detection.get("instance_id") != part.instance_id or detection.get("object_id") != part.object_id:
             raise ControllerPortError("FoundationPose detection identity does not match reserved part")
@@ -60,6 +66,7 @@ class ScenarioPoseProvider:
         return _oriented(tcp, part.object_id, state)
 
     def base_for(self, base: InventoryItem, *, observed_at_s: float) -> OrientedPartPose:
+        """Return the base pose for one product."""
         del observed_at_s
         return _oriented(observed_pose(self._state, base.instance_id), base.object_id)
 
@@ -71,6 +78,7 @@ class ScenarioPoseProvider:
         *,
         observed_at_s: float,
     ) -> OrientedPartPose:
+        """Return the insert target for one part."""
         del product, observed_at_s
         canonical = self._install_target(base, step)
         return _oriented(_pose_with_local_offset(canonical, self._tcp_local_mm), step.object_id)
@@ -83,6 +91,7 @@ class ScenarioPoseProvider:
         *,
         observed_at_s: float,
     ) -> OrientedPartPose:
+        """Return the target used to verify one placement."""
         del product, observed_at_s
         return _oriented(self._install_target(base, step), step.object_id)
 
@@ -93,11 +102,13 @@ class ScenarioPoseProvider:
 
 
 class ScenarioRecoveryTargets:
+    """Recovery targets that answer from the scripted scenario."""
     def __init__(self, scenario: Scenario, state: ScenarioPoseState) -> None:
         self._scenario = scenario
         self._state = state
 
     def staging_target_for(self, product: int, part: InventoryItem, slot: int) -> OrientedPartPose:
+        """Return the staging target for one part."""
         del product
         pose = self._staging_pose(slot)
         self._state.transfer_by_key[(part.instance_id, InventoryZone.STAGED)] = pose
@@ -110,6 +121,7 @@ class ScenarioRecoveryTargets:
         part: InventoryItem,
         slot: int,
     ) -> OrientedPartPose:
+        """Return the target used to verify one staged part."""
         del product
         pose = self._staging_pose(slot)
         self._state.transfer_by_key[(part.instance_id, InventoryZone.STAGED)] = pose
@@ -126,6 +138,7 @@ class ScenarioRecoveryTargets:
         )
 
     def reject_target_for(self, part: InventoryItem) -> OrientedPartPose:
+        """Return the reject bin target for one part."""
         pose = self._scenario.bounds.reject_pose
         self._state.transfer_by_key[(part.instance_id, InventoryZone.REJECT)] = pose
         tcp = _pose_with_local_offset(pose, self._scenario.bounds.tcp_local_mm)

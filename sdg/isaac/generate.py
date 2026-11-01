@@ -1,13 +1,5 @@
-"""Render one chunk of scene specs with Isaac Sim Replicator. Runs under Isaac's python (Rosie: inside the container).
-
-UNTESTED until the Rosie pilot (T08). Written against the Isaac Sim 6.x API; the pilot checks every output type.
-
-    $ISAAC_PY sdg/isaac/generate.py --specs specs/A/chunk_0000.jsonl --out $DATA_ROOT/synthetic/A/chunk_0000
-
-Output per chunk:  rgb/<cam>/<index>.jpg   depth/<cam>/<index>.png (uint16 mm)   seg/<cam>/<index>.png (uint16 uid+1)
-                   labels/<index>.json (written last: a scene with labels is complete)   _DONE.json (timing)
-A re-run skips scenes whose label and images are complete for the same spec, and skips the chunk only when
-_DONE.json names the digest of these specs (sdg/chunk_marks.py); labels and _DONE.json are written atomically.
+"""Render one chunk of scene specs with Isaac Sim Replicator.
+Authored by Shritej Gunda.
 """
 
 import argparse

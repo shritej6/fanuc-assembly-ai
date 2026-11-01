@@ -1,6 +1,5 @@
-"""Host-side regression checks for orientation gating and physical clearances.
-
-These use synthetic observations, not Cosmos inference or PhysX execution.
+"""Regression tests for orientation gating and physical clearances.
+Authored by Shritej Gunda.
 """
 
 import copy

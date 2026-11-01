@@ -1,11 +1,6 @@
 #!/bin/bash
-# Restyle a bundle made by `sdg.cosmos.restyle export` with Cosmos Transfer 2.5 (image-to-image, edge + vis control).
-# The model loads once and every image not yet in out/ runs in one batch. Needs ~/.cache/huggingface/token with the
-# Cosmos licences accepted. Two ways to run it:
-#   RUNNER=docker (default): the Cosmos container on this host (GB10: the Blackwell image cosmos-transfer2.5:2ff49d0)
-#   RUNNER=venv: a uv environment in $REPO_DIR (RunPod pods are containers already; see sdg/cosmos/pod_setup.sh)
-#   BUNDLE=~/fanuc-assembly-data/cosmos/pilot bash sdg/cosmos/run_transfer.sh
-# Writes $BUNDLE/out/<name>.jpg, run.log, timing.txt, cosmos_commit.txt.
+# Restyle an exported bundle with Cosmos Transfer 2.5.
+# Authored by Shritej Gunda.
 set -euo pipefail
 BUNDLE=$(cd "${BUNDLE:?set BUNDLE to the exported bundle}" && pwd)
 REPO_DIR=${REPO_DIR:-$HOME/cosmos-transfer2.5}

@@ -1,4 +1,6 @@
-"""Dataset adapter for frozen wrist-target crop records."""
+"""Dataset adapter for frozen wrist-target crop records.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

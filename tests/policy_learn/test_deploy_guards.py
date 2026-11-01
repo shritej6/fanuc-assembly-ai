@@ -1,4 +1,6 @@
-"""Real-arm guard: every violation is refused (hold + reason) or clamped (with a reason), never passed silently."""
+"""Real-arm guard: every violation is refused (hold + reason) or clamped (with a reason), never passed silently.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -11,7 +13,7 @@ DT = 0.1
 
 
 def path(start, end, n, grip=0.0):
-    """n rows evenly from start (exclusive) to end (inclusive), fingers down."""
+    """N rows evenly from start (exclusive) to end (inclusive), fingers down."""
     s, e = np.asarray(start, float), np.asarray(end, float)
     rows = [np.concatenate([s + (e - s) * (k + 1) / n, [grip]]) for k in range(n)]
     return np.array(rows)
@@ -99,7 +101,7 @@ def test_contact_floor_refuses_far_below_seated_height():
 
 
 def test_slightly_below_floor_is_clamped_up_to_the_floor():
-    """GR00T aims 1-3 mm low at a grasp; refusing the whole chunk froze the arm 3.6 mm above the part (eval 10/31)."""
+    """GR00T aims 1-3 mm low at a grasp; refusing the whole chunk froze the arm 3.6 mm above the part."""
     seated = -326.7
     start = [267.2, -105.8, -323.1, -180.0, 0.0, 0.0]
     guard = ChunkGuard()
@@ -147,7 +149,7 @@ def test_last_5mm_above_contact_is_slow():
 
 
 def test_large_raw_wrist_turn_is_not_hidden_by_angle_wrap():
-    """r 179 -> -179 is 358 deg of J6 travel on the controller, not 2 deg."""
+    """R 179 -> -179 is 358 deg of J6 travel on the controller, not 2 deg."""
     start = HOME[:5] + [179.0]
     rows = path(start, HOME[:5] + [-179.0], 1)
     res = ChunkGuard().guard(rows, start, 0.0, DT)
@@ -190,8 +192,7 @@ def test_clamped_row_rechecked_against_floor():
 
 
 def test_valid_prefix_before_a_refused_row_is_sent():
-    """The 10/31 product-5 evals froze: one row under the workspace floor held the whole chunk, so the policy was
-    asked again from the same pose forever. Now rows 0-9 go and the arm stops at row 9."""
+    """Product-5 evals must not freeze."""
     start = [380.0, 74.0, -300.0, -180.0, 0.0, 180.0]
     rows = path(start, [380.0, 74.0, -328.0, -180, 0, 180], 10)  # above the slow zone: unchanged
     rows = np.vstack([rows, [[380.0, 74.0, -334.5, -180.0, 0.0, 180.0, 0.0]] * 6])

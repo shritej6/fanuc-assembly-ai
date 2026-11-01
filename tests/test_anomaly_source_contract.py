@@ -1,3 +1,7 @@
+"""Tests for anomaly source contract.
+Authored by Shritej Gunda.
+"""
+
 import json
 from pathlib import Path
 

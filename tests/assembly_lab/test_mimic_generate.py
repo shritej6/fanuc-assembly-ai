@@ -1,5 +1,6 @@
-"""MimicGen over agent 3's Isaac Lab recorder demos: reading kept episodes, object-centric transforms, the row
-surgery generate.py does before replay, and the export's acceptance rule. Host-only (no Isaac Sim)."""
+"""Tests for mimic generate.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ h5py = pytest.importorskip("h5py")
 from sim.assembly_lab.mimic import generate as GEN
 from sim.assembly_lab.mimic import mimicgen as M
 
-Z_OFF_M = 1.23  # world z of UF0 (table top + 0.33 m), as measured in run10 files
+Z_OFF_M = 1.23  # world z of UF0 (table top + 0.33 m), as measured in recorder files
 
 
 def _quat_xyzw(rot: np.ndarray) -> np.ndarray:
@@ -40,7 +41,7 @@ def _write_episode(g, part_path: list[np.ndarray], tcp_rows: np.ndarray, frames:
     poses = np.stack([_pose7_world(t) for t in part_path])
     g["initial_state/rigid_object/M4_01/root_pose"] = poses[:1].astype(np.float32)
     g["states/rigid_object/M4_01/root_pose"] = poses[1:].astype(np.float32)
-    g.attrs["success"] = False  # what the recorder writes after its reset-time overwrite (run10)
+    g.attrs["success"] = False  # what the recorder writes after its reset-time overwrite
     meta = {"steps": n, "kept": kept, "case": "nominal", "object_id": "M4_01", "product": 4,
             "marks": marks or {}, "seat_tries": [{"ok": True}]}
     if meta_attrs:
@@ -158,7 +159,7 @@ def test_sources_skip_drop_tags_and_carry_drift(recorded, tmp_path):
     sig, refs, held = ["grasped", "seated"], ["grasp_frame", "seat_frame", "seat_frame"], [False, True, True]
     segs, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
     assert counts["used"] == 2 and len(segs[1]) == 2
-    path.with_name(path.name + ".drop.json").write_text("[2]")              # agent 3 tagged meta line 2
+    path.with_name(path.name + ".drop.json").write_text("[2]")
     segs, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
     assert counts["used"] == 1 and counts["skipped"] == {"drop tag": 1}
     with h5py.File(path, "a") as f:

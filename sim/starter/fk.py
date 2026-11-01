@@ -1,18 +1,5 @@
-"""
-Forward kinematics for the ER-4iA, derived from the joint chain in
-er4ia_physics.usd. Verified against the simulator by verify_fk.py.
-
-Chain, each step "translate in the parent frame, then rotate about the axis":
-    base -> (0,0,0.33) R+z(q1) -> (0,0,0)    R+y(q2)
-         -> (0,0,0.26) R-y(q3) -> (0,0,0.02) R-x(q4)
-         -> (0.29,0,0) R-y(q5) -> (0,0,0)    R-x(q6) = flange (J6_link)
-
-The sign flips on J3..J6 are not cosmetic. Each joint carries
-localRot0 == localRot1 == a 180 deg rotation (about X for J3/J5, about Z for
-J4/J6). Those cancel in the rest pose -- which is why the zero-pose link
-positions look right -- but the joint axis is expressed in the *joint* frame, so
-the effective axis in the parent link frame is localRot0 * physics:axis, i.e.
-negated. Taking physics:axis at face value gives errors of up to 570 mm.
+"""Forward kinematics for the FANUC ER-4iA.
+Authored by Shritej Gunda.
 """
 
 import numpy as np

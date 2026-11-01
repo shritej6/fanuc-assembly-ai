@@ -1,12 +1,5 @@
-"""Rehearse path B (T39 DirectGrootRuntime, robot/cell/policy_direct.py) against the laggy, noisy, faulty arm.
-
-Run from the root of a T39 worktree with this directory copied to tools/rehearsal (tools/rehearsal/run_b.sh does it):
-    uv run python -m tools.rehearsal.direct_b [--groot groot://127.0.0.1:5555]
-
-Path exercised: official cell_client.run_all -> policy_direct.Policy (DirectGrootRuntime) -> GrootPolicy -> ChunkGuard
--> HTTP -> LaggyMock, on the trial-0 rollout of the branch's own placement.yaml. GR00T is T39's own test stand-in
-(tests/policy_learn/direct_fakes.ScriptedGroot: plays the runtime's current step, as a well-trained model would), or
-the real server with --groot. Nothing here reaches a robot.
+"""Rehearse the DirectGrootRuntime entry point against the laggy, noisy, faulty arm.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -55,20 +48,11 @@ def _prompt() -> str:
 
 
 class LatchedGroot:
-    """ScriptedGroot with the gripper held at its last commanded value, as a trained model holds it.
+    """ScriptedGroot that holds the last commanded gripper and re-sends rows until the arm settles."""
 
-    ScriptedGroot copies the OBSERVED gripper into every motion row. TinyCell and the official mock flip the gripper
-    the tick it is commanded, so that works there; with a real 0.5 s gripper the rows after a close still read
-    "open", re-command open and cancel the close (the arm sits on the pad until the pick budget runs out). GR00T
-    emits its own gripper action, so this keeps the commanded intent instead of echoing the reading.
-
-    ScriptedGroot also plans every chunk from the observed pose and advances its waypoint list as if each chunk was
-    played. On a lagging arm the observed pose trails the last row, so its next chunk can open with a step the guard
-    refuses (correctly), and its script then skips ahead (it closed 9 mm above the pad). A trained model re-predicts
-    from where the arm is; here the wrapper re-sends the last row until the arm is within SETTLE_MM of it. Farther
-    than TRACK_MM (more than one fast row) the arm was moved by something else, e.g. the FK-estimate hold after a
-    missing tcp_pose (the mock never updates the joints on tcp actions, so its FK estimate is the home pose), and the
-    stand-in re-plans from where the arm is."""
+    # A real 0.5 s gripper still reads open after a close, so echoing the observed gripper would cancel the close.
+    # On a lagging arm the wrapper re-sends the last row until the arm is within SETTLE_MM of it; farther than
+    # TRACK_MM the arm was moved by something else and the stand-in re-plans from where it is.
 
     SETTLE_MM, TRACK_MM = 1.0, 30.0
 

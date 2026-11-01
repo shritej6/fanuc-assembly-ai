@@ -1,12 +1,12 @@
-# Evaluation scenarios (T12/T18, agent 6). Read by eval/layouts.py; run by eval/run_eval.py.
+# Evaluation scenarios. Read by eval/layouts.py; run by eval/run_eval.py.
+# Authored by Shritej Gunda.
 # Every case of docs/ROBOT_BRAIN.md section 3, on UNSEEN layouts: seeds start at seed_base, a range kept disjoint from
-# the Mimic generation seeds (mimic/skills.yaml datagen.seed = 1; env variation is drawn by Mimic, not from here).
-# Layouts are explicit dicts (INTERFACES.md), so the env's own randomisation never sees these seeds.
+# the Mimic generation seeds (mimic/skills.yaml datagen.seed = 1). Layouts are explicit dicts (INTERFACES.md).
 #
 # requires: what the run needs beyond reset/step_tcp. A scenario whose requirement is missing is SKIPPED with the
 #   reason in the JSON (never counted as a pass):
-#   - env:<method>   the env must have that method (agent 1): inject_foreign, block_holes, force_release, inject_intruder
-#   - director:t09   the case is a planner decision (no GR00T motion of its own): it needs the T09 state machine as
+#   - env:<method>   the env must have that method: inject_foreign, block_holes, force_release, inject_intruder
+#   - director:t09   the case is a planner decision (no GR00T motion of its own): it needs the planner state machine as
 #                    the director (--director module:Class); the oracle director would pass it trivially.
 # perception: oracle = the director knows truth labels (damaged, fallen, blocker, wrong part) from the layout. This
 #   evaluates GR00T executing the planner's steps, not the detector or the classifier.

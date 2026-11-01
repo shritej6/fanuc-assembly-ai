@@ -1,19 +1,5 @@
-"""Generate Mimic demos for one (skill, product) group in one Isaac Sim process, over agent 3's recorder stack.
-
-    # inside the Isaac Lab container (env/isaaclab_run.sh), one process per worker slot:
-    python -m sim.assembly_lab.mimic.generate --skill pick_insert --product 4 \
-        --seeds ~/t12_data/demos/pick_insert/product_4_*.hdf5 --out ~/t12_data/mimic/pick_insert/p4/w0.hdf5 \
-        --target 200 --max-attempts 2000 --seed 0 --cameras table side wrist
-
-Each attempt resets agent 1's env on a fresh layout through agent 3's IsaacBackend (the planner makes the plan and the
-Mimic frames on the settled layout), replays MimicGen-transformed source segments (mimicgen.py) through agent 3's
-EpisodeRecorder, and keeps the episode only if it passes exactly the gates a scripted source demo must pass: grip
-gates, grasp/slip check, seat check, force guard on every step (per-object limits), seat gates, tracking <= 0.1 mm,
-others unmoved, robot touch only on the target, plus mimic/gates.py's every-step non-target check. The Isaac Lab
-recorder writes every attempt to --out (kept ones with success=True, annotated with agent 3's metadata at close), so
-generated files have the same layout as the source demos. The recorder file is closed and annotated every
---rotate-every attempts (<out stem>_c<k>.hdf5), so kept demos can be exported while the worker runs. Totals and the measured wall time go to <out>.stats.json;
-every rejection with its reason goes to <out>.rejects.jsonl.
+"""Generate Mimic demos for one skill and product group in a single Isaac Sim process.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -35,7 +21,7 @@ from .mimicgen import add_noise as _add_noise
 from .spec import load_spec
 
 TAPER_MM = 20.0  # action noise fades to zero within this distance of the subtask's contact row (precise at contact)
-SCENARIO = {"pick_insert": "build", "pull_out": "fix_above", "defect_drop": "defect"}  # skill -> agent 3's scenario
+SCENARIO = {"pick_insert": "build", "pull_out": "fix_above", "defect_drop": "defect"}  # skill -> scenario
 SOURCE_CASES = {"pick_insert": ("nominal",), "pull_out": ("fix_above",),
                 "defect_drop": ("defect",)}  # staged recovery cases are never sources
 CORRIDOR_MM = 15.0
@@ -43,6 +29,7 @@ RETREAT_XY_MM = 1.0
 
 
 def taper_noise(rows: np.ndarray, ref_xyz: np.ndarray, pos_mm: float, rot_deg: float, rng) -> np.ndarray:
+    """Add action noise that fades to zero near the contact point and return the noisy rows."""
     d = np.linalg.norm(rows[:, :3] - ref_xyz, axis=1)
     scale = np.clip(d / TAPER_MM, 0.0, 1.0)
     out = rows.copy()
@@ -58,18 +45,14 @@ def contact_row(rows: np.ndarray) -> int:
 
 
 def trim_to_corridor(rows: np.ndarray) -> np.ndarray:
-    """Drop the leading rows that travel from where the SOURCE robot was (home, or the source part's lift spot):
-    after the transform they mean nothing. Keep from the first row after which every row up to the subtask's contact
-    row stays within CORRIDOR_MM (xy) of it: the vertical corridor above the grasp pad / seat. The connector rises in
-    place, crosses at the higher z and descends to that row instead."""
+    """Drop the leading rows outside the subtask's vertical corridor and return the rest."""
     c = contact_row(rows)
     far = np.flatnonzero(np.linalg.norm(rows[:c + 1, :2] - rows[c, :2], axis=1) > CORRIDOR_MM)
     return rows[int(far[-1]) + 1:] if far.size else rows
 
 
 def trim_after_retreat(rows: np.ndarray) -> np.ndarray:
-    """Last subtask: keep the release and the straight-up retreat (xy within RETREAT_XY_MM); the return home is
-    re-planned live by the recorder's go_home."""
+    """Keep the rows up to the end of the straight-up retreat and return them."""
     opened = np.flatnonzero(rows[:, 6] < 0.5)
     if not opened.size:
         return rows
@@ -82,7 +65,7 @@ def trim_after_retreat(rows: np.ndarray) -> np.ndarray:
 
 
 def split_after_close(rows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Split after the close-and-settle hold (the grip gates are read there, as agent 3's runner does)."""
+    """Split the rows after the close-and-settle hold, where the grip gates are read."""
     closed = np.flatnonzero(rows[:, 6] > 0.5)
     if not closed.size:
         raise ValueError("grasp subtask never closes the gripper")
@@ -100,8 +83,7 @@ def align_r(rows: np.ndarray, ref_r: float, at: int = 0) -> np.ndarray:
 
 
 def connector(pose: np.ndarray, gripper: float, goal: np.ndarray, skill: str, sub, careful: bool):
-    """Rows from the current target to `goal` through agent 3's Motion (workspace box, 6 deg tool tilt, per-row speed
-    limits): rise in place, cross at the higher z, descend. `careful`: one straight SLOW move (part near contact)."""
+    """Return connector rows from the current target to goal: rise, cross at the higher z, descend."""
     from ..skills.motion import FREE, SLOW, Motion, above
 
     m = Motion(np.asarray(pose, float), gripper, skill, sub.name, sub.object_ref)
@@ -128,16 +110,14 @@ SEAT_ZONE_MM = 1.0  # insert.SEAT_APPROACH_MM: the scripted insert goes slow fro
 
 
 def split_seat_rows(rows: np.ndarray, seated_z: float) -> tuple[np.ndarray, np.ndarray]:
-    """Split the held-insert rows where they enter the seat zone for good (every later row within SEAT_ZONE_MM of
-    the seated TCP height): the tail gets the scripted insert's seat-phase handling in agent 3's runner."""
+    """Split the held-insert rows where they enter the seat zone for good."""
     above = np.flatnonzero(rows[:, 2] > seated_z + SEAT_ZONE_MM)
     k = int(above[-1]) + 1 if above.size else 0
     return rows[:k], rows[k:]
 
 
 def free_space_starts(subtasks) -> list[bool]:
-    """Subtasks that start in free space (the first, or one on a new reference frame): trimmed to their corridor and
-    reached through a rise-cross-descend connector. The others continue in contact from where the last one ended."""
+    """Return the subtasks that start in free space and are reached through a connector."""
     return [i == 0 or s.object_ref != subtasks[i - 1].object_ref for i, s in enumerate(subtasks)]
 
 
@@ -158,6 +138,7 @@ def check_rows(rows: np.ndarray, skill: str) -> None:
 
 
 class Generator:
+    """Generate Mimic demos for one skill and product on one cell."""
     def __init__(self, a, backend=None, sources=None):
         from ..skills import record
         from ..skills.force_guard import load_limits
@@ -190,16 +171,14 @@ class Generator:
         return IsaacBackend(self.scenario, a.product, str(chunk_path(a.out, 0)), a.device, tuple(a.cameras))
 
     def rotate(self) -> None:
-        """Close and annotate the current recorder file and record on into the next chunk (agent 3's
-        IsaacBackend.rotate), so kept demos are exportable while the worker keeps generating."""
+        """Close and annotate the current recorder file and continue in the next chunk."""
         k = int(self.run_cfg.path.stem.rsplit("_c", 1)[1]) + 1
         nxt = chunk_path(self.args.out, k)
         self.backend.rotate(str(nxt))
         self.run_cfg.path, self.run_cfg.metas = nxt, []
 
     def parts(self) -> list[str]:
-        """Sheet parts that have a source segment for every subtask (a part's path never transfers to another
-        part's geometry)."""
+        """Return the sheet parts that have a source segment for every subtask."""
         have = set.intersection(*({s.object_id for s in segs} for segs in self.segments))
         parts = [self.args.part] if self.args.part else self.backend.parts(self.product)
         usable = [p for p in parts if p in have]
@@ -250,8 +229,7 @@ class Generator:
         return rows
 
     def _insert(self, rec, i: int, sub, plans) -> object:
-        """Held insert: carry to the top of the seat corridor, re-measure the part in the fingers (as the scripted
-        insert does before entry, so carry slip is absorbed), re-transform the corridor rows, then enter."""
+        """Carry the part to the seat corridor, re-measure the grip, re-transform the rows, then insert."""
         from ..skills import checks
         from ..skills.motion import Segment
         from ..skills.runner import EpisodeFailed
@@ -264,7 +242,7 @@ class Generator:
         lead = connector(rec.pose, rec.gripper, rows[0], self.skill, sub, careful=True)
         head, tail = split_seat_rows(rows, plans[1].seated_tcp[2])
         segs = [Segment(self.skill, sub.name, sub.name, sub.object_ref, head)] if len(head) else []
-        if len(tail):  # agent 3's seat phase: 0.02 mm presses after first seat contact, stop at 2 N, then the check
+        if len(tail):  # seat phase: 0.02 mm presses after first seat contact, stop at 2 N, then the check
             segs.append(Segment(self.skill, SEAT_PHASE, sub.name, sub.object_ref, tail))
         rec.run([*lead, *segs], soft_stop=True)
         ok, err = rec._seated(plans[1])
@@ -274,7 +252,7 @@ class Generator:
 
     # --- one episode ----------------------------------------------------------------------------------------
     def _begin(self, rec, plans) -> None:
-        """Same header as agent 3's episodes.<skill>: meta, instruction, Mimic frames, allowed targets."""
+        """Start an episode with the standard header: meta, instruction, Mimic frames and allowed targets."""
         from ..skills import checks, episodes
         from ..skills.geometry import pose_to_matrix
         from ..skills.runner import EpisodeFailed
@@ -302,7 +280,7 @@ class Generator:
                    "planned_grip": rec._planned_grip(oid, first.grasp_tcp)}
 
     def _grasp(self, rec, segs, plans) -> None:
-        """approach_grasp: grip gates once the fingers closed and settled, then agent 3's grasp + slip check."""
+        """Run the approach and grasp, then the grip gates and the slip check."""
         from dataclasses import replace
 
         from ..skills import checks, gates
@@ -342,7 +320,7 @@ class Generator:
             raise EpisodeFailed(f"episode ended without the subtask signals {missing}")
 
     def _subtask(self, rec, i: int, sub, plans):
-        """Run subtask i with the closed-loop checks agent 3's runner makes at the same signal."""
+        """Run subtask i with the same closed-loop checks the scripted runner makes."""
         from ..skills import checks, gates
         from ..skills.runner import EpisodeFailed
 
@@ -381,7 +359,7 @@ class Generator:
         return src
 
     def _end_gates(self, rec, plans) -> None:
-        """The skill's final placement gates, read after the release (as agent 3's episodes do)."""
+        """Check the skill's final placement gates after the release."""
         from ..skills import checks, frames, gates
         from ..skills.runner import EpisodeFailed
 
@@ -390,7 +368,7 @@ class Generator:
         if self.skill == "pick_insert":
             gates.seat_gates(rec.gate_log, actual, second.seated_object_pose, second.yaw_tol_deg,
                              frames.installed_up(first.object_id))
-        elif self.skill == "defect_drop":  # agent 3's runner: the dropped part is exempt from the guard, then the area
+        elif self.skill == "defect_drop":  # as in the scripted runner: the dropped part is exempt from the guard, then the area
             rec.guard.exempt.add(first.object_id)
             ok, why = checks.in_defect_area(actual, second.spot_tcp)
             if not ok:
@@ -459,7 +437,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def env_manifest_md5(repo: Path = REPO_ROOT) -> str:
-    """md5 of the env manifest this repo copy was verified against (scale_generation.sh repo writes ENV_MANIFEST_MD5)."""
+    """Return the md5 of the env manifest this repo copy was verified against."""
     f = repo / "ENV_MANIFEST_MD5"
     return f.read_text().strip() if f.exists() else "unverified"
 
@@ -482,6 +460,7 @@ def reason_key(reason: str) -> str:
 
 
 def run(a) -> dict:
+    """Run generation for the parsed arguments and return the stats."""
     a.out = a.out.expanduser()
     a.out.parent.mkdir(parents=True, exist_ok=True)
     if a.num_envs > 1:
@@ -582,9 +561,7 @@ def lane_out(out: Path, k: int) -> Path:
 
 
 def _rotate_shared(owner, run_cfg, out: Path, min_metas: int = 1) -> None:
-    """Close + annotate the shared recorder file once it holds min_metas demos, record on in the next. The batched
-    env's own rotate keeps in-progress episodes in memory (IsaacBackend.rotate would export them half done); without
-    it this only runs at a lockstep reset, when no cell is mid-episode."""
+    """Close and annotate the shared recorder file once it holds enough demos, then record into the next."""
     if len(run_cfg.metas) < max(1, min_metas):
         return
     k = int(run_cfg.path.stem.rsplit("_c", 1)[1]) + 1
@@ -598,8 +575,7 @@ def _rotate_shared(owner, run_cfg, out: Path, min_metas: int = 1) -> None:
 
 
 def _close_shared(owner, path: Path) -> None:
-    """End of a batched worker: close + annotate the last file without exporting episodes still in memory (retired
-    cells hold after their last end_episode; IsaacBackend.close would export those holds as demos)."""
+    """Close and annotate the last shared recorder file without exporting unfinished episodes."""
     if not hasattr(owner.raw, "begin_reset"):
         owner.close(path)
         return
@@ -611,8 +587,7 @@ def _close_shared(owner, path: Path) -> None:
 
 
 def _batched_env(a):
-    """agent 9's AssemblyCellEnv(num_envs=N) for this skill / product, and an IsaacBackend shell that owns its
-    recorder file (rotate / close + annotate)."""
+    """Build the batched cell env and a backend shell that owns its recorder file."""
     from ..env.cell_env import AssemblyCellEnv, CellEnvCfg
     from ..skills.backends import base_of, sheet_parts
     from ..skills.frames import LocalFrameEnv
@@ -635,6 +610,7 @@ def _write_stats(out: Path, stats: dict, t0: float) -> None:
 
 
 def main() -> None:
+    """Parse the command line and run generation."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--skill", required=True, choices=sorted(SCENARIO))
     ap.add_argument("--product", type=int, required=True)

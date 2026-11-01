@@ -1,10 +1,5 @@
-"""insert(plan): human-style insertion (user decision 2026-10-29, docs/ROBOT_BRAIN.md section 2).
-
-carry along the planner's clear path -> tilt ~3 deg -> touch one edge into the entry chamfer -> level out while sliding
-in -> ±2 deg twist -> light push to the CAD seated height. Never below seated - 1 mm; slow in the last 5 mm.
-
-The seated check and the single retry are closed-loop (runner): `retry_entry` lifts 3 mm and re-enters with the
-correction the runner measured; `release_and_retreat` lets go and leaves straight up.
+"""Insert skill with a human-style tilt and wiggle insertion.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -27,7 +22,7 @@ FINE = Speed(0.02, 0.02)  # 0.2 mm/s over the seat: ~260 N/mm adds ~5 N per row,
 #                         7 N worst case (run10 0.05 mm rows: 6-11.6 N kept, 15.4 / 17.0 N discarded)
 FINE_ZONE_MM = 0.3  # FINE from this far above the CAD seated height: run10 first seat contact came at -0.085 to
 #                     -0.099 mm and already above 2 N, so a contact trigger is one row too late
-ULTRA = Speed(0.01, 0.01)  # 0.1 mm/s for the last ULTRA_ZONE_MM + PUSH_MM: main 2026-10-30, run10 0.02 mm rows still
+ULTRA = Speed(0.01, 0.01)  # 0.1 mm/s for the last ULTRA_ZONE_MM + PUSH_MM: in run10, 0.02 mm rows still
 #                           reached 11.4-12.5 N at first seat contact; 0.01 mm is the ER-4iA repeatability, so real
 ULTRA_ZONE_MM = 0.05  # ULTRA from this far above the CAD seated height down to the push target
 ENTRY_TOP_MM = 3.0  # start the tilted descent this far above first chamfer contact
@@ -45,20 +40,13 @@ def _motion(plan: InsertPlan, start, gripper: float, learn: bool) -> Motion:
 
 
 def entry_shift(plan: InsertPlan) -> float:
-    """TCP offset toward the lead edge so the part's bottom lands mid-chamfer (inside the capture), corrected for the
-    tilt pivoting about the TCP (which swings the bottom back by hang * sin(tilt)). No lead-in: no offset, the tilt
-    alone puts one edge down first."""
+    """Return the TCP offset toward the lead edge so the part bottom lands mid-chamfer."""
     bottom = 0.5 * (plan.clearance_mm + plan.capture_mm) if plan.chamfer_mm > 0 else 0.0
     return bottom + plan.hang_mm * math.sin(math.radians(INSERT_TILT_DEG))
 
 
 def _entry_heights(plan: InsertPlan) -> dict[str, float]:
-    """Monotone TCP heights for the entry phases, never below the seated height before the push.
-
-    The part is LEVEL before it enters the bore (agent 2 measured that a held tilt does not level by itself and that a
-    tilted part jams a 0.5 mm clearance fit): the lead edge touches mid-chamfer, the part levels inside the chamfer
-    (at the bore mouth when there is no lead-in), twists there, and only then goes straight down to the seat.
-    """
+    """Monotone TCP heights for the entry phases, never below the seated height before the push."""
     zs, e, c = plan.seated_tcp[2], plan.engage_mm, plan.chamfer_mm
     drop = plan.half_extent_mm * math.sin(math.radians(INSERT_TILT_DEG))  # lead edge below the bottom centre
     level = zs + max(e - 0.5 * c, 0.0)
@@ -80,10 +68,7 @@ def _target(plan: InsertPlan, offset) -> np.ndarray:
 
 
 def twisted_about(pose, pivot_xy, deg: float) -> np.ndarray:
-    """The TCP turned by `deg` about the vertical line through `pivot_xy` (the part's own insert axis), so the twist
-    turns the part in place. Turning about the TCP instead swings a part gripped on an edge pad sideways: run3
-    measured M1_01 (pad 21 mm off centre) left 0.3-0.5 mm off after the +-2 deg twist, beyond its 0.5 mm clearance,
-    and it then jammed tilted 1.5-2 deg."""
+    """Return the TCP turned by `deg` about the vertical line through `pivot_xy`."""
     out = tilted(pose, 0.0, 0.0, deg)
     c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
     d = np.asarray(pose[:2], dtype=float) - np.asarray(pivot_xy, dtype=float)
@@ -152,9 +137,7 @@ def retry_entry(plan: InsertPlan, start, gripper: float, offset, learn: bool = T
 
 
 def release_and_retreat(plan: InsertPlan, start, learn: bool = True) -> list[Segment]:
-    """Unload, then let go, then leave straight up. The push leaves the TCP up to 0.5 mm below the seat with the part
-    preloaded in the fingers; opening under that preload dragged seated parts 0.2-0.33 mm in Isaac (run9: M3_01,
-    M5_01, M6_01), so the TCP first backs off to the seated height (fingers at their grasp height, no axial load)."""
+    """Unload, then let go, then leave straight up."""
     m = _motion(plan, start, CLOSED, learn)
     if m.pose[2] < plan.seated_tcp[2]:
         m.move("relieve", above(m.pose, plan.seated_tcp[2]), PRESS)

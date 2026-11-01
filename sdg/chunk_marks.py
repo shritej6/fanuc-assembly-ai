@@ -1,11 +1,5 @@
-"""Completion markers for rendered chunks: written atomically, trusted only when valid and made from the same specs.
-
-A scene counts as rendered when its label parses, was made from the same spec, and every image it implies exists
-and is non-empty. A chunk counts as done when _DONE.json parses and names the digest of the spec file it was
-rendered from; a chunk rendered from other specs is not reused. The render wrapper calls `check` after Isaac exits,
-because Isaac can exit 0 after an exception:
-
-    python3 -m sdg.chunk_marks check <chunk dir> <specs.jsonl>     # exit 0 only for a valid, complete chunk
+"""Write and check completion markers for rendered chunks.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

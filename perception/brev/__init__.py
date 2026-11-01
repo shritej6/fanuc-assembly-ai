@@ -1,1 +1,3 @@
-"""Brev execution helpers for perception training."""
+"""Helpers that run perception training on Brev GPU instances.
+Authored by Shritej Gunda.
+"""

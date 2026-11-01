@@ -1,7 +1,5 @@
-"""Shared geometry for the control family (Models 1-3): housing, carrier, cap socket, rear guard.
-
-Assembly stack (world Z): housing 0-16, carrier plug 7-16 / flange 16-18 / key post 18+,
-cap or knob from 18, rear guard feet 4-8 with bridge 26-30 and grip pad 30-38.
+"""Shared geometry for the control family (Models 1 to 3).
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -68,11 +66,7 @@ GUARD_PRINT_ROTATION = ((1.0, 0.0, 0.0), -90.0)                 # lay guard on i
 
 
 def control_housing(housing_x: float, boss_x: float, guard_arm_cx: float, label: str) -> cq.Workplane:
-    """Housing body with rear guard boss, guard slots, front grip pad and fixture sockets.
-
-    The two guard sockets run from Z 4 straight up through the housing top (user-approved
-    change): the guard arms at Y 13.5-21.5 would otherwise pass through the housing rear wall.
-    """
+    """Return the housing body with guard boss, guard slots, front grip pad and fixture sockets."""
     body = rounded_box(housing_x, HOUSING_Y, CTRL_HOUSING_Z, EDGE_FILLET)
     boss_y = CTRL_BOSS_Y1 - CTRL_BOSS_Y0
     body = body.union(rounded_box(boss_x, boss_y, CTRL_BOSS_Z, EDGE_FILLET,
@@ -154,10 +148,7 @@ def cap_grip_zone(z0: float) -> GripZone:
 
 
 def rear_guard(name: str, arm_cx: float, bridge_x: float, detail=None) -> Part:
-    """U guard: two 5 x 8 arms (feet in the housing slots), 4 mm bridge, 7 x 8 x 8 grip pad.
-
-    detail(guard) -> guard applies the model-specific identification feature.
-    """
+    """Return the U-shaped rear guard with its grip pad and model-specific feature."""
     guard = box(bridge_x, GUARD_ARM_Y, GUARD_BRIDGE_Z, 0, GUARD_CENTER_Y, GUARD_BRIDGE_Z0)
     for side in (-1, 1):
         arm = box(GUARD_ARM_X, GUARD_ARM_Y, GUARD_ARM_Z, side * arm_cx, GUARD_CENTER_Y, GUARD_Z0)

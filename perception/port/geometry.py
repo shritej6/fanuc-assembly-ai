@@ -1,8 +1,5 @@
-"""CellGeometry on the real cell: the official calibration (robot/cell/calibration) plus T28 localisation.
-
-Boxes cross this boundary in the observation's own image pixels (the client may capture at any size); they are scaled
-to the calibrated size (cameras.json `size`) inside. Depth maps are the client's uint16 mm images.
-"""
+"""Cell geometry on the real cell: the official calibration plus table localisation.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -18,6 +15,7 @@ TABLE_SURFACE_Z_MM = geometry.SURFACE_Z * 1000.0 + geometry.UF0_Z_MM
 
 
 def image(observation: Observation, camera: str) -> np.ndarray:
+    """Return one camera image from an observation."""
     images = observation.get("images")
     if not isinstance(images, dict) or camera not in images:
         raise ObservationInputError(f"observation has no {camera} image")
@@ -25,6 +23,7 @@ def image(observation: Observation, camera: str) -> np.ndarray:
 
 
 def depth(observation: Observation, camera: str) -> np.ndarray:
+    """Return one camera depth map from an observation."""
     maps = observation.get("depth")
     if not isinstance(maps, dict) or camera not in maps:
         raise ObservationInputError(f"observation has no {camera} depth map (the policy must request depth=[{camera!r}])")
@@ -32,6 +31,7 @@ def depth(observation: Observation, camera: str) -> np.ndarray:
 
 
 def joints(observation: Observation) -> np.ndarray:
+    """Return the robot joints from an observation."""
     values = np.asarray(observation.get("joints"), dtype=float)
     if values.shape != (7,) or not np.isfinite(values).all():
         raise ObservationInputError("observation joints must be 7 finite values")
@@ -44,6 +44,7 @@ def _scale(box: tuple[float, ...], from_size: tuple[int, int], to_size: tuple[in
 
 
 class CalibratedCellGeometry:
+    """Cell geometry backed by the official calibration."""
     table_surface_z_mm = TABLE_SURFACE_Z_MM
 
     def __init__(self) -> None:
@@ -57,6 +58,7 @@ class CalibratedCellGeometry:
         return _scale(bbox_px, (w, h), self._cams["table"]["size"])
 
     def table_locate(self, observation: Observation, bbox_px) -> Located:
+        """Locate the part in a table box and return its UF0 position."""
         pts, uv = localize.table_points(self._cams, depth(observation, "table"), self._above_mm)
         try:
             return localize.locate(self._table_box(observation, bbox_px), pts, uv)
@@ -64,6 +66,7 @@ class CalibratedCellGeometry:
             raise PerceptionPortError(str(error)) from error
 
     def table_mask(self, observation: Observation, bbox_px) -> np.ndarray:
+        """Return the depth mask of the part in a table box."""
         try:
             return localize.part_mask(self._cams, depth(observation, "table"), self._table_box(observation, bbox_px),
                                       self._above_mm)
@@ -71,6 +74,7 @@ class CalibratedCellGeometry:
             raise PerceptionPortError(str(error)) from error
 
     def table_points(self, observation: Observation, bbox_px) -> np.ndarray:
+        """Return the UF0 points of the part in a table box."""
         pts, uv = localize.table_points(self._cams, depth(observation, "table"), self._above_mm)
         x0, y0, x1, y1 = self._table_box(observation, bbox_px)
         inside = (uv[:, 0] >= x0) & (uv[:, 0] <= x1) & (uv[:, 1] >= y0) & (uv[:, 1] <= y1)
@@ -80,13 +84,16 @@ class CalibratedCellGeometry:
         return mm + (0.0, 0.0, geometry.UF0_Z_MM)
 
     def zone(self, x_mm: float, y_mm: float) -> tuple[Zone, str | None]:
+        """Return the cell zone of a UF0 position."""
         return self._zones.zone(x_mm, y_mm)
 
     def table_cloud(self, observation: Observation) -> np.ndarray:
+        """Return all table depth points above the surface."""
         pts, _ = localize.table_points(self._cams, depth(observation, "table"), self._above_mm)
         return pts * 1000.0 + (0.0, 0.0, geometry.UF0_Z_MM)
 
     def table_box(self, observation: Observation, points_uf0_mm: np.ndarray) -> tuple[float, float, float, float]:
+        """Return the table image box of the given points."""
         base_m = (np.asarray(points_uf0_mm, float) - (0.0, 0.0, geometry.UF0_Z_MM)) / 1000.0
         uv = geometry.project(self._cams["table"], base_m)
         (x0, y0), (x1, y1) = uv.min(0), uv.max(0)
@@ -94,11 +101,13 @@ class CalibratedCellGeometry:
         return _scale((float(x0), float(y0), float(x1), float(y1)), self._cams["table"]["size"], (w, h))  # type: ignore[return-value]
 
     def wrist_points(self, observation: Observation) -> tuple[np.ndarray, np.ndarray]:
+        """Return the wrist depth points in UF0 and their pixels."""
         pts, pix = geometry.depth_to_base(self._cams["wrist_depth"], depth(observation, "wrist"), with_pixels=True,
                                           joints=joints(observation))
         return pts * 1000.0 + (0.0, 0.0, geometry.UF0_Z_MM), pix
 
     def wrist_box(self, observation: Observation, points_uf0_mm: np.ndarray) -> tuple[float, float, float, float]:
+        """Return the wrist image box of the given points."""
         try:
             box = localize.wrist_bbox(self._cams, points_uf0_mm, joints(observation))
         except LocalizeError as error:

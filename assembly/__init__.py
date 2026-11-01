@@ -1,4 +1,6 @@
-"""Assembly planning primitives."""
+"""Assembly planning, control and traceability primitives.
+Authored by Shritej Gunda.
+"""
 
 from assembly.catalog import (
     Catalog,

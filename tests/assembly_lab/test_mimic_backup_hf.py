@@ -1,4 +1,6 @@
-"""mimic/backup_hf.py: which files are safe to upload, the md5 manifest, and verification against the remote list."""
+"""Tests for mimic backup hf.
+Authored by Shritej Gunda.
+"""
 
 import os
 import sys
@@ -21,7 +23,7 @@ def _touch(p, data=b"x", age_s=0.0):
 def test_open_hdf5_waits_for_closed_list_or_idle(tmp_path):
     _touch(tmp_path / "pick_insert" / "new.hdf5")                      # being written
     _touch(tmp_path / "pick_insert" / "old.hdf5", age_s=4000)          # idle
-    _touch(tmp_path / "pick_insert" / "listed.hdf5")                   # agent 3 closed it
+    _touch(tmp_path / "pick_insert" / "listed.hdf5")
     _touch(tmp_path / "pick_insert" / "new.hdf5.meta.jsonl")           # sidecars go up on every change
     (tmp_path / "run10_closed.txt").write_text("demos/pick_insert/listed.hdf5\n")
     _touch(tmp_path / "__pycache__" / "x.pyc")

@@ -1,5 +1,6 @@
 #!/bin/bash
 # Train RT-DETR on Rosie T4s. Override --gres at sbatch time for multi-GPU full runs.
+# Authored by Shritej Gunda.
 #SBATCH --job-name=fa-t13-detector
 #SBATCH --partition=teaching
 #SBATCH --gres=gpu:t4:1

@@ -1,4 +1,6 @@
-"""One-product recipe planning backed by calibrated perception poses."""
+"""One-product recipe planning backed by calibrated perception poses.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

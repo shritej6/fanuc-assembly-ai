@@ -1,7 +1,5 @@
-"""Deterministic stand-ins for the T30 port's models and calibration, so the port runs on a Mac without GPUs.
-
-The fake world is a set of parts at known installed-local poses. Depth points are the top face of each part's CAD
-bbox (0.5 mm grid), so the port's size measurement sees exactly the CAD footprint and height; tests perturb them.
+"""Deterministic stand-ins for the port's models and calibration, so the port runs on a Mac without GPUs.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

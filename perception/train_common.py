@@ -1,4 +1,5 @@
-"""Shared, dependency-light helpers for both T13 trainers."""
+"""Shared, dependency-light helpers for both trainers.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 

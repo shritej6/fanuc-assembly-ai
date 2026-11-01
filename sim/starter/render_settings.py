@@ -1,10 +1,5 @@
-"""
-Renderer settings shared by the render scripts.
-
-The RTX real-time path gives almost no specular response on UsdPreviewSurface,
-which flattens machined aluminium, black oxide and moulded plastic into the same
-matte look. That is exactly the material separation a zero-shot localiser needs,
-so the offline renders use path tracing.
+"""Renderer settings shared by the render scripts.
+Authored by Shritej Gunda.
 """
 
 import carb

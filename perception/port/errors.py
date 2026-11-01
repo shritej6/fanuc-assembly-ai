@@ -1,4 +1,5 @@
-"""Typed failures of the perception port. All are ControllerPortError, so the T09 controller holds on them as-is."""
+"""Typed perception port failures; all are ControllerPortError so the controller holds.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 

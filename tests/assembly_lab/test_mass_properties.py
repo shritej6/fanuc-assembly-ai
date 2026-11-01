@@ -1,4 +1,6 @@
-"""layout.mesh_mass_properties: volume, centroid and inertia of a closed mesh (used for the MHZL2 body mass)."""
+"""layout.mesh_mass_properties: volume, centroid and inertia of a closed mesh (used for the MHZL2 body mass).
+Authored by Shritej Gunda.
+"""
 
 import sys
 from pathlib import Path

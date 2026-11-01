@@ -1,4 +1,6 @@
-"""Behavioral tests for deterministic PLC telemetry and command validation."""
+"""Behavioral tests for deterministic PLC telemetry and command validation.
+Authored by Shritej Gunda.
+"""
 
 import json
 from datetime import UTC, datetime, timedelta

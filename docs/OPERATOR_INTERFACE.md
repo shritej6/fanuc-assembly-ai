@@ -1,6 +1,8 @@
-# T21 operator interface
+# Operator interface
 
-The operator layer compiles a deliberately small set of plain-language phrases into typed T09 task requests. It does
+Authored by Shritej Gunda.
+
+The operator layer compiles a deliberately small set of plain-language phrases into typed controller task requests. It does
 not choose products, create waypoints, call a robot adapter, interpret arbitrary instructions, or use a language model
 to guess intent.
 
@@ -15,19 +17,19 @@ control characters, and out-of-range product IDs never reach the task port.
 
 The command is operator intent, not product authority. Every submission obtains a fresh, typed
 `TrialInstructionEvidence` from the reviewed observation boundary and parses only its
-`obs["trial"]["instruction"]` text with T09's catalog-aware parser. The evidence carries run, rollout, observation,
+`obs["trial"]["instruction"]` text with the controller's catalog-aware parser. The evidence carries run, rollout, observation,
 capture/expiry times, and source. Missing, untyped, stale, or future evidence holds the task. An explicit one-product
 command must exactly equal the prompt-derived sequence; an "everything" command uses the prompt-derived sequence
 without a visible-product or fixed-location override.
 
 ## Runtime boundary
 
-`T09TaskCoordinator` accepts a source, T09 controller factory, trial-instruction provider, trusted final-build evidence
+`T09TaskCoordinator` accepts a source, assembly controller factory, trial-instruction provider, trusted final-build evidence
 provider, validated catalog, and optional clock/task-ID factories. It never calls `act()`. For mock, sim, and replay it
-verifies T09's `requested_products`: empty is permitted before the first observation binds the prompt, while any bound
+verifies the controller's `requested_products`: empty is permitted before the first observation binds the prompt, while any bound
 sequence must exactly equal the coordinator's fresh prompt evidence.
 
-`ControllerSource.CELL` is intentionally unavailable. T21 has no reviewed runtime capability that physically inhibits
+`ControllerSource.CELL` is intentionally unavailable. The operator interface has no reviewed runtime capability that physically inhibits
 `act()` between mechanically completed products. The `execution_authorized` report field is diagnostic only and cannot
 be used as a safety gate. A real-cell integration must inject a reviewed capability that owns the act loop and enforces
 the pause; a boolean, source label, or ordinary mock cannot claim that authority.
@@ -36,11 +38,11 @@ Live reports contain:
 
 - the exact PackML state record and active fault;
 - prompt-selected and mechanically completed products;
-- current T09 plan-step ID and event count;
+- current controller plan-step ID and event count;
 - explicit mock/sim/replay source and report timestamp;
 - controller completion, final-check decisions, quality-release state, and diagnostic `execution_authorized`.
 
-The read boundary enforces T09's PackML ownership invariant: Idle has no product, every non-Idle state owns one selected
+The read boundary enforces the controller's PackML ownership invariant: Idle has no product, every non-Idle state owns one selected
 product, and a controller-state timestamp cannot be later than the operator report clock.
 
 ## Trusted final-build evidence
@@ -57,9 +59,9 @@ and recipe object IDs derived from the validated catalog. It must return immutab
 - capture and expiry times no older than the mechanical state; and
 - provider provenance.
 
-The coordinator owns prepare → `FinalBuildGate` → record under one locked operation. It exposes no public prepare or
+The coordinator owns prepare, then `FinalBuildGate`, then record under one locked operation. It exposes no public prepare or
 record method, verifies identity again before recording, rejects reused request/image evidence, and rechecks expiry. A
-caller therefore cannot substitute a later run, rollout, product, capture, digest, or physical instance—or fabricate a
+caller therefore cannot substitute a later run, rollout, product, capture, digest, or physical instance, or fabricate a
 label-only `done` decision without invoking the configured Cosmos port.
 
 `FinalBuildGate` performs the two independent checks in order:
@@ -70,7 +72,7 @@ label-only `done` decision without invoking the configured Cosmos port.
 Recipe mismatch returns `rebuild` without calling Cosmos. Cosmos rejection returns `rebuild`. Missing, malformed,
 mismatched, substituted-model, or unexpected evidence returns `hold_andon`. `done` requires both checks. The included
 deterministic stub is explicitly labelled `stub` and can never quality-release a product, even when configured true.
-T21 supplies an interface, not a deployed Cosmos endpoint; production provenance must come from a separately reviewed
+The operator layer supplies an interface, not a deployed Cosmos endpoint; production provenance must come from a separately reviewed
 port.
 
 ## Integration shape
@@ -88,7 +90,7 @@ tasks = T09TaskCoordinator(
 operator = OperatorAgent(tasks)
 ```
 
-The names prefixed `trusted_` and `reviewed_` above are integration capabilities, not implementations supplied by T21.
+The names prefixed `trusted_` and `reviewed_` above are integration capabilities, not implementations supplied by the operator interface.
 Omitting the final-build provider holds quality release. Selecting `CELL` fails closed until the physical act-gate
 contract is available and reviewed.
 

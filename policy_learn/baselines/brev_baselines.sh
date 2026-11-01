@@ -1,20 +1,9 @@
 #!/bin/bash
-# ACT + SmolVLA (LeRobot 0.3.3) SIM COMPARISON baselines for GR00T N1.7, on one GPU box, one command, resume-safe:
-#   nohup bash policy_learn/baselines/brev_baselines.sh > ~/t36_baselines.log 2>&1 &
-# They train on exactly GR00T's data: agent 5's prepare_dataset.py (same train / held-out split, seed 0) and then
-# lerobot_view.py (state = GR00T's eef_9d + gripper + joints, action = eef_9d + gripper, absolute). They are never
-# deployed to the real cell: GR00T drives all real-robot motion (user rule, 2026-10-30).
-# Before: our repo at $REPO, the LeRobot export(s) under $SRC_ROOT (default ~/t12_data/lerobot/*), and for HF_SYNC_REPO
-# the HF token at ~/.cache/huggingface/token (copied file-to-file; never printed). The base models are public.
-# Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED ...`). START_AT=<stage> reruns from there;
-# SKIP="<stage> ..." leaves stages out; POLICIES="act smolvla" picks the policies. Stages: env hf prepare view smoke
-# train eval export. Throughput: the smoke stage runs GATE_STEPS steps with the real batch and workers, measures
-# s/step from LeRobot's log (updt_s + data_s of the last window) and sizes each run to MAX_TRAIN_HOURS (never above
-# <P>_MAX_STEPS, never below MIN_STEPS). A rerun of train resumes from checkpoints/last (LeRobot --resume).
-# Off-box: HF_SYNC_REPO=<user>/<repo> (default shritej81632/fanuc-baselines, PRIVATE) gets every saved checkpoint's
-# pretrained_model as <policy>/<step>, every SYNC_SECONDS while training and after export.
-# Eval here is open-loop on the held-out episodes through the evaluator's own client + guard (openloop.py); the sim
-# success rate comes from agent 6's evaluator on the sim box (run_sim_eval.sh).
+# One-command, resume-safe ACT and SmolVLA sim comparison baselines for GR00T N1.7 on one GPU box.
+# Authored by Shritej Gunda.
+#   nohup bash policy_learn/baselines/brev_baselines.sh > ~/baselines.log 2>&1 &
+# Trains on the same data and split as GR00T; these baselines are never deployed to the real cell.
+# Stages: env hf prepare view smoke train eval export. START_AT and SKIP work as in brev_groot.sh.
 set -Eeuo pipefail
 
 REPO="${REPO:-$HOME/fanuc-t36}"
@@ -39,11 +28,11 @@ DEVICE="${DEVICE:-cuda}"                   # cpu only for a local plumbing run o
 SYNC_SECONDS="${SYNC_SECONDS:-900}"
 HF_SYNC_REPO="${HF_SYNC_REPO-shritej81632/fanuc-baselines}"
 EVAL_EPISODES="${EVAL_EPISODES:-50}"
-# Training configs (PRELIMINARY choices, not tuned on this data). Both predict 16 rows = 3.2 s at the data's 5 Hz,
+# Training configs (estimate, not tuned on this data). Both predict 16 rows = 3.2 s at the data's 5 Hz,
 # GR00T's action horizon, and the evaluator plays all 16 before the next observation (one observation per chunk).
 ACT_BATCH="${ACT_BATCH:-32}"; ACT_MAX_STEPS="${ACT_MAX_STEPS:-80000}"; ACT_SAVE="${ACT_SAVE:-5000}"
 SMOLVLA_BATCH="${SMOLVLA_BATCH:-64}"; SMOLVLA_MAX_STEPS="${SMOLVLA_MAX_STEPS:-20000}"; SMOLVLA_SAVE="${SMOLVLA_SAVE:-2500}"
-# Instructions are 53-55 SmolVLM2 tokens on the test export (measured 2026-10-30), so the base's 48 would cut off the
+# Instructions are 53-55 SmolVLM2 tokens on the test export, so the base's 48 would cut off the
 # target numbers; the smoke stage refuses to train if any instruction exceeds SMOLVLA_TOKENS.
 SMOLVLA_TOKENS="${SMOLVLA_TOKENS:-96}"
 export TOKENIZERS_PARALLELISM=false WANDB_MODE=disabled HF_HUB_ENABLE_HF_TRANSFER=0
@@ -94,7 +83,7 @@ PY
   mark "hf $note"
 }
 
-stage_prepare() {   # agent 5's step, unchanged: the same split GR00T trains on
+stage_prepare() {   # same prepare step as GR00T: the same split GR00T trains on
   local srcs=() d
   for d in "$SRC_ROOT"/*/; do [[ -f "$d/meta/info.json" ]] && srcs+=(--src "${d%/}"); done
   (( ${#srcs[@]} )) || { mark "prepare no LeRobot dataset under $SRC_ROOT"; return 1; }

@@ -1,4 +1,6 @@
-"""CELL-only T09 controller whose executable rows come exclusively from GR00T."""
+"""CELL-only controller whose executable motion rows come only from GR00T.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +48,7 @@ class GrootControllerAuthority(str, Enum):
 
 
 class GrootAssemblyController(AssemblyController):
-    """Keep T09 planning/recovery, replacing its scripted queue only in CELL."""
+    """Keep deterministic planning and recovery, replacing its scripted queue only in CELL."""
 
     def __init__(
         self,

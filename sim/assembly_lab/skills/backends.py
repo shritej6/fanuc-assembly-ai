@@ -1,8 +1,5 @@
-"""Where the recorder gets its world and its plans.
-
-- `IsaacBackend`: agent 1's `AssemblyCellEnv` + agent 2's planner (`plan_pick`, `plan_place`, `blockers`). The only
-  backend whose output is a demo.
-- `KinematicBackend`: the dry-run test double (dry_run.py), product 1 base + M1_02 only. Never a demo.
+"""Backends that give the recorder its world and its plans.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -71,7 +68,7 @@ def spot_plan(obs: dict, oid: str, grasp_tcp, rest_pose, kind: str, clear_z: flo
 
 
 def table_rest(oid: str, x: float, y: float, yaw: float) -> np.ndarray:
-    """Agent 1's layout solver: the object standing on the table in its installed orientation."""
+    """Return the layout solver pose of the object standing on the table in its installed orientation."""
     from ..env.layout import LayoutSolver, pose6_from_tf, type_id
 
     return np.asarray(pose6_from_tf(LayoutSolver().table_tf(type_id(oid), x, y, yaw, "installed")), dtype=float)

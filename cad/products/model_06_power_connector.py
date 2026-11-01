@@ -1,7 +1,5 @@
-"""Model 6 - Power Connector Module: housing, power insert, power guide, power lock.
-
-Correct:  Fixture -> Housing -> Power Insert -> Power Guide -> Power Lock
-Recovery: if M5_02 was inserted, remove lock, guide, wrong insert; insert M6_02; reinstall.
+"""Model 6, Power Connector Module: housing, power insert, power guide and power lock.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

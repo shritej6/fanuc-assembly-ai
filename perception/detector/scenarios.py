@@ -1,4 +1,6 @@
-"""Dependency-light detector dataset slices for measured scenario evaluation."""
+"""Detector dataset slices for measured per-scenario evaluation.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

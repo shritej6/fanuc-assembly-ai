@@ -1,4 +1,6 @@
-"""Trusted final-build evidence boundary for the operator task coordinator."""
+"""Trusted final-build evidence boundary for the operator task coordinator.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

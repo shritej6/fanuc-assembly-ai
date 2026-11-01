@@ -1,3 +1,7 @@
+"""Tests for operator agent.
+Authored by Shritej Gunda.
+"""
+
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 

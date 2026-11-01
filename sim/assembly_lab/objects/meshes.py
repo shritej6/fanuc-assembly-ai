@@ -1,13 +1,5 @@
-"""Printed STL meshes in each object's installed local frame, and their top/bottom height maps (numpy only).
-
-The STL files in cad/stl are the printed meshes (byte-identical to the print set, cad/grasp_frames.py). Each mesh is
-moved into the object's installed local frame with `T_local_from_stl` from cad/grasp_frames.json (identity except the
-rear guards, which were laid flat for printing). Local frame: origin = centre of the lowest seating plane, +Z up,
-yaw 0 = the product's assembly frame (fixtures: top surface at z = 0).
-
-A height map samples the mesh surface on a regular xy grid: `top[i, j]` is the highest surface z and `bottom[i, j]`
-the lowest in that cell (NaN = empty). It is what a top-down depth camera sees (top) and what a part being lowered
-touches first (bottom), and the planner uses it for finger clearance.
+"""Load printed STL meshes in each object's installed frame and compute their height maps.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

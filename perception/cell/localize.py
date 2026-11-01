@@ -1,16 +1,5 @@
-"""Where a table-camera detection is on the real cell: UF0 position from the table depth stream, and its cell zone.
-
-A detection box is in table colour-image pixels (1920x1080). The table depth image is turned into base-frame points
-with the official calibration (robot/cell/calibration), those points are projected into the colour image, and the
-ones inside the box and above the table surface are grouped on a 6.5 mm x, y grid; the largest connected group is the
-part (a neighbour reaching into the box corner is a smaller group and is left out). Its top is a high percentile of
-the group's z and its centre the median x, y of the group. Too few points raises instead of guessing.
-
-This is the coarse position that finds and tracks parts: the depth stream has about 3 mm pixels on the table. On boxes
-ray-cast through the real calibration (tests/test_cell_localize.py, 300 random parts) the centre error was median
-0.81 mm, p95 1.93 mm, max 2.92 mm. Grasp and insert poses need FoundationPose and the wrist camera, not this.
-
-Zones come from sdg/configs/cell_layout.yaml (UF0 mm): the reject zone, the spare-store slots and the work area.
+"""Locate table-camera detections in UF0 from the table depth stream and find their cell zone.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -43,6 +32,7 @@ class LocalizeError(ValueError):
 
 
 class Zone(str, Enum):
+    """Cell zone a point lies in."""
     TABLE = "table"
     SPARE = "spare"
     REJECT = "reject"
@@ -51,6 +41,7 @@ class Zone(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class Located:
+    """UF0 centre, top height and point count of one located part."""
     x_mm: float
     y_mm: float
     top_z_mm: float
@@ -59,6 +50,7 @@ class Located:
 
 @dataclass(frozen=True, slots=True)
 class CellZones:
+    """Work area, reach limits, reject zone and store slots of the cell."""
     work_x: tuple[float, float]
     work_y: tuple[float, float]
     reach_min: float
@@ -70,6 +62,7 @@ class CellZones:
 
     @classmethod
     def load(cls, path: Path = LAYOUT) -> CellZones:
+        """Load the cell zones from the layout file."""
         raw = yaml.safe_load(path.read_text())
         store = raw["spare_store"]
         return cls(work_x=tuple(raw["work_area"]["x"]), work_y=tuple(raw["work_area"]["y"]),
@@ -79,7 +72,7 @@ class CellZones:
                    slot_radius=float(store["slot_pitch"]) / 2.0)
 
     def zone(self, x_mm: float, y_mm: float) -> tuple[Zone, str | None]:
-        """The zone of a UF0 point, and the store slot id when it is in one."""
+        """Return the zone of a UF0 point and the store slot id when it is in one."""
         if _within(x_mm, self.reject_x) and _within(y_mm, self.reject_y):
             return Zone.REJECT, None
         for slot_id, sx, sy in self.slots:
@@ -97,12 +90,12 @@ def _within(value: float, bounds: tuple[float, float]) -> bool:
 
 
 def above_table_mm(path: Path = geometry.HERE / "cameras.json") -> float:
-    """The height above the surface (mm) that separates part points from table-plane depth noise."""
+    """Return the height above the surface (mm) that separates part points from depth noise."""
     return ABOVE_TABLE_SIGMAS * float(json.loads(path.read_text())["table_depth"]["rms_plane_mm"])
 
 
 def table_points(cams: dict, depth_mm: np.ndarray, above_mm: float) -> tuple[np.ndarray, np.ndarray]:
-    """Base-frame points (m) of one table depth image more than `above_mm` over the table, and their colour pixels."""
+    """Return base-frame points (m) above the table and their colour pixels."""
     pts = geometry.depth_to_base(cams["table_depth"], depth_mm)
     above = pts[:, 2] * 1000.0 > geometry.SURFACE_Z * 1000.0 + above_mm
     pts = pts[above]
@@ -110,7 +103,7 @@ def table_points(cams: dict, depth_mm: np.ndarray, above_mm: float) -> tuple[np.
 
 
 def _largest_group(xy_mm: np.ndarray) -> np.ndarray:
-    """Mask of the points in the largest 8-connected group of occupied CLUSTER_CELL_MM cells."""
+    """Return a mask of the points in the largest connected group of occupied cells."""
     cells = np.floor(xy_mm / CLUSTER_CELL_MM).astype(np.int64)
     occupied = {tuple(c) for c in cells}
     best: set[tuple[int, int]] = set()
@@ -131,7 +124,7 @@ def _largest_group(xy_mm: np.ndarray) -> np.ndarray:
 
 
 def locate(bbox_px: tuple[float, float, float, float], pts: np.ndarray, uv: np.ndarray) -> Located:
-    """UF0 centre and top of the part inside a table colour-image box, from `table_points` of the same frame."""
+    """Return the UF0 centre and top of the part inside a table colour box."""
     x0, y0, x1, y1 = (float(v) for v in bbox_px)
     if not (x1 > x0 and y1 > y0):
         raise LocalizeError(f"empty box {bbox_px}")
@@ -147,7 +140,7 @@ def locate(bbox_px: tuple[float, float, float, float], pts: np.ndarray, uv: np.n
 
 def part_mask(cams: dict, depth_mm: np.ndarray, bbox_px: tuple[float, float, float, float],
               above_mm: float) -> np.ndarray:
-    """The table depth image's pixels on the part inside a table colour box: the same points `locate` uses."""
+    """Return the table depth pixels on the part inside a table colour box."""
     pts, pix = geometry.depth_to_base(cams["table_depth"], depth_mm, with_pixels=True)
     above = pts[:, 2] * 1000.0 > geometry.SURFACE_Z * 1000.0 + above_mm
     pts, pix = pts[above], pix[above].astype(np.int64)
@@ -165,14 +158,7 @@ def part_mask(cams: dict, depth_mm: np.ndarray, bbox_px: tuple[float, float, flo
 
 
 def wrist_bbox(cams: dict, points_uf0_mm: np.ndarray, joints) -> tuple[float, float, float, float]:
-    """The wrist colour-image box around UF0 points (e.g. a posed part's mesh vertices) for this arm pose.
-
-    The detector never saw wrist images, so at the inspect stop the part's box comes from projecting where the part
-    is through the wrist calibration and the joints' FK; the wrist models were trained on crops of such boxes.
-    Against 60 set O renders (target mesh posed by its label, joints from the twin IK at the label's TCP) the box
-    size matched (median width and height ratio 1.00, 0.99) and the centre was off by median 11.5 px, max 25.9 px
-    (IoU median 0.665). The renders' joints come from the twin IK, not measured joints, and their wrist depth does not
-    reproject onto the table with the real calibration, so the real-cell error is measured on the first real images."""
+    """Return the wrist colour-image box around UF0 points for this arm pose."""
     pts = np.asarray(points_uf0_mm, float).reshape(-1, 3)
     if not np.isfinite(pts).all() or len(pts) == 0:
         raise LocalizeError("wrist_bbox needs finite UF0 points")

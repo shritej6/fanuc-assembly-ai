@@ -1,4 +1,6 @@
-"""CELL model identity is verified before any learned action can reach the robot."""
+"""CELL model identity is verified before any learned action can reach the robot.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

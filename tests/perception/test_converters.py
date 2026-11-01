@@ -1,3 +1,7 @@
+"""Tests for converters.
+Authored by Shritej Gunda.
+"""
+
 import hashlib
 import json
 from pathlib import Path

@@ -1,4 +1,5 @@
-"""Public T17 scenario-fleet API."""
+"""Public API of the scenario fleet.
+Authored by Shritej Gunda."""
 
 from eval.scenario_data import (
     FaultKind,

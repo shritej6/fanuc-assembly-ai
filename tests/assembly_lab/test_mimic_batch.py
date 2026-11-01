@@ -1,4 +1,6 @@
-"""mimic/batch.py against a fake batched env: lanes in threads, the env on the test's thread."""
+"""mimic/batch.py against a fake batched env: lanes in threads, the env on the test's thread.
+Authored by Shritej Gunda.
+"""
 
 import threading
 
@@ -39,8 +41,7 @@ class FakeEnv:
 
 
 class PerEnvResetFake(FakeEnv):
-    """begin_reset / ready_resets: a cell settles for `settle` step_tcp_many calls, then its episode starts. Records
-    every hold step given to a recording cell that did not ask for it (it would land in that cell's demo)."""
+    """begin_reset / ready_resets: a cell settles for `settle` step_tcp_many calls, then its episode starts."""
 
     def __init__(self, n, settle=2, **kw):
         super().__init__(n, **kw)

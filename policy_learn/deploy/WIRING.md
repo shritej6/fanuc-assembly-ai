@@ -1,6 +1,6 @@
-# T09 to GR00T physical-cell wiring
+# Planner to GR00T physical-cell wiring
 
-This is the reviewed runtime boundary for Saturday. It is intentionally fail-closed:
+This is the reviewed runtime boundary. It is intentionally fail-closed:
 the mock controller remains available for software tests, while `runtime="cell"` cannot
 emit motion until every physical dependency is present and reviewed.
 
@@ -8,13 +8,13 @@ emit motion until every physical dependency is present and reviewed.
 
 ```text
 official observation
-  -> T09 state machine
+  -> planner state machine
   -> identity-bound MotionIntent
   -> T09GrootExecutor
   -> GrootPolicy (one fresh row)
   -> learned-policy ChunkGuard
   -> live-scene SafetySupervisor
-  -> T05 CellAdapter
+  -> CellAdapter
   -> official FANUC client
 ```
 
@@ -32,7 +32,7 @@ The deployed checkpoint must attest these skills:
 - `place_free`
 - `defect_drop`
 
-`pick_insert_hold` must finish with the gripper closed. T09 performs its independent
+`pick_insert_hold` must finish with the gripper closed. The planner performs its independent
 post-place verification before issuing `release_retreat`. The policy consumes exactly
 one action row per fresh observation, so no prefetched trajectory can cross that gate.
 
@@ -52,9 +52,9 @@ directory is not sealed read-only after verification. Before CELL can be armed, 
 launcher must supervise and authenticate the exact child process and serve from an
 immutable content-addressed checkpoint (or an equivalently reviewed lifecycle).
 
-The CELL client also checks the dataset, catalog, T29 grasp source, exact guard
+The CELL client also checks the dataset, catalog, reviewed grasp source, exact guard
 calibration, RGB model interface, embodiment, 5 Hz timing, one-row horizon, evaluation
-approval, and release protocol. Table/wrist depth remains an independent T09 perception
+approval, and release protocol. Table/wrist depth remains an independent planner perception
 dependency; the GR00T wire format does not claim to consume it. A sidecar file cannot
 self-assert server verification. `APPROVED_DEPLOYMENT_PINS` is deliberately empty on
 this branch; a real checkpoint cannot be selected until a dual-reviewed manifest digest
@@ -65,7 +65,7 @@ is added to that registry.
 `assembly.cell_runtime.runtime_blockers()` is the canonical list. At minimum, CELL
 requires:
 
-- a T09 semantic queue that preserves the hold-before-release protocol;
+- a planner semantic queue that preserves the hold-before-release protocol;
 - a checkpoint with all six attested skills and reviewed evaluation;
 - measured guard limits with an immutable source;
 - live perception and collision-scene backends with reviewed artifacts; and
@@ -87,7 +87,7 @@ invent the missing measurements, physical providers, or model capabilities. Ther
 action.
 
 The current `MotionIntent.release_authorized` flag exercises the executor protocol in
-software tests only. Before the CELL gate can open, T09 must replace it with a one-shot
+software tests only. Before the CELL gate can open, the planner must replace it with a one-shot
 controller-issued token bound to trial, step, part/base identities, fresh observation
 time, release TCP, and independent inspection evidence.
 

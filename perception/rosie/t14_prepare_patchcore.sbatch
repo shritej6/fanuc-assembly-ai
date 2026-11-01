@@ -1,5 +1,6 @@
 #!/bin/bash
 # Derive C/I rest evidence, then prepare O-only training plus installed C/I/T evaluation crops without a GPU.
+# Authored by Shritej Gunda.
 #   RUN_ROOT=$HOME/fanuc-t14
 #   NEW_DATA_ROOT=$HOME/fanuc-testbed-data/synthetic
 #   OLD_DATA_ROOT=$HOME/fanuc-assembly-data/synthetic

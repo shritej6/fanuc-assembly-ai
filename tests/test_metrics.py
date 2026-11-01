@@ -1,4 +1,6 @@
-"""Shared assembly metrics have one definition across output adapters."""
+"""Shared assembly metrics have one definition across output adapters.
+Authored by Shritej Gunda.
+"""
 
 from assembly.controller_ports import ControllerEvent
 from assembly.metrics import count_assist_episodes

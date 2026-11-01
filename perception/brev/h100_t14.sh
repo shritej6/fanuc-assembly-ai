@@ -1,10 +1,6 @@
 #!/bin/bash
-# User order steps 4-5 on the 8xH100 box, called by h100_testbed.sh after the set-P model.
-# PatchCore: own pinned environment; the strict pip-audit must pass first (user), else PatchCore never runs unaudited
-# and this stage fails. One part per GPU, parts in waves of $GPUS (24 parts = 3 waves on 8 GPUs), no DDP. The stage
-# succeeds only when every one of the 24 M parts of contracts/taxonomy.json has a fresh metrics.json with status
-# "measured"; anything less exits nonzero, so the driver records "t14 FAILED" and never writes ALL_DONE.
-# Needs the old C / I chunks with _REST.json in $OLD_ROOT (test images only, never training).
+# Fit and measure one PatchCore model per part on the 8xH100 box, one part per GPU, after a strict pip-audit.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 REPO="${REPO:-$HOME/fanuc-t27}"

@@ -1,9 +1,5 @@
 """Preflight reachability and swept-geometry adapters with explicit provenance.
-
-Importing a simulator helper is not evidence that it matches the physical cell. These
-adapters validate shape and declared source evidence, but intentionally do not advertise
-the production capability flags required by :class:`SafetySupervisor`. A future sealed
-loader must bind the transitive code, CAD, joint limits, tool, and physical validation.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

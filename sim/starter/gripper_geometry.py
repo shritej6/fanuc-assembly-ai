@@ -1,4 +1,6 @@
-"""Machined AA jaw geometry, independent of Isaac/USD. Dimensions in metres."""
+"""Machined jaw geometry in metres, independent of Isaac and USD.
+Authored by Shritej Gunda.
+"""
 
 import math
 import scene_config as C
@@ -42,9 +44,7 @@ def finger_profile(arc_segments=64):
 
 
 def triangulate(poly):
-    """Triangulate a simple polygon. Needed because the finger profile is
-    concave (the scallop), and a naive fan triangulation would fill the pocket
-    back in."""
+    """Triangulate a simple polygon."""
     idx = list(range(len(poly)))
     area = sum(
         poly[i][0] * poly[(i + 1) % len(poly)][1]

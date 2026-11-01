@@ -1,11 +1,6 @@
 #!/bin/bash
-# Help a running Brev render (sdg/brev/hub.sh) from the GB10: render its queues from the END, newest first, and move
-# each finished chunk to the render host, whose queue then skips it (render_chunk.sh skips chunks with _DONE.json) and
-# whose hub sends it to Cosmos as usual. A chunk is taken only while the render host has not started it, and handed
-# over only if it still has not, so both never write the same chunk; the GB10 stops where the two meet.
-#
-#   queues share the GB10 GPU:  sdg/spark/tail_render.sh fa-r4 "Q:3-0 P:11-0 ..." "Q:7-4 P:23-12 ..."
-#   (items in the order to render: write ranges high-low to walk a set backwards)
+# Help a running Brev render from the GB10 by rendering its queues from the end.
+# Authored by Shritej Gunda.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

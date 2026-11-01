@@ -1,6 +1,5 @@
-"""Image post-processing and label assembly for rendered scenes. numpy only, so it is tested on the host.
-
-The Isaac generator (`sdg/isaac/generate.py`) calls these on raw annotator output.
+"""Post-process rendered images and assemble scene labels, using numpy only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -52,10 +51,7 @@ def box_labels(boxes: np.ndarray, prim_paths: list[str], paths: dict[str, str], 
 
 
 def mask_box_labels(mask: np.ndarray, objects: dict[str, dict], min_pixels: int = 20) -> list[dict]:
-    """Tight boxes from the uid instance mask, so boxes and masks agree by construction.
-
-    `visible_px` is the unoccluded pixel count; tiny slivers (< min_pixels) are dropped.
-    """
+    """Return tight boxes and visible pixel counts from the uid instance mask."""
     by_number = {uid_number(uid): (uid, o) for uid, o in objects.items()}
     out = []
     for number in np.unique(mask):

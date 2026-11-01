@@ -1,4 +1,6 @@
-"""Intent-wide CELL watchdog and recurring physical-scene evidence."""
+"""Intent-wide CELL watchdog and recurring physical-scene evidence.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +31,7 @@ WATCHDOG = GrootWatchdogLimits(
     scene_interval_rows=2,
     base_tilt_limit_deg=3.0,
     status="PRELIMINARY",
-    source="Claude PR 24 minimum; pending CSI measurement",
+    source="Engineering minimum; pending CSI measurement",
 )
 
 SPLIT_WATCHDOG = replace(

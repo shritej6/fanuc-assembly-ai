@@ -1,4 +1,6 @@
-"""Fail-closed operator command and final-build verification boundary."""
+"""Operator command handling and final-build verification, failing closed.
+Authored by Shritej Gunda.
+"""
 
 from agent.authority import TrialInstructionEvidence
 from agent.commands import AssemblyScope, OperatorCommand, OperatorCommandKind, TaskRequest, parse_operator_command

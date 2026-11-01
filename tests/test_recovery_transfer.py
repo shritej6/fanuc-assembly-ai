@@ -1,4 +1,6 @@
-"""Stage-specific evidence gates for reject and staging transfers."""
+"""Stage-specific evidence gates for reject and staging transfers.
+Authored by Shritej Gunda.
+"""
 
 from copy import deepcopy
 

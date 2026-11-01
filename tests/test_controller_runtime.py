@@ -1,4 +1,6 @@
-"""Focused runtime behavior using the shared controller scenario fixture."""
+"""Focused runtime behavior using the shared controller scenario fixture.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 

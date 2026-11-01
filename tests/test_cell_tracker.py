@@ -1,4 +1,6 @@
-"""T28: stable part ids across frames."""
+"""Stable part ids across frames.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Dependency-light value types and split policy for frozen manifests."""
+"""Value types and the split policy for frozen manifests.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ class ManifestError(ValueError):
 
 @dataclass(frozen=True)
 class ManifestConfig:
+    """Inputs and options for building the frozen manifests."""
     data_root: Path
     output_dir: Path
     taxonomy_path: Path
@@ -31,6 +34,7 @@ class ManifestConfig:
     cosmos_ranges: tuple[tuple[str, float, float], ...] = ()
 
     def cosmos_range(self, set_name: str) -> tuple[float, float]:
+        """Return the Cosmos restyle range for one set."""
         for name, low, high in self.cosmos_ranges:
             if name == set_name:
                 return low, high
@@ -39,6 +43,7 @@ class ManifestConfig:
 
 @dataclass(frozen=True)
 class ManifestSummary:
+    """Counts and hashes of the frozen manifests."""
     detector_path: Path
     classifier_path: Path
     metadata_path: Path

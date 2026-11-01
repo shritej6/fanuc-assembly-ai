@@ -1,3 +1,7 @@
+"""Tests for rest labels.
+Authored by Shritej Gunda.
+"""
+
 import json
 
 import pytest

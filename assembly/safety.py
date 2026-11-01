@@ -1,4 +1,6 @@
-"""Fail-closed supervision for absolute UF0 motion chunks."""
+"""Fail-closed supervision for absolute UF0 motion chunks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

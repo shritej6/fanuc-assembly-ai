@@ -1,19 +1,9 @@
 #!/bin/bash
-# GR00T N1.7 fine-tune for the FANUC ER-4iA cell on one 8xH100 box, one command, resume-safe:
-#   nohup bash policy_learn/groot/brev_groot.sh > ~/t18_groot.log 2>&1 &
-# Before: our repo at $REPO, Agent 4's LeRobot export(s) under $SRC_ROOT (default ~/t12_data/lerobot/*), the HF token
-# at ~/.cache/huggingface/token (copied file-to-file; never printed), with access to the gated nvidia/Cosmos-Reason2-2B.
-# Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED ...`), so a watcher can report progress.
-# START_AT=<stage> reruns from that stage; SKIP="<stage> ..." leaves stages out. Stages: env hf prepare smoke train
-# eval export. A rerun of train resumes from the newest checkpoint in $RUNS/main (HF Trainer state + optimizer).
-# Throughput gate: after GATE_STEPS steps the measured s/it is projected to MAX_STEPS; if that exceeds
-# MAX_TRAIN_HOURS the run restarts once with the largest multiple of SAVE_STEPS that fits (never below MIN_STEPS).
-# Off-box copies, every SYNC_SECONDS while training and after export: HF_SYNC_REPO=<user>/<repo> uploads each new
-# checkpoint's model files to a PRIVATE Hugging Face repo with the box's token; SYNC_DEST=<host>:<dir> rsyncs full
-# checkpoints (optimizer included, so training can resume elsewhere). Without either, the status file says so and the
-# main session pulls with: rsync -a <box>:~/groot_runs/ <dest>/
-# EVAL_GPU=<i> keeps GPU i out of training and runs GR00T's open-loop eval on the held-out episodes for every new
-# checkpoint there (one status line each); Agent 6 can serve the newest checkpoint there with serve_policy.sh.
+# One-command, resume-safe GR00T N1.7 fine-tune for the FANUC ER-4iA cell on one 8xH100 box.
+# Authored by Shritej Gunda.
+#   nohup bash policy_learn/groot/brev_groot.sh > ~/groot.log 2>&1 &
+# Stages: env hf prepare smoke train eval export. START_AT=<stage> reruns from a stage, SKIP lists stages to skip.
+# Each stage appends a line to $STATUS; train resumes from the newest checkpoint in $RUNS/main.
 set -Eeuo pipefail
 
 REPO="${REPO:-$HOME/fanuc-t18}"

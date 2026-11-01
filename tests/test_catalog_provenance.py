@@ -1,4 +1,6 @@
-"""Boundary regressions for immutable catalog source provenance."""
+"""Boundary regressions for immutable catalog source provenance.
+Authored by Shritej Gunda.
+"""
 
 import hashlib
 import json

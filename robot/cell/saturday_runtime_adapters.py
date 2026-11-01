@@ -1,8 +1,5 @@
-"""Fail-closed Saturday adapters for supervised construction proof only.
-
-The explicit unverified-presence flag permits dependency construction, not a
-successful build. Missing measured motion, collision, arm-corridor, and final
-identity authority all remain typed stops before physical motion or DONE.
+"""Fail-closed cell adapters for supervised construction proof only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

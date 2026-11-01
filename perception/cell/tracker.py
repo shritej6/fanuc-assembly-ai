@@ -1,10 +1,5 @@
-"""Stable instance ids for parts seen by the table camera, frame after frame.
-
-Parts only move when the robot moves them, so a detection belongs to the existing track nearest to it within
-GATE_MM (greedy, closest pairs first; one detection per track). The id ("p<n>") never encodes the label: the
-detector can confuse look-alikes or a part can fall, so a track's label is the most frequent label of its last
-VOTE_FRAMES detections. A track missed for MISS_FRAMES frames in a row is dropped. When the robot moves a part the
-controller reports it with `moved`, so the track follows the part instead of being dropped and re-created.
+"""Keep stable instance ids for parts seen by the table camera across frames.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -27,6 +22,7 @@ class TrackerError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Detection:
+    """One located table-camera detection."""
     label: str
     score: float
     x_mm: float
@@ -37,6 +33,7 @@ class Detection:
 
 @dataclass(slots=True)
 class Track:
+    """One tracked part with its recent labels."""
     instance_id: str
     x_mm: float
     y_mm: float
@@ -47,26 +44,29 @@ class Track:
 
     @property
     def label(self) -> str:
+        """Return the most common recent label, preferring the latest on a tie."""
         counts = Counter(self.labels)
         best = max(counts.values())
         return next(label for label in reversed(self.labels) if counts[label] == best)
 
     @property
     def votes(self) -> tuple[int, int]:
-        """Detections agreeing with the label, out of the remembered ones."""
+        """Return how many remembered detections agree with the label."""
         return Counter(self.labels)[self.label], len(self.labels)
 
 
 class Tracker:
+    """Associate detections with tracks frame after frame."""
     def __init__(self) -> None:
         self._tracks: dict[str, Track] = {}
         self._next = 1
 
     def tracks(self) -> tuple[Track, ...]:
+        """Return all current tracks."""
         return tuple(self._tracks.values())
 
     def update(self, detections: list[Detection]) -> tuple[Track, ...]:
-        """Associate one frame's detections and return the tracks seen in this frame."""
+        """Associate one frame's detections and return the tracks seen in it."""
         pairs = self._pairs(detections)
         matched_tracks, matched_dets = {t for t, _ in pairs}, {d for _, d in pairs}
         for track_id in [t for t in self._tracks if t not in matched_tracks]:
@@ -78,7 +78,7 @@ class Tracker:
         return tuple(seen)
 
     def moved(self, instance_id: str, x_mm: float, y_mm: float) -> None:
-        """The robot put this part at x, y (UF0 mm); the next frame finds it there."""
+        """Move a track to where the robot put the part (UF0 mm)."""
         if instance_id not in self._tracks:
             raise TrackerError(f"no track {instance_id!r}")
         if not (np.isfinite(x_mm) and np.isfinite(y_mm)):

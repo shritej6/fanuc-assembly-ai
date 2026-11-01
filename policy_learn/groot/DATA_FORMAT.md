@@ -1,4 +1,4 @@
-# LeRobot export for GR00T (Agent 4 → Agent 5)
+# LeRobot export for GR00T
 
 `policy_learn/groot/prepare_dataset.py` reads this format, checks every rule below, and stops with the full list of
 problems if a rule fails. It never changes your files. Put each dataset in its own folder:
@@ -41,10 +41,10 @@ Rules that are checked:
   cell's act dt). The recorder writes one row per 0.1 s Isaac env step (`sim/assembly_lab/skills/motion.py` `DT_S`);
   `export_lerobot.py` keeps every 2nd row and refuses files that state another row period. Do not resample further.
 - `action[t]` is the target the arm moves to during step t. On the last row, repeat the final target (hold).
-- Every `action` xyz stays inside the workspace box (x 150–650, y −450–450, z −334–300 mm, ±1 mm).
+- Every `action` xyz stays inside the workspace box (x 150 to 650, y -450 to 450, z -334 to 300 mm, +-1 mm).
 - The gripper value in both state and action is between 0 and 1. Every demo uses exactly 0 or 1.
-- WPR follow the FANUC fixed-angle convention, R = Rz(r)·Ry(p)·Rx(w). Fingers straight down are w, p, r =
-  −180, 0, r. Either sign of ±180 for w is fine, because the prepare step converts to a rotation matrix.
+- WPR follow the FANUC fixed-angle convention, R = Rz(r) @ Ry(p) @ Rx(w). Fingers straight down are w, p, r =
+  -180, 0, r. Either sign of +-180 for w is fine, because the prepare step converts to a rotation matrix.
 - There are no NaN or inf values, and the parquet length equals `length` in `episodes.jsonl`.
 - **The instruction** in `tasks.jsonl` is the planner's text that GR00T will also get at run time, with the plan's
   target in it. Example: `pick M4_02 at (412.0, -87.5, yaw 33) gripping X, insert on F04 at (300.0, 120.0, yaw 90)`.
@@ -56,7 +56,7 @@ Rules that are checked:
 
 - There are 3 cameras: `table`, `side`, `wrist`. Each one is an MP4 file with **H.264**, yuv420p and 5 fps. Do not
   use AV1, which GR00T's torchcodec decoder does not support reliably.
-- Each frame is **640×360**: the whole 16:9 camera frame, resized and not cropped. This is the same image the robot
+- Each frame is **640x360**: the whole 16:9 camera frame, resized and not cropped. This is the same image the robot
   policy gets (`robot/cell/policy.py` `IMAGE_SIZE`).
 - The frame count equals the episode length, and frame t is the image at the same moment as `observation.state[t]`.
 - In `info.json`, each video feature is `{"dtype": "video", "shape": [360, 640, 3], "names": ["height", "width",
@@ -67,7 +67,7 @@ Rules that are checked:
 The prepare step writes `~/groot_data/train/<dataset>` plus `~/groot_data/val/<dataset>`. The val copy holds 2 % of
 the episodes (at least 1 and at most 50) back from training for the open-loop eval. The prepare step also:
 - adds `observation.eef_9d` and `action.eef_9d`, which are `[x, y, z mm, rot6d]` with rot6d = the first two rows
-  of R. This is GR00T's continuous EEF format. Raw WPR jumps by 360° at w = ±180, which a regression head cannot
+  of R. This is GR00T's continuous EEF format. Raw WPR jumps by 360 deg at w = +-180, which a regression head cannot
   learn across.
 - writes `modality.json` for `fanuc_er4ia_config.py`:
   - state: `eef_9d`, `gripper`, `joints`
@@ -77,4 +77,4 @@ the episodes (at least 1 and at most 50) back from training for the open-loop ev
 - links the videos instead of copying them.
 
 GR00T's `gr00t/data/stats.py` then writes `meta/stats.json` and `meta/relative_stats.json`, the normalisation
-statistics (q01/q99 min-max to [−1, 1]).
+statistics (q01/q99 min-max to [-1, 1]).

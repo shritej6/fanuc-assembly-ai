@@ -1,16 +1,5 @@
-"""
-Stage 2: scene understanding with Cosmos3-Nano (runs in the cosmos venv).
-
-    "$COSMOS" perceive.py --run runs/example --stack-cubes
-
-Reads the table image, identifies cube colours/locations and reports
-image-measured tabletop poses. Writes detections.json and raw crop replies.
-
-Runtime notes, taken from the working AOI setup on this machine:
-  - transformers_cosmos3.Cosmos3ForConditionalGeneration, not a Cosmos 2.x path
-  - AutoConfig must be loaded explicitly and passed to from_pretrained, to dodge
-    a transformers bug where the model_type heuristic replaces the config with
-    vision_config and drops text_config.rope_scaling
+"""Scene understanding with Cosmos3-Nano for the perception pipeline.
+Authored by Shritej Gunda.
 """
 
 import argparse, json, os, re, sys
@@ -307,11 +296,7 @@ Use the measured yaw value from this query, not the example value above."""
 
 
 def inspect_cube_poses(model, processor, image_path, parsed, run):
-    """Cosmos reports semantics + pose with a calibrated image-geometry front end.
-
-    Raw VLM corner regression failed validation. Geometry supplies measured
-    yaw; Cosmos confirms cube/colour and explicitly reports that pose. No GT.
-    """
+    """Cosmos reports semantics + pose with a calibrated image-geometry front end."""
     import cv2
     import numpy as np
     from backproject import CameraModel
@@ -625,12 +610,7 @@ def ask(model, processor, image_path, prompt, max_new_tokens=1400, examples=None
 
 
 def salvage_objects(text):
-    """Recover whatever complete entries exist in a truncated/looping reply.
-
-    Cosmos3-Nano sometimes repeats an object until it runs out of tokens, leaving
-    the JSON unterminated. Rather than discarding the whole reply, pull out the
-    well-formed {...} blocks and de-duplicate them.
-    """
+    """Recover whatever complete entries exist in a truncated/looping reply."""
     out, seen = [], set()
     for m in re.finditer(r"\{[^{}]*\}", text):
         try:
@@ -658,11 +638,7 @@ _ALIASES = {
 
 
 def canonicalise(obj):
-    """Normalise key spellings.
-
-    The model mixes conventions inside a single reply -- in one run the cubes
-    used "center" and the screws "centre", which silently dropped every screw.
-    """
+    """Normalise key spellings."""
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():

@@ -1,4 +1,6 @@
-"""Self-contained, dependency-free dashboard document."""
+"""Self-contained, dependency-free dashboard document.
+Authored by Shritej Gunda.
+"""
 
 DASHBOARD_HTML = r"""<!doctype html>
 <html lang="en">

@@ -1,7 +1,5 @@
-"""place_free(plan): set a removed good part upright on an empty remembered test-bed spot, or drop a defect /
-unknown piece into the defect area.
-
-The part is carried in its installed orientation, so setting it down at `spot_tcp` leaves it upright.
+"""Place a removed part upright on a free test-bed spot, or drop a reject in the bin.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

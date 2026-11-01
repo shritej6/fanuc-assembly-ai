@@ -1,13 +1,5 @@
-"""Fit one anomalib PatchCore per part on good O close-ups and measure it on held-out good + defective crops (T34).
-
-Reads the layout written by `perception.anomaly.coverage`. Scores are PatchCore's raw image scores (the max patch
-distance to the memory bank, no normalisation), the same number `perception.cell.models.PatchCoreBank` returns, so
-the threshold written here is the one the cell compares against.
-
-Operating point (rule as for the wrist defect head, docs/DEFECT_HEAD_INSPECTION.md): the lowest threshold whose
-false-alarm rate on the part's `val` good crops is at most --max-val-fpr. The `test` half is scored once at it.
-
-Writes `<out>/<part>/metrics.json` and `<out>/<part>/scores.jsonl` (one raw score per evaluation crop).
+"""Fit one PatchCore per part on good O close-ups and measure it on held-out crops.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -26,27 +18,29 @@ SEED = 1337
 
 
 def auroc(good: np.ndarray, bad: np.ndarray) -> float:
-    """Probability a defective crop scores above a good one (ties count half): the Mann-Whitney AUROC."""
+    """Return the Mann-Whitney AUROC: the chance a defective crop scores above a good one."""
     diff = bad[:, None] - good[None, :]
     return float(((diff > 0).sum() + 0.5 * (diff == 0).sum()) / diff.size)
 
 
 def threshold_for_fpr(good: np.ndarray, max_fpr: float) -> float:
-    """Lowest threshold t with share(good > t) <= max_fpr; a crop is flagged when its score exceeds t."""
+    """Return the lowest threshold whose false alarm share is at most max_fpr."""
     ordered = np.sort(good)[::-1]
     allowed = math.floor(max_fpr * len(ordered))
     return float(ordered[allowed]) if allowed < len(ordered) else float(ordered[-1])
 
 
 def rates(good: np.ndarray, bad: np.ndarray, threshold: float) -> dict:
+    """Return false alarm and catch rates at one threshold."""
     return {"fpr": float((good > threshold).mean()), "tpr": float((bad > threshold).mean()),
             "false_alarms": int((good > threshold).sum()), "good": len(good),
             "caught": int((bad > threshold).sum()), "bad": len(bad)}
 
 
 def summarise(rows: list[dict], max_val_fpr: float) -> dict:
-    """Threshold on `val`, then AUROC and rates on `test`, overall, per set and per defect type."""
+    """Pick thresholds on val and return AUROC and rates on test, overall, per set and per defect."""
     def scores(split: str, good: bool, **match: str) -> np.ndarray:
+        """Return the scores of the rows that match a split, label and filters."""
         return np.array([r["score"] for r in rows if r["split"] == split and (r["variant"] == "ok") == good
                          and all(r[k] == v for k, v in match.items())], dtype=np.float64)
 
@@ -81,7 +75,7 @@ DEFAULT_CONFIG = {"image_size": 256, "layers": ("layer2", "layer3"), "coreset": 
 
 
 def fit(part_dir: Path, out: Path, workers: int, config: dict):
-    """Fit PatchCore on train_good only (no validation or test data reaches anomalib)."""
+    """Fit PatchCore on the good training crops only and return the model."""
     from anomalib.data import Folder
     from anomalib.engine import Engine
     from anomalib.models import Patchcore
@@ -105,7 +99,7 @@ def fit(part_dir: Path, out: Path, workers: int, config: dict):
 
 
 def raw_scores(model, paths: list[Path], batch: int = 32) -> list[float]:
-    """PatchCore's raw image score per crop, through the model's own pre-processing transform."""
+    """Return PatchCore's raw image score for each crop."""
     import torch
     from PIL import Image
     from torchvision.transforms.functional import to_tensor
@@ -124,6 +118,7 @@ def raw_scores(model, paths: list[Path], batch: int = 32) -> list[float]:
 
 
 def measure(part_dir: Path, out: Path, workers: int, max_val_fpr: float, config: dict) -> dict:
+    """Fit one part, score its crops and return the summary."""
     index = [json.loads(line) for line in (part_dir / "index.jsonl").read_text().splitlines()]
     train = len(list((part_dir / "train_good").glob("*.png")))
     if train == 0:
@@ -136,7 +131,7 @@ def measure(part_dir: Path, out: Path, workers: int, max_val_fpr: float, config:
 
 
 def resummarise(run_dir: Path, max_val_fpr: float) -> dict:
-    """Re-read a finished part's scores.jsonl (no model) and recompute its summary."""
+    """Recompute a finished part's summary from its scores.jsonl."""
     previous = json.loads((run_dir / "metrics.json").read_text())
     rows = [json.loads(line) for line in (run_dir / "scores.jsonl").read_text().splitlines()]
     keep = {k: previous[k] for k in ("part", "train_good", "config") if k in previous}
@@ -144,6 +139,7 @@ def resummarise(run_dir: Path, max_val_fpr: float) -> dict:
 
 
 def main() -> None:
+    """Parse arguments, measure one part and write its results."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--crops", type=Path, required=True, help="output of perception.anomaly.coverage")
     ap.add_argument("--part", required=True)

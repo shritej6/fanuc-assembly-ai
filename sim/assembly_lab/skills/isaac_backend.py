@@ -1,10 +1,5 @@
-"""Agent 1's Isaac Lab env + agent 2's planner: the only backend whose episodes are demos.
-
-The env records through the Isaac Lab recorder (`CellEnvCfg.record_to`), so the HDF5 is exactly what Mimic's
-annotate_demos.py / generate_dataset.py read (initial state, actions at the env's 0.1 s step, frame markers). The plan
-is made inside the env's reset callback, on the settled layout, and its TCP frames become the Mimic object_ref frames
-(grasp_frame / seat_frame / spot_frame) that the env's subtask signals use. Every attempt is one recorder episode;
-`finish(ok)` marks it succeeded or failed before the next reset exports it.
+"""Backend that drives the Isaac Lab env with the object planner to record real demos.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -81,9 +76,7 @@ class IsaacBackend:
         return obs
 
     def _crowded_layout(self, rng, product: int, target: str) -> dict:
-        """A layout where a loose neighbour blocks every wrist turn on `target` (planner-checked on the layout's nominal
-        poses before the env spends a reset on it). The neighbour is set `gap` mm clear of the target's footprint
-        along a random direction (separating axis: the two never overlap); most directions leave one turn free."""
+        """Return a layout where a loose neighbour blocks every wrist turn on the target."""
         last = "no candidate placement"
         for _ in range(CROWD_LAYOUTS):
             layout = sample_layout(rng, [base_of(product), *sheet_parts(product)], self.installed)
@@ -227,8 +220,7 @@ class IsaacBackend:
         return report
 
     def close(self, annotate_path=None) -> dict | None:
-        """Export the last episode and close the recorder file, add agent 3's metadata to it, then shut the app down
-        (SimulationApp.close() ends the process, so nothing can run after it)."""
+        """Export the last episode, add its metadata, close the recorder and shut the app down."""
         report = None
         rm = self.raw.env.recorder_manager
         if rm is not None:

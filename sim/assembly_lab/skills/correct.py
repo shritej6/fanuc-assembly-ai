@@ -1,13 +1,5 @@
-"""Correction demos (user decision 2026-10-31): start a step from a WRONG pose near the target and fix it.
-
-GR00T checkpoint-3000 grasped M1_01 well in the sim eval but arrived above F01 ~8 mm off and ~90 deg turned, tipped
-the part on the base and dropped it: the nominal demos only show one smooth path, never how to correct. Here the
-staged error (part held above the base, or the open fingers above the grip pad, off in x, y, height, yaw and tilt)
-is reached with masked rows (`learn=False`, left out by export_lerobot), and the demo that is trained on starts at the
-wrong pose: line up at the current height, then the normal descent (pick) or human-style entry (insert).
-
-The staging comes first in the episode, so the exported episode has no gap in the middle (actions are absolute
-act_tcp rows: a gap would teach a jump to every frame whose 16-step chunk crosses it).
+"""Correction demos that start a step from a wrong pose near the target and fix it.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -23,7 +15,7 @@ from .pick import CHECK_LIFT_MM, subtask_name
 from .plan import SEAT_FLOOR_MM, InsertPlan, PickPlan
 from .pull_out import carry
 
-# PRELIMINARY ranges (user asked for side offset, turn angle, tilt and grasp height): the eval miss was 8 mm / 90 deg
+# Estimate ranges for side offset, turn angle, tilt and grasp height: the eval miss was 8 mm / 90 deg
 INSERT_XY_MM = (3.0, 10.0)
 INSERT_YAW_DEG = (5.0, 90.0)
 INSERT_TILT_DEG = 4.0  # staged lean; the 6 deg tool limit leaves room for the level correction

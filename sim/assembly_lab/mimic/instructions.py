@@ -1,5 +1,5 @@
-"""Language instruction for one episode. It must carry the planner's target (ROBOT_BRAIN section 1.4) so GR00T
-learns to follow the plan, not to pick its own part. Numbers are rounded to whole mm / deg, as the planner sends them.
+"""Build the language instruction for one episode from the planner's target.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

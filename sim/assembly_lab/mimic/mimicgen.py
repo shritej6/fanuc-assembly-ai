@@ -1,16 +1,5 @@
-"""MimicGen core (the algorithm of Isaac Lab Mimic / MimicGen, Mandlekar et al. 2023) over act_tcp rows in mm / deg.
-
-Source demos are agent 3's kept episodes, written by the Isaac Lab recorder (skills/isaac_backend.py) and annotated
-with agent 3's metadata (marks, kept, case, seat_tries). Generation drives the same env through agent 3's
-EpisodeRecorder (generate.py), with the steps Isaac Lab Mimic uses:
-  1. split each source demo into subtask segments at its subtask marks (attrs `marks`: signal -> first step after);
-  2. per subtask, pick a source segment whose reference frame pose is nearest the new scene's (nearest_neighbor_object,
-     k random among the nearest);
-  3. transform the segment rigidly: T_new_frame @ inv(T_src_frame) @ T_row (the frame pose at the subtask start). Held
-     insert subtasks use the part's planned seated pose as the frame and absorb the in-hand difference
-     (transform_held), so the part, not just the TCP, repeats the source path into the 0.5 mm clearance bore;
-  4. connect from the current TCP target to the first transformed row, add per-row action noise;
-  5. execute, then keep the demo only if it succeeds and passes every precision gate.
+"""MimicGen core: split source demos into subtask segments and transform them to new layouts.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -28,6 +17,7 @@ FRAME_NAMES = ("grasp_frame", "seat_frame", "spot_frame")
 
 
 def pose_to_matrix(pose) -> np.ndarray:
+    """Return the 4x4 matrix of a W/P/R pose in mm."""
     p = np.asarray(pose, dtype=np.float64)
     t = np.eye(4)
     t[:3, :3], t[:3, 3] = wpr_to_rot(p[3:6]), p[:3]
@@ -35,11 +25,13 @@ def pose_to_matrix(pose) -> np.ndarray:
 
 
 def matrix_to_pose(t: np.ndarray) -> np.ndarray:
+    """Return the W/P/R pose of a 4x4 matrix."""
     return np.array([*t[:3, 3], *rot_to_wpr(t[:3, :3])])
 
 
 @dataclass(frozen=True)
 class SourceSegment:
+    """One subtask segment of a source demo."""
     demo: str
     object_id: str
     product: int
@@ -73,21 +65,20 @@ def quat_xyzw_to_rot(q) -> np.ndarray:
 
 
 def frame_mm(pos_m, quat_xyzw) -> np.ndarray:
+    """Return a 4x4 frame in mm from a position in m and an xyzw quaternion."""
     t = np.eye(4)
     t[:3, :3], t[:3, 3] = quat_xyzw_to_rot(quat_xyzw), np.asarray(pos_m, dtype=np.float64) * 1000.0
     return t
 
 
 def seat_object_frame(seat_frame: np.ndarray, grasp_frame: np.ndarray, part_start: np.ndarray) -> np.ndarray:
-    """The part's planned seated pose (4x4 mm): seat_frame is the seated TCP for the planned grip, and the planned grip
-    (part -> TCP) is inv(part_start) @ grasp_frame. Held insert subtasks are transformed in this frame, so the part
-    repeats the source's path relative to its seat whatever grip pad or roll the new plan uses."""
+    """Return the part's planned seated pose as a 4x4 matrix in mm."""
     return seat_frame @ np.linalg.inv(grasp_frame) @ part_start
 
 
 @dataclass(frozen=True)
 class RecordedDemo:
-    """One kept episode of agent 3's Isaac Lab recorder file (skills/isaac_backend.py + hdf5_io.annotate_...)."""
+    """One kept episode of a recorder file."""
     key: str
     object_id: str
     product: int
@@ -98,16 +89,14 @@ class RecordedDemo:
     tcp: np.ndarray           # (T, 6) obs/tcp_pose before each action
     frames: dict              # frame name -> (T, 4, 4) mm, UF0 (obs/<frame>_pos, _quat)
     part: np.ndarray          # (T + 1, 4, 4) mm, CAD local frame of the target before each action (+ after the last)
-    line: int = 0             # 0-based line of this episode in <file>.meta.jsonl (agent 3's drop tags use it)
-    carry_drift_mm: float = 0.0  # agent 3's in_hand_drift_mm["carry"]: worst slip of the held part in free carry
+    line: int = 0             # 0-based line of this episode in <file>.meta.jsonl (drop tags use it)
+    carry_drift_mm: float = 0.0  # in_hand_drift_mm["carry"]: worst slip of the held part in free carry
     pull_drift_mm: float = 0.0   # in_hand_drift_mm["pull"] (pull_out, newer metas): slip in the fingers during the pull
     peaks: np.ndarray | None = None  # (T, 4) obs/sim_contact_peak: normal N, lateral N, torque Nm, robot touch N
 
 
 def _part_local_mm(d, oid: str, z_off_m: float, to_local) -> np.ndarray:
-    """states/ are written after each step (measured: obs/tcp_pose[t] pairs with states[t - 1], in-hand constant to
-    0.01 mm over a carry), initial_state before the first: stacked, row t is the pose observation t saw. World metres
-    -> UF0 mm is a pure z shift (env/layout.world_m_to_uf0), measured per file from the grasp_frame marker."""
+    """Return the target part pose before each step, in mm and its CAD local frame."""
     rows = np.r_[d[f"initial_state/rigid_object/{oid}/root_pose"][()], d[f"states/rigid_object/{oid}/root_pose"][()]]
     return np.stack([to_local(oid, frame_mm(r[:3] - (0.0, 0.0, z_off_m), r[3:7])) for r in rows.astype(np.float64)])
 
@@ -127,9 +116,7 @@ def _cad_local(uid: str, body_mm: np.ndarray) -> np.ndarray:
 
 
 def read_recorded(path: str, to_local=None, kept_only: bool = True) -> list[RecordedDemo]:
-    """Kept episodes of one recorder file. Agent 3's `kept` is the authority: the recorder's own `success` attr is
-    overwritten at reset by the env's success termination term (measured false on 3 of 3 kept run10 demos). `to_local(uid, body_4x4_mm)` maps body
-    poses into CAD local frames (default skills/frames.body_to_local, the frame every skill and gate uses)."""
+    """Return the kept episodes of one recorder file."""
     to_local = to_local or _cad_local
     out = []
     metas = _metas(path)
@@ -138,7 +125,7 @@ def read_recorded(path: str, to_local=None, kept_only: bool = True) -> list[Reco
         for n, key in enumerate(keys):
             d = f["data"][key]
             a = dict(d.attrs)
-            if "marks" not in a and n < len(metas):  # writer still open: agent 3 annotates attrs only at close
+            if "marks" not in a and n < len(metas):  # writer still open: attrs are annotated only at close
                 a = _meta_attrs(metas[n], a, int(d["actions"].shape[0]))
             if "marks" not in a:
                 continue
@@ -160,7 +147,7 @@ def read_recorded(path: str, to_local=None, kept_only: bool = True) -> list[Reco
 
 
 def _metas(path: str) -> list[dict]:
-    """Agent 3's <file>.meta.jsonl: one line per non-empty recorder episode, in order (hdf5_io.annotate_...)."""
+    """Return the meta lines of a recorder file, one per non-empty episode."""
     from pathlib import Path
 
     p = Path(f"{path}.meta.jsonl")
@@ -178,12 +165,12 @@ def _meta_attrs(meta: dict, attrs: dict, steps: int) -> dict:
 
 
 def in_hand_at(demo: RecordedDemo, step: int) -> np.ndarray:
+    """Return the held part's pose in the TCP frame at a step."""
     return np.linalg.inv(pose_to_matrix(demo.tcp[step])) @ demo.part[step]
 
 
 def demo_segments(demo: RecordedDemo, signals: list[str], refs: list[str], held_seat: list[bool]) -> list[SourceSegment]:
-    """Split one demo at its subtask marks. Frame per subtask: the object_ref frame at the segment start, except held
-    insert subtasks (held_seat), whose frame is the part's planned seated pose (seat_object_frame)."""
+    """Split one demo at its subtask marks and return the segments."""
     n = len(demo.actions)
     sig = []
     for s in signals:
@@ -204,7 +191,7 @@ def demo_segments(demo: RecordedDemo, signals: list[str], refs: list[str], held_
     return out
 
 
-FORCE_LIMITS = np.array([15.0, 4.5, 0.1])  # physics/limits.yaml axial N, lateral N, torque Nm (PRELIMINARY)
+FORCE_LIMITS = np.array([15.0, 4.5, 0.1])  # physics/limits.yaml axial N, lateral N, torque Nm (estimate)
 
 
 def force_ratio(peaks: np.ndarray | None, a: int, b: int) -> float:
@@ -214,11 +201,11 @@ def force_ratio(peaks: np.ndarray | None, a: int, b: int) -> float:
     return float((peaks[a:b, :3].max(axis=0) / FORCE_LIMITS).max())
 
 
-MAX_CARRY_DRIFT_MM = 0.5  # agent 3 / main 2026-10-30: a source whose part slipped more in the fingers is not used
+MAX_CARRY_DRIFT_MM = 0.5  # a source whose part slipped more in the fingers is not used
 
 
 def drop_lines(path: str) -> set[int]:
-    """<file>.drop.json: meta lines agent 3 tagged as bad sources (run10_drop_tags.jsonl, mapped per file)."""
+    """Return the meta lines of a file that are tagged as bad sources."""
     from pathlib import Path
 
     p = Path(f"{path}.drop.json")
@@ -228,7 +215,7 @@ def drop_lines(path: str) -> set[int]:
 def load_sources(paths, signals: list[str], refs: list[str], held_seat: list[bool],
                  cases: tuple[str, ...] | None = None, max_seat_tries: int | None = None,
                  to_local=None) -> tuple[list[list[SourceSegment]], dict]:
-    """Per subtask index, every source segment of agent 3's kept recorder demos in `paths`; plus what was skipped."""
+    """Return every source segment per subtask from the kept demos, and what was skipped."""
     out: list[list[SourceSegment]] = [[] for _ in refs]
     counts: dict = {"files": len(paths), "kept": 0, "used": 0, "skipped": {}}
     for path in paths:
@@ -240,7 +227,7 @@ def load_sources(paths, signals: list[str], refs: list[str], held_seat: list[boo
                 why = "drop tag"
             elif demo.carry_drift_mm > MAX_CARRY_DRIFT_MM:
                 why = "carry drift"
-            elif demo.pull_drift_mm > MAX_CARRY_DRIFT_MM:  # agent 3 2026-10-30: the same limit for the pull itself
+            elif demo.pull_drift_mm > MAX_CARRY_DRIFT_MM:  # the same limit for the pull itself
                 why = "pull drift"
             elif cases is not None and demo.case not in cases:
                 why = f"case {demo.case}"
@@ -259,8 +246,7 @@ def load_sources(paths, signals: list[str], refs: list[str], held_seat: list[boo
 
 def transform_held(rows: np.ndarray, src_frame: np.ndarray, new_frame: np.ndarray, src_in_hand: np.ndarray,
                    new_in_hand: np.ndarray) -> np.ndarray:
-    """Rows of a subtask that carries the part: the PART repeats the source part's path relative to the frame, so the
-    TCP absorbs the difference of the two in-hand poses: T_new = D @ T_src @ H_src @ inv(H_new), D = F_new inv(F_src)."""
+    """Transform held-part rows so the part repeats the source path relative to the new frame."""
     delta = new_frame @ np.linalg.inv(src_frame)
     fix = src_in_hand @ np.linalg.inv(new_in_hand)
     out = rows.copy()
@@ -278,15 +264,13 @@ def _frame_distance(a: np.ndarray, b: np.ndarray, mm_per_rad: float = 50.0) -> f
 
 def select_source(cands: list[SourceSegment], new_frame: np.ndarray, object_id: str, k: int,
                   rng: np.random.Generator) -> SourceSegment:
-    """nearest_neighbor_object among the same part's segments (else any); among the k nearest, a source is drawn
-    with weight = its margin to the force limits (1 - force_ratio, floor 0.05), so low-force seeds are preferred."""
+    """Pick a source among the nearest segments, weighted by force margin."""
     return rank_sources(cands, new_frame, object_id, k, rng)[0]
 
 
 def rank_sources(cands: list[SourceSegment], new_frame: np.ndarray, object_id: str, k: int,
                  rng: np.random.Generator) -> list[SourceSegment]:
-    """All usable sources in the order they are tried: the k nearest (same part first) drawn without replacement
-    with weight = force margin, then the rest by frame distance."""
+    """Return all usable sources in the order they are tried."""
     same = [c for c in cands if c.object_id == object_id] or cands
     if not same:
         raise ValueError("no source segment for this subtask")

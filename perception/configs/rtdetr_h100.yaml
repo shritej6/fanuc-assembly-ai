@@ -1,3 +1,5 @@
+# RT-DETR detector training config for H100 GPUs.
+# Authored by Shritej Gunda.
 task: detector
 hardware_profile: h100
 model:

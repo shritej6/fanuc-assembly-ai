@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run all 24 PatchCore parts sequentially after the matching Brev benchmark gate is measured.
+# Run all 24 PatchCore parts in sequence once the matching Brev benchmark gate is measured.
+# Authored by Shritej Gunda.
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 

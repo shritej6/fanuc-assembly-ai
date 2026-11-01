@@ -1,4 +1,6 @@
-"""Industrial observability components for the assembly cell."""
+"""Industrial observability components for the assembly cell.
+Authored by Shritej Gunda.
+"""
 
 from industry.oee import (
     DashboardMetric,

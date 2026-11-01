@@ -1,5 +1,6 @@
-"""PhysX contact / material settings: agent 2's sim/assembly_lab/physics/contact.yaml mapped onto the env's keys,
-with the env defaults (labelled, not tuned) for anything it does not set."""
+"""Map the PhysX contact and material settings in physics/contact.yaml onto the env config.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 CONTACT_YAML = REPO / "sim" / "assembly_lab" / "physics" / "contact.yaml"
-# Defaults used when agent 2's contact.yaml is absent. NOT tuned: textbook-range PLA / NBR friction, SDF settings
+# Defaults used when contact.yaml is absent. NOT tuned: textbook-range PLA / NBR friction, SDF settings
 # from the PhysX SDF guide scaled to 20-60 mm parts (256 -> 0.08-0.23 mm cells, below the 0.5 mm clearance).
 DEFAULT_CONTACT = {
     "finger_collider": "sdf",
@@ -72,7 +73,7 @@ AGENT2_MATERIALS = {"pla_printed": "pla", "nbr_fingertip": "nbr_pad", "table": "
 
 
 def from_agent2_schema(doc: dict) -> dict:
-    """Map agent 2's contact.yaml (materials / collision / solver sections) onto this env's flat keys."""
+    """Map contact.yaml (materials, collision, solver) onto this env's flat keys."""
     out = {k: v for k, v in doc.items() if k not in ("materials", "collision", "solver", "pairs")}
     for src, dst in AGENT2_SOLVER.items():
         if src in doc.get("solver", {}):

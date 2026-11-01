@@ -1,11 +1,5 @@
-"""Instance ids the port publishes to the controller, kept stable across scans and robot moves.
-
-The T09 inventory refuses an instance whose identity changes between scans (assembly/inventory.py
-`reconcile_observation`). The tracker's label is a vote and can change, so a track whose identity changes is
-published under a new id (`p7` -> `p7r1`): the old id stops being observed, which the controller handles as a missing
-part, and the inventory never sees an identity flip. When the robot moves a part, `expect` records where it went; the
-next new track there with the same identity takes over the old instance id instead of minting a new one.
-"""
+"""Stable instance ids published to the controller across scans and robot moves.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -20,6 +14,7 @@ ADOPT_GATE_MM = 12.0   # perception/cell/tracker.py GATE_MM: the same associatio
 
 @dataclass(frozen=True, slots=True)
 class Published:
+    """One instance id published to the controller."""
     instance_id: str
     object_id: str
 
@@ -32,12 +27,14 @@ class _Expected:
 
 
 class Ledger:
+    """Keeps published instance ids stable across scans."""
     def __init__(self) -> None:
         self._by_track: dict[str, Published] = {}
         self._revisions: dict[str, int] = {}
         self._expected: dict[str, _Expected] = {}
 
     def publish(self, track_id: str, object_id: str, x_mm: float, y_mm: float) -> Published:
+        """Return the published entry for a track, keeping its id stable."""
         current = self._by_track.get(track_id)
         if current is not None and current.object_id == object_id:
             return current
@@ -53,9 +50,11 @@ class Ledger:
         return published
 
     def track_of(self, instance_id: str) -> str | None:
+        """Return the track behind a published instance id, if any."""
         return next((track for track, pub in self._by_track.items() if pub.instance_id == instance_id), None)
 
     def object_of(self, instance_id: str) -> str:
+        """Return the object id of a published instance."""
         for pub in self._by_track.values():
             if pub.instance_id == instance_id:
                 return pub.object_id

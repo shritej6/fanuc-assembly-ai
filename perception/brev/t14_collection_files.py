@@ -1,4 +1,6 @@
-"""Fail-closed filesystem operations for resumable T14 collection."""
+"""Fail-closed filesystem operations for resumable PatchCore result collection.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +15,12 @@ from pathlib import Path, PurePosixPath
 
 
 class CollectionError(ValueError):
-    """Raised when off-host T14 evidence cannot be proven complete."""
+    """Raised when off-host evidence cannot be proven complete."""
 
 
 @dataclass(frozen=True)
 class CopySpec:
+    """One remote file to copy and its expected hash."""
     remote: str
     relative: str
     expected_sha256: str | None = None

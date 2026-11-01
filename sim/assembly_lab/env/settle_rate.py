@@ -1,8 +1,5 @@
-"""Measure how often the reset settles, per product: random layouts with 0-3 sheet parts installed on the base.
-
-    isaaclab_run.sh sim/assembly_lab/env/settle_rate.py --out ~/t12_data/settle_rate.json [--resets 8] [--products 1,2]
-
-Cameras off (settling is physics only). Writes {product: {rate, settle_s, failures: [settle_detail, ...]}}.
+"""Measure how often the reset settles for each product over random layouts.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

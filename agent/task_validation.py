@@ -1,4 +1,6 @@
-"""Fail-closed validation helpers for the operator-to-T09 boundary."""
+"""Fail-closed validation helpers for the operator-to-controller boundary.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

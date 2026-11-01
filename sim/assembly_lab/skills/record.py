@@ -1,4 +1,5 @@
-"""Record scripted sim demos for Isaac Lab Mimic / GR00T.
+"""Record scripted sim demos for Isaac Lab Mimic.
+Authored by Shritej Gunda.
 
     # on fa-sim, inside Isaac Lab's python (see ~/ISAACLAB_READY), GPU 2:
     CUDA_VISIBLE_DEVICES=2 python -m sim.assembly_lab.skills.record --backend isaac --scenario build \\
@@ -119,7 +120,7 @@ class Run:
 
 
 def per_object_limits() -> dict:
-    """objects.yaml max_force per object id (agent 2; e.g. M5_04 / M6_04 axial 2.5 N, SIM_MEASURED)."""
+    """Return the objects.yaml max_force for each object id."""
     return {oid: {k: v for k, v in (e.get("max_force") or {}).items() if k in ("axial_N", "lateral_N", "torque_Nm")}
             for oid, e in frames.catalog().items()}
 

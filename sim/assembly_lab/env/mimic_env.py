@@ -1,14 +1,5 @@
-"""The cell as an Isaac Lab ManagerBasedRLMimicEnv (Isaac Lab 3.0.0-beta2): what the official Isaac Lab Mimic tools
-(annotate_demos.py, generate_dataset.py) and the recorder run against. `cell_env.AssemblyCellEnv` is a thin layer on
-this same class for agent 3's recorder (reset(layout) / step_tcp).
-
-Frames: every pose Mimic sees (eef, target eef, object frames) is a 4x4 in UF0 metres. Actions are act_tcp rows
-[x, y, z, w, p, r, gripper] in UF0 mm / deg, one per env step (step_dt, default 0.1 s). EEF name: "er4ia".
-
-Several cells (cfg.scene.num_envs > 1): every cell has its own episode state (EnvEpisode: task, layout, settle
-result); every method that reads or writes one cell takes env_id (default 0), the Mimic hooks take env_ids, and the
-observation / termination terms return one row per env. Poses are relative to each env's origin (UF0 of that cell).
-A reset with layouts for several envs places them all, then settles them together (settle.py).
+"""The assembly cell as an Isaac Lab ManagerBasedRLMimicEnv for the Mimic tools.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -216,11 +207,7 @@ class CellMimicEnv(CellExtrasMixin, ManagerBasedRLMimicEnv):
 
     # ------------------------------------------------------------------ wrist camera
     def _wrist_mount(self):
-        """(J6_link body index, 4x4 camera-in-J6 transform, USD camera convention) or None without a wrist camera.
-
-        The RTX render does not move a camera prim parented under an articulation link when physics writes the link
-        pose (measured: the wrist sensor stayed at its spawn pose while J6 moved 0.5 m), so the camera is re-posed
-        from the simulated J6 pose before every render. The transform is (E, 4, 4): per-env jitter moves each mount."""
+        """(J6_link body index, 4x4 camera-in-J6 transform, USD camera convention) or None without a wrist camera."""
         if "wrist" not in self.scene.sensors:
             return None
         from pxr import UsdGeom
@@ -461,7 +448,7 @@ def _load_sampler(spec: str | None):
 
 
 def subtask_configs(skill: str) -> list[SubTaskConfig]:
-    """agent 4's mimic/skills.yaml -> Isaac Lab Mimic SubTaskConfig list (noise mm -> m)."""
+    """Turn mimic/skills.yaml into an Isaac Lab Mimic SubTaskConfig list (noise mm to m)."""
     spec = yaml.safe_load(SKILLS_YAML.read_text())
     noise = spec["noise_profiles"]
     sel = spec.get("selection", {})

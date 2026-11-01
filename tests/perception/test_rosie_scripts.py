@@ -1,4 +1,6 @@
-"""Behavior tests for the guarded Rosie T13 launch scripts."""
+"""Behavior tests for the guarded Rosie launch scripts.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

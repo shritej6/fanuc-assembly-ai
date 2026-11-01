@@ -1,7 +1,5 @@
-"""Pose maths for the skills, in the API units (mm, deg).
-
-FANUC W, P, R are fixed-axis X, Y, Z rotations: R = Rz(r) @ Ry(p) @ Rx(w). Fingers straight down = (-180, 0, r).
-Only `to_matrix_m` (for the Isaac Lab HDF5 datagen info) converts to metres, and it never leaves the recorder.
+"""Pose maths for the skills in mm and degrees.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -86,10 +84,7 @@ def axis_angle(axis, angle_deg: float) -> np.ndarray:
 
 
 def tilted(pose, lead_dir_deg: float, tilt: float, twist: float = 0.0) -> Pose:
-    """Pose tilted about the TCP so the side facing `lead_dir_deg` (base-frame heading) goes down by `tilt` deg.
-
-    `twist` turns the result about base Z (the insert axis), the ±2 deg wiggle of the human-style insert.
-    """
+    """Pose tilted about the TCP so the side facing `lead_dir_deg` (base-frame heading) goes down by `tilt` deg."""
     pose = np.asarray(pose, dtype=float)
     u = np.array([math.cos(math.radians(lead_dir_deg)), math.sin(math.radians(lead_dir_deg)), 0.0])
     axis = np.cross([0.0, 0.0, 1.0], u)  # rotating +tilt about z x u lowers the +u side
@@ -112,7 +107,7 @@ def interpolate(a, b, frac: float) -> Pose:
         rot = ra @ axis_angle(axis, math.degrees(ang) * frac)
     pos = a[:3] + (b[:3] - a[:3]) * frac
     wpr = np.array(rot_to_wpr(rot))
-    # keep the angles continuous with `a` (avoid ±180 flips between rows)
+    # keep the angles continuous with `a` (avoid +-180 flips between rows)
     wpr = a[3:6] + np.array([wrap_deg(v) for v in (wpr - a[3:6])])
     return np.array([*pos, *wpr])
 

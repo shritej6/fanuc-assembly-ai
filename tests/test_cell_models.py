@@ -1,4 +1,6 @@
-"""T28: live crops match the crops each wrist model was trained on."""
+"""Live crops match the crops each wrist model was trained on.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

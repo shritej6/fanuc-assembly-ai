@@ -1,4 +1,6 @@
-"""Benchmark RT-DETR capacity and throughput on real frozen render data."""
+"""Benchmark RT-DETR capacity and throughput on real frozen render data.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -182,6 +184,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Run the benchmark and print its report."""
     args = _parser().parse_args()
     report = _run(args)
     write_provenance(args.output_dir / "benchmark.json", report)

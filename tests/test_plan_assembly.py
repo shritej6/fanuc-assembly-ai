@@ -1,3 +1,7 @@
+"""Tests for plan assembly.
+Authored by Shritej Gunda.
+"""
+
 import json
 
 import numpy as np

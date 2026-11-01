@@ -1,11 +1,5 @@
-"""
-Stage 1 of the perception pipeline (runs under Isaac's interpreter).
-
-Builds the cell, renders the world camera, and writes out everything the later
-stages need: the image, the camera's exact intrinsics/extrinsics, and the
-ground-truth object poses so the VLM's guesses can actually be scored.
-
-    $ISAAC/python.sh capture_scene.py --out run/
+"""Capture camera images of the scene for the perception pipeline.
+Authored by Shritej Gunda.
 """
 
 import argparse, json, os, sys

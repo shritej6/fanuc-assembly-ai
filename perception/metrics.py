@@ -1,4 +1,6 @@
-"""Measured classifier metrics, including explicit look-alike confusion."""
+"""Measured classifier metrics, including explicit look-alike confusion.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

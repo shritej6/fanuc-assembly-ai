@@ -1,4 +1,6 @@
-"""Model 3 - Push Button Module: housing, actuator stem, button cap, rear guard."""
+"""Model 3, Push Button Module: housing, actuator stem, button cap and rear guard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

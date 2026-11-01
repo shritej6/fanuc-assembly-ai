@@ -1,20 +1,5 @@
-"""PatchCore crops for all 24 movable parts, with in-domain defects to measure against (T34).
-
-Train: good O wrist close-ups whose target stands in its installed orientation (O's `train` split).
-Measure: wrist close-ups at the same O identity height from O (held-out good), U (good + every CAD defect type, and
-the user's cracked M4_04) and T (good + defects, rear guards and look-alike locks). U and T are evaluation only here;
-they never enter `train_good`. Fallen targets are left out everywhere: the detector's `<part>__fallen` class rejects
-them before the wrist ever looks (user rule 2026-10-29).
-
-With --mask, every pixel outside the target's rendered instance mask is set to mid-grey before cropping, so the score
-sees only the part (an upper bound for a cell that masks the part by projecting its estimated CAD pose).
-
-Evaluation crops are split per scene into `val` (sets the operating threshold) and `test` (reported once at it).
-
-Layout under --out:
-    <part>/train_good/*.png
-    <part>/{val,test}/{good,bad}/*.png
-    <part>/index.jsonl   one row per evaluation crop: file, split, set, variant
+"""Export PatchCore crops for all 24 movable parts with in-domain defects to measure against.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -37,7 +22,7 @@ MASK_FILL = 128
 
 
 def masked(image: Image.Image, seg_path: Path, uid: str) -> Image.Image:
-    """The image with everything outside instance `uid` (seg value = uid number + 1) set to mid-grey."""
+    """Return the image with everything outside instance `uid` set to mid-grey."""
     with Image.open(seg_path) as seg:
         keep = np.asarray(seg) == int(uid[1:]) + 1
     if not keep.any():
@@ -48,13 +33,13 @@ def masked(image: Image.Image, seg_path: Path, uid: str) -> Image.Image:
 
 
 def eval_split(set_name: str, index: int) -> str:
-    """Half of a set's evaluation scenes set the threshold, the other half are reported."""
+    """Return the split for one evaluation scene: half set the threshold, half are reported."""
     token = f"{SPLIT_SEED}:eval:{set_name}:{index}".encode()
     return "val" if hashlib.sha256(token).digest()[0] % 2 == 0 else "test"
 
 
 def bucket(set_name: str, index: int, obj: dict) -> tuple[str, str] | None:
-    """(split, folder) for one wrist target, or None when it is not used."""
+    """Return (split, folder) for one wrist target, or None when it is not used."""
     if obj["kind"] != "part" or not obj["object_id"].startswith("M") or obj.get("rest") != "installed":
         return None
     good = obj.get("variant") == "ok"
@@ -69,10 +54,12 @@ def bucket(set_name: str, index: int, obj: dict) -> tuple[str, str] | None:
 
 
 def crop_path(out: Path, part: str, split: str, folder: str, name: str) -> Path:
+    """Return the output path of one crop."""
     return out / part / ("train_good" if split == "train" else f"{split}/{folder}") / name
 
 
 def export_chunk(set_name: str, chunk: Path, out: Path, counts: Counter, index_rows: dict, mask: bool) -> None:
+    """Write the wrist-target crops of one chunk and record them in the index."""
     for label_path in sorted((chunk / "labels").glob("*.json")):
         label = json.loads(label_path.read_text())
         found = wrist_target(label)
@@ -99,6 +86,7 @@ def export_chunk(set_name: str, chunk: Path, out: Path, counts: Counter, index_r
 
 
 def export(root: Path, out: Path, sets: tuple[str, ...], mask: bool = False) -> Counter:
+    """Export crops for every chunk of the given sets and return the crop counts."""
     counts: Counter = Counter()
     index_rows: dict[str, list[dict]] = {}
     for set_name in sets:
@@ -115,6 +103,7 @@ def export(root: Path, out: Path, sets: tuple[str, ...], mask: bool = False) -> 
 
 
 def main() -> None:
+    """Parse arguments, export the crops and print the counts."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, required=True, help="synthetic/ holding the test-bed sets O, U and T")
     ap.add_argument("--out", type=Path, required=True)

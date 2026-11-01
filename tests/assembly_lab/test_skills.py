@@ -1,4 +1,6 @@
-"""Skill motion rules (docs/ROBOT_BRAIN.md section 2): every row is checked, not just the endpoints."""
+"""Skill motion rules (docs/ROBOT_BRAIN.md section 2): every row is checked, not just the endpoints.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -130,7 +132,7 @@ def test_pull_out_straight_with_wiggle(plans):
 
 @pytest.mark.parametrize("deg,steps", [(0.3, 8), (0.0, 4), (1.0, 4)])
 def test_pull_wiggle_variants_rise_straight_within_amplitude(plans, deg, steps):
-    """Main-approved A/B on second-layer pulls: the yaw stays within the variant, the lift ends where the default does."""
+    """Main-approved A/B on second-layer pulls."""
     po = importlib.import_module("sim.assembly_lab.skills.pull_out")
 
     pull, default = plans[2], po.WIGGLE
@@ -152,12 +154,10 @@ def test_pull_wiggle_default_is_the_users_plus_minus_one_deg():
 
     assert po.WIGGLE == (PULL_WIGGLE_DEG, 4) and po.wiggle_signs(4) == [1.0, -1.0, 1.0, 0.0]
     with pytest.raises(ValueError):
-        po.set_wiggle(2.0, 4)  # never more than the user's ±1 deg
+        po.set_wiggle(2.0, 4)  # never more than the user's 1 deg
 
 
 def test_last_ultra_zone_and_push_go_in_real_robot_repeatability_rows(plans):
-    """main 2026-10-30: 0.02 mm rows still reached 12.5 N of 15; from the CAD seated height + ULTRA_ZONE_MM down to
-    the push target (PUSH_MM below it) every row is <= 0.01 mm (ER-4iA repeatability), ending at the push target."""
     from sim.assembly_lab.skills.insert import ULTRA, ULTRA_ZONE_MM
     from sim.assembly_lab.skills.plan import PUSH_MM
 
@@ -281,8 +281,7 @@ def test_retry_clears_the_bore_before_remeasuring(plans):
 
 
 def test_twist_turns_the_part_about_its_own_axis(plans):
-    """The +-2 deg twist pivots on the part's insert axis: the held part's origin stays put, also when it is gripped
-    on an edge pad 21 mm from its centre (M1_01-style)."""
+    """The +-2 deg twist pivots on the part's insert axis."""
     from dataclasses import replace
 
     ins = replace(plans[1], seated_object_pose=plans[1].seated_object_pose + np.array([0.0, 21.06, 0, 0, 0, 0]))
@@ -375,8 +374,7 @@ def test_watch_logs_the_offset_at_first_base_contact():
 
 
 def test_last_fine_zone_over_the_seat_goes_in_fine_rows(plans):
-    """run10: the seat went past 2 N within one 0.05 mm row (6-11.6 N kept, 15.4 / 17 N discarded); the last
-    FINE_ZONE_MM and the push are pressed at FINE (<= 0.02 mm/row), on inserts and on test-bed set-downs."""
+    """The last FINE_ZONE_MM and the push are pressed at FINE (<= 0.02 mm/row), on inserts and set-downs."""
     from sim.assembly_lab.skills.insert import FINE, FINE_ZONE_MM
 
     ins, spot = plans[1], plans[3]

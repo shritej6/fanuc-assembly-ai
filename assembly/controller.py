@@ -1,4 +1,6 @@
-"""PackML orchestration from perception evidence to guarded TCP chunks."""
+"""PackML orchestration from perception evidence to guarded TCP chunks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,7 @@
+"""Tests for anomaly rest.
+Authored by Shritej Gunda.
+"""
+
 import hashlib
 import json
 from pathlib import Path
@@ -20,7 +24,6 @@ def product_up_axes(geometry):
 def rest_states(spec, up_axes):
     return {obj["uid"]: obj["expected_rest"] for obj in spec["objects"]}
 """
-
 
 def _sources(root: Path) -> None:
     for set_name, rest in (("C", "installed"), ("I", "fallen")):

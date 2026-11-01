@@ -1,16 +1,5 @@
-"""How exactly each part must be turned and placed to drop onto the parts below it, measured from CAD.
-
-    uv run --with trimesh --with manifold3d --with scipy python -m sdg.tools.insertion_tolerance
-
-Writes sdg/data/insertion_tolerance.json for the planner. The arm places parts straight down, so before the insert
-the part must be turned (yaw) until its underside holes and recesses line up with the pegs below. For every part in
-its installed pose, against the fixture plus every part installed before it (same exact solids as build_clearance):
-  fit_yaws_deg   every yaw (5 deg grid, about the part's vertical centre line) at which it still drops fully in;
-                 its spacing is the part's insertion symmetry (360 = one way only, 180, 90, ... or any)
-  yaw_tol_deg    largest turn either way from the installed yaw that still drops fully in (bisection, 0.05 deg)
-  shift_tol_mm   largest sideways error that still drops fully in, worst of 16 directions (bisection, 0.02 mm)
-"Drops fully in" = the part needs no lift above its CAD seat (overlap volume <= OVERLAP_MM3). CAD clearances are
-nominal; printed parts are tighter or looser, so the planner should treat these as upper bounds.
+"""Measure from CAD the yaw and position tolerance each part needs to drop into place.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -56,8 +45,7 @@ def largest_ok(ok, hi: float, res: float) -> float:
 
 
 def symmetry(fit_yaws: list[int]) -> str:
-    """Neighbouring grid yaws are one fit window (a tolerant part fits at 0 and 5); equal spacing of the window
-    centres is the insertion symmetry."""
+    """Return the insertion symmetry from the spacing of the fit-window centres."""
     if len(fit_yaws) == 360 // YAW_GRID_DEG:
         return "any"
     start = next(i for i, y in enumerate(fit_yaws) if (y - fit_yaws[i - 1]) % 360 != YAW_GRID_DEG) if \

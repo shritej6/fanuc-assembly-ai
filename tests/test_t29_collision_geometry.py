@@ -1,4 +1,6 @@
-"""Held-part collision geometry comes only from pinned T29 frames and CAD STLs."""
+"""Held-part collision geometry comes only from pinned frames and CAD STLs.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

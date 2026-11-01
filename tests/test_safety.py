@@ -1,4 +1,6 @@
-"""Fail-closed safety supervision for compiled absolute TCP motion."""
+"""Fail-closed safety supervision for compiled absolute TCP motion.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -196,7 +198,7 @@ def test_supervisor_rejects_empty_plan() -> None:
     ],
 )
 def test_supervisor_delegates_every_tcp_row_to_t05_guard(bad: Waypoint, error: type[ValueError]) -> None:
-    """The supervisor must not clamp or weaken T05's finite/bounds checks."""
+    """The supervisor must not clamp or weaken 's finite/bounds checks."""
     plan = (
         MotionChunk(MotionPhase.APPROACH, (_waypoint(220.0, 0.0, -250.0),)),
         MotionChunk(MotionPhase.DESCEND, (bad,)),

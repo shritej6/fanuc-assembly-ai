@@ -1,3 +1,7 @@
+"""Tests for operator prepared decision.
+Authored by Shritej Gunda.
+"""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest

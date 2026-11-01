@@ -1,6 +1,5 @@
-"""Vectorised pose conversions between the sim (m, quaternion wxyz, UF0) and the API (mm, FANUC W/P/R deg, UF0).
-
-FANUC W, P, R are fixed-axis X, Y, Z rotations: R = Rz(r) @ Ry(p) @ Rx(w) (same as skills/geometry.py).
+"""Vectorised pose conversions between sim units (m, wxyz quaternion) and API units (mm, FANUC W/P/R).
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -8,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 
 # Fingers straight down are w = -180. A plain atan2 flips between +180 and -180 on tiny noise, which wrecks the
-# GR00T normalisation stats; w is therefore stored continuous in [W_LOW, W_LOW + 360). The deploy adapter (agent 6)
+# GR00T normalisation stats; w is therefore stored continuous in [W_LOW, W_LOW + 360). The deploy adapter
 # wraps it back to (-180, 180] before act_tcp (the cell accepts either; same rotation).
 W_LOW = -270.0
 
@@ -40,6 +39,7 @@ def rot_to_wpr(rot: np.ndarray) -> np.ndarray:
 
 
 def wpr_to_rot(wpr: np.ndarray) -> np.ndarray:
+    """Return rotation matrices for FANUC W/P/R angles in deg."""
     a = np.radians(np.asarray(wpr, dtype=np.float64))
     cw, sw, cp, sp, cr, sr = np.cos(a[..., 0]), np.sin(a[..., 0]), np.cos(a[..., 1]), np.sin(a[..., 1]), \
         np.cos(a[..., 2]), np.sin(a[..., 2])

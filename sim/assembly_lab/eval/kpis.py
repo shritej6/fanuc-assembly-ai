@@ -1,10 +1,5 @@
-"""Episode KPIs against the precision gates (sim/assembly_lab/INTERFACES.md) and physics/limits.yaml (numpy only).
-
-Per step: peak axial / lateral / torque contact per object (obs["sim"]["contact_peak"], else "contact"), disturbed
-non-target objects (> 1 mm or 2 deg since the current planner step began), wrong-object grips, and robot contact with
-non-targets when the env reports it (obs["sim"]["robot_touch"] {uid: N}, agent 3's key; otherwise UNMEASURED,
-never passed). Only objects on the table count (obs["sim"]["on_table"]; parked pool objects are ignored).
-At the end: products built to the precision gates, defect area, test-bed spots, untouched decoys, Andon and order.
+"""Per-episode KPIs measured against the precision gates and the force limits.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -23,6 +18,7 @@ FORCE_KEYS = (("normal_N", "axial_N"), ("lateral_N", "lateral_N"), ("torque_Nm",
 
 
 def load_limits(path: Path = LIMITS_YAML) -> dict:
+    """Load the force limits YAML and return it as a dict."""
     raw = yaml.safe_load(Path(path).read_text())
     missing = [k for k in ("axial_N", "lateral_N", "torque_Nm") if not isinstance(raw.get(k), (int, float))]
     if missing:
@@ -44,11 +40,13 @@ def per_object_limits(global_lim: dict, path: Path = OBJECTS_YAML) -> dict:
 
 
 def limit_for(limits: dict, uid: str, key: str) -> float:
+    """Return the limit for one object and force key."""
     return limits.get("per_object", {}).get(cad.type_id(uid), limits)[key]
 
 
 @dataclass
 class EpisodeKPI:
+    """Accumulate the KPIs of one eval episode."""
     limits: dict
     initial: dict                                  # uid -> pose at reset
     peaks: dict = field(default_factory=lambda: {"normal_N": 0.0, "lateral_N": 0.0, "torque_Nm": 0.0})
@@ -63,6 +61,7 @@ class EpisodeKPI:
     _step_key: tuple | None = None
 
     def on_step(self, obs: dict, task, t_s: float) -> None:
+        """Update the KPIs from one observation."""
         sim = obs["sim"]
         self._forces(sim.get("contact_peak") or sim.get("contact") or {}, t_s)
         target = task.uid if task is not None else None
@@ -100,6 +99,7 @@ class EpisodeKPI:
                     self.damaged[uid] = {"t": round(t_s, 2), k: round(v, 3), "limit": lim}
 
     def summary(self) -> dict:
+        """Return the episode KPIs as a dict."""
         return {"peak_axial_N": round(self.peaks["normal_N"], 3), "peak_lateral_N": round(self.peaks["lateral_N"], 3),
                 "peak_torque_Nm": round(self.peaks["torque_Nm"], 4), "peak_objects": self.peak_obj,
                 "limits": self.limits, "parts_damaged": len(self.damaged), "damaged": self.damaged,
@@ -109,9 +109,7 @@ class EpisodeKPI:
 
 
 def jam_check(uid: str, base: str, poses: dict) -> dict | None:
-    """A part caught on its mate: within the chamfer reach (xy <= 3 mm) but sitting above the seated height by more
-    than the 0.3 mm gate and no more than the engagement depth + 2 mm (physics/limits.yaml: housings jam at > 0.5 mm
-    offset). None when it is seated or nowhere near."""
+    """Return the jam details if a part is caught on its mate, else None."""
     if uid not in poses or base not in poses:
         return None
     ok, err = cad.seat_check(uid, poses[uid], cad.seated_pose(uid, base, poses[base]))

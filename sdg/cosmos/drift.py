@@ -1,8 +1,5 @@
-"""Shape-drift check for a Cosmos-restyled image against the render it came from.
-
-The labels of a restyled image are the render's labels, so the restyle may change the look (light, texture, noise)
-but not where an edge of a part is. Measure: edge F-score inside the parts' masks. Edges are the strongest gradient
-pixels of each image within that region; an edge counts as matched when the other image has one within TOL_PX.
+"""Measure shape drift between a Cosmos-restyled image and its source render.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -55,8 +52,7 @@ def edge_fscore(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> fl
 
 
 def object_scores(source: np.ndarray, restyled: np.ndarray, seg: np.ndarray) -> dict[int, float]:
-    """Edge F-score of every object of at least MIN_OBJECT_PX pixels, by seg id. One object reshaped (a cylinder drawn
-    as a cube, a slot added to a knob) hides in the whole-image score but not here."""
+    """Return the edge F-score of every object large enough to judge, by seg id."""
     pad = ROI_PAD_PX + TOL_PX + 2
     scores = {}
     for uid in np.unique(seg[seg > 0]):

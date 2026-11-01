@@ -1,15 +1,5 @@
-"""Plan a scripted assembly of one product from a rendered test-bed scene: every frame's joints, jaw and part poses.
-
-numpy only (runs anywhere); `render_assembly.py` replays the plan in Isaac Sim. Poses come from the scene's ground
-truth, not from perception, so the video shows the motion plan and the insertion rule, not model accuracy.
-
-Rules followed (DECISIONS 2026-10-28): parts stay in their installed orientation and the tool only points straight
-down, so the arm changes nothing but yaw; the part is yawed over the base before it goes straight down onto it;
-grasp width comes from the CAD and the measured fingers. Each part is picked by its top grip tab: the thin side of
-the tab's cross-section 0.5-3.5 mm below the top, the jaws closing across it. A part whose tab does not fit the
-measured fingertip gaps, or any frame the IK cannot reach to 1 mm with the jaws aligned, stops the plan.
-
-    python sim/demo/plan_assembly.py --label N/chunk_0000/labels/000003.json --product 1 --out plan.json
+"""Plan a scripted assembly of one product from a rendered test-bed scene.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

@@ -1,4 +1,6 @@
-"""Physical pose continuity across staged dismantle and rebuild."""
+"""Physical pose continuity across staged dismantle and rebuild.
+Authored by Shritej Gunda.
+"""
 
 from assembly.catalog import load_catalog
 from assembly.inventory import Inventory, InventoryItem, InventoryZone

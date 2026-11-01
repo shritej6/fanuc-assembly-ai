@@ -1,4 +1,6 @@
-"""Read-only HTTP dashboard for evidence-backed OEE and Andon status."""
+"""Read-only HTTP dashboard for evidence-backed OEE and Andon status.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

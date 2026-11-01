@@ -1,4 +1,6 @@
-"""Runner, force guard, precision gates and HDF5 output, end to end on the kinematic test double (no physics)."""
+"""Runner, force guard, precision gates and HDF5 output, end to end on the kinematic test double (no physics).
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -236,8 +238,7 @@ def test_annotate_skips_empty_reset_episodes(tmp_path):
 
 
 def test_release_opens_with_no_axial_preload(limits):
-    """The push preloads the seated part (kinematic spring: 0.5 mm below seat = 5 N); the fingers open only after
-    the TCP has backed off to the seated height, so nothing drags the part as they let go."""
+    """The push preloads the seated part (kinematic spring."""
     env, (pick, ins, *_) = _world()
     rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
     episodes.pick_insert(rec, pick, ins)
@@ -443,7 +444,7 @@ def test_pull_wiggle_flag_sets_the_variant_and_rejects_bad_values():
 
 
 def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
-    """run10: build p1 and wont_seat p1 started in the same second and both opened one HDF5 (h5py lock error)."""
+    """Build p1 and wont_seat p1 started in the same second and both opened one HDF5 (h5py lock error)."""
     a = record.isaac_out_path(tmp_path, "build", 1, 7)
     b = record.isaac_out_path(tmp_path, "wont_seat", 1, 7)
     c = record.isaac_out_path(tmp_path, "build", 1, 8)
@@ -452,7 +453,7 @@ def test_isaac_out_paths_differ_for_jobs_started_together(tmp_path):
 
 
 def test_press_steps_drop_to_fine_rows_after_first_seat_contact(limits):
-    """run10: 0.05 mm rows into a ~260 N/mm seat overshot to 6-11.6 N; after first contact rows are <= 0.02 mm."""
+    """0.05 mm rows into a ~260 N/mm seat overshot to 6-11.6 N; after first contact rows are <= 0.02 mm."""
     from sim.assembly_lab.skills.runner import FINE_PRESS_MM, SEAT_PHASES
 
     env, (pick, ins, *_) = _world()
@@ -478,7 +479,7 @@ def test_press_steps_drop_to_fine_rows_after_first_seat_contact(limits):
 
 
 def test_jaw_close_is_in_the_substep_trace(limits):
-    """run10 M2_01 hit 20.7 N during the grasp before any insert: the close rows must be traced per substep."""
+    """M2_01 hit 20.7 N during the grasp before any insert: the close rows must be traced per substep."""
     env, (pick, ins, *_) = _world()
     real_step = env.step_tcp
 
@@ -491,11 +492,11 @@ def test_jaw_close_is_in_the_substep_trace(limits):
     rec = EpisodeRecorder(env, ForceGuard(limits), env.reset())
     episodes.pick_insert(rec, pick, ins)
     phases = {t["phase"] for t in rec.substep_trace}
-    assert {"close", "lift_check"} <= phases  # run10: the 20-22 N grasp trips came on the first lift row
+    assert {"close", "lift_check"} <= phases  # grasp force trips come on the first lift row
 
 
 def test_isaac_runs_close_one_file_per_part(tmp_path, monkeypatch):
-    """Mimic reads closed files while run10 goes on: every part gets its own recorder file, rotated between parts."""
+    """Mimic reads closed files while recording goes on: every part gets its own recorder file, rotated between parts."""
     class Rotating:
         name = "isaac"
         products = (1,)

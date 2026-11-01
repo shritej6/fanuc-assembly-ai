@@ -1,3 +1,7 @@
+"""Tests for depth residual.
+Authored by Shritej Gunda.
+"""
+
 import numpy as np
 import pytest
 

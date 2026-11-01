@@ -1,22 +1,5 @@
-"""Where look-alike objects differ, and whether each camera can see it (ray-cast on the printed STLs, numpy + scipy).
-
-    PYTHONPATH=. uv run python sim/assembly_lab/objects/visibility.py      # writes visibility.yaml
-
-For every pair in a look-alike group: the "differing geometry" of A is every surface point of A further than 0.2 mm
-from B's surface (both meshes in the shared installed local frame), and the same for B. Each part stands on the table
-in its installed orientation at UF0 (400, 0), at 8 yaws (the yaw is random on the bed). A differing point is visible
-from a camera when its face points at the camera and the ray to the camera does not pass through the part itself.
-Only self-occlusion is modelled (no neighbours, no gripper).
-
-Cameras (robot/cell/calibration/cameras.json, measured calibration):
-- table: pose T_base_cam, fx 1024.9 at 1920x1080. side: fx 1185.9 at 1920x1080.
-- wrist colour: fx 619.6 at 1280x720, but captured at 848x480 (FRAMES.md), so the true sampling is fx 410.5 at 848.
-  Mounted on the flange 163 mm along the tool and ~98 mm beside it, looking along the tool: with the fingers down
-  the lens is 130 mm above the fingertip plane. Close-ups modelled: top-down and 30 deg oblique (the SDG sets use
-  up to 30 deg wrist tilt) from 4 sides, at a standoff of 150 mm from the part's top centre.
-Result per pair and camera: visible differing area in px^2 (worst / median / best yaw for the fixed cameras; best
-side for the wrist) and the pair's smallest cue dimension in px. "visible" = >= 12 px^2 and the cue >= 2 px across.
-This is geometry only: black-on-black contrast and depth noise come on top (LOOKALIKES.md). PRELIMINARY.
+"""Find where look-alike objects differ and whether each camera can see that difference.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

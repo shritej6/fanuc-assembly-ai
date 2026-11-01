@@ -1,15 +1,5 @@
-"""
-Pixel <-> table-plane geometry for the perception pipeline.
-
-The VLM returns 2D image coordinates; the planner needs 3D table coordinates.
-Because we control the camera in simulation, this conversion is exact rather
-than estimated: intersect the pixel's view ray with the known table plane.
-
-USD convention notes, both of which are easy to get backwards:
-  - ComputeLocalToWorldTransform is row-vector convention, so a point maps as
-    p_world = [p, 1] @ M, the camera position is row 3, and the camera basis
-    vectors are rows 0..2.
-  - USD cameras look down their local -Z with +Y up.
+"""Pixel to table-plane geometry for the perception pipeline.
+Authored by Shritej Gunda.
 """
 
 import json
@@ -46,12 +36,7 @@ class CameraModel:
 
     # ---------------------------------------------------------------- inverse
     def ray(self, u, v):
-        """Pixel -> (origin, unit direction) in world space.
-
-        u, v are CONTINUOUS image coordinates, matching project(). Adding a
-        half-pixel here (as you would for integer pixel indices) breaks the
-        round trip by about a millimetre at this camera distance.
-        """
+        """Pixel -> (origin, unit direction) in world space."""
         x = u / self.W * 2.0 - 1.0
         y = 1.0 - v / self.H * 2.0
         d_cam = np.array([x * self.tan_h, y * self.tan_v, -1.0])
@@ -70,10 +55,7 @@ class CameraModel:
         return o + t * d
 
     def to_table_xy(self, u_norm, v_norm, height_above_table=0.0):
-        """Normalised (0..1) image coords -> (x, y) in the ROBOT BASE frame.
-
-        The robot base sits at the table top, so robot-frame z = 0 there.
-        """
+        """Normalised (0..1) image coords -> (x, y) in the ROBOT BASE frame."""
         p = self.to_plane(
             u_norm * self.W, v_norm * self.H, z=self.table_z + height_above_table
         )

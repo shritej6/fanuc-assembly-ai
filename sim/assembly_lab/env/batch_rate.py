@@ -1,14 +1,5 @@
-"""Measure env-steps/s with N cloned cells in one Isaac process (the num_envs gate: is batching worth it?).
-
-    GPU=0 CACHE_TAG=_ne REPO=~/t12_data/repo_ne isaaclab_run.sh sim/assembly_lab/env/batch_rate.py \
-        --num_envs 8 --cameras table side wrist --out ~/t12_data/batch_rate/n8_cam.json
-
-The cell env's own scene, solver and sensor settings (mimic_env.make_env_cfg: physics dt, decimation, contact sensors,
-cameras at 640x360), product 4's pool (base + 4 sheet parts, what one generation worker spawns), the arm and jaws held
-at home. Every physics step reads all three contact sensors and the per-contact buffers of every env, like
-contact_metrics.accumulate does; every env step renders and fetches the cameras, like the observation manager does.
-Not timed: the cell env's Python per step (IK, signals, gates), which batching does not multiply on the GPU side.
-Writes {num_envs, cameras, env_steps, wall_s, env_steps_per_s, ms_per_process_step, build_s, gpu_mem_used_mib}.
+"""Measure env steps per second with many cloned cells in one Isaac process.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

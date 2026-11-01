@@ -1,4 +1,6 @@
-"""Train and evaluate the 30-class wrist-camera ResNet-18 classifier."""
+"""Train and evaluate the 30-class wrist-camera ResNet-18 classifier.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -65,7 +67,7 @@ def validate_classifier_identity(
     config: dict[str, Any],
     metadata: dict[str, Any],
 ) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
-    """Require the user-approved 30-label order and valid look-alike groups."""
+    """Check the approved 30-label order and the look-alike groups."""
     try:
         labels = tuple(metadata["labels"]["classifier"])
         groups = tuple(tuple(group) for group in metadata["labels"]["lookalike_groups"])
@@ -189,12 +191,14 @@ def _build_model(num_labels: int) -> Any:
     from transformers.modeling_outputs import ImageClassifierOutput
 
     class ResNetClassifier(nn.Module):
+        """ResNet-18 with a new classification head."""
         def __init__(self) -> None:
             super().__init__()
             self.backbone = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
             self.backbone.fc = nn.Linear(self.backbone.fc.in_features, num_labels)
 
         def forward(self, pixel_values=None, labels=None):
+            """Return the logits, and the loss when labels are given."""
             logits = self.backbone(pixel_values)
             loss = functional.cross_entropy(logits, labels) if labels is not None else None
             return ImageClassifierOutput(loss=loss, logits=logits)
@@ -207,7 +211,7 @@ def _validate_build_states(
     labels: tuple[str, ...],
     groups: tuple[tuple[str, ...], ...],
 ) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
-    """Set P model: the six build states in their frozen order, no look-alike groups."""
+    """Check the set P model: six build states in frozen order, no look-alike groups."""
     if config.get("task") != "classifier" or config.get("model", {}).get("num_labels") != len(BUILD_STATES):
         raise ClassifierTrainingError(f"configuration must declare {len(BUILD_STATES)} build-state labels")
     if labels != BUILD_STATES or groups:
@@ -220,6 +224,7 @@ def _compute_metrics(
     groups: tuple[tuple[str, ...], ...],
 ):
     def calculate(eval_prediction):
+        """Return accuracy and macro F1 for one evaluation pass."""
         logits = eval_prediction.predictions
         if isinstance(logits, tuple):
             logits = logits[0]

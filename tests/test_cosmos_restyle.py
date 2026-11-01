@@ -1,3 +1,7 @@
+"""Tests for cosmos restyle.
+Authored by Shritej Gunda.
+"""
+
 import json
 import shutil
 

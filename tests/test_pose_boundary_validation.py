@@ -1,4 +1,6 @@
-"""Nested pose values must fail as typed boundary errors."""
+"""Nested pose values must fail as typed boundary errors.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

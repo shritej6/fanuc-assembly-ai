@@ -1,9 +1,5 @@
 """Run skills closed-loop in the sim env and record every step for the HDF5 demo.
-
-The skills are open-loop row generators; the runner adds what needs sim feedback:
-- grasp check after the slow check lift (object rose with the fingers),
-- seated check after the push, the single retry (lift 3 mm, re-measure, re-align), then pull out for inspection,
-- the force guard on every step (abort early on the first violation: that demo is discarded anyway).
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -31,7 +27,7 @@ MAX_JOINT_STEP_DEG = 20.0  # obs joints (deg) per 0.1 s row; check10 measured a 
 OTHERS_TRACE_MM = 0.1  # log rows where a non-target object is this far from its start pose (dragged stack, nudges)
 OTHERS_TRACE_MAX = 900  # entries per episode (probe M1_03 logged 298 by its set-down: 3 parts x ~100 rows)
 SUBSTEP_LOG_MIN_N = 1.0  # keep the per-substep contact of insert rows loaded above this (T12_SUBSTEP_LOG=1)
-SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: aligned parts seat at ~0.5 N (agent 2)
+SOFT_STOP_N = {"normal_N": 6.0, "lateral_N": 3.0}  # or at these, if lower: aligned parts seat at ~0.5 N
 SEAT_PHASES = ("slide", "push", "touch_down")  # straight down onto the seat / table
 SEAT_STOP_N = 2.0  # seat phases stop at this normal: check10 M1_01 seated at 1-4 N in one 0.05 mm row and hit
 #                   17 N in the next (about 260 N/mm), so a 6 N stop never fires between rows
@@ -52,8 +48,7 @@ class EpisodeFailed(RuntimeError):
 
 
 class ResetInvalid(RuntimeError):
-    """The scene was bad before the robot did anything (not settled, or over a force limit before first contact):
-    not kept and not counted as a robot failure (main, 2026-10-30)."""
+    """Raised when the scene was bad before the robot acted, so the episode is not kept or counted."""
 
 
 @dataclass
@@ -227,11 +222,7 @@ class EpisodeRecorder:
             self.watch = None
 
     def run(self, segments: list[Segment], stop_after: str | None = None, soft_stop: bool = False) -> list[Segment]:
-        """Execute segments in order; return the ones not run yet when `stop_after` phase completes.
-
-        soft_stop: in the insert contact phases, stop at the first step whose contact passes SOFT_STOP_FRAC of a limit
-        (the rest of the attempt is skipped and the seated check decides what happens next).
-        """
+        """Execute segments in order; return the ones not run yet when `stop_after` phase completes."""
         seated_touch = False  # each run is one insert try or set-down: fine pressing starts at its first seat contact
         for i, seg in enumerate(segments):
             self._open_subtask(seg)
@@ -293,10 +284,7 @@ class EpisodeRecorder:
         self.mark("grasped")
 
     def _offset(self, plan: InsertPlan, oid: str, extra=(0.0, 0.0, 0.0)) -> np.ndarray:
-        """TCP correction (dx, dy, dyaw, w, p) so the part as held lands on its CAD seated pose: w, p level the part
-        itself (a part pivoted in the fingers is squared up before it enters the bore), dx, dy include the swing.
-        The level correction is capped so the tool stays within 6 deg of straight down with the 3 deg entry lean on
-        top; a part pivoted further than that is a failed grasp, not something to steer around."""
+        """Return the TCP correction (dx, dy, dyaw, w, p) that lands the held part on its CAD seated pose."""
         t_tcp_obj = checks.in_hand(self.obs, oid)
         need = matrix_to_pose(pose_to_matrix(plan.seated_object_pose) @ np.linalg.inv(t_tcp_obj))
         d = need - plan.seated_tcp

@@ -1,4 +1,6 @@
-"""Validated product traceability records backed by T09 controller evidence."""
+"""Validated product traceability records backed by controller evidence.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Immutable source-corpus contract for T14 PatchCore preparation."""
+"""Immutable source-corpus contract for PatchCore data preparation.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -142,7 +144,7 @@ def _inventory_set(set_name: str, set_path: Path, chunk_count: int) -> dict[str,
 
 
 def validate_patchcore_source_inventory(new_root: Path, old_root: Path) -> dict[str, dict[str, Any]]:
-    """Require the exact reviewed O/T/C/I chunk and label inventory before preparation."""
+    """Check the exact reviewed O/T/C/I chunk and label inventory before preparation."""
     new, old = Path(new_root), Path(old_root)
     if new.is_symlink() or old.is_symlink():
         raise DatasetBoundaryError("synthetic source roots must not be symlinks")

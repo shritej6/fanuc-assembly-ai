@@ -1,4 +1,6 @@
-"""Typed final-product verification and PackML completion."""
+"""Typed final-product verification and PackML completion.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

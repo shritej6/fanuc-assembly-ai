@@ -1,15 +1,5 @@
-"""Rehearsal scenarios through Codex's real CELL code path against the laggy cell.
-
-Path exercised: ``robot/cell/trial_runner.run_cell_trials`` -> official ``cell_client.run_all/run_trial`` ->
-``Policy(runtime="cell")`` -> ``create_cell_policy`` -> ``T09GrootExecutor`` -> ``ChunkGuard`` -> HTTP ->
-``LaggyMock``. Only the official-mock transport and the reviewed mock proof factory are used, because Codex's
-runtime (correctly) refuses the REAL transport until a reviewed real factory exists.
-
-Two harness substitutions, both documented in the report:
-* the mock factory's ``ExecutionTolerances(0.0, 0.0)`` assume TCP == command; the laggy arm cannot meet a zero
-  tolerance, so the Saturday tolerances (0.3 mm / 1 deg, ``SATURDAY_EXECUTION_TOLERANCES``) are used instead;
-* mock perception's scripted fallen/failed-insertion fixtures are cleared (as Codex's positive proof does), and
-  after a drop it reports the held part missing - what a real wrist/table camera would show.
+"""Rehearsal scenarios that drive the real cell code path against the laggy mock.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -123,15 +113,9 @@ def _placement_prompt(index: int) -> str:
 
 @contextmanager
 def _real_factory_seam():
-    """Run Codex's REAL factory (pinned loader, real adapters) over the mock transport.
-
-    Harness-only seam: the mock transport normally refuses the real factory, and the controller carries REAL_CELL
-    authority, so the transport check is told REAL. Presence runs explicitly unverified (no RT-DETR weights on this
-    host), which is the flag the user would accept at arming. Nothing here reaches a robot.
-    """
-    from robot.cell.t09_real_runtime import build_groot_real_controller
-
+    """Run the real cell factory over the mock transport; harness only, nothing reaches a robot."""
     from assembly import cell_runtime
+    from robot.cell.t09_real_runtime import build_groot_real_controller
 
     saved_resolve, saved_validate = cell_runtime._resolve_factory, cell_runtime._validate_controller
     saved_flag = os.environ.get("FANUC_T09_ALLOW_UNVERIFIED_PRESENCE")

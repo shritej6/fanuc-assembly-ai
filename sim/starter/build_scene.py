@@ -1,10 +1,5 @@
-"""
-Build the FANUC ER-4iA grasping cell in Isaac Sim 6.0.
-
-    /isaacsim/python.sh ~/fanuc_er4ia_sim/build_scene.py            # interactive
-    /isaacsim/python.sh ~/fanuc_er4ia_sim/build_scene.py --headless --save out.usd
-
-Scene construction lives in cell.py, dimensions in scene_config.py.
+"""Build the FANUC ER-4iA grasping cell in Isaac Sim.
+Authored by Shritej Gunda.
 """
 
 import argparse, os, sys
@@ -95,7 +90,7 @@ arm.apply_action(ArticulationAction(joint_positions=q))
 for _ in range(29):
     world.step(render=True)
 for _ in range(270):
-    world.step(render=False)  # physics settle — no render needed
+    world.step(render=False)  # physics settle, no render needed
 world.step(render=True)  # sync arm world transforms for the wrist camera
 
 if args.shoot:

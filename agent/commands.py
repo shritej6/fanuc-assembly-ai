@@ -1,4 +1,6 @@
-"""Strict natural-language compiler for the operator's approved task vocabulary."""
+"""Strict natural-language compiler for the operator's approved task vocabulary.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

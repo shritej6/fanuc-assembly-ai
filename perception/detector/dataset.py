@@ -1,4 +1,6 @@
-"""COCO-backed dataset adapter for RT-DETR's image processor."""
+"""COCO-backed dataset adapter for the RT-DETR image processor.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

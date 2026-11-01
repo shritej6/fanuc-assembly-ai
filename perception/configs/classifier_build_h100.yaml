@@ -1,3 +1,5 @@
+# Set P build-state classifier training config for H100 GPUs.
+# Authored by Shritej Gunda.
 task: classifier
 hardware_profile: h100
 model:

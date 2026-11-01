@@ -1,5 +1,6 @@
 #!/bin/bash
 # Build and prove the pinned PatchCore environment on one Rosie V100.
+# Authored by Shritej Gunda.
 # Submit from a persistent log directory:
 #   RUN_ROOT=$HOME/fanuc-t14 CODE_ROOT=$HOME/fanuc-t14-code-<commit> SOURCE_COMMIT=$(git rev-parse HEAD) \
 #     sbatch --export=ALL,RUN_ROOT,CODE_ROOT,SOURCE_COMMIT "$CODE_ROOT/perception/rosie/t14_patchcore_env_smoke.sbatch"

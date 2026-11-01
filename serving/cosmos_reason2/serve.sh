@@ -1,21 +1,9 @@
 #!/bin/bash
-# Serve the official Cosmos Reason 2 8B (nvidia/Cosmos-Reason2-8B, NVIDIA Open Model License, gated on Hugging Face)
-# with vLLM's OpenAI-compatible server, on the GPU host itself. The host needs only Docker with the NVIDIA container
-# toolkit. NVIDIA's model card asks for >= 32 GB of GPU memory and its repo for vllm >= 0.11.0 with
-# --max-model-len 8192-16384. No --reasoning-parser: see agent/cosmos_reason2_endpoint.py (the port splits <think>).
-#
-#   MODE=spark bash serve.sh   # sponsor DGX Spark (GB10, aarch64, unified memory shared with other users)
-#   MODE=brev  bash serve.sh   # rented x86 Brev box (fallback)
-#
-# Images, pinned by digest: spark uses NVIDIA's NGC vLLM container (nvcr.io/nvidia/vllm, built for DGX Spark / arm64);
-# brev uses vLLM's own vllm/vllm-openai. Everything this script writes lives under $WORK (spark: ~/fanuc-t35), and the
-# container is named cosmos-reason2; nothing else on the host is touched.
-#
-# The Hugging Face token must already be at $HF_DIR/token (copied file-to-file, never printed); the container reads it
-# from the mounted cache, so it never appears on a command line or in the environment. The server listens on
-# 127.0.0.1:$PORT only; reach it through `ssh -L`. Weights are pinned to MODEL_REVISION in agent/cosmos_reason2_endpoint.py.
-# MODEL_REPO / MODEL_REVISION / SERVED_NAME overrides exist only for plumbing checks with other weights; the
-# production port and health check reject any model but Cosmos-Reason2-8B from nvidia/Cosmos-Reason2-8B.
+# Serve nvidia/Cosmos-Reason2-8B with the vLLM OpenAI-compatible server on the GPU host, bound to 127.0.0.1.
+# Authored by Shritej Gunda.
+#   MODE=spark bash serve.sh   # DGX Spark (NGC vLLM image)
+#   MODE=brev  bash serve.sh   # rented x86 Brev box (vllm/vllm-openai image)
+# The Hugging Face token must already be at $HF_DIR/token; weights are pinned in agent/cosmos_reason2_endpoint.py.
 set -euo pipefail
 
 MODE="${MODE:-brev}"

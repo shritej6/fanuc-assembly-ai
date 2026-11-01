@@ -1,4 +1,5 @@
-"""Validated nominal CAD assets for pose-estimation preflight."""
+"""Validated nominal CAD assets for pose-estimation preflight.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ class PoseAssetError(ValueError):
 
 @dataclass(frozen=True)
 class PoseAsset:
+    """One validated nominal CAD asset."""
     object_id: str
     mesh_path: Path
     mesh_scale_to_m: float

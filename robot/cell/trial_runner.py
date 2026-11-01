@@ -1,4 +1,6 @@
-"""Real-CELL trial containment for typed fail-closed policy holds."""
+"""Real-cell trial containment for typed fail-closed policy holds.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

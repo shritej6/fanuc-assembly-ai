@@ -1,4 +1,6 @@
-"""Real-cell recovery targets derived from reviewed zones plus pinned CAD/T29 geometry."""
+"""Real-cell recovery targets from reviewed zones and pinned CAD geometry.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

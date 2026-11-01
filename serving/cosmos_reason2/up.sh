@@ -1,14 +1,10 @@
 #!/bin/bash
-# One command, from the laptop at the repo root, Saturday morning: serve Cosmos Reason 2 8B on a GPU host, tunnel it
-# to http://127.0.0.1:8000/v1 and run the health check.
-#
-#   MODE=spark bash serving/cosmos_reason2/up.sh        # sponsor DGX Spark (`ssh spark`), the plan's endpoint host
-#   bash serving/cosmos_reason2/up.sh                   # fallback: rent Brev box $BOX (default fa-c1)
-#   MODE=spark bash serving/cosmos_reason2/up.sh down   # stop the server + tunnel (brev: also DELETES the box)
-#
-# TYPES is the Brev fallback chain (first that provisions wins; all have >= 48 GB, NVIDIA asks for >= 32 GB).
-# TOKEN_FILE is a local Hugging Face token file whose account has accepted the Cosmos-Reason2-8B licence on
-# huggingface.co; it is copied file-to-file with scp and never printed. Any failure stops the script.
+# Serve Cosmos Reason 2 8B on a GPU host, tunnel it to http://127.0.0.1:8000/v1 and run the health check.
+# Authored by Shritej Gunda.
+#   MODE=spark bash serving/cosmos_reason2/up.sh        # DGX Spark host
+#   bash serving/cosmos_reason2/up.sh                   # fallback: rented Brev box $BOX
+#   MODE=spark bash serving/cosmos_reason2/up.sh down   # stop the server and tunnel (brev: also deletes the box)
+# TOKEN_FILE is a local Hugging Face token file; it is copied with scp and never printed.
 set -euo pipefail
 
 MODE="${MODE:-brev}"

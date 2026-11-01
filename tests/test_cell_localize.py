@@ -1,4 +1,6 @@
-"""T28: table-depth localisation and cell zones on the real calibration, against ray-cast synthetic depth."""
+"""table-depth localisation and cell zones on the real calibration, against ray-cast synthetic depth.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -13,8 +15,7 @@ SURFACE_M = geometry.SURFACE_Z
 
 
 def _render_depth(boxes: list[tuple[float, float, float, float, float]]) -> np.ndarray:
-    """Depth (uint16 mm) the table depth camera sees: the table plus axis-aligned boxes (x, y, half_x, half_y, h) in
-    UF0 mm, ray-cast exactly through the camera's pinhole model."""
+    """Depth (uint16 mm) the table depth camera sees."""
     cam = CAMS["table_depth"]
     w, h = cam["size"]
     v, u = np.mgrid[0:h, 0:w].astype(float)
@@ -93,7 +94,7 @@ def test_coarse_accuracy_over_random_parts():
 
 
 def test_part_under_the_wrist_at_the_inspect_stop_projects_into_the_lower_middle():
-    """Set O renders put the target low in the wrist image (e.g. y 472-618 of 720): the camera is beside the tool."""
+    """Set O renders put the target low in the wrist image (e.g."""
     from sdg.wrist_ik import _starter_robot, solve_tcp
 
     ik, robot = _starter_robot()

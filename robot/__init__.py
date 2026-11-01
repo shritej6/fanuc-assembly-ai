@@ -1,4 +1,6 @@
-"""Runtime-neutral robot adapter API."""
+"""Runtime-neutral robot adapter API.
+Authored by Shritej Gunda.
+"""
 
 from robot.adapter import (
     ActionBoundsError,

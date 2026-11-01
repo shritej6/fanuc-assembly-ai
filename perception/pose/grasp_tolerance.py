@@ -1,17 +1,5 @@
-"""Score FoundationPose estimates where the gripper acts: at the grasp TCP and on the part's up axis (T34).
-
-ADD-S says how far the whole mesh is off; a grasp cares about two things only:
-- TCP error: distance between where the estimate and the truth put the commanded grasp TCP
-  (`cad/grasp_frames.json` `grips[].tcp_local_mm`, installed-local mm, mapped to the STL frame with
-  `inv(T_local_from_stl)`). A part that is symmetric under the swap of the two wrist turns may be estimated turned
-  by 180 deg; the TCP of turn k then lands on the truth's other turn, which grips the part just as well, so each
-  turn is scored against the nearer truth TCP and the worse turn is kept.
-- tilt error: angle between the estimated and true installed-local +Z (the part's up axis). Yaw about +Z is not in
-  it, so symmetry about the vertical axis cannot inflate it.
-
-Gate (T34 brief): TCP error <= 1.8 mm and tilt error <= 3 deg. Parts without grips (bases) are not scored.
-Poses are 4x4 object-to-camera transforms in metres with the STL as the object frame, as FoundationPose returns.
-"""
+"""Score FoundationPose estimates at the grasp TCP and on the part's up axis.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -51,24 +39,18 @@ def grasp_errors(estimate: np.ndarray, truth: np.ndarray, points: dict) -> dict:
 
 
 def upright_hypotheses(rot_grid: np.ndarray, up_stl: np.ndarray, up_cam: np.ndarray, max_deg: float) -> np.ndarray:
-    """Mask of start rotations (object-in-camera) whose installed up axis is within max_deg of the table's up.
-
-    A part the detector calls standing (not `__fallen`) stands as installed, so a start pose that turns it upside
-    down can only converge to a mirror-like wrong answer; near-symmetric parts did exactly that with all 252 starts.
-    """
+    """Return a mask of start rotations whose up axis is within max_deg of the table's up."""
     ups = rot_grid[:, :3, :3] @ up_stl
     return ups @ up_cam >= np.cos(np.radians(max_deg))
 
 
 def within_gate(tcp_mm: float, tilt_deg: float) -> bool:
+    """Return True when both TCP and tilt errors are inside the gate."""
     return tcp_mm <= TCP_GATE_MM and tilt_deg <= TILT_GATE_DEG
 
 
 def spread(estimates: list[np.ndarray], points: dict) -> dict:
-    """Repeatability of repeated estimates of one object: largest TCP and tilt distance from their mean pose.
-
-    The reference is the first estimate's frame averaged over the TCP points, so no truth is needed.
-    """
+    """Return the largest TCP and tilt distance of repeated estimates from their mean pose."""
     tcp = points["tcp_stl_m"]
     placed = np.stack([tcp @ e[:3, :3].T + e[:3, 3] for e in estimates])           # runs x turns x 3
     centre = placed.mean(axis=0)
@@ -114,6 +96,7 @@ def report(rows: list[dict], grasp_points: dict) -> dict:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])

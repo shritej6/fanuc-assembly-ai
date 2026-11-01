@@ -1,3 +1,7 @@
+"""Tests for anomaly train.
+Authored by Shritej Gunda.
+"""
+
 from __future__ import annotations
 
 import hashlib

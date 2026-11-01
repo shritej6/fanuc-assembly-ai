@@ -1,7 +1,5 @@
-"""
-Scene construction for the ER-4iA cell, shared by build_scene.py and make_video.py.
-
-Assumes SimulationApp has already been started by the caller.
+"""Scene construction for the ER-4iA cell, shared by the build and video scripts.
+Authored by Shritej Gunda.
 """
 
 import os
@@ -102,16 +100,7 @@ _MATERIAL_SPEC = {
 
 
 def init_materials(stage):
-    """Define every material once under /World/Looks.
-
-    OmniPBR (MDL) rather than UsdPreviewSurface -- it is what the RTX renderer
-    is tuned for and gives a more predictable metallic/roughness response.
-
-    NOTE: MDL materials take a few frames to compile after the stage is built.
-    Render too early and everything comes out default white, which looks exactly
-    like a broken binding. Warm up with several world.step(render=True) calls
-    before capturing.
-    """
+    """Define every material once under /World/Looks."""
     from isaacsim.core.api.materials import OmniPBR
 
     MATS.clear()
@@ -221,11 +210,7 @@ SOFT_TIP_MAT_PATH = "/World/Physics/SoftTipMaterial"
 
 
 def enable_ccd(world):
-    """Continuous collision detection.
-
-    The bin walls are 4 mm; without CCD a fast object can pass straight through
-    one between solver steps rather than bouncing off it.
-    """
+    """Continuous collision detection."""
     try:
         ctx = world.get_physics_context()
         ctx.enable_ccd(True)
@@ -243,11 +228,7 @@ def small_contact_offsets(prim):
 
 
 def init_physics(stage):
-    """One shared physics material for the task objects and the table.
-
-    Without a material PhysX uses its defaults, which are slippery enough that a
-    parallel-jaw grasp cannot hold anything.
-    """
+    """One shared physics material for the task objects and the table."""
     UsdGeom.Scope.Define(stage, "/World/Physics")
     m = UsdPhysics.MaterialAPI.Apply(
         UsdGeom.Scope.Define(stage, PHYS_MAT_PATH).GetPrim()
@@ -292,12 +273,7 @@ def bind_physics_material(prim, path=PHYS_MAT_PATH):
 def make_dynamic(
     prim, mass, angular_damping=0.08, linear_damping=0.02, collide_self=True
 ):
-    """Turn a prim into a dynamic rigid body so it falls and collides.
-
-    collide_self=False when the collision geometry lives on child meshes, which
-    need their own convex-hull approximation -- PhysX refuses a raw triangle
-    mesh on a dynamic body and falls back with an error otherwise.
-    """
+    """Turn a prim into a dynamic rigid body so it falls and collides."""
     if collide_self:
         UsdPhysics.CollisionAPI.Apply(prim)
     rb = UsdPhysics.RigidBodyAPI.Apply(prim)
@@ -321,11 +297,7 @@ def bind_mat(prim, name):
 
 
 def place(prim, pos, yaw_deg=0.0):
-    """Set translate/orient on a prim that may already carry xform ops.
-
-    Referenced assets (the robot) arrive with [translate, orient, scale] already
-    in xformOpOrder, so AddXformOp would raise. Reuse what is there.
-    """
+    """Set translate/orient on a prim that may already carry xform ops."""
     x = UsdGeom.Xformable(prim)
     ops = {o.GetOpName(): o for o in x.GetOrderedXformOps()}
     (ops.get("xformOp:translate") or x.AddTranslateOp()).Set(Gf.Vec3d(*pos))
@@ -345,13 +317,7 @@ def place(prim, pos, yaw_deg=0.0):
 def box(
     stage, path, size, pos, color, kinematic=True, rot=None, collision=True, mat=None
 ):
-    """Axis-aligned box centred at pos. size = (x, y, z) extents.
-
-    collision=False leaves the prim out of the physics scene entirely. That
-    matters for anything we animate by writing its xform: touching the transform
-    of a collider forces PhysX to resync, which invalidates the tensor
-    simulation view and breaks the articulation mid-run.
-    """
+    """Axis-aligned box centred at pos."""
     cube = UsdGeom.Cube.Define(stage, path)
     cube.CreateSizeAttr(1.0)
     cube.CreateDisplayColorAttr([Gf.Vec3f(*color)])
@@ -397,13 +363,7 @@ def cyl(stage, path, radius, height, pos, color, collision=False, mat=None):
 
 
 def add_mat_print(stage):
-    """The printed mat as a textured quad over the whole tabletop.
-
-    assets/mat_print.png is the real artwork, rectified into the robot frame
-    from the site scan by make_mat_texture.py: row 0 is the front (+X) edge,
-    column 0 the -Y edge. It includes the yellow CAUTION edge bands and the
-    black tape marks.
-    """
+    """The printed mat as a textured quad over the whole tabletop."""
     if "mat_print" not in MATS:
         return
     (x0, x1), (y0, y1) = C.TABLE_X, C.TABLE_Y
@@ -430,12 +390,7 @@ def add_mat_print(stage):
 
 
 def add_props(stage):
-    """The dark fixture at the front-left corner of the bench (VIDEO).
-
-    Grey base plate, a raised tray with a recessed top, a block with two round
-    holes, and a pill bottle. Static colliders: the arm never goes there, but
-    the fixture is solid in the real cell.
-    """
+    """The dark fixture at the front-left corner of the bench (VIDEO)."""
     Z = C.TABLE_TOP_Z + C.SURFACE_DZ
     fx, fy = C.FIXTURE_XY
     pw, pd, pt = C.FIXTURE_PLATE
@@ -521,7 +476,7 @@ def add_props(stage):
 
 
 def add_backdrop(stage):
-    """Cut white paper laid flat on the mat, per the 2026-10-09 site update."""
+    """Cut white paper laid flat on the mat."""
     z = C.TABLE_TOP_Z + C.SURFACE_DZ + 0.0003
     x0, x1 = C.BACKDROP_X
     half = C.BACKDROP_WIDTH / 2
@@ -669,12 +624,7 @@ def build(stage, with_objects=True):
 
 
 def add_lighting(stage):
-    """Studio-ish three-point rig.
-
-    A flat dome alone gives no specular response, which flattens the machined
-    aluminium and the moulded plastic into the same look -- bad for the
-    localisation work these renders feed.
-    """
+    """Studio-ish three-point rig."""
     # A textured studio environment, not a flat colour. Metal is mostly what it
     # reflects -- against a featureless dome, machined aluminium renders as dead
     # grey however the metallic and roughness constants are set.
@@ -727,11 +677,7 @@ def add_lighting(stage):
 
 
 def _rounded_square(half, r, per_corner=9):
-    """Counter-clockwise outline of a square with rounded corners.
-
-    per_corner is odd so each arc includes its 45 deg midpoint, which is what
-    lets _ray_to_square land exactly on the outer square's corners.
-    """
+    """Counter-clockwise outline of a square with rounded corners."""
     pts = []
     for k, (cx, cy) in enumerate(
         (
@@ -836,7 +782,7 @@ def add_sort_bins(stage):
 
 
 def add_bin(stage):
-    """Legacy single-bin builder — kept for reference, not called by build()."""
+    """Legacy single-bin builder, kept for reference and not called by build()."""
     _make_bin(
         stage,
         "/World/Bin",
@@ -860,9 +806,9 @@ def add_sort_objects(stage):
 
     # ---- vials: long-axis in XY plane, centred at (x_ctr, y) ----
     # Each entry: (x_ctr, y[, yaw_deg]).  yaw_deg rotates the vial from +X
-    # toward +Y (0° = along +X).  R_Y(+90°) maps local +Z -> world +X, then
+    # toward +Y (0 deg = along +X).  R_Y(+90 deg) maps local +Z -> world +X, then
     # R_Z(yaw) tilts it.  Translation origin offsets for the rotated tail:
-    #   T = (x_ctr - L/2·cos(yaw), y - L/2·sin(yaw), Z + r)
+    #   T = (x_ctr - L/2*cos(yaw), y - L/2*sin(yaw), Z + r)
     import math as _math
 
     for i, entry in enumerate(C.SORT_VIALS):
@@ -945,7 +891,7 @@ def add_sort_objects(stage):
             if op.GetOpName() not in (translate.GetOpName(), rotate.GetOpName())
         ]
         vis_xf.SetXformOpOrder([translate] + existing + [rotate])
-        # Isaac Sim handles the inch→metre conversion via xformOp:scale:unitsResolve.
+        # Isaac Sim handles the inch -> metre conversion via xformOp:scale:unitsResolve.
 
         coll_path = f"/World/SortCap{i}/Collider/Flange"
         coll = UsdGeom.Cylinder.Define(stage, coll_path)
@@ -1020,7 +966,7 @@ def add_sort_objects(stage):
         )
         scale_cad_visual(stage, vis_path, (C.CUBE_EDGE / 0.016,) * 3)
         vis_prim = stage.GetPrimAtPath(vis_path)
-        # Isaac Sim handles inch→metre conversion; just set the colour variant.
+        # Isaac Sim handles inch -> metre conversion; just set the colour variant.
         if vis_prim.IsValid():
             vs = vis_prim.GetVariantSets().GetVariantSet("color")
             if vs and vs.IsValid():
@@ -1041,11 +987,7 @@ def add_sort_objects(stage):
 
 
 def add_grasp_cubes(stage):
-    """Row of moulded plastic cubes in front of the robot for the pick task.
-
-    Dynamic rigid bodies: they rest on the table under gravity and drop when
-    released.
-    """
+    """Row of moulded plastic cubes in front of the robot for the pick task."""
     Z = C.TABLE_TOP_Z
     e = C.CUBE_EDGE
     for i, y in enumerate(C.CUBE_ROW_Y):
@@ -1102,11 +1044,7 @@ def prism(stage, path, profile, thickness, color, mat=None):
 
 
 def revolve(stage, path, profile, color, segments=48, mat=None):
-    """Revolve a 2D (radius, axial) profile about the local Z axis.
-
-    Used for the countersunk screws, whose tapered head is not expressible with
-    the USD cone/cylinder primitives.
-    """
+    """Revolve a 2D (radius, axial) profile about the local Z axis."""
     n = len(profile)
     pts, counts, idx = [], [], []
     for k in range(segments):
@@ -1134,12 +1072,7 @@ def revolve(stage, path, profile, color, segments=48, mat=None):
 
 
 def add_screws(stage):
-    """Loose M6 x 30 countersunk socket screws (ISO 10642) lying on the mat.
-
-    90 deg conical head, as seen side-on in the cell video. Lying on its side a
-    countersunk screw rests on the head rim and the shank, so it settles with
-    its axis tilted a few degrees -- the physics works that out.
-    """
+    """Loose M6 x 30 countersunk socket screws (ISO 10642) lying on the mat."""
     Z = C.TABLE_TOP_Z + C.SURFACE_DZ
     hr, sr = C.SCREW_HEAD_D / 2, C.SCREW_SHANK_D / 2
     L, hh = C.SCREW_LENGTH, C.SCREW_HEAD_H
@@ -1229,14 +1162,7 @@ def gripper_transforms(jaw):
 
 
 def grasp_offset():
-    """Flange face to the centre of the scallop pocket.
-
-    Correct for cradling a cylinder in mid-air, WRONG for picking something off
-    a surface: the pocket sits 12 mm above the fingertips, so commanding it to an
-    object's centre height drives the tips through the table. Now that the
-    fingers carry colliders that is a hard collision, not a cosmetic issue.
-    Use tip_offset() for table-top picks.
-    """
+    """Flange face to the centre of the scallop pocket."""
     _, fx = gripper_layout()
     return fx + C.SCALLOP_AT * C.FINGER_LENGTH
 
@@ -1303,23 +1229,7 @@ def detailed_finger_visual(stage, jaw_path, sign, offset):
 
 
 def attach_gripper(stage, jaw=None, articulated=True):
-    """EOAT modelled from the bench photos, with real physics.
-
-    Static parts (adapter, cylinder, flange, gripper body, jaw plate, camera and
-    bracket) are children of J6_link and carry CollisionAPI, so PhysX treats
-    them as collision geometry belonging to that articulation link and moves
-    them with it -- no transform writes, no resync.
-
-    The two jaws are separate rigid bodies joined to J6_link by PRISMATIC joints,
-    which makes them part of the articulation. That is what lets them carry
-    colliders and still open and close: writing xforms on a collider forces a
-    PhysX resync that invalidates the tensor view mid-run, whereas a joint target
-    is exactly what the physics engine expects.
-
-    Jaw bodies live at /World/ER4iA/Jaw{L,R}, NOT under J6_link -- nesting a
-    rigid body inside another rigid body's subtree is invalid.
-    articulated=False builds a static, zero-origin assembly for inspection.
-    """
+    """EOAT modelled from the bench photos, with real physics."""
     if jaw is None:
         jaw = C.JAW_OPEN
     ax = np.array(C.TOOL_AXIS, float)
@@ -1641,7 +1551,7 @@ def attach_gripper(stage, jaw=None, articulated=True):
             drive.CreateTargetPositionAttr().Set(0.0)
 
     # Wrist vision: compact grey camera body on a bracket to one side of the
-    # tool. PHOTO 2026-10-08: no ring light — earlier model was wrong.
+    # tool. From site photos: no ring light, earlier model was wrong.
     side = np.array(C.WRISTCAM_DIR, float)
 
     def at_side(d, lateral):

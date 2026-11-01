@@ -1,4 +1,6 @@
-"""The real-cell layout is expected-state evidence, never grasp authority."""
+"""The real-cell layout is expected-state evidence, never grasp authority.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

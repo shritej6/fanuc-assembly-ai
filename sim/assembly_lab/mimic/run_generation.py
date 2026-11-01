@@ -1,17 +1,5 @@
-"""Launch mimic/generate.py workers on this host's GPUs (one Isaac Lab container per worker) and roll up the results.
-
-Runs with the host's plain python3 (stdlib only). Each worker is one container started through env/isaaclab_run.sh
-(GPU pinned, repo mounted) generating one (skill, product) group into its own recorder file; several workers can share
-a GPU. Throughput and acceptance come only from the workers' <out>.stats.json files (accepted demos, attempts,
-measured wall time), never from estimates.
-
-    python3 -m sim.assembly_lab.mimic.run_generation --run r1 --gpus 2 3 --workers-per-gpu 2 \
-        --groups pick_insert:4 pick_insert:6 --target 50 --max-attempts 400
-    python3 -m sim.assembly_lab.mimic.run_generation --rollup ~/t12_data/a7/gen/r1      # report only
-
-Seeds: <seeds>/<skill>/product_<n>_*.hdf5 (agent 3's kept recorder files, gathered by scale_generation.sh; the
-.meta.jsonl next to each file carries agent 3's per-episode metadata while the writer is still open).
-Outputs: <out>/<run>/<skill>/p<n>/<host>_g<gpu>_w<k>.hdf5 (+ .stats.json, .rejects.jsonl, .log).
+"""Launch Mimic generation workers on this host's GPUs and roll up their results.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -31,6 +19,7 @@ DATA = Path.home() / "t12_data"
 
 
 def rollup(root: Path) -> dict:
+    """Return the per-group roll-up of the worker stats under root."""
     per: dict[str, dict] = {}
     for f in sorted(root.glob("*/p*/*.hdf5.stats.json")):
         s = json.loads(f.read_text())
@@ -70,6 +59,7 @@ def closed_chunks(root: Path, args: str) -> list[str]:
 
 
 def seed_files(seeds: Path, skill: str, product: str) -> list[str]:
+    """Return the seed demo files for one skill and product."""
     files = sorted(str(p) for p in (seeds / skill).glob(f"product_{product}_*.hdf5")
                    if Path(f"{p}.meta.jsonl").exists())
     if not files:
@@ -102,6 +92,7 @@ def foreign_on_gpu(gpu: int, mine: str) -> list[str]:
 
 
 def launch(a) -> list[subprocess.Popen]:
+    """Start the worker containers and return their processes."""
     host = socket.gethostname()
     root = a.out / a.run
     busy = {g: foreign_on_gpu(g, str(root)) for g in a.gpus}
@@ -131,6 +122,7 @@ def launch(a) -> list[subprocess.Popen]:
 
 
 def main() -> None:
+    """Parse the command line and launch or report a run."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rollup", type=Path, default=None, help="only print the roll-up of a run directory")
     ap.add_argument("--closed", type=Path, default=None, help="only list the closed recorder chunks of a run directory")

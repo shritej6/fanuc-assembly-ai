@@ -1,13 +1,5 @@
-"""Per-part PatchCore crops for the test-bed run: train on good O wrist close-ups, test on C / I wrist close-ups.
-
-The user trains only on the new test-bed sets, whose wrist targets (O) stand as in their product and are all good.
-Defective wrist close-ups exist only in the old sets C and I; they are used to MEASURE, never to train, and only
-targets lying loose in their installed orientation (`_REST.json` from `sdg/tools/rest_labels.py`) are kept, so the
-test shows the pose the real bed shows. Test good and test bad both come from C / I (same camera heights), so the
-score cannot come from O's fixed wrist height; good O test-split crops measure the false-alarm share separately.
-
-Layout written under --out (anomalib `Folder` per part):
-    <part>/train_good/*.png  <part>/test_good/*.png  <part>/test_bad/*.png  <part>/o_test_good/*.png
+"""Export per-part PatchCore crops: train on good O wrist close-ups, test on C and I.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -26,7 +18,7 @@ SPLIT_SEED = 1337
 
 
 def wrist_target(label: dict) -> tuple[dict, dict] | None:
-    """The wrist target's scene object and its wrist box, or None when the target is not visible."""
+    """Return the wrist target's scene object and wrist box, or None when it is not visible."""
     spec = label["spec"]
     uid = spec.get("wrist_target_uid")
     obj = next((o for o in spec["objects"] if o["uid"] == uid), None)
@@ -37,7 +29,7 @@ def wrist_target(label: dict) -> tuple[dict, dict] | None:
 
 
 def square_crop(image: Image.Image, bbox: list[int]) -> Image.Image:
-    """Square crop around the target (context x the longer side), clipped to the image."""
+    """Return a square crop around the target, clipped to the image."""
     x0, y0, x1, y1 = bbox
     side = max(x1 - x0, y1 - y0) * CONTEXT
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -60,6 +52,7 @@ def bucket(set_name: str, index: int, obj: dict, rest: dict | None) -> str | Non
 
 
 def export(new_root: Path, old_root: Path, out: Path) -> Counter:
+    """Export crops from the O, C and I sets and return the crop counts."""
     counts: Counter = Counter()
     sources = [("O", new_root / "O")] + [(s, old_root / s) for s in ("C", "I")]
     for set_name, set_dir in sources:
@@ -85,6 +78,7 @@ def export(new_root: Path, old_root: Path, out: Path) -> Counter:
 
 
 def main() -> None:
+    """Parse arguments, export the crops and print the counts."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--new-root", type=Path, required=True, help="synthetic/ holding the test-bed set O")
     ap.add_argument("--old-root", type=Path, required=True, help="synthetic/ holding C and I with _REST.json")

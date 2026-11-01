@@ -1,4 +1,6 @@
-"""Deterministic motion compilation from calibrated absolute UF0 TCP poses."""
+"""Deterministic motion compilation from calibrated absolute UF0 TCP poses.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -97,7 +99,7 @@ class InspectionStopConfig:
 
 @dataclass(frozen=True)
 class Waypoint:
-    """One absolute T05-compatible TCP action row."""
+    """One absolute TCP action row in robot-adapter format."""
 
     x: float
     y: float

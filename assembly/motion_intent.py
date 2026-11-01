@@ -1,4 +1,6 @@
-"""Semantic motion requests shared by T09 and learned real-cell executors."""
+"""Semantic motion requests shared by the deterministic and learned executors.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -211,7 +213,7 @@ class MotionIntent:
 
     @property
     def plan_target(self) -> tuple[float, float, float, float, float, float, float]:
-        """The exact T12 language target: raw object pose, roll, then raw goal pose."""
+        """The exact policy language target: raw object pose, roll, then raw goal pose."""
         return (*self.object_pose, float(self.wrist_roll_deg), *self.goal_pose)
 
     @property

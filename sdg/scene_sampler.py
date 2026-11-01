@@ -1,12 +1,5 @@
 """Deterministic scene specs for the Isaac Sim Replicator generator.
-
-A scene spec is plain JSON: which 3 products are on the table, where every base, part, spare, reject and foreign
-object sits (4x4 transform, UF0 mm), which parts are defective, the camera / light / material draws and, for wrist
-sets, the TCP pose the arm moves to. The same (set, index) always gives the same spec, so any chunk can be re-run on
-Rosie and produce identical labels. No Isaac imports here: this runs and is tested on any laptop.
-
-    uv run python -m sdg.scene_sampler --set A --chunk 0 --out specs/A/chunk_0000.jsonl
-    uv run python -m sdg.scene_sampler --set A --n-chunks
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -28,8 +21,8 @@ REPO = Path(__file__).resolve().parents[1]
 SPEC_VERSION = 1
 MAX_TRIES = 400
 FOREIGN_RADIUS_MM = {"screw_m3": 9.0, "tape_roll": 26.0, "cube_10mm": 8.0}
-# Cell objects the detector must learn are NOT parts (real CSI photos 2026-10-29: the printed marker cards and the
-# silver wrist-camera housing were boxed as bases). Footprint radius, size (x, y, z mm). They carry no class label.
+# Cell objects the detector must learn are not parts (marker cards and the wrist-camera housing were once boxed as
+# bases). Footprint radius, size (x, y, z mm). They carry no class label.
 DISTRACTORS = {"marker_card": (50.0, (80.0, 60.0, 0.3)), "camera_box": (40.0, (64.0, 52.0, 38.0))}
 TCP_BOX = {"x": (150.0, 650.0), "y": (-450.0, 450.0), "z": (-334.0, 300.0)}
 REST_MARGIN_MM = 0.05   # a mis-built part rests this far above the contact found by sdg/tools/build_clearance.py
@@ -191,9 +184,7 @@ class SceneBuilder:
         return self._add(kind, object_id, tf, state=state, product=product, stable_pose=k, **extra)
 
     def _test_bed_pose(self, geo: dict) -> tuple[dict, int, str]:
-        """Test-bed placement: the arm cannot turn a part over, so parts stand as installed (yaw comes from _place).
-        A `fallen_prob` share lies in another resting pose instead; the planner must reject those and use a spare.
-        stable_pose is the matching drop pose, or -1 when the installed orientation is not one (an edge stand)."""
+        """Return a test-bed pose: standing as installed, or fallen with probability fallen_prob."""
         installed = geo["installed_rest"]
         up = np.array(installed["transform"])[2, :3]
         same = [np.allclose(np.array(p["transform"])[2, :3], up, atol=1e-2) for p in geo["stable_poses"]]
@@ -234,8 +225,7 @@ class SceneBuilder:
                       stable_pose=0, **extra)
 
     def _any_part_spares(self, slots: list[dict]) -> list[tuple[dict, str, np.ndarray]]:
-        """The real spare area holds a few spares of any part type, never a base (user 2026-10-28). Slots are 50 mm
-        apart and the housings are ~49 mm wide, so each slot takes a random part that clears the spares already laid."""
+        """Lay one random spare part per slot, clear of the spares already laid, and return them."""
         pool = sorted(k for k in self.inp.geometry if k.startswith("M"))
         laid: list[tuple[dict, str, np.ndarray]] = []
         circles: list[tuple[np.ndarray, float]] = []
@@ -392,8 +382,7 @@ class SceneBuilder:
         return _check_tcp([round(float(v), 3) for v in tcp])
 
     def _jitter_range(self, camera: str, rnd: dict) -> dict:
-        """Mount drift applies to the fixed table / side cameras. The wrist camera is bolted to the tool: a large
-        offset would put its eye inside its own lens housing, so it always keeps the nominal range."""
+        """Return the camera mount drift range; the wrist camera always keeps the nominal range."""
         return self.inp.sets["randomization"]["camera_jitter"] if camera == "wrist" else rnd["camera_jitter"]
 
     def _camera_jitter(self, cfg: dict) -> dict:
@@ -479,8 +468,7 @@ class SceneBuilder:
 
 
 def _rest_lift(table: list[list[float]], az_deg: float, value: float, grid: list[float]) -> float:
-    """Clearance for a tilt / shift of `value` toward azimuth `az_deg`: the larger of the two neighbouring azimuth
-    rows (so the part may float a hair, never sink), interpolated along `grid` from 0 at 0."""
+    """Return the interpolated lift for a tilt or shift toward an azimuth, never letting the part sink."""
     n = len(table)
     a0 = int(az_deg % 360 / 360 * n) % n
     lifts = [float(np.interp(value, [0.0, *grid], [0.0, *table[a % n]])) for a in (a0, a0 + 1)]

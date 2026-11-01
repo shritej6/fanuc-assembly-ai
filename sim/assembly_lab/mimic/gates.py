@@ -1,8 +1,5 @@
-"""Precision gates for every generated demo (sim/assembly_lab/INTERFACES.md "Precision gates"; user: "like heart
-surgery"). Pure numpy over the per-step observations, so the same code runs on host tests and on the GPU box.
-
-A demo is kept only if every gate holds. Every gate value is returned, accepted or not, so the rejection log shows
-exactly which gate failed and by how much.
+"""Precision gates that every generated demo must pass before it is kept.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -17,19 +14,20 @@ from .frames import wpr_to_rot
 
 @dataclass(frozen=True)
 class GateLimits:
-    """Numbers from INTERFACES.md; grip_* are agent 4's choice where INTERFACES gives no number (labelled)."""
+    """Gate limits from INTERFACES.md, with grip limits chosen where it gives no number."""
     xy_mm: float = 0.3
     yaw_deg: float = 1.0
     z_mm: float = 0.3
     tilt_deg: float = 1.0
     other_move_mm: float = 1.0
     other_turn_deg: float = 2.0
-    grip_pos_mm: float = 0.5      # agent 4 choice: in-hand offset vs the planned CAD grip (INTERFACES: "on the pad")
-    grip_roll_deg: float = 1.0    # agent 4 choice: TCP roll vs the planned roll
+    grip_pos_mm: float = 0.5      # in-hand offset vs the planned CAD grip (INTERFACES: "on the pad")
+    grip_roll_deg: float = 1.0    # TCP roll vs the planned roll
 
 
 @dataclass
 class GateReport:
+    """Gate result: pass flag, every gate value and the gates that failed."""
     ok: bool
     values: dict = field(default_factory=dict)
     failed: list = field(default_factory=list)
@@ -40,8 +38,7 @@ def _rot(pose) -> np.ndarray:
 
 
 def pose_error(actual, expected) -> dict:
-    """xy (mm), dz (mm), tilt (deg between z axes), yaw (deg about z, wrapped): for frame-to-frame offsets such as the
-    TCP in the object frame. Placed-part poses use placed_error."""
+    """Return the xy, dz, tilt and yaw errors between two frames."""
     a, e = np.asarray(actual, dtype=np.float64), np.asarray(expected, dtype=np.float64)
     ra, re = _rot(a), _rot(e)
     tilt = np.degrees(np.arccos(np.clip(ra[:, 2] @ re[:, 2], -1.0, 1.0)))
@@ -52,6 +49,7 @@ def pose_error(actual, expected) -> dict:
 
 
 def rotation_deg(a, b) -> float:
+    """Return the rotation angle in deg between two poses."""
     rel = _rot(a).T @ _rot(b)
     return float(np.degrees(np.arccos(np.clip((np.trace(rel) - 1.0) / 2.0, -1.0, 1.0))))
 
@@ -66,12 +64,7 @@ WORLD_UP = (0.0, 0.0, 1.0)
 
 
 def placed_error(actual, expected, up=WORLD_UP) -> dict:
-    """Pose error of a placed part, measured in the world so it does not depend on which local axis lies where.
-
-    tilt = angle between the installed-up direction (`up`: the world direction that is up in the expected pose,
-    objects.yaml -insert_axis) in the actual vs the expected pose; yaw = turn about world z. Comparing local z axes
-    lets a pure yaw leak into tilt for parts whose local z lies flat when installed (the *_04 locks).
-    """
+    """Return the pose error of a placed part, measured in the world frame."""
     a, e = np.asarray(actual, dtype=np.float64), np.asarray(expected, dtype=np.float64)
     d = _rot(a) @ _rot(e).T
     u = np.asarray(up, dtype=np.float64) / np.linalg.norm(up)
@@ -83,6 +76,7 @@ def placed_error(actual, expected, up=WORLD_UP) -> dict:
 
 def gate_final_pose(rep: GateReport, final_pose, expected_pose, lim: GateLimits, tilt_only: bool = False,
                     up=WORLD_UP) -> None:
+    """Check a placed part's final pose against the gate limits."""
     e = placed_error(final_pose, expected_pose, up)
     _check(rep, "final_tilt_deg", e["tilt"], lim.tilt_deg)
     if tilt_only:
@@ -93,6 +87,7 @@ def gate_final_pose(rep: GateReport, final_pose, expected_pose, lim: GateLimits,
 
 
 def gate_forces(rep: GateReport, contact_trace: np.ndarray, limits: ForceLimits) -> None:
+    """Check the peak contact forces against the force limits."""
     c = np.asarray(contact_trace, dtype=np.float64)
     peak = np.where(np.isfinite(c), np.abs(c), np.inf).max(axis=0)
     for name, v, lim in zip(("peak_axial_N", "peak_lateral_N", "peak_torque_Nm"), peak, limits.as_array()):
@@ -132,5 +127,6 @@ def gate_grip(rep: GateReport, tcp_in_obj, planned_tcp_in_obj, lim: GateLimits) 
 
 
 def finish(rep: GateReport) -> GateReport:
+    """Set the report's pass flag and return the report."""
     rep.ok = not rep.failed
     return rep

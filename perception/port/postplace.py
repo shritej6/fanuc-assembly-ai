@@ -1,12 +1,5 @@
 """Verdicts after a placement and after a recovery transfer.
-
-After a placement the part is still in the fingers, so the depth size and the defect head (both judged at pre_pick on
-the free-standing part) are not repeated: the fingers sit inside the part's footprint. What is checked is classifier
-identity, the seat and the tilt (placement.py); FoundationPose fit is recorded only as an advisory.
-
-FoundationPose seat, tilt, and recovery-zone results are diagnostics only. Even a high-fit result asks the operator,
-so this port never causes an automatic release, reinsert, or recovery transfer.
-"""
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -33,6 +26,7 @@ def _identity(expected: str, view: WristView, thresholds: CloseupThresholds) -> 
 
 def post_place_judgement(expected: str, view: WristView, seat: SeatReport,
                          thresholds: CloseupThresholds) -> tuple[Judgement, bool, bool]:
+    """Return the verdict for a part after placement."""
     identity = _identity(expected, view, thresholds)
     if identity.unsure or identity.action != "use":
         return identity, False, False

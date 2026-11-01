@@ -1,4 +1,6 @@
-"""Behavior tests for the PatchCore stage: it succeeds only when all 24 M parts are freshly measured."""
+"""Behavior tests for the PatchCore stage: it succeeds only when all 24 M parts are freshly measured.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +12,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "perception" / "brev" / "h100_t14.sh"
 
-# Stands in for the PatchCore venv's python: pip / import checks pass, the crop export writes nothing of note, and
-# train_patchcore writes metrics.json with $FAKE_STATUS (or $FAKE_STATUS_<part> for one part; "none" writes
-# nothing, as a crash would). Inline -c code runs on the real interpreter.
 FAKE_PYTHON = f"""#!/bin/sh
 case "$1 $2" in
   "-m pip") exit 0 ;;
@@ -26,7 +25,6 @@ esac
 case "$2" in *anomalib*) echo fake; exit 0 ;; esac
 exec {sys.executable} "$@"
 """
-
 
 def _fake_box(tmp_path: Path, audit_exit: int = 0) -> dict[str, str]:
     home, venv = tmp_path / "home", tmp_path / "pc-venv"

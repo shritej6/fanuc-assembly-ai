@@ -1,4 +1,6 @@
-"""Per-callback guarded motion queue with fresh scene revalidation."""
+"""Per-callback guarded motion queue with fresh scene revalidation.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

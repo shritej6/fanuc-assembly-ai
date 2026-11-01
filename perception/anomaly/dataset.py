@@ -1,4 +1,6 @@
-"""Deterministic synthetic target discovery for per-part PatchCore datasets."""
+"""Deterministic synthetic target discovery for per-part PatchCore datasets.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ class DatasetPreparationError(DatasetBoundaryError):
 
 @dataclass(frozen=True)
 class PatchCoreSample:
+    """One discovered PatchCore target and where it is used."""
     set_name: SetName
     sample_id: str
     object_id: str
@@ -59,6 +62,7 @@ class PatchCoreSample:
 
 @dataclass(frozen=True)
 class PatchCoreObjectCounts:
+    """Crop counts per split for one part."""
     object_id: str
     train_good: int
     test_good: int
@@ -68,6 +72,7 @@ class PatchCoreObjectCounts:
 
 @dataclass(frozen=True)
 class PatchCorePreparationSummary:
+    """Totals and per-part counts of one prepared PatchCore dataset."""
     object_ids: tuple[str, ...]
     per_object: tuple[PatchCoreObjectCounts, ...]
     total: int

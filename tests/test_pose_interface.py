@@ -1,3 +1,7 @@
+"""Tests for pose interface.
+Authored by Shritej Gunda.
+"""
+
 import numpy as np
 import pytest
 

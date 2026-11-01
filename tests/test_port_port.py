@@ -1,4 +1,6 @@
-"""T30 CellPerceptionPort end to end on fakes: the evidence it returns drives the real T09 verification gates."""
+"""CellPerceptionPort end to end on fakes: the evidence it returns drives the real verification gates.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

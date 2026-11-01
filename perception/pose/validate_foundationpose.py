@@ -1,12 +1,5 @@
-"""Measure pretrained FoundationPose (STL + RGB + depth) against the exact poses of the test-bed renders.
-
-Table camera only: its pose is fixed (v0.5 calibration in sim/starter/scene_config.py) plus the scene's jitter, which
-is re-applied with pxr.Gf exactly as sdg/isaac/generate.py does. Depth is stored at 640x400 (uint16 mm, the real
-cell's size), so RGB and the instance mask are resized to it and the intrinsics are scaled per axis. Only loose,
-defect-free parts are scored, standing (installed rest) and fallen ones reported apart. Writes per-object rows + a summary (ADD-S mm, translation mm, rotation deg).
-
-Run inside the fa-foundationpose container with the FoundationPose checkout on PYTHONPATH and usd-core installed.
-"""
+"""Measure pretrained FoundationPose against the exact poses of the test-bed renders.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -26,6 +19,7 @@ USD_TO_CV = np.diag([1.0, -1.0, -1.0, 1.0])   # USD camera looks down -Z with +Y
 
 
 def load_camera_config(repo: Path, name: str = "TABLE_CAM") -> dict:
+    """Load one camera's settings from the starter scene config."""
     spec = importlib.util.spec_from_file_location("scene_config", repo / "sim/starter/scene_config.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -54,12 +48,14 @@ def camera_to_world_cv(cfg: dict, jitter: dict) -> np.ndarray:
 
 
 def object_to_world(transform_uf0_mm: list[list[float]]) -> np.ndarray:
+    """Return a UF0 mm transform as a 4x4 world matrix in metres."""
     m = np.array(transform_uf0_mm, dtype=np.float64)
     m[:3, 3] = m[:3, 3] / 1000.0 + (0.0, 0.0, TABLE_TOP_Z + UF0_ABOVE_BASE_M)
     return m
 
 
 def project(K: np.ndarray, object_in_camera: np.ndarray) -> tuple[float, float]:
+    """Project an object's origin into pixel coordinates."""
     x, y, z = object_in_camera[:3, 3]
     return K[0, 0] * x / z + K[0, 2], K[1, 1] * y / z + K[1, 2]
 
@@ -77,6 +73,7 @@ def errors(estimate: np.ndarray, truth: np.ndarray, points_m: np.ndarray) -> dic
 
 
 def scene_items(chunk: Path, stem: str, cfg: dict) -> list[dict]:
+    """Return the scored objects of one rendered scene."""
     label = json.loads((chunk / "labels" / f"{stem}.json").read_text())
     spec = label["spec"]
     if "table" not in spec["cameras"]:
@@ -110,6 +107,7 @@ def check_geometry(args: argparse.Namespace) -> None:
 
 
 def load_views(chunk: Path, stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load the RGB, depth and mask images of one scene."""
     rgb = cv2.cvtColor(cv2.imread(str(chunk / "rgb" / "table" / f"{stem}.jpg")), cv2.COLOR_BGR2RGB)
     rgb = cv2.resize(rgb, DEPTH_SIZE, interpolation=cv2.INTER_AREA)
     depth = cv2.imread(str(chunk / "depth" / "table" / f"{stem}.png"), cv2.IMREAD_UNCHANGED).astype(np.float32) / 1000.0
@@ -119,6 +117,7 @@ def load_views(chunk: Path, stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarr
 
 
 def make_estimator(args: argparse.Namespace, item: dict, cache: dict, models: tuple) -> tuple:
+    """Return a cached FoundationPose estimator for the item's object."""
     if item["object_id"] not in cache:
         from estimater import FoundationPose
 
@@ -135,6 +134,7 @@ def make_estimator(args: argparse.Namespace, item: dict, cache: dict, models: tu
 
 
 def apply_upright_prior(estimator, up_stl: np.ndarray, up_cam: np.ndarray, max_deg: float) -> None:
+    """Keep only start rotations that leave the part upright."""
     import torch
 
     from perception.pose.grasp_tolerance import upright_hypotheses
@@ -153,10 +153,7 @@ def noisy(depth: np.ndarray, sigma_mm: float, rng: np.random.Generator) -> np.nd
 
 
 def estimate_rows(args, state: dict, chunk: Path, stem: str, K: np.ndarray, cfg: dict) -> list[dict]:
-    """--repeat registrations of each scored object in one scene, until a part has --per-part objects.
-
-    Fresh depth noise is drawn for every registration when --depth-noise-mm is set.
-    """
+    """Run repeated registrations per scene object and return the scored rows."""
     items = [i for i in scene_items(chunk, stem, cfg) if state["counts"].get(i["object_id"], 0) < args.per_part
              and (args.rest is None or i["rest"] == args.rest)]
     if not items:
@@ -181,6 +178,7 @@ def estimate_rows(args, state: dict, chunk: Path, stem: str, K: np.ndarray, cfg:
 
 
 def run(args: argparse.Namespace) -> None:
+    """Run the validation over every scene and write the results."""
     import nvdiffrast.torch as dr
     from estimater import PoseRefinePredictor, ScorePredictor
 
@@ -204,6 +202,7 @@ def run(args: argparse.Namespace) -> None:
 
 
 def write_summary(rows: list[dict], out: Path) -> dict:
+    """Write the per-part summary and return it."""
     out.mkdir(parents=True, exist_ok=True)
     (out / "rows.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     adds = np.array([r["adds_mm"] for r in rows]) if rows else np.zeros(0)
@@ -225,6 +224,7 @@ def write_summary(rows: list[dict], out: Path) -> dict:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--repo", type=Path, required=True, help="this repository (STL files, camera config)")
     ap.add_argument("--data", type=Path, nargs="+", required=True,

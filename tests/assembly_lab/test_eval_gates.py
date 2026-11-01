@@ -1,4 +1,6 @@
-"""Precision gates (INTERFACES.md) and unseen-layout generation for the evaluator."""
+"""Precision gates (INTERFACES.md) and unseen-layout generation for the evaluator.
+Authored by Shritej Gunda.
+"""
 from __future__ import annotations
 
 import sys
@@ -107,7 +109,7 @@ def test_grip_tcp_is_the_flange_axis_not_the_pad_point():
 @pytest.mark.parametrize("pid", ["M4_02", "M1_04", "M6_01", "M2_03"])
 @pytest.mark.parametrize("yaw,current_r", [(0.0, 180.0), (37.0, 0.0), (-120.0, 90.0)])
 def test_eval_tcp_equals_grasp_frames_tcp_for_the_turn_used(pid, yaw, current_r):
-    """grasp_frames.json tcp_local_mm[turn] (T29, per wrist turn) is the commanded TCP; eval must land on it."""
+    """grasp_frames.json tcp_local_mm[turn] is the commanded TCP; eval must land on it."""
     g = cad.grasp_frames()[pid]
     grip = g["grips"][0]
     pose = cad.table_pose(pid, 350.0, 40.0, yaw)
@@ -123,7 +125,7 @@ def test_eval_tcp_equals_grasp_frames_tcp_for_the_turn_used(pid, yaw, current_r)
 
 @pytest.mark.parametrize("pid", [p for p in cad.geometry() if not p.startswith("F")])
 def test_seated_pose_matches_env_layout_seat(pid):
-    """Regression (agent 1, 3bb7db3): seat = base_pose @ installed_in_base_frame, no extra base rest offset."""
+    """Regression: seat = base_pose @ installed_in_base_frame, no extra base rest offset."""
     sys.path.insert(0, str(REPO / "sim/assembly_lab/env"))
     import layout as env_layout
 

@@ -1,10 +1,5 @@
-"""CellPerceptionPort: the T09 `PerceptionPort` (assembly/controller_ports.py) on the real cell's cameras and models.
-
-Every call returns evidence stamped with the observation's own time, or raises a PerceptionPortError (a
-ControllerPortError, so the controller holds). Typed side information the Protocol's return types cannot carry is
-kept on the port: `last_scan` (ScanReport), `closeup(instance_id)` (CloseupReport: use / reject / second look /
-Andon with both pictures) and `placement(instance_id)` (SeatReport with the measured errors and their bounds).
-"""
+"""PerceptionPort implementation backed by the real cell cameras and trained models.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -49,6 +44,7 @@ _TRANSFER_ZONES = {InventoryZone.REJECT: Zone.REJECT, InventoryZone.STAGED: Zone
 
 
 class CellPerceptionPort:
+    """PerceptionPort on the real cell cameras and trained models."""
     def __init__(self, *, detector: Detector, classifier: WristClassifier, pose_estimator: PoseEstimator,
                  geometry: CellGeometry, thresholds: CloseupThresholds, wrist_size: SizeUncertainty,
                  wrist_pose: PoseUncertainty, table_pose: PoseUncertainty, arm_corridor: ArmCorridor,
@@ -72,6 +68,7 @@ class CellPerceptionPort:
 
     @property
     def last_scan(self) -> ScanReport | None:
+        """Return the report of the latest scan, if any."""
         return self._scanner.last_report
 
     @property
@@ -96,9 +93,11 @@ class CellPerceptionPort:
             reset_verifier()
 
     def closeup(self, instance_id: str) -> CloseupReport:
+        """Return the latest close-up report for an instance."""
         return self._report(self._closeups, instance_id, "close-up")
 
     def placement(self, instance_id: str) -> SeatReport:
+        """Return the latest placement report for an instance."""
         return self._report(self._placements, instance_id, "placement")
 
     @staticmethod
@@ -107,8 +106,9 @@ class CellPerceptionPort:
             raise UnknownInstanceError(f"no {label} report for {instance_id!r}")
         return table[instance_id]
 
-    # -- scan ---------------------------------------------------------------------------------------------------
+    # scan
     def scan(self, observation: Observation) -> InventorySnapshot:
+        """Scan the cell and return the inventory snapshot."""
         snapshot, report = self._scanner.scan(observation)
         for item in snapshot.items:
             if item.coarse_xy_mm is not None:
@@ -132,8 +132,9 @@ class CellPerceptionPort:
             self._base_poses.pop(instance_id, None)
             self.base_fit_errors[instance_id] = str(error)
 
-    # -- pre_pick -----------------------------------------------------------------------------------------------
+    # pre_pick
     def pre_pick(self, observation: Observation, part: InventoryItem) -> EvidencePair:
+        """Inspect a part before picking and return the evidence pair."""
         center = self._center(part.instance_id)
         view = self._inspector.look(observation, part.object_id, center, self._geometry.table_surface_z_mm)
         verdict = judge(part.object_id, view.reading, view.fit_score, view.side, view.size, self._thresholds)
@@ -163,8 +164,9 @@ class CellPerceptionPort:
         return CloseupReport(part.instance_id, part.object_id, NextStep.SECOND_LOOK, verdict.reason,
                              (view.image_ref,), view_request(part.instance_id, part.object_id, view.pose, top))
 
-    # -- post_place ---------------------------------------------------------------------------------------------
+    # post_place
     def post_place(self, observation: Observation, part: InventoryItem) -> PlacementEvidence:
+        """Check a placed part and return the placement evidence."""
         tcp = current_waypoint(observation)
         base_id, base = self._base_under(tcp.x, tcp.y)
         cad = self._cad.get(part.object_id)
@@ -191,9 +193,10 @@ class CellPerceptionPort:
         half = math.hypot(*self._cad.get(self._scanner.ledger.object_of(base_id)).size_mm[:2]) / 2.0
         self._scanner.assembly_bases[base_id] = (base.x_mm, base.y_mm, half)
 
-    # -- post_transfer ------------------------------------------------------------------------------------------
+    # post_transfer
     def post_transfer(self, observation: Observation, part: InventoryItem,
                       target_zone: InventoryZone) -> RecoveryTransferEvidence:
+        """Check a transferred part and return the evidence."""
         if target_zone not in _TRANSFER_ZONES:
             raise PerceptionPortError(f"no calibrated zone check for a transfer to {target_zone.value}")
         tcp = current_waypoint(observation)
@@ -215,9 +218,10 @@ class CellPerceptionPort:
         else:
             self._scanner.ledger.expect(part.instance_id, part.object_id, x_mm, y_mm)
 
-    # -- collision_scene ----------------------------------------------------------------------------------------
+    # collision_scene
     def collision_scene(self, observation: Observation, moving_instance_id: str,
                         base_instance_id: str) -> CollisionScene:
+        """Return the collision scene for a move of one instance."""
         self._require_resolved_obstacles()
         observed_at = observation_time(observation)
         base = self._refit_base(observation, base_instance_id)
@@ -257,7 +261,7 @@ class CellPerceptionPort:
 
     def _part_boxes(self, moving_instance_id: str) -> tuple:
         report = self._scanner.last_report
-        if report is None:  # guarded by _require_resolved_obstacles; retained for direct internal misuse
+        if report is None:  # already guarded by _require_resolved_obstacles
             raise PerceptionPortError("collision scene requested before the first scan")
         boxes = []
         for obj in report.objects:

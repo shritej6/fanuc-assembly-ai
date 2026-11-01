@@ -1,9 +1,5 @@
-"""Explicitly unverified placement evidence for supervised fixed inspection only.
-
-This adapter is enabled only by ``FANUC_T09_ALLOW_UNVERIFIED_PRESENCE=1``.
-It lets the controller move an open gripper to reviewed camera poses while
-keeping learned part motion fail closed until detector-backed scene evidence
-exists.
+"""Unverified placement evidence that allows fixed inspection moves only.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

@@ -1,8 +1,5 @@
 """Demo timing end to end: recorded rows, exported LeRobot rows and the runtime's playback share one clock.
-
-The recorder writes one row per Isaac env step (skills/motion.py DT_S); the export keeps every stride-th row so each
-exported row is one runtime step (policy_learn/deploy/groot_policy.py DT_S, the real cell's 5 Hz). A waypoint the
-recorded arm reached at wall time t must be the exported action the runtime reaches at the same t.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -84,7 +81,7 @@ def test_recorded_dt_reads_the_skills_recorder_step(tmp_path):
 
 def test_export_refuses_a_recording_at_another_row_period(tmp_path, limits):
     path = tmp_path / "old.hdf5"
-    write_recording(path, 20, 0.2, {"env_name": "T12", "dt_s": 0.2})   # pre-3172a6c rows: 0.2 s each
+    write_recording(path, 20, 0.2, {"env_name": "T12", "dt_s": 0.2})  # older rows: 0.2 s each
     with pytest.raises(ValueError, match="records one row per 0.2"):
         E.export([str(path)], tmp_path / "ds", E.SIM_DT_S, E.FPS, (32, 24), None, workers=1, limits_path=limits)
 

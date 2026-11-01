@@ -1,4 +1,6 @@
-"""Measured-pose projection into absolute UF0 assembly targets."""
+"""Measured-pose projection into absolute UF0 assembly targets.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Protocol-boundary tests that do not require pandas or a live ZMQ server."""
+"""Protocol-boundary tests that do not require pandas or a live ZMQ server.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Acceptance proof for the pinned Saturday real-cell factory over mock transport."""
+"""Acceptance proof for the pinned real-cell factory over mock transport.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

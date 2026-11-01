@@ -1,15 +1,6 @@
 #!/bin/bash
-# Train the test-bed models on one 8xH100 Brev box, in the user's order: RT-DETR (with fallen classes) on N R Q,
-# wrist classifier on O, set-P build-state classifier on P. Run on the box after the code is in $REPO and the sets
-# are in $DATA_ROOT/synthetic/{N,R,Q,O,P}:
-#   nohup bash perception/brev/h100_testbed.sh > ~/t27_h100.log 2>&1 &
-# Every stage appends one line to $STATUS (`<utc> <stage> start|ok|FAILED`), so a watcher can report progress.
-# START_AT=<stage> reruns from that stage after a fix, reusing the env and artifacts of the earlier stages.
-# SKIP="<stage> ..." leaves out stages that already ran on this box (e.g. a finished detector when only the
-# classifiers rerun). ALL_DONE is written only when $STATUS holds an "ok" for every required stage, from this
-# run or an earlier one; otherwise the run ends with PARTIAL_DONE and the missing stages.
-# Before each full training run the same launcher runs a 2-step smoke on all GPUs; the full run is then stopped
-# unless its measured speed after GATE_STEPS steps projects to at most MAX_STAGE_HOURS of training.
+# Train the test-bed detector and classifiers on one 8xH100 Brev box, logging each stage to $STATUS.
+# Authored by Shritej Gunda.
 set -Eeuo pipefail   # -E: the ERR trap also fires inside stage functions, so a failure always reaches $STATUS
 
 REPO="${REPO:-$HOME/fanuc-t27}"
@@ -53,7 +44,7 @@ stage() {
 }
 
 setup_env() {
-  # Codex's lock is for Python 3.12 + CUDA 12.6 wheels; uv's standalone CPython comes from PyPI, no extra apt source.
+  # The lock is for Python 3.12 + CUDA 12.6 wheels; uv's standalone CPython comes from PyPI, no extra apt source.
   python3 -m pip --version > /dev/null 2>&1 || sudo apt-get install -y python3-pip   # Crusoe's image has no pip
   python3 -m pip install --user --quiet uv
   "$HOME/.local/bin/uv" python install 3.12
@@ -128,7 +119,7 @@ stage prepare_build prepare testbed_build "$ART/build"
 stage detector train detector.sbatch "$DETECTOR_CONFIG" "$ART/main" "$RUNS/main"
 stage classifier train classifier.sbatch classifier_h100.yaml "$ART/main" "$RUNS/main"
 stage build_classifier train classifier.sbatch classifier_build_h100.yaml "$ART/build" "$RUNS/build"
-# PatchCore + FoundationPose validation (user order steps 4-5) run here when their launcher has been delivered by now.
+# PatchCore + FoundationPose validation run here when their launcher has been delivered by now.
 required=(env prepare_main prepare_build detector classifier build_classifier)
 if [[ -f "$REPO/perception/brev/h100_t14.sh" ]]; then
   stage t14 bash "$REPO/perception/brev/h100_t14.sh"

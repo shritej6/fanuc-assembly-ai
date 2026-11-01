@@ -1,11 +1,7 @@
-# CAD installation offsets locate the STL part origin in the product fixture's
-# CAD frame. Installed rotations map the STL print frame into that same frame.
-# Motion planning must transform both through the measured fixture pose; neither
-# value is an absolute UF0 TCP target. Gripper rolls are T29 grasp-frame offsets:
-# commanded TCP r = measured part yaw + roll_offset_deg. T29 defines X-closing
-# grips as 90 degrees and Y-closing grips as 0 degrees. Only that source-
-# validated turn is authorized by this catalog; the algebraic 180-degree
-# alternative remains unavailable to CELL until physical clearance evidence lands.
+# CAD-local assembly recipes for the six products in the cell.
+# Authored by Shritej Gunda.
+# Offsets and rotations are in the fixture CAD frame, not absolute UF0 targets.
+# Commanded TCP roll = measured part yaw + roll_offset_deg (X-closing 90, Y-closing 0).
 geometry_source:
   file: sdg/data/object_geometry.json
   generator: sdg/tools/object_geometry.py

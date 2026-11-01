@@ -1,8 +1,5 @@
-"""Saturday CELL entrypoint for T09 decisions and guarded GR00T motion.
-
-The controller factory is supplied explicitly because the repository has more
-than one perception/calibration deployment. CELL never substitutes the local
-mock or scripted motion when that production dependency is absent.
+"""CELL entry point that pairs controller decisions with guarded GR00T motion.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -25,13 +22,13 @@ from robot import Controller
 CELL_FACTORY_ENV = "FANUC_T09_CELL_FACTORY"
 SOFTWARE_PROOF_ENV = "FANUC_T09_SOFTWARE_PROOF"
 MOCK_PROOF_FACTORY = "robot.cell.t09_mock_runtime:build_groot_mock_controller"
-# No reviewed production factory exists on T37 yet. Adding one is a source
-# change reviewed on its own PR; an environment variable cannot self-authorize.
+# No reviewed production factory exists yet. Adding one requires a reviewed source
+# change; an environment variable cannot self-authorize.
 REVIEWED_REAL_CELL_FACTORY: str | None = None
 SATURDAY_EXECUTION_TOLERANCES = ExecutionTolerances(
     0.3,
     1.0,
-)  # sim/assembly_lab/INTERFACES.md precision gates, user-approved for Saturday.
+)  # Precision gates from sim/assembly_lab/INTERFACES.md.
 SATURDAY_ENDPOINT_SETTLE_LIMITS = EndpointSettleLimits(
     3.0,
     3.0,
@@ -49,7 +46,7 @@ SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
     base_tilt_limit_deg=3.0,
     status="PRELIMINARY",
     source=(
-        "Claude PR 24 work order 2026-10-31: 60 s pre-grasp, 90 s post-grasp insertion, "
+        "Engineering estimate: 60 s pre-grasp, 90 s post-grasp insertion, "
         "and collision-scene evidence at least every 1 s; pending CSI measurement"
     ),
     pick_s=60.0,
@@ -59,7 +56,7 @@ SATURDAY_GROOT_WATCHDOG_LIMITS = GrootWatchdogLimits(
 
 
 class CellRuntimeBlockedError(RuntimeError):
-    """A required Saturday CELL dependency is absent or unsafe."""
+    """A required CELL dependency is absent or unsafe."""
 
 
 class CellTransport(str, Enum):
@@ -71,7 +68,7 @@ class CellTransport(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeBlocker:
-    """Known post-Saturday risk intentionally excluded from motion authority."""
+    """Known deferred risk intentionally excluded from motion authority."""
 
     code: str
     owner: str
@@ -120,7 +117,7 @@ _KNOWN_RISKS = (
 
 
 def runtime_blockers() -> tuple[RuntimeBlocker, ...]:
-    """Return known risks accepted by the user's Saturday scope decision."""
+    """Return known risks accepted for the current CELL scope."""
     return _KNOWN_RISKS
 
 
@@ -176,7 +173,7 @@ def create_cell_policy(
     checkpoint: str | None,
     transport: CellTransport = CellTransport.REAL,
 ) -> Controller:
-    """Build the explicit T09 -> semantic executor -> guarded GR00T CELL path."""
+    """Build the explicit controller to semantic executor to guarded GR00T CELL path."""
     if not isinstance(transport, CellTransport):
         raise CellRuntimeBlockedError("CELL transport must be an explicit CellTransport value")
     if not isinstance(checkpoint, str) or not checkpoint.startswith("groot://"):

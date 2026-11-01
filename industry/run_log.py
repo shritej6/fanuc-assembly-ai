@@ -1,4 +1,6 @@
-"""Strict JSONL boundary for the read-only OEE dashboard."""
+"""Strict JSONL boundary for the read-only OEE dashboard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -82,7 +84,7 @@ class RunLogWriter:
 
 
 class ControllerRunLogRecorder:
-    """Bridge public T09 PackML history and terminal outcomes into JSONL."""
+    """Bridge public controller PackML history and terminal outcomes into JSONL."""
 
     def __init__(self, writer: RunLogWriter, source: EventSource, run_id: str, rollout: int) -> None:
         if not isinstance(writer, RunLogWriter):

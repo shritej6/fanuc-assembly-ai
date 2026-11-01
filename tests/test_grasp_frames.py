@@ -1,4 +1,6 @@
-"""T29: grasp/insert frames are regenerated from the printed CAD and fit the real gripper."""
+"""grasp/insert frames are regenerated from the printed CAD and fit the real gripper.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

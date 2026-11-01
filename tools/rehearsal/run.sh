@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Rehearse Codex's CELL runtime head against the laggy real-arm double, then print a short table.
+# Rehearse the cell runtime at a git ref against the laggy real-arm double and print a summary table.
+# Authored by Shritej Gunda.
 #
-#   tools/rehearsal/run.sh [--groot] [--ref origin/feature/T37-saturday-cell-integration]
+#   tools/rehearsal/run.sh [--groot] [--ref <git ref>]
 #
-# --groot  also runs the real GR00T server through an SSH tunnel to fa-eval (port 5555), closed on exit.
-# Exit code is pytest's: non-zero on a FAIL (a new unsafe behaviour) or an XPASS (a known blocker looks fixed:
-# re-review it and drop its xfail marker).
+# --groot  also runs the real GR00T server through an SSH tunnel (port 5555), closed on exit.
+# Exits non-zero on a FAIL (new unsafe behaviour) or an XPASS (a known blocker looks fixed; drop its xfail).
 set -euo pipefail
 
 REF="origin/feature/T37-saturday-cell-integration"
@@ -46,7 +46,7 @@ if [[ "$GROOT" == 1 ]]; then
 fi
 
 cd "$WORK/head"
-echo "Rehearsing Codex head ${HEAD_SHA:0:7} ($REF)"
+echo "Rehearsing integration head ${HEAD_SHA:0:7} ($REF)"
 uv sync --quiet --group dev --python 3.13
 set +e
 REHEARSAL=1 REHEARSAL_REPORT="$REPORT" uv run pytest -q -p no:cacheprovider tests/rehearsal -rxXf 2>&1 \
@@ -56,5 +56,5 @@ set -e
 echo
 [[ -s "$REPORT" ]] && uv run python -m tools.rehearsal.report "$REPORT"
 echo
-echo "Codex head ${HEAD_SHA:0:7}: pytest exit $STATUS (XFAIL = known blocker still present; XPASS/FAIL need a look)"
+echo "Integration head ${HEAD_SHA:0:7}: pytest exit $STATUS (XFAIL = known blocker still present; XPASS/FAIL need a look)"
 exit "$STATUS"

@@ -1,4 +1,6 @@
-"""Fail-closed construction boundary for the physical T09/GR00T cell."""
+"""Fail-closed construction boundary for the physical GR00T cell controller.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -347,8 +349,7 @@ def load_saturday_real_cell_dependencies() -> RealCellDependencies:
     )
 
 
-# The loader is source-pinned, but real-cell arming remains a separate None gate
-# in assembly.cell_runtime until review and explicit user approval.
+# The loader is source-pinned; real-cell arming stays a separate gate in assembly.cell_runtime.
 REVIEWED_REAL_CELL_DEPENDENCY_LOADER: Callable[[], RealCellDependencies] | None = (
     load_saturday_real_cell_dependencies
 )

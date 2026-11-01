@@ -1,4 +1,6 @@
-"""Reviewed inspection-slot poses are fixed authority, not live target coordinates."""
+"""Tests for fixed inspection registry.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

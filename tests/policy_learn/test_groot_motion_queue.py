@@ -1,4 +1,6 @@
-"""CELL semantic queue: GR00T rows are the only motion authority."""
+"""CELL semantic queue: GR00T rows are the only motion authority.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

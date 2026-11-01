@@ -1,4 +1,6 @@
-"""Operator-facing service that routes text only into approved typed ports."""
+"""Operator-facing service that routes text only into approved typed ports.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +48,7 @@ class OperatorResponse:
 
 
 class OperatorAgent:
-    """Compile operator text; all physical authority remains in the injected T09 port."""
+    """Compile operator text; all physical authority remains in the injected controller port."""
 
     def __init__(self, tasks: OperatorTaskPort) -> None:
         required = ("submit", "report", "evaluate_final_build")

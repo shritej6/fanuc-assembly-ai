@@ -1,4 +1,6 @@
-"""Evidence-backed OEE and Andon metrics derived from an append-only run log."""
+"""Evidence-backed OEE and Andon metrics derived from an append-only run log.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

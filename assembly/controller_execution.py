@@ -1,4 +1,6 @@
-"""Guarded T09 motion queue execution and boundary handling."""
+"""Guarded controller motion queue execution and boundary handling.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

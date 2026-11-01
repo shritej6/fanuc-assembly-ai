@@ -1,9 +1,5 @@
-"""Assembly instruction sheets for the 6 products, rendered from the product CAD.
-
-    uv run python cad/assembly_sheets.py
-
-One page per product: base, then steps 01 -> 04 with the new part highlighted, plus an exploded view.
-Dismantling is the exact reverse (04 -> 01). Writes docs/ASSEMBLY_INSTRUCTIONS/Product_<n>.png and one PDF.
+"""Render the assembly instruction sheets for the 6 products from the product CAD.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -75,10 +71,7 @@ def _label(name: str) -> str:
 
 
 def steps(parts, taxonomy: dict) -> list[dict]:
-    """What the sheet prints for each build step: part, gripper roll and the look-alikes from the taxonomy.
-
-    A part whose first grip zone runs along Y is gripped across its narrow side, so the gripper turns 90 degrees.
-    """
+    """Return the part, gripper roll and look-alikes printed for each build step."""
     return [{"step": f"0{i}", "object_id": p.name[:5], "part": _label(p.name),
              "gripper": "turn gripper 90°" if p.grips and p.grips[0].axis == "Y" else "normal",
              "lookalikes": list(taxonomy[p.name[:5]]["lookalikes"])}

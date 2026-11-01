@@ -1,17 +1,5 @@
-"""Isaac Lab InteractiveScene for the cell. Runs inside Isaac Lab (after AppLauncher).
-
-The whole USD (starter cell + Team V fingers + pool objects + Mimic frame markers) is written by one custom spawner,
-`spawn_cell`, the first scene entry; every Isaac Lab asset / sensor after it wraps prims that spawner made
-(`spawn=None`). The cell is a per-env template: spawn_cell builds it under /World as the starter does, then moves
-every cell prim into /World/envs/env_0/Cell, and Isaac Lab copies env_0 to env_1..N-1 on a grid (env_spacing, the
-6 m floor fits inside one cell). Only the shared look / physics materials and the dome light stay global (one sky,
-not N). Cells never touch, so collision filtering stays off; every pose a caller sees is relative to its env origin.
-
-Scene keys: `robot`; one RigidObject per pool instance named by `prim_name(uid)` (e.g. M4_01, M4_03_c2), so the
-recorder's states read `rigid_object/<name>`; Mimic frame markers `grasp_frame`, `seat_frame`, `spot_frame`
-(kinematic, no collider, invisible); `robot_contact_<link>` (that robot link vs every object), `object_contact` (net
-force on every object), `object_env_contact_<name>` (that object vs every non-robot collider); cameras `table`,
-`side`, `wrist`.
+"""Isaac Lab InteractiveScene definition for the cell.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -74,9 +62,7 @@ def _starter_path(template: str) -> str:
 
 
 def _move_cell_prims(stage, cell_root: str, built: list[str]) -> None:
-    """Move every /World child the cell build created (except GLOBAL_PRIMS) under cell_root. Sdf.CopySpec re-targets
-    relationships inside the moved subtree (joint bodies, the gripper's jaw joints); bindings to the global looks /
-    physics materials keep their absolute targets."""
+    """Move every /World child the cell build created (except GLOBAL_PRIMS) under cell_root."""
     from pxr import Sdf
 
     layer = stage.GetEditTarget().GetLayer()

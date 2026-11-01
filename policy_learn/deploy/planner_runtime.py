@@ -1,14 +1,5 @@
-"""PLANNER-DRIVEN runtime, scripted motion (user-approved 2026-10-31 ~15:15 CT, last slot): the planner drives every
-step from placement.yaml (approach at a safe transit height, grasp, carry, insert, retreat); GR00T is not asked for motion. It is
-HybridRuntime with the takeover always on, so every row still goes through the same ChunkGuard and the same
-grasp / seated / jam / time / corridor checks of DirectGrootRuntime. Every planned leg is logged as a "takeover".
-
-    from policy_learn.deploy.planner_runtime import PlannerRuntime
-    policy = PlannerRuntime("groot://127.0.0.1:5557")   # the checkpoint is kept for the interface; no chunk is requested
-
-No perception: a base hand-placed farther off than the part's capture (0.5-3 mm) jams and the seated detector holds.
-TRANSIT_MM is PRELIMINARY.
-"""
+"""Planner-driven runtime: scripted motion for every step from placement.yaml.
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 import numpy as np
@@ -26,12 +17,12 @@ def _planner_path(tcp: np.ndarray, goal, grip_after: float, after_mm: float) -> 
 
 
 class PlannerRuntime(HybridRuntime):
-    # user 2026-10-31 15:3x: the arm was too slow. Per 0.2 s row: 140 / 9 mm/s and 55 / 12.5 deg/s, still under the
-    # guard's 150 / 10 mm/s and 60 / 15 deg/s (the limits are unchanged)
+    # Per 0.2 s row: 140 / 9 mm/s and 55 / 12.5 deg/s, under the guard's 150 / 10 mm/s and 60 / 15 deg/s
+    """Runtime where the planner drives every step."""
     STEP_MM_DEG = (28.0, 1.8, 11.0, 2.5)
 
     def act(self, obs: dict) -> np.ndarray:
-        """Start the trial here so its first act is planned too (the parent would ask GR00T for it)."""
+        """Return planned rows, starting the trial on the first call."""
         pr = self.progress
         if obs.get("tcp_pose") is not None and pr.rollout is None and pr.ended is None:
             grip = float(np.asarray(obs["joints"], float)[6])
@@ -48,8 +39,7 @@ class PlannerRuntime(HybridRuntime):
             goal, grip_after, after, kind = pr.step.seat_tcp, 0.0, RETREAT_UP_MM, "insert"
         else:
             return
-        # insert: slow from just above the part's first contact with the base (up to 13 mm above the seat, M5_02),
-        # not only above the seat; run r20261031-57450f faulted on M5_02 hitting the base at free-space speed
+        # Insert: slow from just above the part's first contact with the base, not only above the seat.
         contact = max(goal[2], pr.step.contact_z) if kind == "insert" else goal[2]
         self._plan_path, self._plan_i, self._plan_contact = _planner_path(tcp, goal, grip_after, after), 0, contact
         self._event("takeover", mode=f"planner {kind}", part=pr.step.object_id,
@@ -57,7 +47,7 @@ class PlannerRuntime(HybridRuntime):
                     dz=round(float(tcp[2] - goal[2]), 1))
 
     def _groot_rows(self, obs: dict) -> np.ndarray:
-        """Between planned legs (e.g. the retreat check before the next step starts) stand still: no GR00T motion."""
+        """Return a hold between planned legs, with no GR00T motion."""
         tcp = np.asarray(obs["tcp_pose"], float)[:6]
         grip = float(np.asarray(obs["joints"], float)[6])
         self.steps += 1

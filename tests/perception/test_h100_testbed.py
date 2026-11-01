@@ -1,4 +1,6 @@
-"""Behavior tests for the 8xH100 test-bed driver's stage status lines."""
+"""Behavior tests for the 8xH100 test-bed driver's stage status lines.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -19,13 +21,8 @@ fi
 exit {exit_code}
 """
 
-
 def _fake_box(tmp_path: Path, classifier_exit: int, gpu_mib: int = 81559) -> dict[str, str]:
-    """A repo whose launchers are stubs, and an nvidia-smi that reports GPUs of `gpu_mib` MiB.
-
-    Like the real tool, a memory query without --id writes one line per GPU over time, so a reader that closes the
-    pipe early makes it die of SIGPIPE.
-    """
+    """A repo whose launchers are stubs, and an nvidia-smi that reports GPUs of `gpu_mib` MiB."""
     repo, bin_dir = tmp_path / "repo", tmp_path / "bin"
     (repo / "perception" / "rosie").mkdir(parents=True)
     bin_dir.mkdir()

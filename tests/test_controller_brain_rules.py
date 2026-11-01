@@ -1,4 +1,6 @@
-"""Regression coverage for the operator-approved robot-brain case rules."""
+"""Regression coverage for the operator-approved robot-brain case rules.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 from dataclasses import replace

@@ -1,6 +1,5 @@
-"""Load and validate `skills.yaml` without Isaac Lab, so the Mimic plan is checked on any host.
-
-Field names follow `isaaclab.envs.mimic_env_cfg.SubTaskConfig` (Isaac Lab 3.0); mimicgen.py / generate.py use them.
+"""Load and validate the Mimic plan in skills.yaml without Isaac Lab.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ class SpecError(ValueError):
 
 @dataclass(frozen=True)
 class SubtaskSpec:
+    """One subtask of a skill in the Mimic plan."""
     name: str
     object_ref: str
     term_signal: str | None
@@ -34,6 +34,7 @@ class SubtaskSpec:
 
 @dataclass(frozen=True)
 class SkillSpec:
+    """One skill of the Mimic plan and its subtasks."""
     name: str
     seed_dir: str
     description: str
@@ -41,20 +42,24 @@ class SkillSpec:
 
     @property
     def signals(self) -> list[str]:
+        """Return the subtask termination signals in order."""
         return [s.term_signal for s in self.subtasks if s.term_signal is not None]
 
 
 @dataclass(frozen=True)
 class MimicSpec:
+    """The whole validated Mimic plan."""
     raw: dict
     skills: dict[str, SkillSpec]
 
     @property
     def eef_name(self) -> str:
+        """Return the end effector name."""
         return self.raw["eef_name"]
 
     @property
     def rot_rad_per_m(self) -> float:
+        """Return the rotation noise in rad per metre of position noise."""
         return math.radians(float(self.raw["rot_deg_per_mm"])) * 1000.0
 
 
@@ -87,6 +92,7 @@ def _skill(name: str, raw: dict, noise: dict) -> SkillSpec:
 
 
 def load_spec(path: str | Path = SPEC_PATH) -> MimicSpec:
+    """Load skills.yaml, validate it and return the MimicSpec."""
     raw = yaml.safe_load(Path(path).read_text())
     noise = raw["noise_profiles"]
     contact_limit_m = 0.5e-3  # 0.5 mm clearance per side (cad/products/parameters.py)

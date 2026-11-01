@@ -1,24 +1,5 @@
-"""Look-alike size gate: measure the part first, then match the measured size to the CAD (user rule 2026-10-29).
-
-Look-alikes differ in dimensions (sim/assembly_lab/objects/LOOKALIKES.md on feature/T12-mimic). The measurement is
-the depth points on the part, put into the part's installed-local frame with the FoundationPose fit:
-
-- footprint: the extent (max - min) of the points along local x and y, compared sorted (so a 90 deg yaw ambiguity
-  cannot swap the axes) with the CAD bbox size. Stray depth clusters are already removed by the connected-group
-  selection; a percentile extent would shrink a uniform face by the trimmed fraction (4 % for 2-98) and is not used.
-  Flying pixels on edges would inflate the extent; that error is part of the (PRELIMINARY) bound;
-- height: the depth points are binned on a HEIGHT_CELL_MM grid in the part frame and each cell's median z taken
-  (about 30 wrist pixels per cell at 150 mm, so per-pixel noise drops about five-fold); the height is the median of
-  the highest TOP_FRACTION of those cell medians above the support plane. A plain high percentile of raw pixels would
-  read about two noise sigmas high (measured wrist noise below); this reads about 0.3 sigma high on a flat face;
-- top cues: where objects.yaml lists a region whose top height differs between two look-alikes (e.g. the M1_02 post
-  is 17 mm, the M2_02 post 16 mm), the median local z of the points in that region is compared with both heights.
-  Regions narrower than MIN_CUE_SIDE_MM are not used: LOOKALIKES.md section 3 says stereo depth smooths the 1 mm lock
-  ribs and 0.8 mm insert markers away, so those pairs are read from colour by the wrist classifier.
-
-A dimension agrees with a CAD value when it is within the stated uncertainty, which is a bound and carries its status.
-Nothing here is calibrated on the cell: the wrist numbers below are PRELIMINARY until measured on real parts.
-"""
+"""Look-alike size gate: measure the part, then match the measured size to the CAD.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -40,6 +21,7 @@ MIN_CELL_POINTS = 5
 
 
 class Status(StrEnum):
+    """Whether an uncertainty is measured or an estimate."""
     PRELIMINARY = "PRELIMINARY"
     MEASURED = "MEASURED"
 
@@ -73,6 +55,7 @@ TABLE_DEPTH_PRELIMINARY = SizeUncertainty(
 
 
 class SizeOutcome(StrEnum):
+    """Outcome of matching a measured size to the CAD."""
     CONFIRMS = "confirms"                # the expected object fits and no look-alike does
     CANNOT_SEPARATE = "cannot_separate"  # the expected object and a look-alike both fit: identity rests on colour
     CONTRADICTS = "contradicts"          # the expected object does not fit, another of the 30 does
@@ -82,6 +65,7 @@ class SizeOutcome(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SizeMeasurement:
+    """Measured size of one part."""
     footprint_mm: tuple[float, float]    # sorted (short, long)
     height_mm: float
     points: int
@@ -90,6 +74,7 @@ class SizeMeasurement:
 
 @dataclass(frozen=True, slots=True)
 class SizeVerdict:
+    """Size gate verdict for one part."""
     outcome: SizeOutcome
     expected: str
     matching: tuple[str, ...]            # objects whose CAD fits the measurement (after cues)

@@ -1,4 +1,6 @@
-"""Post-placement verification and inventory commit flow."""
+"""Post-placement verification and inventory commit flow.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

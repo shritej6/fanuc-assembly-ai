@@ -1,4 +1,6 @@
-"""Fixed inspection poses are guarded camera moves, never learned part motion."""
+"""Fixed inspection poses are guarded camera moves, never learned part motion.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -11,8 +13,8 @@ from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionPhase, Waypoint
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
 from policy_learn.deploy.cell_groot_policy import CellPolicySafetyError, GrootPolicy
-from policy_learn.deploy.groot_queue import GrootMotionQueue
 from policy_learn.deploy.cell_guards import GuardLimits
+from policy_learn.deploy.groot_queue import GrootMotionQueue
 
 SETTLE = EndpointSettleLimits(2.0, 3.0, "PRELIMINARY", "fixed inspection test fixture")
 WATCHDOG = GrootWatchdogLimits(

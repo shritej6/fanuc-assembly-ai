@@ -1,15 +1,5 @@
-"""Seating torque on each object from its NON-robot contacts (other objects, table, mat, floor), per contact point.
-
-PhysX reports, for every sensor body i and filter shape j, a run of contact points (normal force magnitude, point,
-normal) and a run of friction anchors (friction force vector, point), each run located by count[i, j] / start[i, j]
-in a flat buffer (RigidContactView.get_contact_data / get_friction_data). The torque on body i about its centre of
-mass is sum (p - com) x F over both runs; torque_Nm is its component along the body's insert axis (body +Z).
-
-A part held in the air has no non-robot contact, so its torque is exactly 0 (the robot's pinch couple, which the old
-estimate counted, is not a seating load). Contact points farther than `max_arm` from the COM cannot lie on the part
-and are dropped (buffer artefacts). The guard value is gated by `robot_loaded`: a part the robot is not loading (not
-touched, not touching a touched part) is at rest under its own weight and reads 0; the ungated value is kept as the
-raw reading for logging. Works on numpy or torch arrays, so it is unit-tested without Isaac Sim.
+"""Compute the seating torque on each object from its non-robot contacts.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -70,10 +60,7 @@ def _near(arm, max_arm):
 
 def env_torque(normal_f, points, normals, n_counts, n_starts, friction, f_points, f_counts, f_starts, com, axis,
                max_arm=None):
-    """Returns (torque about the insert axis |tau . axis| (N,), full torque (N, 3), contact force sum (N, 3)).
-
-    normal_f (C,) or (C, 1), points / normals (C, 3), friction / f_points (F, 3), counts / starts (N, M),
-    com / axis (N, 3) world frame (axis unit); contacts farther than max_arm (m) from the COM are dropped."""
+    """Returns (torque about the insert axis |tau ."""
     n = com.shape[0]
     owner, idx = _runs(n_counts, n_starts)
     fn = normal_f.reshape(-1)[idx]
@@ -91,9 +78,7 @@ def env_torque(normal_f, points, normals, n_counts, n_starts, friction, f_points
 
 
 def robot_loaded(touch_n, pair_n, eps=1e-3):
-    """(..., N) bool: the robot loads object i this physics step, i.e. a robot link touches it (touch_n[i] > eps) or it
-    touches an object a robot link touches (pair_n[i, j] > eps, the contact force between objects i and j). Leading
-    dims (envs) broadcast: touch_n (..., N), pair_n (..., N, N)."""
+    """(..., N) bool: the robot loads object i this physics step, i.e."""
     touched = touch_n > eps
     return touched | ((pair_n > eps) & touched[..., None, :]).any(-1)
 

@@ -1,4 +1,6 @@
-"""Inspection-gated pick, reject, and insert preparation for T09."""
+"""Inspection-gated pick, reject and insert preparation for the controller.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-"""Typed records written to frozen T13 JSONL manifests."""
+"""Typed records written to the frozen JSONL training manifests.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class Annotation:
+    """One labelled object in an image record."""
     uid: str
     object_id: str
     class_id: int
@@ -21,6 +23,7 @@ class Annotation:
     label: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the annotation as a JSON-ready dict."""
         return {
             "uid": self.uid,
             "object_id": self.object_id,
@@ -37,6 +40,7 @@ class Annotation:
 
 @dataclass(frozen=True)
 class ImageRecord:
+    """One image entry of a frozen manifest with its annotations."""
     task: str
     scene_id: str
     set_name: str
@@ -53,10 +57,12 @@ class ImageRecord:
     target: Annotation | None = None
 
     def sort_key(self) -> tuple[str, int, str, int]:
+        """Return the stable sort key for manifest ordering."""
         variant_order = 0 if self.variant == "native" else 1
         return self.set_name, self.index, self.camera, variant_order
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the record as a JSON-ready dict."""
         record: dict[str, Any] = {
             "schema_version": 2,
             "task": self.task,

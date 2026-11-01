@@ -1,9 +1,5 @@
-"""Turn a scene spec into USD prims on the starter cell. Runs inside Isaac Sim (imports pxr / starter modules).
-
-UNTESTED until the Rosie pilot (T08). Written against the Isaac Sim 6.x Python API.
-
-Frames: specs are UF0 mm. The starter stage is metres with the robot base mount at (0, 0, TABLE_TOP_Z), and UF0's
-origin is 330 mm above the base mount, so  world = (x/1000, y/1000, TABLE_TOP_Z + (z + 330)/1000).
+"""Turn a scene spec into USD prims on the starter cell inside Isaac Sim.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -24,7 +20,7 @@ STARTER_LIGHTS = ("/World/DomeLight", "/World/KeyLight", "/World/FillLight", "/W
 
 
 class MissingVariantMesh(FileNotFoundError):
-    """A defect variant is requested but its mesh (T06) is absent. Never render the good part under a defect label."""
+    """A defect variant is requested but its mesh is absent. Never render the good part under a defect label."""
 
 
 def read_binary_stl(path: Path) -> tuple[np.ndarray, np.ndarray]:

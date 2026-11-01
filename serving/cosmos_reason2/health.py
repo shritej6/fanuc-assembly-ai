@@ -1,12 +1,5 @@
-"""Health check for the Cosmos Reason 2 8B build-check endpoint: right model, right weights, parseable answers.
-
-    uv run python -m serving.cosmos_reason2.health [--base-url http://127.0.0.1:8000/v1]
-
-Passes (exit 0) only if ``/v1/models`` serves exactly ``Cosmos-Reason2-8B`` from ``nvidia/Cosmos-Reason2-8B`` and
-both bundled rendered set D crops (a seated and a raised top part, sim only) come back from the production port
-(``CosmosReason2Endpoint.check``) as a parsed verdict. The verdicts and latencies are printed; a wrong verdict does not
-fail the check (accuracy is measured by eval/cosmos_reason2_bench.py), an unparseable or missing answer does.
-"""
+"""Health check for the Cosmos Reason 2 8B endpoint: right model, right weights, parseable answers.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -51,6 +44,7 @@ def _request(case: dict, image: bytes) -> FinalBuildRequest:
 
 
 def main() -> int:
+    """Run the health checks and return the exit code."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     args = parser.parse_args()

@@ -1,1 +1,3 @@
-"""Depth-based inspection evidence."""
+"""Depth-based inspection evidence.
+Authored by Shritej Gunda.
+"""

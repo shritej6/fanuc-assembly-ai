@@ -1,15 +1,5 @@
-"""One part's inspection verdict (contracts/inspection.schema.json) from the T27 models' outputs at the inspect stop.
-
-Who decides what:
-- the detector's class says foreign object or fallen part (`<object_id>__fallen`); a fallen part is rejected (user
-  rule 2026-10-29) and its identity is the detector's, since the wrist models only learned installed-orientation
-  close-ups;
-- the wrist classifier decides identity; below its measured confidence the part goes to the operator;
-- `checks_agree` records whether the classifier's identity and the advisory FoundationPose fit agree. Bases of
-  one `base_type` are the same mesh (contracts/taxonomy.json: F01=F02, F04=F05=F06, 0.0 mm), so neither model can
-  tell them apart and any base of the right type agrees (user 2026-10-29: same-shape bases are interchangeable);
-- PatchCore is advisory: a score above its measured threshold asks the operator and never creates a reject verdict.
-  Missing PatchCore or FoundationPose evidence is recorded as a warning, not made into motion authority.
+"""Turn the model outputs at the inspect stop into one part's inspection verdict.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -36,6 +26,7 @@ def same_shape(a: str, b: str) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Thresholds:
+    """Decision thresholds for the classifier, pose fit and PatchCore."""
     classifier_min: float
     pose_fit_min: float
     patchcore_max: dict[str, float]
@@ -43,6 +34,7 @@ class Thresholds:
 
     @classmethod
     def load(cls, path: Path, parts: tuple[str, ...]) -> Thresholds:
+        """Load and validate thresholds from a JSON file."""
         del parts
         raw = json.loads(path.read_text())
         patchcore = raw.get("patchcore_max", {})
@@ -59,6 +51,7 @@ class Thresholds:
 
 @dataclass(frozen=True, slots=True)
 class Evidence:
+    """Model outputs for one part at the inspect stop."""
     detector_label: str
     classifier: tuple[str, float] | None      # top identity and its probability
     pose_fit: tuple[str, float] | None        # FoundationPose's best mesh and its fit score
@@ -95,6 +88,7 @@ def _foundationpose_warnings(identity: str, evidence: Evidence, thresholds: Thre
 
 
 def inspect(instance_id: str, evidence: Evidence, thresholds: Thresholds) -> dict:
+    """Return the inspection verdict for one part."""
     label = evidence.detector_label
     if label in FOREIGN_LABELS:
         return _result(instance_id, None, "foreign", "reject", True, evidence)

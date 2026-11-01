@@ -1,4 +1,6 @@
-"""Fail-closed perception gates and bounded insertion recovery decisions."""
+"""Fail-closed perception gates and bounded insertion recovery decisions.
+Authored by Shritej Gunda.
+"""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass

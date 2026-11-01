@@ -1,4 +1,5 @@
-"""Fail-closed identity and capability checks for a served GR00T checkpoint."""
+"""Fail-closed identity and capability checks for a served GR00T checkpoint.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -31,11 +32,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 
 class AttestationError(RuntimeError):
-    """A served checkpoint cannot prove the exact Saturday deployment contract."""
+    """Raised when a served checkpoint cannot prove the deployment contract."""
 
 
 @dataclass(frozen=True, slots=True)
 class DeploymentAttestation:
+    """Identity and capabilities reported by a served checkpoint."""
     checkpoint_sha256: str
     model_id: str
     model_revision: str
@@ -58,7 +60,7 @@ class DeploymentAttestation:
 
 @dataclass(frozen=True, slots=True)
 class DeploymentPin:
-    """Repository-reviewed pointer to one immutable deployment manifest."""
+    """Reviewed pointer to one immutable deployment manifest."""
 
     manifest: str
     sha256: str
@@ -78,13 +80,12 @@ class ReviewedDeployment:
             raise AttestationError("reviewed deployments can only be created by the pinned-record loader")
 
 
-# Deliberately empty until the trained checkpoint, evaluation, and CSI calibration
-# have a dual-reviewed immutable manifest. An empty registry makes production fail closed.
+# Empty until a reviewed manifest exists, so production fails closed.
 APPROVED_DEPLOYMENT_PINS: Mapping[str, DeploymentPin] = MappingProxyType({})
 
 
 def attestation_from_mapping(value: object) -> DeploymentAttestation:
-    """Decode the versioned server payload without accepting implicit defaults."""
+    """Return the attestation decoded from the versioned server payload."""
     if not isinstance(value, Mapping):
         raise AttestationError("server attestation must be a mapping")
     expected = {field.name for field in fields(DeploymentAttestation)}
@@ -121,7 +122,7 @@ def _read_record(path: Path) -> bytes:
 
 
 def load_reviewed_deployment(name: str) -> ReviewedDeployment:
-    """Load one local approval only when its bytes match the repository trust registry."""
+    """Load one local approval only when its bytes match the trust registry."""
     if not isinstance(name, str) or not name.strip():
         raise AttestationError("deployment name must be a non-empty string")
     try:
@@ -224,7 +225,7 @@ def validate_attestation(
     *,
     expected: DeploymentAttestation,
 ) -> DeploymentAttestation:
-    """Return the attestation only after identity, interface, evaluation, and server proof agree."""
+    """Return the attestation once identity, interface, evaluation and server proof agree."""
     for candidate, label in ((expected, "approved"), (value, "server")):
         if not isinstance(candidate, DeploymentAttestation):
             raise AttestationError(f"{label} attestation has the wrong type")

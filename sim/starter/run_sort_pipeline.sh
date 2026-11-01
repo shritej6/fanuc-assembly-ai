@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Capture -> Cosmos -> plan -> physical execution -> review videos.
+# Run the sort pipeline: capture, Cosmos, plan, physical execution and review videos.
+# Authored by Shritej Gunda.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ISAAC="${ISAAC:-/isaacsim}"

@@ -1,4 +1,6 @@
-"""Re-render bookkeeping: only scenes whose sampled spec changed are superseded; renderer notes do not count."""
+"""Re-render bookkeeping: only scenes whose sampled spec changed are superseded; renderer notes do not count.
+Authored by Shritej Gunda.
+"""
 
 import json
 

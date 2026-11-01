@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# Scale Mimic generation over several Brev hosts from the controller (the Mac with the fa-* ssh aliases).
+# Scale Mimic generation over several GPU hosts from a controller machine.
+# Authored by Shritej Gunda.
 # Every step is idempotent; workers run detached on the hosts (nohup), so the controller may sleep in between.
 #
 #   M=sim/assembly_lab/mimic/scale_generation.sh
-#   $M repo                           # repo_a7 = fa-sim run10 copy + repo_sync2 env (md5-verified) + mimic/
-#   $M seeds                          # agent 3's closed seed files (+ drop tags) from fa-mimic -> every host
+#   $M repo                           # build the run copy (md5-verified env) on every host
+#   $M seeds                          # closed seed files (+ drop tags) from the gather host -> every host
 #   MIMIC_GROUPS="pick_insert:4 pick_insert:6" TARGET=50 MAXATT=400 \
 #     $M launch r1 fa-sim:1,2,3:2 fa-mimic:0,1,2,3:2 fa-gen1:0,1,2,3:2 fa-a6k-1:0,1:2 fa-l40s-1:0:2
 #   $M status r1                      # per-host roll-up of the workers' measured stats
 #   $M export r1                      # per host: LeRobot v2.1 export of its kept demos -> fa-mimic; validate + prepare
 #   $M drain r1 fa-g2 fa-g13          # before deleting a box: finish attempts, export + archive raw on fa-mimic
 #
-# host spec = <ssh alias>:<comma-separated GPUs>:<workers per GPU>. launch refuses a GPU that runs a container that is
-# not ours (run_generation.py checks it on the host). Nothing here stops or touches other agents' containers.
+# host spec = <ssh alias>:<comma-separated GPUs>:<workers per GPU>. launch refuses a GPU that runs a container
+# that is not ours (run_generation.py checks it on the host); other containers are never touched.
 set -euo pipefail
 HOSTS=${HOSTS:-"fa-sim fa-mimic fa-gen1 fa-a6k-1 fa-l40s-1"}
 GATHER=${GATHER:-fa-mimic}
 SKILLS=${SKILLS:-"pick_insert"}
 SCR=${SCR:-${TMPDIR:-/tmp}/t12_a7}
 SRC_REPO_HOST=${SRC_REPO_HOST:-fa-sim}
-SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # agent 3's recording copy: the skills + gates the seeds came from
+SRC_REPO=${SRC_REPO:-t12_data/repo_run10}  # the recording copy: the skills + gates the seeds came from
 ENV_REPO=${ENV_REPO:-t12_data/repo_sync2}  # the current env (real gripper mass); overlaid on SRC_REPO
 ENV_MD5=${ENV_MD5:-dbcfe5fd48d73cde763ffdc4316291a5}  # md5 of ${ENV_REPO}.md5, the manifest of its files
 REPO_NAME=${REPO_NAME:-repo_a7}  # the built copy: ~/t12_data/$REPO_NAME on every host (a new env gets a new name)
@@ -29,8 +30,8 @@ RSYNC=(rsync -a -e "ssh -o ControlPath=none -o ConnectTimeout=15")
 TOOLS='~/.local/bin/uv run -q --no-project --with h5py --with numpy --with pandas --with pyarrow --with pillow --with pyyaml --with imageio-ffmpeg'
 
 seeds() {
-  # agent 3 gathers its closed per-part files on $GATHER and lists them in run10_closed.txt; stage_seeds.py copies
-  # only those, with a .drop.json per file from run10_drop_tags.jsonl (run `repo` first: it needs repo_a7 there)
+  # the closed per-part seed files are listed in run10_closed.txt on $GATHER; stage_seeds.py copies only those,
+  # with a .drop.json per file from run10_drop_tags.jsonl (run `repo` first: it needs repo_a7 there)
   "${SSH[@]}" "$GATHER" "cd ~/t12_data/repo_a7 && python3 -m sim.assembly_lab.mimic.stage_seeds"
   mkdir -p "$SCR/seeds_all"
   ssh -o ControlPath=none -o ConnectTimeout=15 -n "$GATHER" 'tar -C ~/t12_data/a7/seed_stage -cf - .' | tar -C "$SCR/seeds_all" -xf -
@@ -42,7 +43,7 @@ seeds() {
 }
 
 repo() {
-  # repo_a7 = agent 3's run10 copy (skills, robot/, policy_learn) + the current env (ENV_REPO, verified against its md5
+  # repo_a7 = the recording copy (skills, robot/, policy_learn) + the current env (ENV_REPO, verified against its md5
   # manifest, whose own md5 must be ENV_MD5) + this checkout's mimic/. ENV_MANIFEST_MD5 is stamped into every demo.
   mkdir -p "$SCR/$REPO_NAME"
   "${RSYNC[@]}" --delete --exclude .git --exclude __pycache__ "${SRC_REPO_HOST}:${SRC_REPO}/" "$SCR/$REPO_NAME/"
@@ -89,7 +90,7 @@ launch() {
   for spec in "$@"; do
     IFS=: read -r h gpus wpg <<< "$spec"
     # only the redirected launcher goes to the background, so the ssh session closes at once
-    # CACHE_TAG: our own Kit/shader cache dirs, apart from other agents' caches on shared hosts
+    # CACHE_TAG: our own Kit/shader cache dirs, apart from other caches on shared hosts
     local cmd="cd ~/${REPO_DIR:-t12_data/$REPO_NAME} && mkdir -p ~/t12_data/a7/gen/$run && { CACHE_TAG=${CACHE_TAG:-_a7} nohup python3 -m sim.assembly_lab.mimic.run_generation \
       --run $run --gpus ${gpus//,/ } --workers-per-gpu $wpg --groups $MIMIC_GROUPS --target ${TARGET:-50} \
       --max-attempts ${MAXATT:-400} --seed $RANDOM --stagger-s ${STAGGER:-30} --num-envs ${NUM_ENVS:-1} --repo ~/${REPO_DIR:-t12_data/$REPO_NAME} \

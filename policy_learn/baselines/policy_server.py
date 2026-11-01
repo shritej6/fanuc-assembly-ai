@@ -1,20 +1,5 @@
-"""Serve a LeRobot ACT or SmolVLA checkpoint behind GR00T's PolicyServer wire protocol (SIM COMPARISON ONLY).
-
-    python -m policy_learn.baselines.policy_server --checkpoint ~/baseline_runs/act/checkpoints/last/pretrained_model \
-        --port 5561 [--device cuda]
-
-The evaluator then drives it exactly like GR00T, with no change to its files:
-    run_eval.py --policy groot://127.0.0.1:5561
-`GrootPolicy` -> agent 5's `GrootTcpClient` (eef_9d + gripper, dt 0.2 s) -> this server -> LeRobot policy, and every
-returned chunk goes through `policy_learn/deploy/guards.py` like GR00T's. ACT and SmolVLA are never deployed to the
-real cell (user rule, 2026-10-30): GR00T N1.7 drives all real-robot motion.
-
-Protocol (Isaac-GR00T `gr00t/policy/server_client.py`, msgpack-numpy over ZMQ REQ/REP): a request is
-{"endpoint": ..., "data": {...}}; endpoints ping, reset, get_action, kill; an error is answered as {"error": str}.
-get_action gets the observation `groot_client.obs_to_groot` builds and answers [action, info] with
-action = {"eef_9d": (1, T, 9), "gripper": (1, T, 1)}, T = the checkpoint's n_action_steps (16 rows = 3.2 s).
-It binds 127.0.0.1 only (no authentication); reach it through an SSH tunnel.
-"""
+"""Serve a LeRobot ACT or SmolVLA checkpoint behind the GR00T PolicyServer protocol (sim comparison only).
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -32,11 +17,11 @@ STATE_DIM, ACTION_DIM = 16, 10   # policy_learn/baselines/lerobot_view.py STATE_
 
 
 class ObservationError(ValueError):
-    """The request's observation does not match what the checkpoint was trained on."""
+    """Raised when the observation does not match what the checkpoint was trained on."""
 
 
 def groot_obs_to_lerobot(observation: dict, image_hw: tuple[int, int] | None = None) -> dict:
-    """GR00T Policy API observation (batch 1) -> numpy LeRobot frame: images (3, H, W) float32 0..1, state (16,)."""
+    """Return a LeRobot frame built from one GR00T observation."""
     frame = {}
     for cam in CAMERAS:
         img = np.asarray(observation["video"][cam])
@@ -58,7 +43,7 @@ def groot_obs_to_lerobot(observation: dict, image_hw: tuple[int, int] | None = N
 
 
 def chunk_to_groot_action(chunk: np.ndarray, n_rows: int) -> dict:
-    """(T, 10) [eef_9d, gripper] absolute chunk -> GR00T action dict holding the first n_rows rows."""
+    """Return a GR00T action dict holding the first n_rows rows of a chunk."""
     chunk = np.asarray(chunk, np.float32)
     if chunk.ndim != 2 or chunk.shape[1] != ACTION_DIM or not np.isfinite(chunk).all():
         raise ValueError(f"policy returned a bad chunk {chunk.shape}")
@@ -67,7 +52,7 @@ def chunk_to_groot_action(chunk: np.ndarray, n_rows: int) -> dict:
 
 
 class LeRobotChunkPolicy:
-    """A LeRobot 0.3.3 ACT / SmolVLA checkpoint (`.../pretrained_model`) answering one chunk per observation."""
+    """LeRobot ACT or SmolVLA checkpoint that answers one chunk per observation."""
 
     def __init__(self, checkpoint: Path, device: str):
         import torch
@@ -87,10 +72,12 @@ class LeRobotChunkPolicy:
         log.info("loaded %s from %s: %d rows per chunk, images %s", self.kind, checkpoint, self.n_rows, self.image_hw)
 
     def reset(self, options=None) -> dict:
+        """Clear the policy state for a new episode."""
         self.policy.reset()
         return {}
 
     def get_action(self, observation: dict, options=None) -> list:
+        """Return the action chunk for one observation."""
         frame = groot_obs_to_lerobot(observation, self.image_hw)
         batch = {k: v if k == "task" else self.torch.from_numpy(v)[None].to(self.device) for k, v in frame.items()}
         batch["task"] = [frame["task"]]
@@ -100,6 +87,7 @@ class LeRobotChunkPolicy:
 
 
 def serve(policy, host: str, port: int) -> None:
+    """Serve the policy until interrupted."""
     import zmq
 
     context = zmq.Context()
@@ -128,6 +116,7 @@ def serve(policy, host: str, port: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse arguments and start the server."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", type=Path, required=True, help="a LeRobot .../pretrained_model directory")
     ap.add_argument("--host", default="127.0.0.1")

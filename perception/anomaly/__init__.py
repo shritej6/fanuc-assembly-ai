@@ -1,1 +1,3 @@
-"""PatchCore anomaly detection per part (anomalib)."""
+"""PatchCore anomaly detection per part, built on anomalib.
+Authored by Shritej Gunda.
+"""

@@ -1,3 +1,7 @@
+"""Tests for run log.
+Authored by Shritej Gunda.
+"""
+
 import json
 import os
 from collections import Counter

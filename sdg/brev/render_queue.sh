@@ -1,12 +1,6 @@
 #!/bin/bash
-# Unattended render queue for a rented multi-GPU Docker host (Brev 2x L40S): one-time setup, then one serial queue
-# per GPU. Each chunk is retried up to 3 times (the generator skips scenes that already have labels).
-# Writes $DATA_ROOT/QUEUE_DONE when every queue has finished, so the host can be deleted.
-#
-#   nohup sdg/brev/render_queue.sh "G:0-15 J:6-11" "I:0-11 J:0-5" > ~/queue.log 2>&1 &
-#   (argument N = the plan for GPU N-1, items in render order)
-#   ONE_GPU=1 SKIP_SETUP=1 sdg/brev/render_queue.sh "A:1-15" "F:0-15"   # GB10: parallel queues sharing GPU 0
-#   (SKIP_SETUP leaves the defect meshes alone while other renders read them)
+# Unattended render queue for a multi-GPU Docker host, one serial queue per GPU.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

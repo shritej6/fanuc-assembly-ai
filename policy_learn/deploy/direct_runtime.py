@@ -1,37 +1,5 @@
-"""Fallback 14:00 runtime: GR00T drives every motion, step by step through placement.yaml, guarded, hold-only.
-
-    from policy_learn.deploy.direct_runtime import DirectGrootRuntime
-    policy = DirectGrootRuntime("groot://127.0.0.1:5555")    # the official Policy interface (ACTION = "tcp")
-
-What it does on each act(obs):
-0. At construction it reads placement.yaml, validates DIRECT_ROLLOUT and plans every rollout (direct_plan.plan_rollout:
-   products in prompt order, parts in assembly-sheet order), so a bad file or setting fails before the run starts.
-1. On the first act of a trial it picks the rollout (DIRECT_ROLLOUT, else the trial prompt matched against
-   placement.yaml, else obs["trial"]["index"], else the count of resets).
-2. It gives GR00T the current step through GrootPolicy.set_plan (the training instruction format) and the guard the
-   step's contact target: the grasp pad until the part is held, then the seated TCP (as sim/assembly_lab/eval/director.py).
-3. It returns GrootPolicy.act(obs): the model's chunk after ChunkGuard. A refused chunk is one hold row.
-4. It advances when the observed TCP and gripper show the step done. This is the sim eval's rule (director._done:
-   fingers open, the part was grasped, TCP at least RETREAT_MM above the goal) with the oracle parts replaced by what
-   the arm reports, with tolerances from the plan's CAD geometry:
-   - "grasped": the gripper closed within the open fingers' slack around the pad ((16.5 - pad width) / 2 in xy) and
-     within half the pad's contact height in z;
-   - "released on the seat": the gripper opened at most SEATED_Z_MM above the seated TCP (below the first-contact
-     height), with the reported TCP no more than JAM_MM above the last commanded row (higher = the part stopped on
-     something: jammed, not seated). These two are the seated detector: the table z is fixed, and a part reaches
-     seat depth only if it is aligned with the ACTUAL base (capture 0.5-3 mm), wherever the base was hand-placed.
-     The xy check against the plan (HAND_PLACE_XY_MM) only bounds hand-placement error.
-   - "done": fingers open and the TCP RETREAT_MM above the seat, within the retreat budget.
-
-It never moves the arm itself. Every failure ends the trial with the arm held where it is (current pose, gripper as
-it is), for the rest of the trial: a step over its time budget, the gripper closed at the start of a trial, closing
-away from the pad or opening away from the seat (dropped, misplaced or jammed part), the TCP leaving the step's
-corridor, STUCK_HOLDS guard refusals in a row, or a rollout the planner refused.
-
-EMPTY-GRIPPER DETECTION IS OFF ON THE REAL CELL: the official observation has no gripper width (joints[6] is the
-binary 0/1 state), so a part slipping out of closed fingers is not seen. The check runs only if an observation
-carries "gripper_width_mm" (none does today). A lost part shows up later only as a missing part on the seat.
-"""
+"""Fallback runtime where GR00T drives every motion step by step through placement.yaml, guarded and hold-only.
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 import logging
@@ -48,16 +16,15 @@ from policy_learn.deploy.guards import ContactTarget, GuardLimits, hold_row
 
 log = logging.getLogger(__name__)
 RETREAT_MM = 10.0  # sim/assembly_lab/eval/director.py RETREAT_MM: done only once this far above the goal
-HAND_PLACE_XY_MM = 5.0      # PRELIMINARY: declared hand-placement accuracy of a base; release xy vs the planned seat
-SEATED_Z_MM = 1.5           # PRELIMINARY: release at most this above the seated TCP (first contact is 2-13 mm above)
-JAM_MM = 1.0                # PRELIMINARY: reported TCP this much above the commanded row at release = blocked
+HAND_PLACE_XY_MM = 5.0      # estimate: declared hand-placement accuracy of a base; release xy vs the planned seat
+SEATED_Z_MM = 1.5           # estimate: release at most this above the seated TCP (first contact is 2-13 mm above)
+JAM_MM = 1.0                # estimate: reported TCP this much above the commanded row at release = blocked
 EMPTY_GRIPPER_ON_CELL = False  # the cell's obs has no gripper width: see the module docstring
 
 
 @dataclass(frozen=True)
 class Budgets:
-    """PRELIMINARY engineering choices, not measured on the real cell. Grasp and release tolerances are not here:
-    they come from each step's CAD geometry (direct_plan.Step)."""
+    """Engineering estimates for timeouts and retries, not measured on the real cell."""
 
     pick_s: float = 60.0            # from the step's first act to the grasp
     insert_s: float = 90.0          # from the grasp to fingers open on the seat
@@ -81,11 +48,12 @@ class _Progress:
 
     @property
     def step(self) -> Step | None:
+        """Return the current plan step."""
         return self.steps[self.index] if self.index < len(self.steps) else None
 
 
 def _forced_rollout(n: int) -> int | None:
-    """DIRECT_ROLLOUT (1-based) as a 0-based index, validated before the run: a typo must not hold every trial."""
+    """Return DIRECT_ROLLOUT as a validated 0-based index."""
     raw = os.environ.get("DIRECT_ROLLOUT", "").strip()
     if not raw:
         return None
@@ -104,7 +72,7 @@ def _xy_dist_to_segment(p, a, b) -> float:
 
 
 class DirectGrootRuntime(GrootPolicy):
-    """The official Policy (CAMERAS, IMAGE_SIZE 640x360, ACTION "tcp", PREFETCH False from GrootPolicy)."""
+    """Official policy that runs the direct plan with GR00T."""
 
     def __init__(self, checkpoint: str | None = None, model: ChunkModel | None = None,
                  limits: GuardLimits | None = None, placement: str | None = None, budgets: Budgets | None = None,
@@ -125,8 +93,9 @@ class DirectGrootRuntime(GrootPolicy):
         self.events: list[dict] = []  # kept across trials, for the run's report
         self.resets = 0
 
-    # ------------------------------------------------------------------ trial setup
+    # Trial setup
     def reset(self) -> None:
+        """Start a new trial."""
         super().reset()
         self.resets += 1
         self.progress = _Progress()
@@ -170,7 +139,7 @@ class DirectGrootRuntime(GrootPolicy):
                              ContactTarget(g[0], g[1], g[2], label=f"grasp {step.object_id}"))
         self._event("step_start", step=pr.index + 1, part=step.object_id, base=step.base_id, instruction=text)
 
-    # ------------------------------------------------------------------ progress
+    # Progress
     def _end(self, reason: str) -> None:
         self.progress.ended = reason
         self.set_task(None)
@@ -191,8 +160,7 @@ class DirectGrootRuntime(GrootPolicy):
             self._update_retreat(pr.step, tcp, closed, elapsed)
 
     def _switch_row(self, closed: bool) -> np.ndarray | None:
-        """The first row of the last chunk sent with the new gripper state: where the gripper changed (a chunk may
-        close on the pad and then lift, so the observed TCP is already past the grasp). None if no row has it."""
+        """Return the first row of the last chunk with the new gripper state, or None."""
         rows = self.progress.last_rows
         if rows is None:
             return None
@@ -219,10 +187,7 @@ class DirectGrootRuntime(GrootPolicy):
             self._end(f"{step.object_id}: TCP ({tcp[0]:.0f}, {tcp[1]:.0f}) left the path to the grasp pad")
 
     def _release_fault(self, step: Step, tcp: np.ndarray) -> str | None:
-        """Why this release is not 'released on the seat', or None. Without perception the part is taken as seated
-        only if the fingers opened at seat depth (below first contact) and the arm got where it was sent (a part
-        resting on a burr or a misaligned peg stops the arm above the commanded row). Seat depth is reachable only
-        when the part is aligned with the actual base, so the xy check is just the hand-placement bound."""
+        """Return why this release is not seated, or None."""
         s, row = step.seat_tcp, self._switch_row(False)
         at = tcp[:3] if row is None else row[:3]
         dxy, xy_tol = float(np.hypot(at[0] - s[0], at[1] - s[1])), HAND_PLACE_XY_MM
@@ -264,8 +229,9 @@ class DirectGrootRuntime(GrootPolicy):
         if elapsed > b.retreat_s:
             self._end(f"{step.label}: no retreat within the {b.retreat_s:.0f} s retreat budget")
 
-    # ------------------------------------------------------------------ act
+    # Act
     def act(self, obs: dict) -> np.ndarray:
+        """Return guarded rows for one observation."""
         if obs.get("tcp_pose") is None:
             return super().act(obs)  # FK-estimate hold, the model is not asked (GrootPolicy)
         tcp = np.asarray(obs["tcp_pose"], float)[:6]

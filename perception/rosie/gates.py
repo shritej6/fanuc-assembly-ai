@@ -1,4 +1,5 @@
-"""Production-manifest gates shared by the Rosie launch scripts."""
+"""Production-manifest gates shared by the Rosie launch scripts.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -13,11 +14,10 @@ MAX_COSMOS_FRACTION = 0.20
 # Kept independent of prepare.py so a wrongly prepared manifest cannot loosen its own gate.
 TESTBED_RANGES = {"N": (0.20, 0.30), "R": (0.20, 0.30), "Q": (0.20, 0.30), "O": (0.45, 0.55)}
 TESTBED_BUILD_RANGES = {"P": (0.45, 0.55)}
-# The approved test-bed sets are complete only with every chunk: a set that lost a chunk (to a cutoff or a lost
-# Cosmos host) must not train. Chunk IDs run from chunk_0000 without gaps.
+# A test-bed set trains only with every chunk present; chunk ids run from chunk_0000 without gaps.
 TESTBED_CHUNKS = {"N": 40, "R": 20, "Q": 8, "O": 48}
 TESTBED_BUILD_CHUNKS = {"P": 24}
-# T31 weak-spot sets: rendered without Cosmos by the user's fast-retrain order, so any Cosmos image there is an error.
+# Weak-spot sets are rendered without Cosmos, so any Cosmos image there is an error.
 TESTBED_WEAK_RANGES = {**TESTBED_RANGES, "S": (0.0, 0.0), "T": (0.0, 0.0)}
 TESTBED_WEAK_CHUNKS = {**TESTBED_CHUNKS, "S": 6, "T": 3}
 
@@ -52,7 +52,7 @@ def verify_production_manifest(path: Path) -> dict[str, Any]:
     return verify_production_metadata(_read_metadata(path))
 
 
-# Which approved profile each production trainer may read (T27: only the test-bed sets train).
+# Which profile each production trainer may read: only the test-bed sets train.
 TRAINING_PROFILES = {"detector": ("testbed", "testbed_weak"), "identity": ("testbed", "testbed_weak"),
                      "build_state": ("testbed_build",)}
 
@@ -114,6 +114,7 @@ def _expected_ranges(metadata: dict[str, Any]) -> dict[str, tuple[float, float]]
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("metadata", type=Path)
     args = parser.parse_args()

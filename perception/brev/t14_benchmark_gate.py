@@ -1,4 +1,6 @@
-"""Create and verify the measured cost gate before Brev T14 production runs."""
+"""Create and verify the measured cost gate before Brev PatchCore production runs.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -191,6 +193,7 @@ def create_gate(
     hourly_rate_evidence: Path,
     output: Path,
 ) -> dict[str, Any]:
+    """Create the cost gate from a benchmark artifact and return it."""
     _identifiers(source_commit, runtime_sha256)
     temporary = _destination(output, hourly_rate_usd)
     created_at = _utc_now()
@@ -273,6 +276,7 @@ def verify_gate(
     source_commit: str,
     runtime_sha256: str,
 ) -> dict[str, Any]:
+    """Check that a gate still matches its benchmark and inputs and return it."""
     _identifiers(source_commit, runtime_sha256)
     gate = _json(gate_path)
     benchmark_path = Path(str(gate.get("benchmark_artifact", "")))
@@ -308,6 +312,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run the create or verify command and print the result."""
     args = _parser().parse_args()
     if args.command == "create":
         payload = create_gate(

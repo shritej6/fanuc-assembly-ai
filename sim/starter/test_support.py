@@ -1,4 +1,6 @@
-"""Construct a calibrated synthetic camera for host-side regression tests."""
+"""Build a calibrated synthetic camera for host-side tests.
+Authored by Shritej Gunda.
+"""
 
 import numpy as np
 import scene_config as C

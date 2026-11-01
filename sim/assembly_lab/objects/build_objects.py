@@ -1,4 +1,5 @@
-"""Build objects.yaml + heightmaps.npz: everything the planner, skills and eval need about the 30 printed objects.
+"""Build objects.yaml and heightmaps.npz with everything the planner, skills and eval need about the printed objects.
+Authored by Shritej Gunda.
 
     PYTHONPATH=. uv run python sim/assembly_lab/objects/build_objects.py      # same CAD -> same files
 
@@ -72,7 +73,7 @@ def locating_features(n: int, role: int, feats: dict) -> list[dict]:
     return located
 
 
-# xy capture from a CAD column sweep (agent 1, 2026-10-30): the upper part dropped at 0-4 mm offsets in 8 directions
+# xy capture from a CAD column sweep: the upper part dropped at 0-4 mm offsets in 8 directions
 # onto the base + earlier steps; capture = min over directions of the end of the lead-in ramp (slope >= 0.35, steeper
 # than PLA friction). Overrides the declared-mate value where a side has no chamfer (run10: every M4_02 landed on
 # M4_01's flat top at the declared 2.0 mm).

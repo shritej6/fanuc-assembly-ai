@@ -1,10 +1,12 @@
+# RT-DETR detector fine-tune config for 40 GB A100 GPUs.
+# Authored by Shritej Gunda.
 task: detector
 hardware_profile: h100
 model:
   name: PekingU/rtdetr_r50vd
   revision: df939e661d8c52e80608d1ec566561aabd25a4e7
   image_size: 1280
-  # T31 fine-tune (user 2026-10-29): continue from the T27 detector (main/full/detector, trained on N R Q) on N R Q
+  # Fine-tune: continue from the trained detector (main/full/detector, trained on N R Q) on N R Q
   # plus the weak-spot set S; the driver copies that run to runs/detector_init. The hash pins exactly those weights.
   init_from: runs/detector_init
   init_sha256: b054f9aa224f56081998a77b778ff6336985a65bfbc2bb658b1036fc0d3fd785

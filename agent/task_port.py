@@ -1,4 +1,6 @@
-"""Typed task boundary between operator intent and the T09 controller runtime."""
+"""Typed task boundary between operator intent and the assembly controller runtime.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -149,7 +151,7 @@ class _ControllerSnapshot:
 
 
 class T09TaskCoordinator:
-    """Create T09 work from typed requests and expose only read-side status."""
+    """Create controller work from typed requests and expose only read-side status."""
 
     def __init__(
         self,

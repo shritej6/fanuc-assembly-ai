@@ -1,30 +1,5 @@
-"""Grasp and insert frames for all 30 printed objects, from the product CAD that was printed.
-
-    uv run python cad/grasp_frames.py          # writes cad/grasp_frames.json (same CAD -> same file)
-
-Source: each model's `build()` (cad/products), the same code that wrote the printed STLs (cad/stl is byte-identical
-to the printed FANUC_PRINT_FIRST/output/stl, checked 2026-10-29). Per object:
-- `installed_origin_mm`: the part's local origin (centre of its lowest seating plane) in its product's assembly frame,
-  whose origin is the base's local origin. A part is installed when its origin sits at the base pose + this offset,
-  at the base's yaw (parts install without extra rotation in this frame).
-- `T_local_from_stl`: STL mesh frame -> the part's installed local frame. Identity except the rear guards, whose STL
-  is laid flat for printing (print_rotation, then re-centred in x, y and seated on z = 0). FoundationPose estimates
-  the STL frame's pose, so a measured pose must be multiplied by the inverse of this before using the offsets.
-- `grips`: the CAD grip pads, in the installed local frame: closing axis, pad width, span, contact height, the pad
-  point and the TCP to command. Both come from the Team V printed fingers' validated grasp of that part
-  (cad/fingers/product_grasp_frames.json, 24/24 PASS in that project's CAD check):
-  - `pad_point_local_mm`: the fingers' contact centre moved down by the 1.85 mm from contact centre to fingertip.
-    It must lie on the CAD pad, or nothing is written. It is NOT the point to command.
-  - `tcp_local_mm`: {wrist turn: TCP}. The TCP (UTOOL, on the flange axis at the tip plane) is 1.8 mm from the pad
-    point along the gripper STEP X axis, which is (cos r, sin r) in UF0 at w, p = -180, 0, so the two turns r and
-    r + 180 put the TCP on opposite sides of the pad. Key k is the turn relative to the part: r = measured yaw + k.
-    Every Team V validated grasp is checked to satisfy this, or nothing is written.
-- `roll_offset_deg`: the turn that spreads the jaws along the closing axis (the other one is roll_offset + 180).
-  The twin's IK spreads the jaws along rot(w, p, r) @ +y (sim/starter/ik.py, scene_config.FINGER_SPREAD_AXIS = +y):
-  at w = -180, p = 0 that is (sin r, -cos r, 0) in UF0, so jaws closing along the part's local X need r = yaw + 90
-  and along local Y need r = yaw.
-Every pad must fit the Team V fingers on the SMC MHZL2-16D2 (rubber fingertip gap 4.5 mm closed, 16.5 mm open,
-cad/fingers/README.md): wider than the closed gap and narrower than the open gap, or nothing is written.
+"""Compute grasp and insert frames for every printed object from the product CAD.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

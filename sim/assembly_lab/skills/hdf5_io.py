@@ -1,27 +1,5 @@
-"""Write recorded episodes as Isaac Lab HDF5 demos, annotated for Isaac Lab Mimic.
-
-Layout (Isaac Lab `HDF5DatasetFileHandler` + Mimic annotation conventions; keys follow mimic/skills.yaml):
-
-    data/                     attrs: total, total_demos, env_args (JSON)
-      demo_<k>/               attrs: num_samples, success, skill, case, product, instruction, subtasks, peaks, ...
-        actions               (T, 7)  act_tcp rows, mm / deg / gripper 0-1 (the contract units)
-        obs/eef_pos (T, 3) m, obs/eef_quat (T, 4) wxyz, obs/arm_joint_pos (T, 6) rad, obs/gripper_state (T, 1)
-        obs/plan_ids (T, 5), obs/plan_target (T, 7)        mimic/catalog.py tables; mm / deg
-        obs/<frame>_pos (T, 3) m, obs/<frame>_quat (T, 4)  grasp_frame / seat_frame / spot_frame
-        obs/sim_contact_peak  (T, 3)  [normal_N, lateral_N, torque_Nm] during that step's action, max over parts
-        obs/{table,side,wrist}_cam    (T, H, W, 3) uint8, when the env renders cameras
-        obs/joints (T, 7) deg + gripper, obs/tcp_pose (T, 6) mm / deg   (the CellClient.observe units)
-        obs/train_mask        (T,)    False on rows that only stage a recovery case
-        obs/datagen_info/eef_pose/er4ia            (T, 4, 4) metres, UF0
-        obs/datagen_info/target_eef_pose/er4ia     (T, 4, 4) metres (the commanded row)
-        obs/datagen_info/object_pose/<frame>       (T, 4, 4) metres
-        obs/datagen_info/subtask_term_signals/<s>  (T,) bool, 0 until that subtask ended, then 1
-        states/rigid_object/<id>/root_pose         (T, 7) metres + quaternion w, x, y, z
-        states/articulation/robot/joint_position   (T, 7) rad (J1..J6), gripper 0-1
-        initial_state/...                          the same keys, first step only
-
-Datagen info is in metres because Isaac Lab Mimic combines it with the env's own frame poses (metres) at generation
-time; the actions stay in the act_tcp contract units.
+"""Write recorded episodes as Isaac Lab HDF5 demos annotated for Mimic.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -174,9 +152,7 @@ def append_demo(path: Path, rec: EpisodeRecorder, attrs: dict, env_name: str) ->
 
 
 def annotate_recorder_file(path: Path) -> dict:
-    """Add agent 3's per-episode metadata (<path>.meta.jsonl, in episode order) to the Isaac Lab recorder's HDF5:
-    attrs (kept, would_keep, gates, instruction, plan ids, peaks, touch_gate) and, when the step counts agree,
-    obs/plan_ids, obs/plan_target, obs/train_mask. A count mismatch is reported, never papered over."""
+    """Add per-episode metadata to the recorder HDF5 and return a report of what was written."""
     meta_path = Path(str(path) + ".meta.jsonl")
     metas = [json.loads(line) for line in meta_path.read_text().splitlines()] if meta_path.exists() else []
     report = {"episodes": 0, "metas": len(metas), "step_mismatch": []}

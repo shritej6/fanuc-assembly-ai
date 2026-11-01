@@ -1,4 +1,6 @@
-"""T09 CELL controller keeps T29 frames and GR00T motion authority separate."""
+"""CELL controller keeps frames and GR00T motion authority separate.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,16 +1,5 @@
 """Tag every loose part in already rendered chunks as `installed` or `fallen`, from its exact pose in the label.
-
-The old sets (A-M) were rendered before the test-bed rule and carry no `rest` field, yet 71 % of their loose parts
-lie in a pose the real test-bed never shows except as a fallen part. The rule is the one the new sets render with
-(user, 2026-10-28): a loose part is `installed` when its up axis is the up axis it has inside its product (yaw and xy
-are free), otherwise `fallen`. Labels are not touched: each chunk gets a sidecar `_REST.json`
-
-    {"rule": ..., "max_tilt_deg": 2.0, "images": {"000234": {"o09": "fallen", ...}, ...}}
-
-listing only loose parts, traps and spares (installed parts, mis-builds on a stack, bases and foreign objects have no
-rest state). Pure standard library, so it runs on any data host:
-
-    python3 sdg/tools/rest_labels.py --geometry sdg/data/object_geometry.json --root ~/old-sets/synthetic --sets ABCDFGHIJKLM
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

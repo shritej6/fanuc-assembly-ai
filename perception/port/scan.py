@@ -1,14 +1,5 @@
-"""scan(): the table and side cameras -> a complete InventorySnapshot plus a typed ScanReport.
-
-Per table frame: RT-DETR boxes -> class-agnostic suppression (dedup.py) -> UF0 centre from table depth (T28 locate)
--> cell zone -> T28 tracker (stable track ids, label vote) -> ledger (stable published ids) -> size check against
-the CAD with the table depth (catches a piece that fits none of the 30 objects; it cannot separate 1-2 mm look-alikes
-at about 3 mm depth pixels, so those are flagged for the wrist close-up).
-
-What the controller's InventorySnapshot cannot carry is in ScanReport: foreign/unknown pieces (the inventory accepts
-only the 30 catalog ids), objects outside the work area, boxes with no depth, unmatched side-camera boxes, and the
-instances whose identity still needs a wrist close-up. Any unresolved box makes the snapshot incomplete.
-"""
+"""Scan the table and side cameras into an inventory snapshot and a scan report.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -38,6 +29,7 @@ _ZONES = {Zone.TABLE: InventoryZone.TABLE, Zone.SPARE: InventoryZone.SPARE}
 
 @dataclass(frozen=True, slots=True)
 class ScannedObject:
+    """One object found by a scan."""
     instance_id: str
     object_id: str | None          # None for a foreign / unknown piece
     label: str
@@ -54,6 +46,7 @@ class ScannedObject:
 
 @dataclass(frozen=True, slots=True)
 class ScanReport:
+    """Typed report of one scan."""
     observed_at_s: float
     objects: tuple[ScannedObject, ...]
     foreign: tuple[ScannedObject, ...]
@@ -72,6 +65,7 @@ class _Located:
 
 
 class Scanner:
+    """Turns camera frames into inventory snapshots."""
     def __init__(self, detector: Detector, geometry: CellGeometry, cad: CadCatalog) -> None:
         self._detector = detector
         self._geometry = geometry
@@ -86,6 +80,7 @@ class Scanner:
         self.last_report: ScanReport | None = None
 
     def scan(self, observation: Observation) -> tuple[InventorySnapshot, ScanReport]:
+        """Scan the cell and return the snapshot and its report."""
         observed_at = observation_time(observation)
         boxes = suppress(self._detector(image(observation, "table")))
         located, unlocated = self._locate_all(observation, boxes)

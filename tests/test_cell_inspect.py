@@ -1,4 +1,6 @@
-"""T28: inspection verdicts follow the contract and the measured thresholds, and refuse missing evidence."""
+"""Inspection verdicts follow the contract and the measured thresholds, and refuse missing evidence.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

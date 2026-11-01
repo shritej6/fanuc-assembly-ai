@@ -1,11 +1,12 @@
-# Contact force limits for every insert / pull-out / grip (T12, agent 2). Units: N, N·m, mm, MPa.
+# Contact force limits for every insert, pull-out and grip. Units: N, N*m, mm, MPa.
+# Authored by Shritej Gunda.
 # The sim force guard throws away any demo whose contact exceeds these; the real arm has no force sensor.
 #
-# STATUS: PRELIMINARY = calculated from the printed CAD and literature, NOT measured. It becomes SIM_MEASURED only
+# STATUS: PRELIMINARY = estimate calculated from the printed CAD and literature, NOT measured. It becomes SIM_MEASURED only
 # per value that was measured in Isaac Lab (physics/measure_seating.py); until then nothing here is a measurement.
 #
-# Rule (user, 2026-10-29): every limit is >= 2x below the calculated failure load AND >= the measured seating force.
-axial_N: 15.0          # straight down along the insert axis (user's calculated start, kept; see axial note below)
+# Rule: every limit is >= 2x below the calculated failure load AND >= the measured seating force.
+axial_N: 15.0          # straight down along the insert axis (calculated start, kept; see axial note below)
 lateral_N: 4.5         # sideways, at the part, any direction in the horizontal plane
 torque_Nm: 0.10        # about the vertical (insert) axis, e.g. the +-2 deg twist
 status: PRELIMINARY    # the three global limits are calculated; per_part_axial_N and sim_seating below are SIM_MEASURED

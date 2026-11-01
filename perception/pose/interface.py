@@ -1,4 +1,5 @@
-"""Calibrated, metric input/output boundary for FoundationPose inference."""
+"""Calibrated, metric input and output boundary for FoundationPose inference.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ class PoseInputError(ValueError):
 
 @dataclass(frozen=True)
 class PoseRequest:
+    """Metric inputs for one pose estimate."""
     object_id: str
     rgb: np.ndarray
     depth_m: np.ndarray
@@ -26,6 +28,7 @@ class PoseRequest:
 
 @dataclass(frozen=True)
 class PoseEstimate:
+    """One metric pose estimate with its fit score."""
     object_id: str
     object_to_camera_m: np.ndarray
     object_to_uf0_m: np.ndarray

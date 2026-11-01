@@ -1,4 +1,6 @@
-"""Behavioral tests for fail-closed perception and recovery decisions."""
+"""Behavioral tests for fail-closed perception and recovery decisions.
+Authored by Shritej Gunda.
+"""
 
 from copy import deepcopy
 from dataclasses import FrozenInstanceError

@@ -1,4 +1,6 @@
-"""Perspective, square symmetry, crop conversion and uncertain-pose gates."""
+"""Tests for perspective, square symmetry, crop conversion and uncertain-pose gates.
+Authored by Shritej Gunda.
+"""
 
 import copy, json, tempfile, unittest
 from pathlib import Path

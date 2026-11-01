@@ -1,14 +1,5 @@
-"""The trained T27 models, loaded once and run on live cell images (GPU when present).
-
-- detector: the RT-DETR run directory written by perception/detector/train.py (`trainer.save_model()`: config with
-  id2label, weights, preprocessor), run at the size it was trained at;
-- classifier: the wrist ResNet-18 run directory written by perception/classifier/train.py; its labels are the
-  ontology's classifier labels and its crops are the training crops (target box x 1.3, perception/crops.py), resized
-  and centre-cropped as the evaluation transform does;
-- PatchCore: one anomalib checkpoint per part (perception/anomaly/coverage_eval.py); its crops are the training crops
-  (square, context 1.3, perception/anomaly/testbed.py) and its score is PatchCore's raw image score (no anomalib
-  normalisation), compared against the part's threshold measured by coverage_eval on held-out good crops.
-Torch, transformers and anomalib load lazily, so the decision logic around them stays importable and testable.
+"""Load the trained models once and run them on live cell images.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -31,16 +22,19 @@ class ModelLoadError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Box:
+    """One detection: label, score and pixel box."""
     label: str
     score: float
     bbox_px: tuple[float, float, float, float]
 
 
 def classifier_crop(image: Image.Image, bbox_px: tuple[float, float, float, float]) -> Image.Image:
+    """Return the classifier crop around a box."""
     return image.crop(_crop_box([*bbox_px], image.size, CLASSIFIER_CONTEXT))
 
 
 def patchcore_crop(image: Image.Image, bbox_px: tuple[float, float, float, float]) -> Image.Image:
+    """Return the square PatchCore crop around a box."""
     return square_crop(image, [round(v) for v in bbox_px])
 
 
@@ -51,6 +45,7 @@ def _device() -> str:
 
 
 class Detector:
+    """RT-DETR detector loaded from its run directory."""
     def __init__(self, run_dir: Path, min_score: float) -> None:
         from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
 
@@ -75,6 +70,7 @@ class Detector:
 
 
 class Classifier:
+    """Wrist ResNet classifier loaded from its run directory."""
     def __init__(self, run_dir: Path, labels: tuple[str, ...], image_size: int) -> None:
         from safetensors.torch import load_file
 
@@ -101,10 +97,7 @@ class Classifier:
 
 
 def patchcore_raw_scores(model: Any, images: list[Any], device: Any) -> list[float]:
-    """Raw PatchCore image scores: the model's own pre-processing, then the torch model, no post-processor.
-
-    Crops differ in size, so each one goes through the pre-processor (which resizes) on its own before batching.
-    """
+    """Return raw PatchCore image scores, pre-processing each crop on its own."""
     import torch
 
     batch = torch.cat([model.pre_processor(image.unsqueeze(0)) for image in images]).to(device)

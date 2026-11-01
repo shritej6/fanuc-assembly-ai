@@ -1,4 +1,6 @@
-"""Behaviour of the synthetic scene sampler: every guarantee is re-checked from the spec, not from sampler internals."""
+"""Tests for scene sampler.
+Authored by Shritej Gunda.
+"""
 
 import collections
 import json
@@ -254,7 +256,6 @@ def test_misassembly_set_labels_every_shift_and_turn_with_its_measured_rest_heig
     assert set(seen) == {"seated", "shifted", "rotated", "tilted", "high", "wrong_part"}
 
 
-# ---------------------------------------------------------------- test-bed sets (T25)
 TEST_BED = "NROPQ"
 
 

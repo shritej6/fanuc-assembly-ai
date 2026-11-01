@@ -1,5 +1,6 @@
 #!/bin/bash
 # Train the exact 30-class wrist classifier on Rosie T4s.
+# Authored by Shritej Gunda.
 #SBATCH --job-name=fa-t13-classifier
 #SBATCH --partition=teaching
 #SBATCH --gres=gpu:t4:1

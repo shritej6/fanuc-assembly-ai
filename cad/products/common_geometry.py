@@ -1,4 +1,6 @@
-"""Reusable CadQuery primitives, grip pads and the Part record shared by every model."""
+"""Reusable CadQuery primitives, grip pads and the Part record shared by every model.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -32,14 +34,7 @@ EPS = 0.01  # overlap used when uniting touching solids so OCC never sees coplan
 
 @dataclass(frozen=True)
 class GripZone:
-    """Where the two fingers touch a grip pad. Used only for the digital clearance check.
-
-    axis: closing direction ("X" or "Y"); center: pad centre in the closing axis;
-    half_width: half the pad thickness across the closing axis;
-    span: (lo, hi) free contact range along the other horizontal axis;
-    other: centre of the pad on the other horizontal axis (informational);
-    z_top / height: top of the pad and its usable contact height.
-    """
+    """Where the two fingers touch a grip pad, used for the digital clearance check."""
 
     axis: str
     center: float
@@ -51,11 +46,7 @@ class GripZone:
 
 @dataclass(frozen=True)
 class Part:
-    """One printed part, modelled in its installed (world) position.
-
-    origin: world coordinates of the part's local origin (centre of its lowest seating plane).
-    print_rotation: optional (axis, degrees) applied to the STL only, to lay the part flat.
-    """
+    """One printed part, modelled in its installed world position."""
 
     name: str
     solid: cq.Workplane
@@ -118,11 +109,7 @@ def profile_xz(points: list[tuple[float, float]], y_front: float, depth: float) 
 
 
 def fillet_edges_in_box(wp: cq.Workplane, lo: tuple, hi: tuple, r: float, label: str) -> cq.Workplane:
-    """Fillet every edge whose centre lies inside the box lo..hi.
-
-    A failed fillet is cosmetic (strength margin only), so the build continues with sharp
-    edges; the failure is logged and recorded in BUILD_NOTES so it is never silent.
-    """
+    """Fillet every edge whose centre lies in the box; log and record any failure."""
     try:
         return wp.edges(cq.selectors.BoxSelector(lo, hi)).fillet(r)
     except Standard_Failure as exc:  # OCC's fillet failure; an empty edge selection (ValueError) is a bug and raises
@@ -133,11 +120,7 @@ def fillet_edges_in_box(wp: cq.Workplane, lo: tuple, hi: tuple, r: float, label:
 
 
 def edge_fillet_solid(start: tuple, end: tuple, n1: tuple, n2: tuple, r: float) -> cq.Workplane:
-    """Concave fillet material along a straight inside corner from start to end.
-
-    n1, n2: unit vectors lying in the two faces, pointing away from the corner edge.
-    Built explicitly (prism minus cylinder) because OCC's fillet fails on some pad roots.
-    """
+    """Return concave fillet material along a straight inside corner."""
     s, e = cq.Vector(*start), cq.Vector(*end)
     a, b = cq.Vector(*n1) * r, cq.Vector(*n2) * r
     wire = cq.Wire.makePolygon([s, s + a, s + a + b, s + b], close=True)
@@ -148,10 +131,7 @@ def edge_fillet_solid(start: tuple, end: tuple, n1: tuple, n2: tuple, r: float) 
 
 def side_pad_root(normal_axis: str, face: float, out_sign: int, half_width: float,
                   z0: float, z1: float, r: float = GRIP_ROOT_FILLET) -> cq.Workplane:
-    """Root fillets for a pad sticking out of a vertical wall (both sides and the underside).
-
-    normal_axis: "X" or "Y" (wall normal); face: wall coordinate; out_sign: pad direction.
-    """
+    """Return root fillets for a pad sticking out of a vertical wall."""
     def vec(n: float, t: float, z: float) -> tuple:
         return (n, t, z) if normal_axis == "X" else (t, n, z)
 
@@ -168,12 +148,7 @@ def side_pad_root(normal_axis: str, face: float, out_sign: int, half_width: floa
 
 def pad_support_wedge(normal_axis: str, face: float, out_sign: int, half_width: float,
                       z_pad: float, projection: float) -> cq.Workplane:
-    """45 degree solid wedge under a pad that sticks out of a vertical wall.
-
-    Without it the pad underside is a 9 mm cantilever that cannot print unsupported. The wedge
-    reaches to 1 mm short of the pad tip (a 1 mm overhang prints fine) and stays inside the pad
-    width, so it never enters the gripper finger zones beside the contact faces.
-    """
+    """Return a 45 degree wedge that lets a wall-mounted pad print without support."""
     run = projection - 1.0
     z0 = max(0.0, z_pad - run)
     n_tip = face + out_sign * (z_pad - z0)

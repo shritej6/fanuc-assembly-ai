@@ -1,4 +1,5 @@
-"""Run provenance and checkpoint-resume compatibility guards."""
+"""Run provenance and checkpoint-resume compatibility guards.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 

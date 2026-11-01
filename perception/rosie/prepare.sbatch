@@ -1,5 +1,6 @@
 #!/bin/bash
-# Freeze T13 manifests and export COCO/crops. SMOKE=1 is the only native-only mode.
+# Freeze the training manifests and export COCO/crops. SMOKE=1 is the only native-only mode.
+# Authored by Shritej Gunda.
 #SBATCH --job-name=fa-t13-prepare
 #SBATCH --partition=teaching
 #SBATCH --cpus-per-task=8

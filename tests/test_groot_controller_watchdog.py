@@ -1,4 +1,6 @@
-"""Controller-level Held/Andon behavior for CELL settlement and watchdog trips."""
+"""Controller-level Held/Andon behavior for CELL settlement and watchdog trips.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import replace
 

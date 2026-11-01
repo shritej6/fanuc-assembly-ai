@@ -1,4 +1,6 @@
-"""Dependency-light immutable contract for T14 PatchCore evidence."""
+"""Immutable, dependency-light contract for PatchCore evidence.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

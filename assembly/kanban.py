@@ -1,8 +1,5 @@
-"""Deterministic Kanban and defect-Pareto view models.
-
-T09 inventory is the sole stock authority. Controller events can trigger a
-card or contribute a validated defect occurrence, but they never mutate or
-decrement stock. The immutable output is intentionally chart-renderer agnostic.
+"""Deterministic Kanban cards and defect Pareto view models.
+Authored by Shritej Gunda.
 """
 
 from collections import Counter
@@ -58,7 +55,7 @@ class KanbanInputError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class FailureRateEvidence:
-    """Measured counts behind a rate that must remain PRELIMINARY."""
+    """Measured counts behind a rate that remains an estimate."""
 
     failures: int
     opportunities: int
@@ -167,7 +164,7 @@ def build_operations_view(
     events: tuple[ControllerEvent, ...],
     policies: tuple[StockPolicy, ...],
 ) -> OperationsView:
-    """Build cards and Pareto rows from validated T09 state without mutation."""
+    """Build cards and Pareto rows from validated controller state without mutation."""
 
     _validate_view_boundary(catalog, inventory, events, policies)
     validated = _validate_policies(catalog, policies)

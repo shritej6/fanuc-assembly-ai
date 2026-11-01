@@ -1,5 +1,5 @@
-"""Index tables for the numeric `plan_ids` observation (Mimic-generated episodes keep only per-step tensors, so the
-plan travels as indices). Object ids come from `cad/grasp_frames.json`, never typed by hand.
+"""Index tables that encode an episode's plan as the numeric plan_ids observation.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -75,6 +75,7 @@ def decode_plan_ids(ids) -> dict:
 
 
 def encode_plan_ids(skill: str, object_id: str, base_id: str | None, grip: int, case: str) -> list[int]:
+    """Return the plan_ids vector for one episode's plan."""
     oids = object_ids()
     return [SKILLS.index(skill), oids.index(object_id), NO_BASE if base_id is None else oids.index(base_id),
             grip, CASES.index(case)]

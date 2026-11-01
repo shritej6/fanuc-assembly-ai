@@ -1,3 +1,7 @@
+"""Tests for taxonomy.
+Authored by Shritej Gunda.
+"""
+
 import json
 from pathlib import Path
 

@@ -1,4 +1,6 @@
-"""Raw observed-versus-rendered depth evidence without an unmeasured verdict threshold."""
+"""Raw observed-versus-rendered depth evidence, with no unmeasured verdict threshold.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ class DepthResidualError(ValueError):
 
 @dataclass(frozen=True)
 class DepthResidual:
+    """Measured depth residual evidence for one mask."""
     status: Literal["measured", "uncertain"]
     valid_pixels: int
     mask_pixels: int

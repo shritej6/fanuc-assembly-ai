@@ -1,14 +1,5 @@
-"""Check Agent 4's LeRobot export and turn it into the GR00T training layout (DATA_FORMAT.md).
-
-    python -m policy_learn.groot.prepare_dataset --src ~/t12_data/lerobot/<ds> [--src ...] --out ~/groot_data \
-        [--val-fraction 0.02]
-
-For every source dataset it writes `<out>/train/<name>` and `<out>/val/<name>` (held-out episodes, re-indexed):
-- parquet: the source columns plus `observation.eef_9d` and `action.eef_9d` (tcp_convert.tcp_to_eef9d),
-- videos: symlinks to the source mp4 files (the source is never modified),
-- meta: info.json (+ the two new features), episodes.jsonl, tasks.jsonl, modality.json.
-Any check failure stops the run with every problem listed; nothing is silently dropped.
-"""
+"""Check the LeRobot export and convert it to the GR00T training layout (DATA_FORMAT.md).
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -49,11 +40,12 @@ MODALITY = {
 
 
 class DatasetError(ValueError):
-    """The source export does not match DATA_FORMAT.md."""
+    """Raised when the source export does not match DATA_FORMAT.md."""
 
 
 @dataclass
 class Source:
+    """One source LeRobot export."""
     root: Path
     info: dict
     episodes: list[dict]
@@ -66,6 +58,7 @@ def _jsonl(path: Path) -> list[dict]:
 
 
 def load_source(root: Path) -> Source:
+    """Load and return one source export."""
     meta = root / "meta"
     for name in ("info.json", "episodes.jsonl", "tasks.jsonl"):
         if not (meta / name).is_file():
@@ -78,6 +71,7 @@ def load_source(root: Path) -> Source:
 
 
 def check_info(src: Source) -> None:
+    """Check the export info against the expected format."""
     info, feats = src.info, src.info.get("features", {})
     if info.get("fps") != FPS:
         src.problems.append(f"info.fps={info.get('fps')} but the demos run at {FPS} Hz (dt 0.2 s)")
@@ -101,6 +95,7 @@ def _path(src: Source, pattern_key: str, ep: int, video_key: str = "") -> Path:
 
 
 def check_episode(src: Source, ep_meta: dict, df: pd.DataFrame) -> list[str]:
+    """Check one episode against the expected format."""
     ep = int(ep_meta["episode_index"])
     out = []
     if len(df) != int(ep_meta["length"]):
@@ -135,6 +130,7 @@ def check_episode(src: Source, ep_meta: dict, df: pd.DataFrame) -> list[str]:
 
 
 def add_eef_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Return the frame with eef_9d columns added."""
     state = np.stack(df["observation.state"].to_numpy()).astype(np.float64)
     action = np.stack(df["action"].to_numpy()).astype(np.float64)
     df = df.copy()
@@ -146,7 +142,7 @@ def add_eef_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def write_split(src: Source, frames: dict[int, pd.DataFrame], episodes: list[dict], dest: Path) -> int:
-    """Write the given source episodes re-indexed 0..n-1 under `dest`; returns the frame count."""
+    """Write the given episodes re-indexed from 0 under `dest` and return the frame count."""
     if dest.exists():
         shutil.rmtree(dest)
     (dest / "meta").mkdir(parents=True)
@@ -171,6 +167,7 @@ def write_split(src: Source, frames: dict[int, pd.DataFrame], episodes: list[dic
 
 
 def write_meta(src: Source, dest: Path, episodes: list[dict], total: int) -> None:
+    """Write the dataset metadata files."""
     info = json.loads(json.dumps(src.info))
     info.update(
         codebase_version="v2.1", fps=FPS, chunks_size=CHUNK, data_path=DATA_PATH, video_path=VIDEO_PATH,
@@ -191,6 +188,7 @@ def write_meta(src: Source, dest: Path, episodes: list[dict], total: int) -> Non
 
 
 def split_episodes(episodes: list[dict], val_fraction: float, seed: int) -> tuple[list[dict], list[dict]]:
+    """Return the train and validation episode split."""
     n_val = 0 if val_fraction <= 0 else min(50, max(1, round(len(episodes) * val_fraction)))
     if n_val >= len(episodes):
         raise DatasetError(f"{len(episodes)} episodes cannot give {n_val} held-out episodes and a training set")
@@ -202,6 +200,7 @@ def split_episodes(episodes: list[dict], val_fraction: float, seed: int) -> tupl
 
 
 def prepare(src_root: Path, out: Path, val_fraction: float, seed: int) -> dict:
+    """Prepare every split and return the output paths."""
     src = load_source(src_root)
     frames: dict[int, pd.DataFrame] = {}
     for ep_meta in src.episodes:
@@ -225,6 +224,7 @@ def prepare(src_root: Path, out: Path, val_fraction: float, seed: int) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse arguments and prepare the dataset."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--src", type=Path, action="append", required=True, help="LeRobot dataset root (repeatable)")
     ap.add_argument("--out", type=Path, required=True)
@@ -237,6 +237,7 @@ def main(argv: list[str] | None = None) -> None:
     if len(set(names)) != len(names):
         raise DatasetError(f"source dataset folder names must be unique: {names}")
     def val_fraction(src: Path) -> float:
+        """Return the validation fraction parsed from text."""
         return 0.0 if args.no_val_prefix and src.name.startswith(args.no_val_prefix) else args.val_fraction
 
     reports = [prepare(s.expanduser(), args.out.expanduser(), val_fraction(s), args.seed) for s in args.src]

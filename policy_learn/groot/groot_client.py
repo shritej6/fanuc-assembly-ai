@@ -1,18 +1,5 @@
-"""Sim-eval / deploy hook: talk to a GR00T policy server with the cell's observation dict, get `act_tcp` rows.
-
-Needs only numpy, msgpack, msgpack-numpy and pyzmq (no torch, no Isaac-GR00T install), so Agent 6's evaluator on
-fa-sim and `policy_learn/deploy/` can import it. The wire format is Isaac-GR00T's `PolicyServer`
-(`gr00t/policy/server_client.py`, ZMQ REQ/REP + msgpack-numpy); start the server with `serve_policy.sh`.
-
-    from policy_learn.groot.groot_client import GrootTcpClient
-    policy = GrootTcpClient(host="127.0.0.1", port=5555)   # ssh -N -L 5555:127.0.0.1:5555 <training box>
-    rows = policy.act(obs)        # list of [x, y, z, w, p, r, gripper], absolute, mm / deg, play at dt 0.2 s
-
-`obs` uses the INTERFACES.md keys: images {table, side, wrist: HxWx3 uint8, the whole frame resized to 640x360 as
-in the training videos}, joints (7: J1..J6 deg, gripper), tcp_pose (6), instruction (str; or obs["trial"]
-["instruction"] as in the official client). The rows are NOT guarded: the caller runs them through
-`policy_learn/deploy/guards.py` before they reach the sim or the arm.
-"""
+"""Client for a GR00T policy server: send the cell observation, get act_tcp rows.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -30,10 +17,11 @@ ATTESTATION_PROTOCOL = "fanuc-groot-attestation-v1"
 
 
 class PolicyServerError(RuntimeError):
-    """The server answered with an error payload."""
+    """Raised when the server answers with an error payload."""
 
 
 def instruction_of(obs: dict) -> str:
+    """Return the instruction text from an observation."""
     text = obs.get("instruction") or obs.get("trial", {}).get("instruction")
     if not isinstance(text, str) or not text.strip():
         raise ValueError("observation has no instruction (obs['instruction'] or obs['trial']['instruction'])")
@@ -41,7 +29,7 @@ def instruction_of(obs: dict) -> str:
 
 
 def obs_to_groot(obs: dict) -> dict:
-    """Cell observation -> GR00T Policy API observation (batch 1, one time step)."""
+    """Return the GR00T observation for one cell observation."""
     images = obs["images"]
     video = {}
     for cam in CAMERAS:
@@ -62,27 +50,29 @@ def obs_to_groot(obs: dict) -> dict:
 
 
 def groot_to_rows(action: dict, current_tcp: np.ndarray, execution_horizon: int | None = None) -> list[list[float]]:
-    """GR00T action dict {eef_9d: (1, T, 9), gripper: (1, T, 1)} -> absolute act_tcp rows."""
+    """Return absolute act_tcp rows from a GR00T action dict."""
     eef = np.asarray(action["eef_9d"], dtype=np.float64)[0]
     grip = np.asarray(action["gripper"], dtype=np.float64)[0, :, 0]
     if eef.ndim != 2 or eef.shape[1] != 9 or len(grip) != len(eef):
         raise ValueError(f"unexpected action shapes eef_9d {eef.shape} gripper {grip.shape}")
     n = len(eef) if execution_horizon is None else min(execution_horizon, len(eef))
     tcp = eef9d_to_tcp(eef[:n], np.asarray(current_tcp, dtype=np.float64)[3:6])
-    # Preserve model uncertainty. ChunkGuard owns the only reviewed snap/refuse
-    # decision; thresholding here could turn NaN or 0.49 into an authorized open.
+    # Keep the raw value: only ChunkGuard decides to snap or refuse the gripper.
     return np.column_stack([tcp, grip[:n]]).tolist()
 
 
 def pack(data) -> bytes:
+    """Return the msgpack bytes for a message."""
     return msgpack.packb(data, default=mnp.encode)
 
 
 def unpack(raw: bytes):
+    """Return the message decoded from msgpack bytes."""
     return msgpack.unpackb(raw, object_hook=mnp.decode, raw=False)
 
 
 class GrootTcpClient:
+    """ZMQ client for a GR00T policy server."""
     def __init__(
         self, host: str = "127.0.0.1", port: int = 5555, timeout_ms: int = 30000, execution_horizon: int | None = None
     ):
@@ -100,6 +90,7 @@ class GrootTcpClient:
         self.socket.connect(self.address)
 
     def call(self, endpoint: str, data: dict | None = None):
+        """Send one request and return the reply."""
         request = {"endpoint": endpoint}
         if data is not None:
             request["data"] = data
@@ -115,13 +106,14 @@ class GrootTcpClient:
         return reply
 
     def ping(self) -> bool:
+        """Return True when the server answers."""
         try:
             return self.call("ping").get("status") == "ok"
         except TimeoutError:
             return False
 
     def describe(self) -> dict:
-        """Return the server-derived deployment attestation, never a local default."""
+        """Return the deployment attestation reported by the server."""
         reply = self.call("describe")
         valid = (
             isinstance(reply, dict)
@@ -133,15 +125,19 @@ class GrootTcpClient:
         return dict(reply["attestation"])
 
     def reset(self) -> None:
+        """Reset the server session."""
         self.call("reset", {"options": None})
 
     def predict(self, obs: dict) -> dict:
+        """Return the raw action dict for one observation."""
         action, _info = self.call("get_action", {"observation": obs_to_groot(obs), "options": None})
         return action
 
     def act(self, obs: dict) -> list[list[float]]:
+        """Return act_tcp rows for one observation."""
         return groot_to_rows(self.predict(obs), obs["tcp_pose"], self.execution_horizon)
 
     def close(self) -> None:
+        """Close the socket."""
         self.socket.close()
         self.context.term()

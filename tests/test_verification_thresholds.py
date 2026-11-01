@@ -1,4 +1,6 @@
-"""Validation tests for measured perception acceptance thresholds."""
+"""Validation tests for measured perception acceptance thresholds.
+Authored by Shritej Gunda.
+"""
 
 import pytest
 

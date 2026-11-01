@@ -1,4 +1,6 @@
-"""Controller regressions for advisory FoundationPose and PatchCore evidence."""
+"""Controller regressions for advisory FoundationPose and PatchCore evidence.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 from dataclasses import replace

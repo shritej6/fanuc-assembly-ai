@@ -1,13 +1,5 @@
-"""Gripper-held insert at a sideways offset: does the part seat or jam, as CAD says (capture 0.5 mm)?
-
-    T12_POOL=F01,M1_01,...  isaaclab_run.sh sim/assembly_lab/env/held_insert_check.py --out ~/t12_data/held.json \
-        [--products 1,4] [--offsets 0,0.5,0.6,1,2] [--free_base]
-
-Per episode: CAD grasp of M<p>_01 standing on the table, lift, carry to its CAD seat on F0<p> shifted +x (UF0) by the
-offset, descend 0.25 mm per 0.1 s step until the part is 0.5 mm below the seat or its contact normal force reaches the
-15 N axial limit (the force guard), then read the height above the seat. By default the base is pressed onto the table
-(30 N external force) like agent 2's fixed-receiver rig; --free_base leaves it free-standing as on the real cell.
-Seated: < 0.3 mm above the seat. Jammed: >= 2 mm (CAD: the unchamfered 3 mm stops block any offset > 0.5 mm).
+"""Check whether a gripper-held part seats or jams when inserted at a sideways offset.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

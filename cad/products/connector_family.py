@@ -1,7 +1,5 @@
-"""Shared geometry for the connector family (Models 4-6): housing, insert, U guide frame, top lock.
-
-Assembly stack (world Z): housing 0-18, insert body 5-17 / pad 17-25, guide frame 18-23 /
-rear pad 23-31, lock legs 18-23 / bridge 23-27 / pad 27-35. Removal order: lock, guide, insert.
+"""Shared geometry for the connector family (Models 4 to 6).
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -133,10 +131,7 @@ def front_pocket(width: float, height: float, x: float, z_center_local: float, y
 
 def connector_insert(name: str, bx: float, by: float, pockets: list[tuple[float, float, float, float]],
                      detail: Detail | None = None) -> Part:
-    """Insert body bx x by x 12 (Z 5-17), 1.5 mm bottom lead-in, front pockets, 7 x 10 x 8 pad.
-
-    pockets: (width, height, x_center, local_z_center) for each blind front cavity.
-    """
+    """Return the connector insert body with lead-in, front pockets and grip pad."""
     body = box(bx, by, INSERT_H, z0=INSERT_Z0).faces("<Z").chamfer(INSERT_BOTTOM_CHAMFER)
     for w, h, x, zc in pockets:
         body = body.cut(front_pocket(w, h, x, zc, -by / 2))
@@ -150,10 +145,7 @@ def connector_insert(name: str, bx: float, by: float, pockets: list[tuple[float,
 # --- U guide frame ------------------------------------------------------------
 
 def _guide_pad() -> cq.Workplane:
-    """Rear grip pad (Y 13-23, Z 23-31) on a solid block down to the frame bottom.
-
-    User-approved change: the block replaces a 6 mm unsupported overhang behind the frame.
-    """
+    """Return the rear grip pad on a solid block that replaces an unsupported overhang."""
     y0, y1 = GUIDE_PAD_CENTER_Y - GRIP_LENGTH / 2, GUIDE_PAD_CENTER_Y + GRIP_LENGTH / 2
     rear = GUIDE_Y / 2
     pts = [(rear - EPS, GUIDE_Z0), (y1, GUIDE_Z0), (y1, GUIDE_Z1 + GRIP_HEIGHT),

@@ -1,9 +1,5 @@
-"""What each skill needs from the planner (agent 2), in mm / deg, UF0.
-
-`planner.py` (agent 2) returns `GraspPlan` / `PlacePlan`; `from_planner` reads them by field name (attribute or dict
-key) so the two modules stay decoupled. Every pose is a TCP pose `[x, y, z, w, p, r]`. Nothing here is guessed:
-a field the planner does not give raises `PlanError`, except the documented human-style insert constants, which are
-the user's decisions (docs/ROBOT_BRAIN.md section 2) and the CAD entry chamfer (cad/products/parameters.py).
+"""Data each skill needs from the planner, in mm and degrees in UF0.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -16,15 +12,15 @@ GAP_CLOSED_MAX_MM = 4.5  # cad/grasp_frames.json gripper_gap_mm: fingers fully c
 GAP_OPEN_MIN_MM = 16.5  # fully open
 ENTRY_CHAMFER_MM = 1.5  # parameters.ENTRY_CHAMFER
 CLEARANCE_PER_SIDE_MM = 0.5  # parameters.LOCATING_CLEARANCE_PER_SIDE
-INSERT_TILT_DEG = 3.0  # user: come in tilted about 3 deg
-INSERT_TWIST_DEG = 2.0  # user: twist ±2 deg
-PULL_WIGGLE_DEG = 1.0  # user: pull out with a ±1 deg wiggle
-SEAT_FLOOR_MM = 1.0  # user: never command below the seated height - 1 mm
-SLOW_ZONE_MM = 5.0  # user: slow last 5 mm
-RETRY_LIFT_MM = 3.0  # user: if not seated, lift 3 mm, re-measure, re-align, retry once
-PUSH_MM = 0.05  # push target below the CAD seated TCP: agent 1's substep trace (2026-10-30) ramps 10-17 N when the
-#                 command goes 0.25-0.5 mm below the seat (SDF compliance lets a part sink only ~0.12 mm); main
-#                 2026-10-30: 0.1 gave 12.5 N of the 15 N limit (run10 58 kept: first seat contact at a median
+INSERT_TILT_DEG = 3.0  # come in tilted about 3 deg
+INSERT_TWIST_DEG = 2.0  # twist +-2 deg
+PULL_WIGGLE_DEG = 1.0  # pull out with a +-1 deg wiggle
+SEAT_FLOOR_MM = 1.0  # never command below the seated height - 1 mm
+SLOW_ZONE_MM = 5.0  # slow last 5 mm
+RETRY_LIFT_MM = 3.0  # if not seated, lift 3 mm, re-measure, re-align, retry once
+PUSH_MM = 0.05  # push target below the CAD seated TCP: the substep trace ramps 10-17 N when the
+#                 command goes 0.25-0.5 mm below the seat (SDF compliance lets a part sink only ~0.12 mm);
+#                 0.1 gave 12.5 N of the 15 N limit (run10 58 kept: first seat contact at a median
 #                 -0.097 mm, so 0.1 mostly compressed the seat), target median <= 6 N / max <= 10 N. Back to 0.1 if
 #                 seats then fail the z gate
 

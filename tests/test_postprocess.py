@@ -1,3 +1,7 @@
+"""Tests for postprocess.
+Authored by Shritej Gunda.
+"""
+
 import numpy as np
 
 from sdg.postprocess import (

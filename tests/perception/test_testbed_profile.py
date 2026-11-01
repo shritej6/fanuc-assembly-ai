@@ -1,3 +1,7 @@
+"""Tests for testbed profile.
+Authored by Shritej Gunda.
+"""
+
 import json
 from pathlib import Path
 
@@ -263,7 +267,7 @@ def test_a_loose_part_without_a_rest_state_is_refused_not_trained_as_installed(t
 
 
 def test_foreign_objects_and_bases_need_no_rest_state() -> None:
-    """Regression: the rest-state check refused `foreign_cube_10mm on_table` and stopped T27 prepare on the box."""
+    """Regression: the rest-state check refused `foreign_cube_10mm on_table` and stopped prepare on the box."""
     from perception.manifest_annotations import annotation
 
     label2id = {"foreign_cube_10mm": 0, "F01": 1, "M1_01": 2, "M1_01__fallen": 3}

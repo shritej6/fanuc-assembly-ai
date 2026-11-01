@@ -1,4 +1,6 @@
-"""Model 1 - Rotary Knob Module: housing, spindle carrier, rotary knob, rear guard."""
+"""Model 1, Rotary Knob Module: housing, spindle carrier, rotary knob and rear guard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Atomic, hash-verifiable storage for product birth certificates."""
+"""Atomic, hash-verifiable storage for product birth certificates.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

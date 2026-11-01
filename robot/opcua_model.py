@@ -1,4 +1,6 @@
-"""Deterministic PLC telemetry and a fail-closed PackML command boundary."""
+"""Deterministic PLC telemetry and a fail-closed PackML command boundary.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -40,7 +42,7 @@ class CommandStateError(CommandValidationError):
 
 
 class ControllerStatusSource(Protocol):
-    """Public T09 interfaces consumed by the PLC telemetry adapter."""
+    """Public controller interfaces read by the PLC telemetry adapter."""
 
     state_machine: PackMLStateMachine
     inventory: Inventory
@@ -115,7 +117,7 @@ class ControllerSnapshotMailbox:
 
 
 def build_controller_snapshot(source: ControllerStatusSource) -> ControllerSnapshot:
-    """Read only public T09 state; never invoke policy, adapters, or motion."""
+    """Read public controller state only; never call the policy, adapters or motion."""
     record = source.state_machine.current_record
     items = tuple(source.inventory.items())
     counts = Counter(item.zone for item in items)

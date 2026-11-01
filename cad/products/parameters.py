@@ -1,6 +1,5 @@
-"""Shared parameters for the FANUC print-first assembly models. All values in millimetres.
-
-World frame for every product: +X right, +Y rear, +Z up, fixture top surface at Z = 0.
+"""Shared parameters for the printed assembly models, in millimetres.
+Authored by Shritej Gunda.
 """
 
 # --- FDM process ---------------------------------------------------------
@@ -83,7 +82,7 @@ CARRIER_FLANGE_H = 2.0
 CARRIER_BOTTOM_CHAMFER = 1.0
 KEY_POST_X = 7.0
 KEY_POST_Y = 10.0
-# Design decision (user-approved): cap/knob sockets are post height + this headroom,
+# Cap/knob sockets are post height + this headroom,
 # so every cap seats on its carrier flange instead of riding on the post top.
 SOCKET_HEADROOM = 0.5
 SOCKET_ROOF = 1.5

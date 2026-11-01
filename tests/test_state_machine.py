@@ -1,4 +1,6 @@
-"""Behavioral tests for the fail-closed PackML state machine."""
+"""Behavioral tests for the fail-closed PackML state machine.
+Authored by Shritej Gunda.
+"""
 
 import json
 from datetime import UTC, datetime

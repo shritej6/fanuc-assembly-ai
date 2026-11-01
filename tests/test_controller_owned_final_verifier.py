@@ -1,4 +1,6 @@
-"""Controller-owned final verification keeps motion out of perception callbacks."""
+"""Controller-owned final verification keeps motion out of perception callbacks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

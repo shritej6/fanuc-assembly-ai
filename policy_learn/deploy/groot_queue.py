@@ -1,4 +1,5 @@
-"""CELL queue for GR00T part motion and explicitly non-learned camera poses."""
+"""Cell queue for GR00T part motion and non-learned camera poses.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -33,11 +34,11 @@ from robot.adapter import Action, Observation
 
 
 class GrootGuardTrip(ExecutionError):
-    """The learned-policy guard returned a hold row and a concrete reason."""
+    """Raised when the policy guard returned a hold row with a reason."""
 
 
 class GrootMotionQueue:
-    """Preserve T09 lifecycle without accepting generic scripted MotionChunk data."""
+    """Motion queue that keeps the planner lifecycle but accepts only GR00T motion."""
 
     def __init__(
         self,
@@ -71,33 +72,41 @@ class GrootMotionQueue:
 
     @property
     def active(self) -> bool:
+        """Return True while a motion is queued."""
         return self._intent is not None
 
     @property
     def instance_id(self) -> str | None:
+        """Return the current instance id."""
         return None if self._intent is None else self._intent.instance_id
 
     @property
     def base_instance_id(self) -> str | None:
+        """Return the base instance id."""
         return None if self._intent is None else self._intent.base_instance_id
 
     @property
     def pending_endpoint(self) -> Waypoint | None:
+        """Return the endpoint waiting for confirmation."""
         return self._expected_endpoint
 
     @property
     def last_emitted_phase(self) -> MotionPhase | None:
+        """Return the phase of the last emitted row."""
         return self._last_emitted_phase
 
     @property
     def last_authority_label(self) -> str | None:
+        """Return the label of the last motion authority."""
         return self._last_authority_label
 
     @property
     def last_authority_source(self) -> str | None:
+        """Return the source of the last motion authority."""
         return self._last_authority_source
 
     def clear(self) -> None:
+        """Drop any queued motion."""
         self._intent: MotionIntent | FixedInspectionMove | None = None
         self._expected_endpoint: Waypoint | None = None
         self._expected_issued_at_s: float | None = None
@@ -122,6 +131,7 @@ class GrootMotionQueue:
         observed_at_s: float,
         base_pose: tuple[float, float, float, float],
     ) -> None:
+        """Queue one motion intent after a first watchdog check."""
         if self.active or self._expected_endpoint is not None:
             raise ExecutionError("CELL queue already owns an unfinished motion intent")
         if not isinstance(intent, (MotionIntent, FixedInspectionMove)):
@@ -156,6 +166,7 @@ class GrootMotionQueue:
         current: Waypoint,
         observed_at_s: float,
     ) -> Action | None:
+        """Return None once the previous endpoint is reached, else the row that keeps settling."""
         if self._expected_endpoint is None:
             return None
         gripper_changed = current.gripper != self._last_observed_gripper
@@ -200,6 +211,7 @@ class GrootMotionQueue:
         current: Waypoint,
         observed_at_s: float,
     ) -> Action:
+        """Return the next guarded rows for the queued motion."""
         if self._expected_endpoint is not None:
             raise ExecutionError(
                 "CELL cannot emit another GR00T row before the previous endpoint settles"
@@ -258,6 +270,7 @@ class GrootMotionQueue:
         return result.action
 
     def finish(self) -> None:
+        """Clear the queue once its guarded endpoint is reached."""
         if self.active or self._expected_endpoint is not None:
             raise ExecutionError("CELL queue cannot finish before its guarded endpoint")
         self.clear()

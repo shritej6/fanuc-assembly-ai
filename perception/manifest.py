@@ -1,4 +1,6 @@
-"""Validate SDG chunks and freeze leak-free T13 training manifests."""
+"""Validate SDG chunks and freeze leak-free training manifests.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -158,6 +160,7 @@ class _ManifestBuilder:
         self.label_hashes = {"detector": hashlib.sha256(), "classifier": hashlib.sha256()}
 
     def build(self) -> ManifestSummary:
+        """Build the manifests and return their summary."""
         self._validate_root()
         for set_name in self.config.detector_sets:
             self._process_set(set_name, "detector")
@@ -477,7 +480,7 @@ class _ManifestBuilder:
 
 
 def build_manifests(config: ManifestConfig) -> ManifestSummary:
-    """Validate approved synthetic sets and atomically freeze both T13 manifests."""
+    """Validate the approved synthetic sets and atomically freeze both manifests."""
     _validate_config(config)
     ontology = load_ontology(config.taxonomy_path, config.fallen_classes)
     return _ManifestBuilder(config, ontology).build()

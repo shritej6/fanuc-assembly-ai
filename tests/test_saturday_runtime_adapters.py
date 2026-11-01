@@ -1,6 +1,5 @@
-"""Saturday production-adapter regressions.
-
-These tests cover the source-pinned adapters without loading GPU model weights.
+"""production-adapter regressions.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

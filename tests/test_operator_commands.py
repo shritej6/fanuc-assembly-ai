@@ -1,3 +1,7 @@
+"""Tests for operator commands.
+Authored by Shritej Gunda.
+"""
+
 import pytest
 
 from agent.commands import (

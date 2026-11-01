@@ -1,5 +1,6 @@
-"""Mixin for CellMimicEnv: per-episode camera / light jitter (Mimic diversity) and the eval disturbance props
-(inject_foreign, block_holes, force_release, inject_intruder). Kept apart so mimic_env.py stays the Mimic core."""
+"""Mixin that adds per-episode camera and light jitter and eval disturbance props to the cell env.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -42,12 +43,7 @@ class CellExtrasMixin:
         return {"views": views, "wrist": None if self._wrist is None else self._wrist[1].clone(), "lights": lights}
 
     def apply_jitter(self, env_ids=None) -> None:
-        """Per-episode camera / light jitter from cfg.t12["jitter"] = {cam_pos_mm, cam_rot_deg, light_frac} (0 = off).
-
-        For each env in env_ids (default all), each fixed camera and the wrist mount move by N(0, cam_pos_mm) per axis
-        and rotate by N(0, cam_rot_deg) about a random axis; every authored light intensity is scaled by
-        U(1 - light_frac, 1 + light_frac): each env's own lights, and the shared dome only when every env is reset
-        together (it lights all cells). Nominal values are restored first, so jitter never accumulates."""
+        """Apply per-episode camera and light jitter from the env config (0 = off)."""
         j = self.cfg.t12.get("jitter") or {}
         pos_m, rot_rad, frac = j.get("cam_pos_mm", 0.0) / 1000.0, math.radians(j.get("cam_rot_deg", 0.0)), j.get("light_frac", 0.0)
         if not (pos_m or rot_rad or frac):
@@ -80,7 +76,7 @@ class CellExtrasMixin:
                 continue
             attr.Set(value * float(self.rng.uniform(1.0 - frac, 1.0 + frac)))
 
-    # ------------------------------------------------------------------ disturbances (eval scenarios, agent 6)
+    # ------------------------------------------------------------------ disturbances (eval scenarios)
     def _extra(self, name: str):
         key = f"extra_{name}"
         if key not in self.scene.rigid_objects:

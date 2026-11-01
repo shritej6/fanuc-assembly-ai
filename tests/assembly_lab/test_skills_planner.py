@@ -1,4 +1,6 @@
-"""Agent 2's planner -> skill plans -> rows, for all 24 parts in sheet order (host-side, no physics)."""
+"""The planner -> skill plans -> rows, for all 24 parts in sheet order (host-side, no physics).
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -64,8 +66,7 @@ def test_scene_from_obs_marks_installed_and_fallen():
 
 @pytest.mark.parametrize("part", ["M1_02", "M4_01", "M6_01"])
 def test_crowded_layout_blocks_every_turn_without_overlap(part):
-    """The crowded case: the planner refuses every wrist turn on the target until the moved neighbour goes, and the
-    neighbour's footprint stays clear of the target's (no interpenetration for physics to resolve)."""
+    """The crowded case: the planner refuses every wrist turn on the target until the moved neighbour goes, and the neighbour's footprint stays clear of the target's (no interpenetration for physics to resolve)."""
     from types import SimpleNamespace
 
     from sim.assembly_lab.objects.scene import build_instances, solid_of

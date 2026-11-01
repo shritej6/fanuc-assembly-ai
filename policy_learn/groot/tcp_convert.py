@@ -1,14 +1,5 @@
-"""FANUC `[x, y, z, w, p, r]` <-> GR00T `eef_9d` = `[x, y, z, rot6d]` (pure numpy, no GR00T import).
-
-Why: w sits at +-180 when the fingers point down, so raw WPR jumps by 360 deg between equal poses. Min-max
-normalisation and a regression head cannot learn across that jump. GR00T's own EEF format (XYZ_ROT6D, as in its
-DROID pre-training) is continuous, so the model sees rot6d and we convert back to WPR only at the client.
-
-Conventions (identical to `policy_learn/deploy/guards.py`):
-- WPR are FANUC fixed angles in degrees: R = Rz(r) @ Ry(p) @ Rx(w).
-- rot6d = the first two ROWS of R, flattened (`gr00t/data/state_action/pose.py::_matrix_to_rot6d`).
-- Translation stays in mm.
-"""
+"""Convert FANUC [x, y, z, w, p, r] to and from GR00T eef_9d (numpy only).
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -16,7 +7,7 @@ import numpy as np
 
 
 def wpr_to_matrix(wpr: np.ndarray) -> np.ndarray:
-    """(..., 3) degrees -> (..., 3, 3)."""
+    """Return rotation matrices for w, p, r in degrees."""
     w, p, r = np.moveaxis(np.radians(np.asarray(wpr, dtype=np.float64)), -1, 0)
     cw, sw, cp, sp, cr, sr = np.cos(w), np.sin(w), np.cos(p), np.sin(p), np.cos(r), np.sin(r)
     m = np.empty(w.shape + (3, 3))
@@ -33,7 +24,7 @@ def wpr_to_matrix(wpr: np.ndarray) -> np.ndarray:
 
 
 def matrix_to_wpr_pair(m: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Both fixed-angle solutions (degrees) of (..., 3, 3): (w, p, r) and (w+180, 180-p, r+180), wrapped to +-180."""
+    """Return both fixed-angle w, p, r solutions for rotation matrices."""
     m = np.asarray(m, dtype=np.float64)
     p = np.arcsin(np.clip(-m[..., 2, 0], -1.0, 1.0))
     w = np.arctan2(m[..., 2, 1], m[..., 2, 2])
@@ -45,7 +36,7 @@ def matrix_to_wpr_pair(m: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def rot6d_to_matrix(rot6d: np.ndarray) -> np.ndarray:
-    """(..., 6) -> (..., 3, 3) by Gram-Schmidt on the two rows (same as GR00T's `_rot6d_to_matrix`)."""
+    """Return rotation matrices from 6D rotations by Gram-Schmidt."""
     rows = np.asarray(rot6d, dtype=np.float64).reshape(np.shape(rot6d)[:-1] + (2, 3))
     a = rows[..., 0, :] / np.linalg.norm(rows[..., 0, :], axis=-1, keepdims=True)
     b = rows[..., 1, :] - np.sum(a * rows[..., 1, :], axis=-1, keepdims=True) * a
@@ -54,7 +45,7 @@ def rot6d_to_matrix(rot6d: np.ndarray) -> np.ndarray:
 
 
 def tcp_to_eef9d(tcp: np.ndarray) -> np.ndarray:
-    """(..., 6) `[x, y, z, w, p, r]` (mm, deg) -> (..., 9) `[x, y, z, r00, r01, r02, r10, r11, r12]` float32."""
+    """Return eef_9d rows for FANUC TCP poses."""
     tcp = np.asarray(tcp, dtype=np.float64)
     rot = wpr_to_matrix(tcp[..., 3:6])
     rot6d = rot[..., :2, :].reshape(tcp.shape[:-1] + (6,))
@@ -62,12 +53,7 @@ def tcp_to_eef9d(tcp: np.ndarray) -> np.ndarray:
 
 
 def eef9d_to_tcp(eef9d: np.ndarray, reference_wpr: np.ndarray) -> np.ndarray:
-    """(T, 9) chunk -> (T, 6) `[x, y, z, w, p, r]`.
-
-    Each row takes the WPR solution closest to the previous row (the first row: to `reference_wpr`, normally the
-    current `tcp_pose[3:]`), and every angle is unwrapped by multiples of 360 to be continuous, so the arm never
-    gets a +-360 spin on J6 or a w flip between -180 and +180. Whether r stays inside J6 is the guard's job.
-    """
+    """Return FANUC TCP rows for an eef_9d chunk."""
     eef9d = np.atleast_2d(np.asarray(eef9d, dtype=np.float64))
     first, second = matrix_to_wpr_pair(rot6d_to_matrix(eef9d[:, 3:9]))
     out = np.empty((len(eef9d), 6))

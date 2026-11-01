@@ -1,15 +1,5 @@
-"""Precompute how far a mis-built part must rise to rest ON the fixture stack instead of passing through it.
-
-    uv run --with trimesh --with manifold3d --with scipy python -m sdg.tools.build_clearance
-
-Writes sdg/data/build_clearance.json, which the scene sampler reads (no mesh library at sampling time).
-For every part in its installed pose, against the fixture plus every part installed before it:
-  tilt   lift (mm) per tilt azimuth x tilt angle, pivot = bottom centre of the part's box (as the sampler tilts)
-  shift  lift per shift direction x shift distance
-  yaw    lift per yaw (90/180/270) and how visible the turn is (p99 surface deviation, mm); a turn of a symmetric
-         part looks seated, so the sampler only uses yaws whose deviation is at least YAW_VISIBLE_MM
-  wrong  lift of each look-alike swapped in at this part's installed pose
-Lift = smallest rise with no interpenetration (bisection on intersection volume, 0.01 mm resolution).
+"""Precompute how far a mis-built part must rise to rest on the fixture stack.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

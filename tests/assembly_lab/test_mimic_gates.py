@@ -1,4 +1,6 @@
-"""Precision gates (INTERFACES.md) and the MimicGen core transforms used by mimic/generate.py."""
+"""Precision gates (INTERFACES.md) and the MimicGen core transforms used by mimic/generate.py.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

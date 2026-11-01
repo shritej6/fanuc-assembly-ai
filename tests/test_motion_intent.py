@@ -1,4 +1,6 @@
-"""Semantic motion intents keep object origins, fingertip TCPs, and release authority distinct."""
+"""Semantic motion intents keep object origins, fingertip TCPs, and release authority distinct.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""4x4 homogeneous transforms in mm / deg, UF0 frame."""
+"""4x4 homogeneous transforms in mm and degrees, in the UF0 frame.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -55,9 +57,6 @@ def yaw_deg(tf: np.ndarray) -> float:
 
 
 def rest_on_table_dz(verts_mm: np.ndarray, tf: np.ndarray, table_z: float) -> float:
-    """Vertical shift that puts the lowest vertex of a mesh posed by `tf` exactly on the table.
-
-    A defect variant (warp, scale) rests slightly differently from the good part whose pose the sampler used.
-    """
+    """Return the vertical shift that puts the lowest vertex of the posed mesh on the table."""
     z = verts_mm @ tf[2, :3] + tf[2, 3]
     return float(table_z - z.min())

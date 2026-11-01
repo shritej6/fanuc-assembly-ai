@@ -1,8 +1,5 @@
-"""Fit one PatchCore model for one part and measure it (anomalib, single GPU per part, as the user asked).
-
-Reads the folders written by `perception.anomaly.testbed`. Writes `<out>/<part>/metrics.json`:
-  image AUROC and F1 on C / I good vs defective close-ups (installed orientation), and the share of good O test
-  close-ups flagged as anomalous at the model's own threshold (false alarms on the real-bed view).
+"""Fit one PatchCore model for one part and measure it on held-out close-ups.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -24,6 +21,7 @@ def _count(path: Path) -> int:
 
 
 def false_alarm_share(engine: Engine, model: Patchcore, folder: Path) -> float | None:
+    """Return the share of good crops in a folder flagged as defective, or None when empty."""
     if _count(folder) == 0:
         return None
     predictions = engine.predict(model=model, dataset=PredictDataset(path=folder), return_predictions=True) or []
@@ -32,6 +30,7 @@ def false_alarm_share(engine: Engine, model: Patchcore, folder: Path) -> float |
 
 
 def fit_and_measure(part_dir: Path, out: Path, workers: int) -> dict:
+    """Fit PatchCore for one part and return its counts and metrics."""
     counts = {name: _count(part_dir / name) for name in ("train_good", "test_good", "test_bad", "o_test_good")}
     result: dict = {"part": part_dir.name, "counts": counts}
     if counts["train_good"] == 0:
@@ -63,6 +62,7 @@ def fit_and_measure(part_dir: Path, out: Path, workers: int) -> dict:
 
 
 def main() -> None:
+    """Parse arguments, fit one part and write its metrics.json."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--crops", type=Path, required=True, help="output of perception.anomaly.testbed")
     ap.add_argument("--part", required=True)

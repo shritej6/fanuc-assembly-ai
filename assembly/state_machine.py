@@ -1,4 +1,6 @@
-"""Fail-closed PackML state tracking for one active product."""
+"""Fail-closed PackML state tracking for one active product.
+Authored by Shritej Gunda.
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass

@@ -1,4 +1,6 @@
-"""Software-only proof of the CELL policy boundary against the official mock."""
+"""Software-only proof of the CELL policy boundary against the official mock.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

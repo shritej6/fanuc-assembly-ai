@@ -1,4 +1,6 @@
-"""Malformed safety configuration and geometry must fail with typed errors."""
+"""Malformed safety configuration and geometry must fail with typed errors.
+Authored by Shritej Gunda.
+"""
 
 from dataclasses import replace
 

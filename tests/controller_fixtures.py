@@ -1,4 +1,6 @@
-"""Shared deterministic controller fixtures that are not production safety providers."""
+"""Shared deterministic controller fixtures that are not production safety providers.
+Authored by Shritej Gunda.
+"""
 
 from assembly.safety import AABBCollisionChecker, ReachabilityCapabilities, SafetyConfig, SafetySupervisor
 

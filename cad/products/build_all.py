@@ -1,10 +1,5 @@
-"""Regenerate every STEP and STL file in one command:  uv run python cad/products/build_all.py
-(Optional model numbers rebuild a subset, e.g. `uv run python cad/products/build_all.py 1` for the first test print.)
-
-STEP files: each part in its installed orientation, local origin at its lowest seating plane.
-STL files: same, except parts with a print_rotation (rear guards) are laid flat for slicing.
-Also writes output/part_registry.json (installed offsets, grip zones, assemblies) that
-validate_outputs.py uses to re-place the exported files and check the assemblies.
+"""Regenerate every STEP and STL file and the part registry in one command.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

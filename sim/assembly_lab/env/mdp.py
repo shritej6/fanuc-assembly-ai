@@ -1,4 +1,6 @@
-"""Manager terms (observations, events, terminations) of the cell env. Each takes the CellMimicEnv instance."""
+"""Observation, event and termination terms of the cell env.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Insertion tolerance table (sdg/data/insertion_tolerance.json) and the helpers that build it."""
+"""Insertion tolerance table (sdg/data/insertion_tolerance.json) and the helpers that build it.
+Authored by Shritej Gunda.
+"""
 
 import json
 from pathlib import Path

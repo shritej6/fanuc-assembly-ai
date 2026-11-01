@@ -1,5 +1,6 @@
-# PhysX material and contact settings for the 30 PLA parts and the Team V rubber fingertips (T12, agent 2).
-# SI units here (PhysX/Isaac Lab): m, s, kg. Read by sim/assembly_lab/env (agent 1).
+# PhysX material and contact settings for the 30 PLA parts and the Team V rubber fingertips.
+# Authored by Shritej Gunda.
+# SI units here (PhysX/Isaac Lab): m, s, kg. Read by sim/assembly_lab/env.
 # Status per value: SOURCE = taken from a cited source, ESTIMATE = engineering estimate to validate in sim / on the
 # cell. No value here was measured on the real parts.
 

@@ -1,4 +1,6 @@
-"""Trial instruction parsing is the only source of requested products."""
+"""Trial instruction parsing is the only source of requested products.
+Authored by Shritej Gunda.
+"""
 
 from inspect import signature
 from itertools import permutations

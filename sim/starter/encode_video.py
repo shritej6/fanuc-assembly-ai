@@ -1,7 +1,5 @@
-"""
-Encode the PNG frames written by make_video.py into an mp4.
-
-    ~/fanuc_er4ia_sim/.venv/bin/python encode_video.py --frames frames/ --out demo.mp4
+"""Encode rendered PNG frames into an mp4.
+Authored by Shritej Gunda.
 """
 
 import argparse, glob, os

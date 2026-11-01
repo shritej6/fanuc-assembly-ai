@@ -1,4 +1,6 @@
-"""Saturday CELL factory is explicit, GR00T-only, and fail closed."""
+"""CELL factory is explicit, GR00T-only, and fail closed.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

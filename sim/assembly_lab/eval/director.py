@@ -1,11 +1,5 @@
-"""Oracle director: the planner's steps for one eval layout, issued one at a time to the GR00T policy.
-
-It follows docs/ROBOT_BRAIN.md section 3 with ORACLE perception (truth labels from the layout) and the CAD planner of
-cad.py (no finger-clearance check; agent 2's planner replaces it when present). It evaluates GR00T executing plans.
-The T09 state machine plugs in through the same interface (`reset(obs)`, `step(obs) -> Task | None`, `events`).
-
-Every step uses the training instruction format (mimic/instructions.py) and the skills GR00T was trained on:
-pick_insert, pull_out, place_free, defect_drop.
+"""Oracle director that issues the planner's steps for one eval layout, one at a time.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 
@@ -27,6 +21,7 @@ MAX_ATTEMPTS = 2        # a step is re-issued once (fresh targets), then the epi
 
 @dataclass
 class Task:
+    """One planner step for the policy."""
     skill: str                     # pick_insert | pull_out | place_free | defect_drop
     uid: str                       # object instance in the env
     case: str                      # mimic CASES tag
@@ -44,6 +39,7 @@ class Task:
 
 @dataclass
 class Director:
+    """Issue the planner's steps for one eval layout."""
     expect: dict
     labels: dict
     spares: dict                   # type id -> spare uid
@@ -57,11 +53,13 @@ class Director:
 
     @classmethod
     def for_layout(cls, ev, task_time_s: float) -> Director:
+        """Build a director for an eval layout."""
         spares = {cad.type_id(s["uid"]): s["uid"] for s in ev.layout["spares"]}
         return cls(ev.expect, ev.layout["eval"]["labels"], spares, task_time_s)
 
     # ---------------------------------------------------------------- plan
     def reset(self, obs: dict) -> None:
+        """Plan the steps for a new episode."""
         self.events, self.queue, self.current, self.failed, self.spots = [], [], None, None, []
         lab = self.labels
         if "wrong_part" in lab:  # remove only the parts above it, in reverse sheet order, then the wrong part
@@ -91,7 +89,7 @@ class Director:
             out.append(Task("place_free", lab["blocker"], "crowded"))
         if pid in lab.get("damaged", []):
             out.append(Task("defect_drop", pid, "defect"))
-        # a fallen part is rejected in place: agent 2's planner has no grip for it (the pad is defined upright)
+        # a fallen part is rejected in place: the planner has no grip for it (the pad is defined upright)
         if pid in lab.get("damaged", []) + lab.get("fallen", []) + lab.get("missing", []):
             spare = self.spares.get(pid)
             out.append(Task("pick_insert", spare, "spare", base=base) if spare

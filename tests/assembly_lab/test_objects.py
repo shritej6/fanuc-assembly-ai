@@ -1,4 +1,6 @@
-"""T12 agent 2: objects.yaml is what the printed CAD produces, and its numbers are self-consistent."""
+"""Tests for objects.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

@@ -1,16 +1,5 @@
-"""Convert accepted Isaac Lab Mimic HDF5 demos into a GR00T N1.7 LeRobot v2.1 dataset.
-
-An episode is exported only if (1) agent 3 kept it (attr `kept`; `success` for files without it) and (2) its whole contact trace passes the force
-guard (physics/limits.yaml). Rejections are counted per reason in `meta/t12_export_report.json`, never dropped
-silently. Per frame: state = joints J1..J6 (deg) + gripper + TCP [x, y, z mm, w, p, r deg] (UF0);
-action = the absolute act_tcp row [x, y, z, w, p, r, gripper] the arm must reach by the next frame.
-Frames whose obs/train_mask is False (rows that only stage a recovery case) are left out.
-Timing: the recorder writes one row per Isaac env step (SIM_DT_S, 0.1 s); every exported row is one runtime step of
-the GR00T client and the real cell (1 / FPS = 0.2 s), so every 2nd recorded row is kept and labelled with the target
-reached 0.2 s later. A file that states another row period (sim_args or dt_s) is refused, never resampled silently.
-
-    python -m sim.assembly_lab.mimic.export_lerobot --inputs ~/t12_data/mimic/pick_insert/p4/*.hdf5 \
-        --out ~/t12_data/lerobot/t12_p4_small --max-episodes 300
+"""Convert accepted Mimic HDF5 demos into a LeRobot v2.1 dataset for GR00T N1.7.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -41,6 +30,7 @@ FPS = 5  # exported rows per second = 1 / the runtime step (policy_learn/deploy/
 
 @dataclass(frozen=True)
 class EpisodeRef:
+    """One recorded episode: its file and HDF5 key."""
     file: str
     key: str
 
@@ -51,8 +41,7 @@ def _obs(spec_keys: dict) -> dict:
 
 
 def meta_matches(demo) -> bool:
-    """The annotated meta belongs to this recorded episode: its step count equals the recorded rows and the plan obs
-    the annotation adds are there (a chunk with more meta lines than episodes gets them shifted onto the wrong demo)."""
+    """Return True if the annotated meta belongs to this recorded episode."""
     steps = demo.attrs.get("steps")
     if steps is not None and int(steps) != demo["actions"].shape[0]:
         return False
@@ -85,7 +74,7 @@ def _screen_demo(demo, key: str, path: str, limits: ForceLimits, contact_key: st
         reject = "empty"
     elif not accepted_attr(demo.attrs):
         reject = "not_success"
-    elif not meta_matches(demo):  # agent 3's annotate paired this demo with another attempt's meta line
+    elif not meta_matches(demo):  # the annotation paired this demo with another attempt's meta line
         reject = "meta_mismatch"
     elif bool(demo.attrs.get("KINEMATIC_DRY_RUN", False)):
         reject = "dry_run"
@@ -113,16 +102,14 @@ PROVENANCE = ("generator", "env_manifest_md5", "case", "scenario")  # demo attrs
 
 
 def accepted_attr(attrs) -> bool:
-    """Agent 3's `kept` decides when present (all gates, annotated at close); the Isaac Lab recorder's `success` attr
-    is overwritten at reset by the env's success term, so it is used only for files without agent 3's metadata."""
+    """Return whether the demo was accepted, using `kept` when present, else `success`."""
     if "kept" in attrs:
         return _truthy(attrs["kept"])
     return _truthy(attrs.get("success", False))
 
 
 def recorded_dt(path: str) -> float | None:
-    """Seconds per recorded row from the file's env_args: the simulator's dt x decimation (sim_args) when present,
-    else the skills recorder's dt_s (skills/hdf5_io.env_args); None if the file states neither."""
+    """Return the seconds per recorded row from the file's env_args, or None."""
     with h5py.File(path, "r") as f:
         args = json.loads(f["data"].attrs.get("env_args", "{}"))
     sim = args.get("sim_args")
@@ -152,8 +139,7 @@ def _wrap_w(w: np.ndarray) -> np.ndarray:
 
 
 def state_action(demo, obs_idx: np.ndarray, act_idx: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """API units straight from the demo (obs/joints, obs/tcp_pose, actions = act_tcp rows). w continuous around
-    -180 (frames.W_LOW), r unwrapped along the episode and on the same wrist turn in state and action."""
+    """Return the state and action rows in API units, with continuous w and unwrapped r."""
     o = demo["obs"]
     joints = o["joints"][()].astype(np.float64)
     tcp = o["tcp_pose"][()].astype(np.float64)[:, :6]
@@ -204,6 +190,7 @@ def convert_episode(job: dict) -> dict:
 
 
 def write_parquet(root: Path, rec: dict, task_index: int, start_index: int, fps: int) -> dict:
+    """Write one episode's parquet file and return its episode entry."""
     t = len(rec["state"])
     ts = (np.arange(t) / fps).astype(np.float32)
     df = pd.DataFrame({
@@ -227,6 +214,7 @@ def write_parquet(root: Path, rec: dict, task_index: int, start_index: int, fps:
 
 def export(inputs: list[str], out: Path, sim_dt: float, fps: int, size: tuple[int, int], max_episodes: int | None,
            workers: int, product: int | None = None, limits_path: Path | None = None) -> dict:
+    """Export the accepted demos to a LeRobot dataset and return the report."""
     spec = load_spec()
     keys = _obs(spec.raw["obs_keys"])
     contact_key = spec.raw["force_guard"]["contact_obs"]
@@ -283,6 +271,7 @@ def _finish(out: Path, records: list[dict], fps: int, size: tuple[int, int], rep
 
 
 def main() -> None:
+    """Parse the command line and run the export."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inputs", nargs="+", required=True, help="generated Mimic HDF5 files (successful ones)")
     ap.add_argument("--out", type=Path, required=True)

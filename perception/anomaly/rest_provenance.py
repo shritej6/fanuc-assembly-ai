@@ -1,4 +1,6 @@
-"""Derive C/I rest sidecars with an externally reviewed, hash-pinned algorithm."""
+"""Derive C/I rest sidecars with a reviewed, hash-pinned algorithm.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ class RestProvenanceError(ValueError):
 
 @dataclass(frozen=True)
 class RestDerivationSummary:
+    """Counts and hashes of one derived sidecar set."""
     counts: dict[str, int]
     sidecar_sha256: dict[str, str]
     tool_sha256: str

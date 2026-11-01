@@ -1,18 +1,5 @@
-"""Stage-5 check of the batched cell env: the same scripted pick_insert / pull_out in every cell, via step_tcp_many.
-
-    GPU=0 CACHE_TAG=_ne REPO=~/t12_data/repo_ne isaaclab_run.sh sim/assembly_lab/env/batch_check.py \
-        --num_envs 8 --out ~/t12_data/batch_check/n8.json [--cameras table side wrist] [--varied] [--skill pull_out]
-
-Product 4: F04 at (330, -90), M4_01 at (300, 60, yaw 30) in every env (--varied: env k > 0 shifts both by k mm in x,
-so cells differ while env 0 stays the same layout). pick_insert: M4_01 is grasped at its CAD grasp, lifted 60 mm, carried
-to 10 mm above its seat, lowered onto the seat, released and the TCP retreats 40 mm. pull_out: M4_01 starts installed
-on F04, is pulled 60 mm up, carried to 10 mm above a free spot, lowered, released, retreat. A plain straight
-insert / place (no wiggle): the point is identical behaviour in every cell, not a good demo. Per env and per phase
-it records the TCP
-tracking error (FK of the simulated joints minus the commanded TCP), M4_01's jaw forces, chunk contact peaks, robot
-touch, signals and its final pose, and evaluates mimic/gates.py per env (final pose vs the seat / spot, forces vs
-physics/limits.yaml over the phase peaks, F04 unmoved, nothing but M4_01 touched); run once with --num_envs 1 and
-once with N and compare env 0. Also the wall time per env step with the real env Python (IK, metrics, signals).
+"""Check the batched cell env by running the same scripted pick, insert and pull-out in every cell.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

@@ -1,4 +1,6 @@
-"""Regression coverage for PR #9 controller review findings."""
+"""Tests for controller review fixes.
+Authored by Shritej Gunda.
+"""
 
 from collections import Counter
 from dataclasses import replace

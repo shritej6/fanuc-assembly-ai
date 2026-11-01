@@ -1,7 +1,5 @@
 """Evaluator end to end on a kinematic fake env: layouts -> director -> guarded policy -> KPIs -> gates.
-
-The fake env is a test double (no physics): a part attaches when the fingers close within 1.5 mm of its CAD grip TCP,
-follows the TCP, and stays where it is released. It proves the plumbing and the gate logic, not any success rate.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 

@@ -1,8 +1,6 @@
 #!/bin/bash
-# One-time setup on the Rosie login node: host venv for the scene sampler + data folders.
-#
-#   git clone https://github.com/shritej6/fanuc-assembly-ai.git ~/fanuc-assembly-ai
-#   ~/fanuc-assembly-ai/sdg/rosie/setup.sh
+# One-time Rosie login node setup: host venv for the scene sampler and data folders.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 DATA_ROOT="${DATA_ROOT:-$HOME/fanuc-assembly-data}"

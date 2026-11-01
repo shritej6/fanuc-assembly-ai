@@ -1,4 +1,6 @@
-"""Loads on a part held in the gripper and its slip in the TCP frame (tcp_track_check.py, grasp_diag.py)."""
+"""Compute loads on a part held in the gripper and its slip in the TCP frame.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

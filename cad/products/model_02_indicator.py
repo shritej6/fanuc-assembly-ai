@@ -1,7 +1,5 @@
-"""Model 2 - Indicator Light Module: housing, diffuser carrier, indicator cap, rear guard.
-
-The carrier's 7 x 10 x 5 post matches Model 1's knob socket on purpose, so the M1 rotary
-knob can be installed here as a camera wrong-part test.
+"""Model 2, Indicator Light Module: housing, diffuser carrier, indicator cap and rear guard.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

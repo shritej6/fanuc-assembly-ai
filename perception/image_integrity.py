@@ -1,4 +1,6 @@
-"""Exact-byte image identities and verified JPEG decoding."""
+"""Exact-byte image identities and verified JPEG decoding.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

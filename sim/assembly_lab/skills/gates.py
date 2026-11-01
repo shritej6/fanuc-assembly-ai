@@ -1,7 +1,5 @@
-"""Precision gates (sim/assembly_lab/INTERFACES.md "Precision gates", user: "like heart surgery").
-
-Every gate is measured and logged per episode, kept or rejected, so the acceptance rate is measured, not assumed.
-A demo is kept only if every gate passed. Values in mm / deg / N.
+"""Precision gates that a recorded demo must pass.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from .geometry import pose_to_matrix, wpr_to_rot, wrap_deg
 
 SEAT_XY_MM = 0.3  # final part xy vs the CAD installed pose
 SEAT_YAW_DEG = 1.0
-SEAT_Z_MM = 0.3  # seated height, ±
+SEAT_Z_MM = 0.3  # seated height, +-
 SEAT_TILT_DEG = 1.0
 OTHER_MOVE_MM = 1.0  # no non-target object moved more than this
 OTHER_MOVE_DEG = 2.0
@@ -40,11 +38,7 @@ def _world_delta(a, b) -> np.ndarray:
 
 
 def axis_tilt_deg(a, b, up=WORLD_UP) -> float:
-    """How far pose a's installed-up direction leans from pose b's, independent of yaw and of the part's local axes.
-
-    `up` is the world direction that is up in the target pose b (objects.yaml: -insert_axis). Comparing local z
-    axes is wrong for parts whose local z lies flat when installed (the *_04 locks): a pure yaw turn would leak in.
-    """
+    """How far pose a's installed-up direction leans from pose b's, independent of yaw and of the part's local axes."""
     u = np.asarray(up, float) / np.linalg.norm(up)
     return math.degrees(math.acos(max(-1.0, min(1.0, float(u @ _world_delta(a, b) @ u)))))
 
@@ -130,12 +124,7 @@ def others_moved(log: GateLog, start: dict, end: dict, movers: set[str]) -> None
 
 @dataclass
 class TouchMonitor:
-    """Arm and fingers touch only the target.
-
-    Measured when the env reports `sim.robot_touch` {uid: peak N of any robot link (arm or finger) on that object over
-    the step}. Without it, the only signal is `sim.gripper_obj` (which object is in both pads); that proxy cannot see a
-    single finger or an arm link brushing a neighbour, so it is accepted only when the caller allows it explicitly.
-    """
+    """Arm and fingers touch only the target."""
 
     allow_proxy: bool
     worst_n: float = 0.0

@@ -1,3 +1,7 @@
+"""Tests for cosmos reason2 endpoint.
+Authored by Shritej Gunda.
+"""
+
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
@@ -182,7 +186,7 @@ def test_config_rejects_unsafe_values(changes: dict) -> None:
 
 @pytest.mark.xfail(
     strict=True,
-    reason="gate still pins Cosmos-Reason2-2B; coord/CODEX_BRIEF.md T35 asks Codex to pin 8B (drop this mark then)",
+    reason="gate still pins Cosmos-Reason2-2B; the 8B pin is a planned upgrade",
 )
 def test_gate_releases_a_recipe_complete_build_on_8b_pass_evidence() -> None:
     from agent.cosmos_reason import BuildCheckOutcome, FinalBuildGate

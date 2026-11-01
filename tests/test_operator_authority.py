@@ -1,4 +1,6 @@
-"""Regression tests for prompt, evidence, and physical-runtime authority."""
+"""Regression tests for prompt, evidence, and physical-runtime authority.
+Authored by Shritej Gunda.
+"""
 
 from datetime import UTC, datetime, timedelta
 

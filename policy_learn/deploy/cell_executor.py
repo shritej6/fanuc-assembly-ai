@@ -1,4 +1,5 @@
-"""One-row T09-to-GR00T execution with independent live-scene safety validation."""
+"""One-row planner to GR00T execution with independent live-scene safety checks.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from policy_learn.deploy.cell_guards import ContactTarget, GuardResult, UnsafeHo
 
 
 class CellExecutionError(RuntimeError):
-    """A learned motion cannot be proven safe for the current observation."""
+    """Raised when a learned motion cannot be proven safe for the current observation."""
 
 
 _T18_EXECUTABLE_SKILLS = frozenset(
@@ -37,6 +38,7 @@ _T18_EXECUTABLE_SKILLS = frozenset(
 
 
 class GuardedPolicy(Protocol):
+    """Interface of a policy that guards its own output."""
     last_guard_result: GuardResult | None
 
     def reset(self) -> None: ...
@@ -65,6 +67,7 @@ class GuardedPolicy(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class GrootExecutionResult:
+    """Result of one guarded execution step."""
     action: list[float]
     phase: MotionPhase
     reached_endpoint: bool
@@ -143,7 +146,7 @@ def _pose_reached(actual: Waypoint, pose: tuple[float, ...], grip: float, tolera
 
 
 class T09GrootExecutor:
-    """Execute one semantic intent at a time; never fall back to scripted TCP motion."""
+    """Execute one semantic intent at a time, never falling back to scripted motion."""
 
     def __init__(
         self,
@@ -162,7 +165,7 @@ class T09GrootExecutor:
         self._activated = False
 
     def bind_scene_safety(self, safety: SafetySupervisor) -> None:
-        """Bind the reviewed supervisor once, before reset or motion is possible."""
+        """Bind the reviewed scene supervisor once, before any motion."""
         if not isinstance(safety, SafetySupervisor):
             raise TypeError("scene safety binding requires a SafetySupervisor")
         if self._activated:
@@ -173,12 +176,12 @@ class T09GrootExecutor:
         self._require_scene_safety = True
 
     def reset(self) -> None:
-        """Start a fresh rollout in both the T09 and served-policy layers."""
+        """Start a fresh rollout in the planner and policy layers."""
         self._activated = True
         self._policy.reset()
 
     def close(self) -> None:
-        """Release the guarded policy's network transport deterministically."""
+        """Release the guarded policy's network transport."""
         self._policy.close()
 
     def act(
@@ -188,6 +191,7 @@ class T09GrootExecutor:
         observation: dict,
         scene: CollisionScene | None,
     ) -> GrootExecutionResult:
+        """Return the guarded execution result for one intent."""
         self._activated = True
         if intent.skill not in _T18_EXECUTABLE_SKILLS:
             raise CellExecutionError(f"{intent.skill.value} is absent from the T18 dataset")
@@ -229,7 +233,7 @@ class T09GrootExecutor:
         return GrootExecutionResult(target.as_action(), phase, False, False, reasons)
 
     def inspect(self, move: FixedInspectionMove, *, observation: dict) -> GrootExecutionResult:
-        """Execute a reviewed non-learned camera pose through the policy guard."""
+        """Execute a reviewed camera pose through the policy guard."""
         current = _observed_waypoint(observation)
         if current.gripper != 0.0:
             raise CellExecutionError(

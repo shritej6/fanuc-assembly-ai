@@ -1,4 +1,6 @@
-"""Semantic checks for projecting T15 certificates into dashboard events."""
+"""Semantic checks for turning birth certificates into dashboard events.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

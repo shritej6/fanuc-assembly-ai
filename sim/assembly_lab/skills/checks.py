@@ -1,7 +1,5 @@
-"""Success checks on the sim ground truth (`obs["sim"]["object_poses"]`, mm / deg).
-
-These are the scripted-demo success criteria. They read sim truth because the script is a teacher: the policy never
-sees these values, and the real cell repeats the checks with cameras (docs/ROBOT_BRAIN.md section 1 step 5).
+"""Success checks on the sim ground truth object poses.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

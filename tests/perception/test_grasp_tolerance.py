@@ -1,3 +1,7 @@
+"""Tests for grasp tolerance.
+Authored by Shritej Gunda.
+"""
+
 import json
 
 import numpy as np

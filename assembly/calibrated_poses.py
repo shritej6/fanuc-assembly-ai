@@ -1,4 +1,6 @@
-"""Fail-closed conversion of measured poses into recipe motion targets."""
+"""Fail-closed conversion of measured poses into recipe motion targets.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -49,7 +51,7 @@ Matrix4 = tuple[tuple[float, float, float, float], ...]
 
 @dataclass(frozen=True, slots=True)
 class SourcedGraspFrame:
-    """One T29 mesh transform and its authorized turn/TCP pair."""
+    """One grasp-frame mesh transform and its authorized turn/TCP pair."""
 
     object_id: str
     local_from_stl: Matrix4
@@ -58,7 +60,7 @@ class SourcedGraspFrame:
 
 
 class GraspFrameRegistry:
-    """Immutable, hash-verified T29 grasp frames for catalog parts."""
+    """Immutable, hash-verified grasp frames for catalog parts."""
 
     def __init__(self, frames: Mapping[str, SourcedGraspFrame]) -> None:
         if not isinstance(frames, Mapping) or not frames:
@@ -330,11 +332,7 @@ class MeasuredRecipePoses:
         *,
         observed_at_s: float,
     ) -> OrientedPartPose:
-        """Convert a canonical installed-local object pose to its fingertip TCP.
-
-        The configured frame boundary must normalize raw FoundationPose STL output
-        with ``inverse(T_local_from_stl)`` before the yaw-only contract reaches here.
-        """
+        """Convert a canonical installed-local object pose to its fingertip TCP."""
         _finite(observed_at_s, "FoundationPose observation time")
         if not isinstance(detection, Mapping):
             raise CalibratedPoseError("FoundationPose detection must be a mapping")

@@ -1,7 +1,5 @@
-"""pick(plan): vertical corridor above the grip pad, open, descend, close, short check lift, lift straight up.
-
-The grasp check itself is closed-loop and lives in the runner: after the `lift_check` phase it confirms in sim that
-the object rose with the fingers (`checks.grasp_ok`), and only then runs the `lift` phase.
+"""Pick skill: approach above the grip pad, descend, close, check lift and lift straight up.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

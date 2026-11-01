@@ -1,17 +1,5 @@
-"""HYBRID 14:00 runtime (user-approved 2026-10-31 12:56 CT): GR00T drives the approach and the carry; the planner
-takes the last few centimetres of the grasp and of the insert. Everything else is DirectGrootRuntime unchanged.
-
-    from policy_learn.deploy.hybrid_runtime import HybridRuntime
-    policy = HybridRuntime("groot://127.0.0.1:5557")
-
-Takeover (every row still goes through the same ChunkGuard, and every takeover is logged as a "takeover" event):
-- grasp: fingers open and the TCP within TAKEOVER_XY_MM (xy) and TAKEOVER_Z_MM (above) of the step's planned grasp TCP
-  -> rise to the hover height if lower, over the pad, down slowly, close standing still, lift LIFT_MM.
-- insert: part held and the TCP within TAKEOVER_XY_MM (xy) and INSERT_Z_MM (above) of the planned seated TCP
-  -> rise to the hover height if lower, over the seat, down slowly, open standing still, retreat RETREAT_UP_MM.
-The planner works only from placement.yaml (no perception): a base hand-placed farther off than the part's capture
-(0.5-3 mm) jams, and the runtime's seated detector holds, exactly as with GR00T. All distances are PRELIMINARY.
-"""
+"""Hybrid runtime: GR00T drives approach and carry, the planner does the last centimetres of grasp and insert.
+Authored by Shritej Gunda."""
 from __future__ import annotations
 
 import numpy as np
@@ -21,7 +9,7 @@ from policy_learn.deploy.direct_runtime import DirectGrootRuntime
 TAKEOVER_XY_MM = 25.0
 TAKEOVER_Z_MM = 40.0
 INSERT_Z_MM = 80.0
-HOVER_MM = 40.0          # turn the wrist here: GR00T can arrive with the roll ~140 deg off (D, sim 13:05)
+HOVER_MM = 40.0          # turn the wrist here: GR00T can arrive with the roll ~140 deg off
 LIFT_MM = 40.0
 RETREAT_UP_MM = 20.0
 REACHED_MM = 1.0
@@ -34,7 +22,7 @@ def _wrap(a: float) -> float:
 
 
 def _path(tcp: np.ndarray, goal, grip_after: float, after_mm: float) -> list:
-    """Waypoints (x, y, z, r) and gripper commands (floats) from the current TCP to a planned pose and back up."""
+    """Return waypoints and gripper commands from the TCP to a planned pose and back up."""
     x, y, z, r = goal[0], goal[1], goal[2], goal[5]
     hover = z + HOVER_MM
     return [(tcp[0], tcp[1], max(tcp[2], hover), tcp[5]), (x, y, hover, r), (x, y, z + EDGE_MM, r), (x, y, z, r),
@@ -42,9 +30,11 @@ def _path(tcp: np.ndarray, goal, grip_after: float, after_mm: float) -> list:
 
 
 class HybridRuntime(DirectGrootRuntime):
+    """Direct runtime with planned final approach for grasp and insert."""
     STEP_MM_DEG = (FAST_MM, SLOW_MM, FAST_DEG, SLOW_DEG)
 
     def reset(self) -> None:
+        """Start a new trial."""
         super().reset()
         self._plan_path: list | None = None
         self._plan_i = 0
@@ -65,9 +55,7 @@ class HybridRuntime(DirectGrootRuntime):
             self._event("takeover", mode=kind, part=pr.step.object_id, dxy=round(dxy, 1), dz=round(dz, 1))
 
     def _planned_rows(self, tcp: np.ndarray, grip: float) -> np.ndarray:
-        """Rows from the reported TCP toward the next unreached waypoint (the one the last chunk was heading to), so a
-        lagging arm continues along the same segment instead of jumping. A gripper change is sent only once the arm
-        reports the pose before it within REACHED_MM, standing still."""
+        """Return rows from the reported TCP toward the next unreached waypoint."""
         path, pose = self._plan_path, tcp.copy()
         while self._plan_i < len(path):
             wp = path[self._plan_i]
@@ -119,6 +107,7 @@ class HybridRuntime(DirectGrootRuntime):
         return out, bool(k >= 1.0)
 
     def act(self, obs: dict) -> np.ndarray:
+        """Return guarded rows for one observation."""
         if obs.get("tcp_pose") is None or self.progress.rollout is None or self.progress.ended is not None:
             return super().act(obs)
         tcp = np.asarray(obs["tcp_pose"], float)[:6]
@@ -144,7 +133,7 @@ class HybridRuntime(DirectGrootRuntime):
         return out
 
     def _groot_rows(self, obs: dict) -> np.ndarray:
-        """The parent's GR00T path for this act, without re-running its progress update (already done above)."""
+        """Return the GR00T rows for this step without repeating the progress update."""
         pr = self.progress
         logged = len(self.guard_log)
         rows = super(DirectGrootRuntime, self).act(obs)

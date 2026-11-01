@@ -1,5 +1,6 @@
 #!/bin/bash
 # Build Rosie training environment without the broken snap-packaged uv.
+# Authored by Shritej Gunda.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

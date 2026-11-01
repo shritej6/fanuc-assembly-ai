@@ -1,19 +1,5 @@
-"""Turn the GR00T-prepared data into one LeRobot v2.1 dataset per split for the ACT / SmolVLA baselines.
-
-    python -m policy_learn.baselines.lerobot_view --prepared ~/groot_data --out ~/baseline_data
-
-Input: the output of `policy_learn.groot.prepare_dataset` (`<prepared>/train/<name>`, `<prepared>/val/<name>`), so
-the baselines train on exactly GR00T's training episodes and hold out exactly GR00T's validation episodes.
-Output: `<out>/train` and `<out>/val`, each ONE merged dataset (LeRobot 0.3.3's trainer takes a single dataset):
-- `observation.state` float32[16] = [eef_9d (x, y, z mm + rot6d), gripper, J1..J6 deg], GR00T's three state keys
-  in the same order as its modality config;
-- `action` float32[10] = [eef_9d, gripper], GR00T's two action keys. Targets stay ABSOLUTE (GR00T regresses them
-  relative to the current TCP; ACT and SmolVLA are trained on absolute targets, their standard setup);
-- the three camera videos, symlinked to the source files (nothing is re-encoded);
-- tasks merged across datasets (task_index renumbered), and `meta/episodes_stats.jsonl`, which LeRobot v2.1 needs.
-  Camera entries there hold the ImageNet mean/std: ACT replaces camera stats with ImageNet's anyway
-  (`dataset.use_imagenet_stats`, default true) and SmolVLA does not normalise images (VISUAL: IDENTITY).
-"""
+"""Turn the GR00T-prepared data into one LeRobot v2.1 dataset per split for the ACT and SmolVLA baselines.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -35,7 +21,7 @@ IMAGENET = {"mean": [[[0.485]], [[0.456]], [[0.406]]], "std": [[[0.229]], [[0.22
 
 
 class ViewError(ValueError):
-    """The prepared data is missing something the baselines need."""
+    """Raised when the prepared data is missing something the baselines need."""
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -43,7 +29,7 @@ def _jsonl(path: Path) -> list[dict]:
 
 
 def to_baseline_columns(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    """Prepared parquet rows -> (state (n, 16), action (n, 10)) float32."""
+    """Return (state (n, 16), action (n, 10)) float32 arrays from prepared parquet rows."""
     raw_state = np.stack(df["observation.state"].to_numpy()).astype(np.float32)   # [J1..J6, gripper, x..r]
     raw_action = np.stack(df["action"].to_numpy()).astype(np.float32)             # [x..r, gripper]
     eef_state = np.stack(df["observation.eef_9d"].to_numpy()).astype(np.float32)
@@ -60,6 +46,7 @@ def _numeric_stats(values: np.ndarray) -> dict:
 
 
 def episode_stats(df: pd.DataFrame) -> dict:
+    """Return the per-feature stats for one episode."""
     stats = {key: _numeric_stats(np.stack(df[key].to_numpy()) if key in ("observation.state", "action")
                                  else df[key].to_numpy())
              for key in ("observation.state", "action", "timestamp", "frame_index", "episode_index", "index",
@@ -139,6 +126,7 @@ def _write_meta(dest: Path, episodes, ep_stats, tasks, total, video_features) ->
 
 
 def build(prepared: Path, out: Path) -> list[dict]:
+    """Build every split and return their paths."""
     reports = []
     for split in ("train", "val"):
         sources = sorted(d for d in (prepared / split).glob("*") if (d / "meta/info.json").is_file())
@@ -149,6 +137,7 @@ def build(prepared: Path, out: Path) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse arguments and build the baseline datasets."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prepared", type=Path, required=True, help="prepare_dataset.py --out directory")
     ap.add_argument("--out", type=Path, required=True)

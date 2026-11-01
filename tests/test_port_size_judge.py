@@ -1,4 +1,6 @@
-"""T30 look-alike size gate and the close-up judgement rules."""
+"""look-alike size gate and the close-up judgement rules.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

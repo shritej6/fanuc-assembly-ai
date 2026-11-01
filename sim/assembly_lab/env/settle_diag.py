@@ -1,9 +1,5 @@
-"""Trace why a reset with seated parts does not settle: per-physics-step motion of every seated part and its contacts.
-
-    isaaclab_run.sh sim/assembly_lab/env/settle_diag.py --product 4 --installed 1 [--steps 400]
-
-Prints, for each seated part, its displacement from the spawn pose and speed every 10 physics steps, plus the deepest
-non-robot contact (separation, mm) on the first step, so penetration at spawn and the onset of motion are visible.
+"""Trace why a reset with seated parts does not settle, step by step.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

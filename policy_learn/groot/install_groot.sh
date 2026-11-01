@@ -1,8 +1,7 @@
 #!/bin/bash
-# Install Isaac-GR00T (N1.7, pinned in pins.env) on a fresh Ubuntu 22.04/24.04 x86_64 GPU box, the repo's documented
-# way: ffmpeg (4-7, for torchcodec) + uv + `uv sync --frozen` against the repo's uv.lock (torch 2.9.0+cu128).
-#   bash policy_learn/groot/install_groot.sh            (idempotent; the fine-tune driver calls it as stage env)
-# Needs: sudo, internet. Does not need the HF token (brev_groot.sh's hf stage checks that).
+# Install the pinned Isaac-GR00T N1.7 stack on a fresh Ubuntu x86_64 GPU box (idempotent).
+# Authored by Shritej Gunda.
+#   bash policy_learn/groot/install_groot.sh
 set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,7 +13,7 @@ UV="$HOME/.local/bin/uv"
 install_system() {
   sudo apt-get update -qq
   # libaio-dev and the CUDA 12.8 toolkit: deepspeed needs CUDA_HOME/nvcc to start (Isaac-GR00T
-  # scripts/deployment/dgpu/install_deps.sh; the 2026-10-30 smoke failed with "CUDA_HOME does not exist" without them).
+  # scripts/deployment/dgpu/install_deps.sh).
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg git rsync python3-pip libaio-dev > /dev/null
   if [[ ! -d /usr/local/cuda ]]; then
     if ! apt-cache show cuda-toolkit-12-8 &> /dev/null; then

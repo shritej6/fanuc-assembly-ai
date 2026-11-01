@@ -1,4 +1,5 @@
-"""Approve a T14 generation only when all 24 immutable part runs are measured."""
+"""Approve a PatchCore generation only when all 24 part runs are measured.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -193,6 +194,7 @@ def finalize(pointers: list[Path], output: Path) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Run the command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--approved-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

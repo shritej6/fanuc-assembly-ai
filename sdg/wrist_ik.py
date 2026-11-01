@@ -1,7 +1,5 @@
-"""UF0 TCP pose -> ER-4iA joint angles with the starter's damped least-squares IK. numpy only.
-
-Shared by the renderer (`sdg/isaac/generate.py`) and the scene sampler, which only emits poses `reachable` accepts:
-the renderer would otherwise stop a whole chunk at the first pose with no solution.
+"""Convert UF0 TCP poses to ER-4iA joint angles with damped least-squares IK.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations
@@ -27,10 +25,7 @@ def fanuc_rotation(w: float, p: float, r: float) -> np.ndarray:
 
 def solve_tcp(ik, tcp: list[float], home: np.ndarray, park: np.ndarray, limits: np.ndarray,
               tool_offset: tuple) -> np.ndarray | None:
-    """UF0 [x y z w p r] (mm/deg) -> joints, or None if no seed converges.
-
-    Damped least squares is local, so it is seeded facing the target (J1 = atan2(y, x)) before home and park.
-    """
+    """Return joint angles for a UF0 [x y z w p r] pose, or None if no seed converges."""
     x, y, z, w, p, r = tcp
     rot = fanuc_rotation(w, p, r)
     target = np.array([x, y, z]) / 1000.0 + (0.0, 0.0, UF0_ABOVE_BASE_M)
@@ -52,8 +47,7 @@ def reachable(tcp: list[float]) -> bool:
 
 @functools.cache
 def _starter_robot():
-    """The starter's IK and robot numbers outside Isaac. `cell.py` imports USD modules it does not need for the
-    gripper geometry, so those are stubbed (only when absent: inside Isaac the real ones stay)."""
+    """Load the starter IK and robot numbers outside Isaac, stubbing missing USD modules."""
     for name in ISAAC_ONLY:
         sys.modules.setdefault(name, mock.MagicMock())
     if str(STARTER) not in sys.path:

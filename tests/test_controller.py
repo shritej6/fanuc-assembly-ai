@@ -1,4 +1,6 @@
-"""End-to-end controller behavior through the guarded T05 CellAdapter."""
+"""End-to-end controller behavior through the guarded CellAdapter.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

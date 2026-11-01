@@ -1,6 +1,6 @@
 #!/bin/bash
-# One Slurm array task = one chunk of one set. Submit with sdg/rosie/submit.sh (it writes the specs first).
-# UNTESTED until the Rosie pilot (T08).
+# Render one chunk of one set as a Slurm array task.
+# Authored by Shritej Gunda.
 #SBATCH --job-name=fa-sdg
 #SBATCH --partition=teaching
 #SBATCH --gres=gpu:t4:1

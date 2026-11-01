@@ -1,4 +1,6 @@
-"""Run the remote T14 production generation with an exact-ID Brev stop guard."""
+"""Run the remote PatchCore production job with an exact-ID Brev stop guard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
@@ -95,6 +97,7 @@ def run_guarded(
     stop_instance: StopInstance,
     now: datetime | None = None,
 ) -> None:
+    """Run production on the dedicated instance and stop it when time runs out or the run fails."""
     if instance_name != INSTANCE_NAME or re.fullmatch(r"[a-z0-9]+", instance_id) is None:
         raise RuntimeGuardError("guard is restricted to the dedicated fa-t14 Brev instance")
     _verify_live_instance(list_instances(), instance_name, instance_id)
@@ -132,6 +135,7 @@ def _stop_instance(instance_id: str) -> None:
 
 
 def main() -> None:
+    """Parse arguments and run the guarded production job."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instance-name", required=True)
     parser.add_argument("--instance-id", required=True)

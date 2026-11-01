@@ -1,4 +1,6 @@
-"""Production safety providers must prove both capability and reviewed provenance."""
+"""Production safety providers must prove both capability and reviewed provenance.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

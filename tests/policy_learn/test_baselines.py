@@ -1,6 +1,5 @@
-"""T36 ACT / SmolVLA baselines on CPU: the LeRobot view of GR00T's data, the GR00T-protocol server, the guard path.
-
-LeRobot itself is not a repo dependency; the one test that loads the view with LeRobot 0.3.3 is skipped without it.
+"""ACT / SmolVLA baselines on CPU: the LeRobot view of GR00T's data, the GR00T-protocol server, the guard path.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

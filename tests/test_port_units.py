@@ -1,4 +1,6 @@
-"""T30 port building blocks: duplicate suppression, pinned CAD, frames, defect band, ledger, placement checks."""
+"""Port building blocks: duplicate suppression, pinned CAD, frames, defect band, ledger, placement checks.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

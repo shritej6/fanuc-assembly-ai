@@ -1,17 +1,5 @@
-"""GR00T N1.7 as the official `policy.py` interface (ACTION = "tcp"), with every chunk passed through the real-arm guard.
-
-    from policy_learn.deploy.cell_groot_policy import GrootPolicy
-    policy = GrootPolicy("groot://127.0.0.1:5555")   # or "stub" for a plumbing test; None reads $GROOT_POLICY
-    # each planner (T09) step: the instruction is built by mimic/instructions.instruction, the function the demos
-    # were labelled with, e.g. "pick M4_02 at (300, -50, 37) gripping X at roll 127, insert on F04 at (400, 50, 90)"
-    policy.set_plan("pick_insert", "M4_02", "F04", grip=0, case="nominal",
-                    target=[300, -50, 37, 127, 400, 50, 90],   # part x, y, yaw, roll r, base x, y, yaw
-                    contact=ContactTarget(400.0, 50.0, -301.2, label="M4_02 on F04"))
-    rows = policy.act(obs)                         # (N, 7) [x, y, z, w, p, r, gripper], already guarded
-
-The model sees cameras + joints + TCP + the instruction, never obs["sim"]. The wire format is agent 5's
-`policy_learn/groot/groot_client.py` (Isaac-GR00T PolicyServer, eef_9d + gripper, dt 0.2 s).
-"""
+"""GR00T N1.7 behind the official policy interface, with every chunk passed through the arm guard.
+Authored by Shritej Gunda."""
 
 from __future__ import annotations
 
@@ -46,12 +34,10 @@ DT_S = 0.2  # GR00T training control step (policy_learn/groot/groot_client.py DT
 
 
 class CellPolicySafetyError(RuntimeError):
-    """A production-only invariant is missing, so no robot action may be produced."""
+    """Raised when a production invariant is missing, so no action may be produced."""
 
 
-# FK fallback for a missing obs["tcp_pose"] (the mock reports none before the first tcp command). The chain is the
-# official twin's, copied from robot/cell/calibration/geometry.py (read-only there); UTOOL1 is 293 mm along the
-# flange x axis (robot/cell/calibration/FRAMES.md). UF0 z = base z - 330 mm.
+# FK fallback when obs has no tcp_pose; chain from robot/cell/calibration/geometry.py, UTOOL1 293 mm along flange x.
 _CHAIN = [
     ((0.0, 0.0, 0.33), "z", +1),
     ((0.0, 0.0, 0.00), "y", +1),
@@ -61,8 +47,7 @@ _CHAIN = [
     ((0.0, 0.0, 0.00), "x", -1),
 ]
 _TOOL_M, _UF0_Z_MM = 0.293, -330.0
-# Flange axes -> FANUC tool axes: tool z = flange x (approach), tool x = flange z, tool y = -flange y. At the cell's
-# HOME joints this gives fingers down (w, p, r = -180, 0, 0), matching the PLAN's "fingers down" convention.
+# Flange to FANUC tool axes: tool z = flange x, tool x = flange z, tool y = -flange y (fingers down at HOME).
 _FLANGE_TO_TOOL = np.array([[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]])
 
 
@@ -76,7 +61,7 @@ def _rot(axis: str, a: float) -> np.ndarray:
 
 
 def tcp_from_joints(joints) -> np.ndarray:
-    """Estimated [x, y, z mm, w, p, r deg] in UF0 from J1..J6 (an estimate: used only to HOLD, never to move)."""
+    """Return the estimated TCP pose from joint angles, used only to hold."""
     rot, pos = np.eye(3), np.zeros(3)
     for (off, axis, sign), q in zip(_CHAIN, np.radians(np.asarray(joints, float)[:6])):
         pos = pos + rot @ np.array(off)
@@ -87,12 +72,13 @@ def tcp_from_joints(joints) -> np.ndarray:
 
 
 class ChunkModel(Protocol):
+    """Interface of a model that predicts one action chunk."""
     def predict(self, obs: dict) -> np.ndarray:
-        """obs: images, joints, tcp_pose, instruction (never obs["sim"]). Return (N, 7) absolute act_tcp rows."""
+        """Return (N, 7) absolute act_tcp rows for one observation."""
 
 
 class StubModel:
-    """Plumbing test only: glides toward a hover pose at 40 mm/s, gripper unchanged. Never for the real cell."""
+    """Plumbing test model that glides toward a hover pose; never for the real cell."""
 
     HOVER = np.array([450.0, 0.0, -200.0, -180.0, 0.0, 0.0])
 
@@ -100,6 +86,7 @@ class StubModel:
         self.horizon, self.step = horizon, speed_mm_s * dt
 
     def predict(self, obs: dict) -> np.ndarray:
+        """Return a stub chunk toward the hover pose."""
         pose, rows = np.asarray(obs["tcp_pose"], float)[:6].copy(), []
         grip = 1.0 if float(obs["joints"][6]) >= 0.5 else 0.0
         for _ in range(self.horizon):
@@ -114,7 +101,7 @@ class StubModel:
 
 
 class GrootServerModel:
-    """Agent 5's `GrootTcpClient` (policy_learn/groot/groot_client.py): ZMQ to a running GR00T policy server."""
+    """Model backed by a running GR00T policy server over ZMQ."""
 
     def __init__(self, host: str, port: int, client=None):
         self.injected_client = client is not None
@@ -127,13 +114,15 @@ class GrootServerModel:
         self.client = client
 
     def reset(self) -> None:
+        """Reset the server session."""
         self.client.reset()
 
     def describe(self) -> dict:
-        """Fetch provenance from the serving process; no client-side identity is synthesized."""
+        """Return the provenance reported by the serving process."""
         return self.client.describe()
 
     def predict(self, obs: dict) -> np.ndarray:
+        """Return the server's chunk for one observation."""
         return np.asarray(self.client.act(obs), dtype=float)
 
     def close(self) -> None:
@@ -142,7 +131,7 @@ class GrootServerModel:
 
 
 def load_model(spec: str | None) -> ChunkModel:
-    """spec: "stub", "groot://host:port", or None to read $GROOT_POLICY. Anything else is an error, not a fallback."""
+    """Return the model for a spec: stub, groot://host:port, or None to read $GROOT_POLICY."""
     spec = spec or os.environ.get("GROOT_POLICY")
     if spec == "stub":
         log.warning("GrootPolicy is using the STUB model: plumbing test only, not for the real cell")
@@ -178,10 +167,7 @@ def _attest_production_model(
 
 
 def nearest_turns(chunk, tcp_pose) -> np.ndarray:
-    """Write each row's w and r as the equivalent angle numerically nearest the row before, starting at the reported
-    pose: a model's 6D-rotation output decoded near r = +-180 flips sign between rows (179.8 vs -179.9) although the
-    fingers barely turn. Same orientation either way, so the controller and the guard both see the real, small turn;
-    the guard still refuses a genuine large one. Malformed chunks pass through untouched for the guard to refuse."""
+    """Return the rows with w and r unwrapped to the angle nearest the previous row."""
     arr = np.array(chunk, dtype=float, copy=True)
     if arr.ndim != 2 or arr.shape[1] != 7 or not np.isfinite(arr).all():
         return arr
@@ -209,7 +195,7 @@ def _incremental_fixed_pose(
 
 
 class GrootPolicy:
-    """The official policy interface. Class attributes are read by robot/cell/run.py and cell_client.run_trial."""
+    """The official policy interface used by the cell runner."""
 
     CAMERAS: ClassVar[list[str]] = ["table", "side", "wrist"]
     IMAGE_SIZE = (640, 360)
@@ -238,8 +224,7 @@ class GrootPolicy:
         )
         if saturday_cell:
             self._validate_saturday_server()
-        # Saturday keeps the one-row and T09 release fences while explicitly
-        # deferring checkpoint attestation and measured-limit provenance.
+        # Keeps the one-row and planner release fences; attestation and measured limits are deferred.
         self.production = production or saturday_cell
         self.saturday_cell = saturday_cell
         self.guard = ChunkGuard(active_limits)
@@ -259,6 +244,7 @@ class GrootPolicy:
             raise CellPolicySafetyError("Saturday CELL mode forbids injected GR00T clients")
 
     def reset(self) -> None:
+        """Start a new rollout."""
         self.instruction, self.steps, self.rollout = None, 0, self.rollout + 1
         self.last_guard_result = None
         self.release_authorized = False
@@ -268,13 +254,13 @@ class GrootPolicy:
             self.model.reset()
 
     def close(self) -> None:
-        """Release an optional model transport without relying on GC teardown."""
+        """Release the model transport."""
         close = getattr(self.model, "close", None)
         if callable(close):
             close()
 
     def set_task(self, instruction: str | None, target: ContactTarget | None = None) -> None:
-        """The planner's (T09) current step: the instruction GR00T gets and the contact target the guard enforces."""
+        """Set the planner step: the instruction for GR00T and the guard contact target."""
         self.instruction = instruction
         self.guard.set_target(target)
 
@@ -283,14 +269,14 @@ class GrootPolicy:
         grasp_tcp: tuple[float, ...],
         tolerances: ExecutionTolerances,
     ) -> None:
-        """Authorize deferring a moving close only at T09's reviewed grasp TCP."""
+        """Allow a deferred moving close only at the reviewed grasp pose."""
         grasp = tuple(float(value) for value in grasp_tcp)
         if len(grasp) != 6 or not np.isfinite(grasp).all():
             raise CellPolicySafetyError("grasp fence requires one finite six-axis TCP")
         self._grasp_fence = (grasp, tolerances)
 
     def authorize_release(self) -> None:
-        """Authorize one observed model step to open the gripper after T09 verification."""
+        """Allow one observed model step to open the gripper after verification."""
         self.release_authorized = True
 
     def set_plan(
@@ -303,8 +289,7 @@ class GrootPolicy:
         target,
         contact: ContactTarget | None = None,
     ) -> str:
-        """set_task with the training instruction format (sim/assembly_lab/mimic/instructions.py, the same function
-        agent 3's demos use), so the words GR00T sees on the arm match the words it was trained on."""
+        """Set the task using the same instruction format the demos were labelled with."""
         from sim.assembly_lab.mimic.catalog import encode_plan_ids
         from sim.assembly_lab.mimic.instructions import instruction
 
@@ -355,6 +340,7 @@ class GrootPolicy:
         return GuardResult(hold_row(tcp, gripper, self.guard.limits), False, True, (reason,))
 
     def act(self, obs: dict) -> np.ndarray:
+        """Return guarded act_tcp rows for one observation."""
         self.steps += 1
         joints, gripper, tcp = self._observed_state(obs)
         if tcp is None:
@@ -397,7 +383,7 @@ class GrootPolicy:
         tcp: np.ndarray,
         gripper: float,
     ) -> tuple[np.ndarray, bool]:
-        """Split GR00T's near-grasp move+close before the unchanged ChunkGuard."""
+        """Split a near-grasp move and close before the chunk guard."""
         if self._grasp_fence is None or gripper != 0.0 or chunk.shape != (1, 7):
             return chunk, False
         row = chunk[0]
@@ -428,7 +414,7 @@ class GrootPolicy:
         move: FixedInspectionMove,
         tolerances: ExecutionTolerances,
     ) -> np.ndarray:
-        """Guard one reviewed camera pose without invoking the learned model."""
+        """Guard one reviewed camera pose without calling the model."""
         self.steps += 1
         _, gripper, tcp = self._observed_state(obs)
         if tcp is None:

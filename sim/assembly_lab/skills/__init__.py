@@ -1,4 +1,6 @@
-"""Scripted, sim-only skills that record demos for GR00T (docs/ROBOT_BRAIN.md). The real arm never runs these."""
+"""Scripted sim-only skills that record demonstrations for policy training.
+Authored by Shritej Gunda.
+"""
 
 from .insert import insert
 from .pick import pick

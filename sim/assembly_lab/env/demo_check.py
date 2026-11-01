@@ -1,10 +1,5 @@
-"""Record one scripted pick_insert demo through AssemblyCellEnv with the Isaac Lab recorder, for checking the official
-Mimic pipeline (annotate_demos.py --auto, generate_dataset.py) end to end on the cell.
-
-    T12_POOL=F04,M4_01 isaaclab_run.sh sim/assembly_lab/env/demo_check.py --out ~/t12_data/mimic_demo/pick_insert.hdf5
-
-The script follows the CAD frames only (grasp -> lift -> above the CAD seat -> down -> open -> retreat); it is a
-pipeline check, not a training demo (agent 3 owns those). Prints the subtask signals after each move.
+"""Record one scripted pick and insert demo through the cell env to check the recorder output.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

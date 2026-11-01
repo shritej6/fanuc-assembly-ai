@@ -1,4 +1,6 @@
-"""Stop box colliders come out of the base STL exactly (stop_colliders.py)."""
+"""Tests that the stop box colliders match the base STL exactly.
+Authored by Shritej Gunda.
+"""
 
 import struct
 import sys

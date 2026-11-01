@@ -1,3 +1,7 @@
+"""Tests for training benchmark.
+Authored by Shritej Gunda.
+"""
+
 import sys
 from types import SimpleNamespace
 

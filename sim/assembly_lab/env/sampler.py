@@ -1,14 +1,5 @@
-"""Default episode sampler for Mimic generation: a random layout of one product plus the three TCP frames.
-
-Used by the env's reset event when no planner-based sampler is configured (CellEnvCfg.sampler = "module:function"
-replaces it; agent 4 can plug agent 2's planner in there). Frames come from CAD only:
-- grasp_frame: the Team V CAD grasp of the target (cad/fingers/product_grasp_frames.json), exactly as designed. (The
-  180-deg-flipped grasp is NOT equivalent: measured 70.7 N finger-on-part contact while descending onto M4_01 with
-  it, 0 N with the CAD grasp; the Team V fingers are not symmetric about the tool axis.)
-- seat_frame:  the grasp carried to the target's CAD installed pose on its base.
-- spot_frame:  the grasp carried to a free test-bed spot (place_free / pull_out) or a defect-area spot.
-Signature: fn(api, rng) -> {frame name: 4x4 UF0 mm}; `api.apply_layout(layout)` places the objects and returns
-{uid: 4x4 UF0 mm}; `api.pool` lists the spawned instances; `api.reachable(tf)` checks IK.
+"""Default episode sampler for Mimic generation: a random layout of one product and its TCP frames.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

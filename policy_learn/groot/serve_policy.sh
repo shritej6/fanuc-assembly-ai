@@ -1,9 +1,8 @@
 #!/bin/bash
-# Serve a fine-tuned checkpoint with Isaac-GR00T's own policy server (ZMQ, port 5555) for the sim eval or the cell.
+# Serve a fine-tuned GR00T checkpoint with the Isaac-GR00T policy server on 127.0.0.1:5555.
+# Authored by Shritej Gunda.
 #   ATTESTATION_JSON=/path/to/attestation.json bash policy_learn/groot/serve_policy.sh [checkpoint dir] [gpu]
-# Default checkpoint: the newest one under ~/groot_runs/main (or ~/groot_artifacts/groot_final once exported).
-# It binds to 127.0.0.1 only (the server has no authentication); reach it with an SSH tunnel from the client:
-#   ssh -N -L 5555:127.0.0.1:5555 <training box>      then GrootTcpClient(host="127.0.0.1", port=5555)
+# The server has no authentication, so reach it through an SSH tunnel.
 set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

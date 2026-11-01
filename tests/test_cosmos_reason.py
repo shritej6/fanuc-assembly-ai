@@ -1,3 +1,7 @@
+"""Tests for cosmos reason.
+Authored by Shritej Gunda.
+"""
+
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 

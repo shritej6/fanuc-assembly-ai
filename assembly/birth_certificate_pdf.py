@@ -1,4 +1,6 @@
-"""One-page ReportLab layout for validated birth-certificate records."""
+"""One-page ReportLab layout for validated birth-certificate records.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

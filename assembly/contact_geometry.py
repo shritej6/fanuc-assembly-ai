@@ -1,4 +1,6 @@
-"""SHA-pinned CAD footprints for the learned-motion contact-floor guard."""
+"""SHA-pinned CAD footprints for the learned-motion contact-floor guard.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

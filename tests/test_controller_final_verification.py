@@ -1,4 +1,6 @@
-"""Behavioral regressions for the trusted final-product verification gate."""
+"""Behavioral regressions for the trusted final-product verification gate.
+Authored by Shritej Gunda.
+"""
 
 import inspect
 from collections import Counter
@@ -29,7 +31,6 @@ class MutatingFinalVerifier(MockFinalProductVerifier):
 
 class TupleSubclass(tuple):
     """Proves boundary validation does not accept tuple lookalikes."""
-
 
 class MissingVerifyMethod:
     reviewed_motion_source = "reviewed but unavailable workflow"

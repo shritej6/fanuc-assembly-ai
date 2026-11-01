@@ -1,18 +1,5 @@
-"""Turn measure_seating.py's raw runs into physics/seating_results.yaml and check limits.yaml against them.
-
-    PYTHONPATH=. uv run python sim/assembly_lab/physics/summarize_seating.py raw1.jsonl [raw2.jsonl ...]
-
-Per mating pair and condition:
-- min_cap_seated_N: the smallest downward force cap (15 / 5 / 2 / 0.5 N) at which the part reached the CAD seat
-  within 0.3 mm. The force actually needed is at most this value. None = it did not seat even at 15 N (jam).
-- pre_seat_peak_*: the largest contact force / torque on the part before it first reached the seat, in the 15 N run.
-  This is what passing the fit costs (chamfer sliding, friction).
-- max_cap_seated_N / press_sink_cap_N: the largest cap that still ended at the seat, and the smallest larger cap at
-  which the part was pushed past it (press-induced sink, e.g. a lock leg ledge crushing in the contact model).
-- press_peak_*: the peaks including the final press at the cap (the real arm presses at most to 1 mm below the seat).
-Limits check (allowed conditions aligned / 0.5 mm): every pair seats under lateral_N / torque_Nm before the seat, its
-axial limit (per_part_axial_N override, else axial_N) is >= min_cap_seated_N, and safety_factor_min x axial limit is
-<= press_sink_cap_N.
+"""Summarize raw seating runs into seating_results.yaml and check limits.yaml against them.
+Authored by Shritej Gunda.
 """
 
 from __future__ import annotations

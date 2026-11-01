@@ -1,4 +1,6 @@
-"""End-to-end T29 fingertip-frame regressions for every catalog part."""
+"""End-to-end fingertip-frame regressions for every catalog part.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 

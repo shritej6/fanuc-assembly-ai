@@ -1,3 +1,7 @@
+"""Tests for detector scenarios.
+Authored by Shritej Gunda.
+"""
+
 from perception.detector.scenarios import scenario_datasets
 
 

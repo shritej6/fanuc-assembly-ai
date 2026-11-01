@@ -1,4 +1,6 @@
-"""T30 CalibratedCellGeometry on the official calibration, and the real-model adapters' load guards."""
+"""CalibratedCellGeometry on the official calibration, and the real-model adapters' load guards.
+Authored by Shritej Gunda.
+"""
 
 from __future__ import annotations
 
