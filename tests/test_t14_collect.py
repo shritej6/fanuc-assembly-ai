@@ -1,0 +1,536 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from perception.brev.t14_collect_and_shutdown import (
+    PARTS,
+    CollectionError,
+    _brev_resolve_instance_id,
+    collect_and_shutdown,
+)
+
+INSTANCE_ID = "fisjik4qw"
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _environment_evidence(remote: dict[str, bytes]) -> tuple[bytes, bytes]:
+    env_dir = "/remote/env"
+    platform = json.dumps({"brev_instance_id": INSTANCE_ID, "brev_machine_type": "l4"}).encode()
+    remote["/remote/platform.json"] = platform
+    rate = json.dumps({"source_command": "brev search", "hourly_rate_usd": 0.85}).encode()
+    remote["/remote/rate.json"] = rate
+    env = {
+        "env_dir": env_dir,
+        "platform_identity": "/remote/platform.json",
+        "platform_identity_sha256": _sha(platform),
+    }
+    bootstrap = {
+        "uv_executable": ("/remote/bootstrap/uv", b"uv-binary"),
+        "bootstrap_freeze": ("/remote/bootstrap/requirements.freeze.txt", b"uv==0.13.6\n"),
+        "bootstrap_audit_requirements": ("/remote/bootstrap/requirements.audit.txt", b"uv==0.13.6\n"),
+        "bootstrap_pip_audit": ("/remote/bootstrap/pip_audit.json", b"{}\n"),
+        "python_executable": ("/remote/python/python3.11", b"python-binary"),
+    }
+    for field, (path, content) in bootstrap.items():
+        remote[path] = content
+        env[field] = path
+        env[f"{field}_sha256"] = _sha(content)
+    freeze, audit_requirements, audit = b"frozen\n", b"audit requirements\n", b"{}"
+    env.update(
+        freeze_sha256=_sha(freeze),
+        audit_requirements_sha256=_sha(audit_requirements),
+        pip_audit_sha256=_sha(audit),
+    )
+    env_bytes = json.dumps(env).encode()
+    remote["/remote/env.json"] = env_bytes
+    remote["/remote/audit.json"] = audit
+    remote[f"{env_dir}/requirements.freeze.txt"] = freeze
+    remote[f"{env_dir}/requirements.audit.txt"] = audit_requirements
+    remote[f"{env_dir}/.complete"] = f"{_sha(env_bytes)}\n".encode()
+    return env_bytes, audit
+
+
+def _dataset_evidence(remote: dict[str, bytes]) -> bytes:
+    dataset_dir = "/remote/dataset"
+    ready, manifest = b"{}", b'{"row":1}\n'
+    dataset = {"ready_sha256": _sha(ready), "manifest_sha256": _sha(manifest)}
+    dataset_bytes = json.dumps(dataset).encode()
+    remote["/remote/dataset.json"] = dataset_bytes
+    remote[f"{dataset_dir}/_READY.json"] = ready
+    remote[f"{dataset_dir}/manifest.jsonl"] = manifest
+    return dataset_bytes
+
+
+def _benchmark_evidence(remote: dict[str, bytes]) -> bytes:
+    benchmark_metrics, benchmark_model = b"{}", b"benchmark-model"
+    remote["/remote/benchmark_metrics.json"] = benchmark_metrics
+    remote["/remote/benchmark_model.ckpt"] = benchmark_model
+    benchmark = {
+        "metrics_path": "/remote/benchmark_metrics.json",
+        "metrics_sha256": _sha(benchmark_metrics),
+        "model_path": "/remote/benchmark_model.ckpt",
+        "model_sha256": _sha(benchmark_model),
+    }
+    benchmark_bytes = json.dumps(benchmark).encode()
+    remote["/remote/benchmark.json"] = benchmark_bytes
+    gate = {
+        "benchmark_artifact": "/remote/benchmark.json",
+        "benchmark_artifact_sha256": _sha(benchmark_bytes),
+        "hourly_rate_evidence": "/remote/rate.json",
+        "hourly_rate_evidence_sha256": _sha(remote["/remote/rate.json"]),
+    }
+    gate_bytes = json.dumps(gate).encode()
+    remote["/remote/gate.json"] = gate_bytes
+    return gate_bytes
+
+
+def _run_evidence(remote: dict[str, bytes]) -> list[dict[str, str]]:
+    env_dir, dataset_dir = "/remote/env", "/remote/dataset"
+    runs = []
+    for part in PARTS:
+        metrics, model = json.dumps({"part": part}).encode(), f"model-{part}".encode()
+        artifact = {
+            "part": part,
+            "dataset_dir": dataset_dir,
+            "env_dir": env_dir,
+            "metrics_path": f"/remote/{part}/metrics.json",
+            "metrics_sha256": _sha(metrics),
+            "model_path": f"/remote/{part}/model.ckpt",
+            "model_sha256": _sha(model),
+        }
+        artifact_bytes = json.dumps(artifact).encode()
+        remote[f"/remote/{part}/artifact.json"] = artifact_bytes
+        remote[f"/remote/{part}/metrics.json"] = metrics
+        remote[f"/remote/{part}/model.ckpt"] = model
+        runs.append(
+            {
+                **artifact,
+                "artifact_path": f"/remote/{part}/artifact.json",
+                "artifact_sha256": _sha(artifact_bytes),
+            }
+        )
+    return runs
+
+
+def _arguments(tmp_path: Path) -> argparse.Namespace:
+    return argparse.Namespace(
+        instance_name="fa-t14",
+        instance_id=INSTANCE_ID,
+        confirm_delete="fa-t14",
+        summary_remote="/remote/summary.json",
+        dataset_artifact_remote="/remote/dataset.json",
+        env_artifact_remote="/remote/env.json",
+        env_audit_remote="/remote/audit.json",
+        benchmark_gate_remote="/remote/gate.json",
+        destination=tmp_path / "offhost",
+        resume_partial=False,
+    )
+
+
+def _remote_fixture(tmp_path: Path) -> tuple[dict[str, bytes], argparse.Namespace]:
+    remote: dict[str, bytes] = {}
+    env_bytes, audit = _environment_evidence(remote)
+    dataset_bytes = _dataset_evidence(remote)
+    gate_bytes = _benchmark_evidence(remote)
+    runs = _run_evidence(remote)
+    summary = {
+        "status": "approved",
+        "runs": runs,
+        "dataset_artifact_sha256": _sha(dataset_bytes),
+        "env_artifact_sha256": _sha(env_bytes),
+        "env_audit_sha256": _sha(audit),
+        "env_complete_sha256": _sha(remote["/remote/env/.complete"]),
+        "benchmark_gate_sha256": _sha(gate_bytes),
+    }
+    remote["/remote/summary.json"] = json.dumps(summary).encode()
+    return remote, _arguments(tmp_path)
+
+
+def _copy_from(remote: dict[str, bytes]):
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        destination.write_bytes(remote[source])
+
+    return copy
+
+
+def _resolve_fa_t14(instance_name: str) -> str:
+    assert instance_name == "fa-t14"
+    return INSTANCE_ID
+
+
+def test_collection_verifies_all_evidence_before_deleting(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    actions = []
+
+    result = collect_and_shutdown(
+        args,
+        copy_file=_copy_from(remote),
+        lifecycle=lambda action, instance: actions.append((action, instance)),
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert actions == [("delete", INSTANCE_ID)]
+    verified = json.loads((result / "OFFHOST_VERIFIED.json").read_text())
+    manifest = json.loads((result / "OFFHOST_MANIFEST.json").read_text())
+    assert verified["status"] == "verified"
+    assert verified["file_count"] == 92
+    assert len(manifest["files"]) == 92
+    assert len(list(result.glob("runs/*/model.ckpt"))) == 24
+
+
+def test_hash_failure_preserves_partial_evidence_and_stops_instance(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    remote["/remote/M1_01/model.ckpt"] = b"tampered"
+    actions = []
+
+    with pytest.raises(CollectionError, match="hash mismatch"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    partial = args.destination.with_name("offhost.partial")
+    assert (partial / "COLLECTION_FAILED.json").is_file()
+    assert not args.destination.exists()
+
+
+def test_existing_partial_requires_explicit_resume(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+
+    with pytest.raises(CollectionError, match="explicit resume"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda _action, _instance: None,
+            resolve_instance=_resolve_fa_t14,
+        )
+
+
+def test_resume_reuses_only_hash_verified_partial_files(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    (partial / "environment/python").mkdir(parents=True)
+    (partial / "environment/python/python3.11").write_bytes(remote["/remote/python/python3.11"])
+    (partial / "runs/M1_01").mkdir(parents=True)
+    (partial / "runs/M1_01/model.ckpt").write_bytes(remote["/remote/M1_01/model.ckpt"])
+    (partial / "summary.json").write_text('{"status":"stale"}')
+    (partial / "COLLECTION_FAILED.json").write_text('{"status":"collection_failed"}')
+    copied_sources: list[str] = []
+    actions: list[tuple[str, str]] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    result = collect_and_shutdown(
+        args,
+        copy_file=copy,
+        lifecycle=lambda action, instance: actions.append((action, instance)),
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert actions == [("delete", INSTANCE_ID)]
+    assert "/remote/summary.json" in copied_sources
+    assert "/remote/python/python3.11" not in copied_sources
+    assert "/remote/M1_01/model.ckpt" not in copied_sources
+    assert not (result / "COLLECTION_FAILED.json").exists()
+
+
+def test_resume_refuses_tampered_hash_bound_evidence(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    (partial / "environment/python").mkdir(parents=True)
+    (partial / "environment/python/python3.11").write_bytes(b"tampered")
+    copied_sources: list[str] = []
+    actions: list[tuple[str, str]] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    with pytest.raises(CollectionError, match="partial evidence hash mismatch"):
+        collect_and_shutdown(
+            args,
+            copy_file=copy,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    assert "/remote/python/python3.11" not in copied_sources
+    assert not args.destination.exists()
+
+
+def test_resume_refuses_untracked_partial_evidence(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    (partial / "untracked.bin").write_bytes(b"not part of the approved generation")
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match="untracked partial evidence"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    assert not args.destination.exists()
+
+
+def test_resume_rejects_symlinked_parent_before_any_copy(tmp_path: Path) -> None:
+    _remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (partial / "dataset").symlink_to(outside, target_is_directory=True)
+    copies: list[tuple[str, str, Path]] = []
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match="must not contain symlinks"):
+        collect_and_shutdown(
+            args,
+            copy_file=lambda instance, source, destination: copies.append(
+                (instance, source, destination)
+            ),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert copies == []
+    assert actions == [("stop", INSTANCE_ID)]
+    assert list(outside.iterdir()) == []
+
+
+def test_interrupted_copy_leaves_no_candidate_and_can_resume(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    actions: list[tuple[str, str]] = []
+
+    def interrupted_copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        destination.write_bytes(remote[source][:5])
+        raise OSError("simulated transport interruption")
+
+    with pytest.raises(OSError, match="transport interruption"):
+        collect_and_shutdown(
+            args,
+            copy_file=interrupted_copy,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    partial = args.destination.with_name("offhost.partial")
+    assert not (partial / "summary.json").exists()
+    assert not (partial / ".summary.json.t14-copy").exists()
+    assert (partial / "COLLECTION_FAILED.json").is_file()
+
+    args.resume_partial = True
+    result = collect_and_shutdown(
+        args,
+        copy_file=_copy_from(remote),
+        lifecycle=lambda action, instance: actions.append((action, instance)),
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert actions == [("stop", INSTANCE_ID), ("delete", INSTANCE_ID)]
+
+
+@pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
+def test_untrusted_failure_marker_cannot_overwrite_external_file(
+    tmp_path: Path,
+    link_kind: str,
+) -> None:
+    _remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    partial.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("SAFE")
+    marker = partial / "COLLECTION_FAILED.json"
+    if link_kind == "symlink":
+        marker.symlink_to(outside)
+        expected_error = "must not contain symlinks"
+    else:
+        marker.hardlink_to(outside)
+        expected_error = "must not contain hard links"
+    actions: list[tuple[str, str]] = []
+
+    with pytest.raises(CollectionError, match=expected_error):
+        collect_and_shutdown(
+            args,
+            copy_file=lambda _instance, _source, _destination: None,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert outside.read_text() == "SAFE"
+    assert actions == [("stop", INSTANCE_ID)]
+
+
+def test_resume_discards_only_known_regular_copy_temporary(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.resume_partial = True
+    partial = args.destination.with_name("offhost.partial")
+    temporary = partial / "environment/python/.python3.11.t14-copy"
+    temporary.parent.mkdir(parents=True)
+    temporary.write_bytes(b"interrupted")
+    copied_sources: list[str] = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        assert instance == "fa-t14"
+        copied_sources.append(source)
+        destination.write_bytes(remote[source])
+
+    result = collect_and_shutdown(
+        args,
+        copy_file=copy,
+        lifecycle=lambda _action, _instance: None,
+        resolve_instance=_resolve_fa_t14,
+    )
+
+    assert result == args.destination
+    assert "/remote/python/python3.11" in copied_sources
+    assert not (result / "environment/python/.python3.11.t14-copy").exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "malformed"),
+    [("dataset_dir", []), ("env_dir", {}), ("part", [])],
+)
+def test_malformed_approved_summary_stops_exact_instance(
+    tmp_path: Path,
+    field: str,
+    malformed: object,
+) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    summary = json.loads(remote["/remote/summary.json"])
+    summary["runs"][0][field] = malformed
+    remote["/remote/summary.json"] = json.dumps(summary).encode()
+    actions = []
+
+    with pytest.raises(CollectionError):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("stop", INSTANCE_ID)]
+    assert not args.destination.exists()
+
+
+def test_collector_refuses_any_instance_except_exact_fa_t14(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    args.instance_name = "fa-sim"
+    actions = []
+
+    with pytest.raises(CollectionError, match="exact fa-t14"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == []
+    assert not args.destination.exists()
+
+
+def test_delete_failure_preserves_verified_copy_and_stops_instance(tmp_path: Path) -> None:
+    remote, args = _remote_fixture(tmp_path)
+    actions = []
+
+    def lifecycle(action: str, instance: str) -> None:
+        actions.append((action, instance))
+        if action == "delete":
+            raise CollectionError("delete failed")
+
+    with pytest.raises(CollectionError, match="delete failed"):
+        collect_and_shutdown(
+            args,
+            copy_file=_copy_from(remote),
+            lifecycle=lifecycle,
+            resolve_instance=_resolve_fa_t14,
+        )
+
+    assert actions == [("delete", INSTANCE_ID), ("stop", INSTANCE_ID)]
+    assert (args.destination / "OFFHOST_VERIFIED.json").is_file()
+    assert (args.destination / "COLLECTION_FAILED.json").is_file()
+
+
+def test_live_instance_id_mismatch_cannot_copy_or_stop(tmp_path: Path) -> None:
+    _remote, args = _remote_fixture(tmp_path)
+    copies = []
+    actions = []
+
+    def copy(instance: str, source: str, destination: Path) -> None:
+        copies.append((instance, source, destination))
+        raise OSError("copy must not be attempted")
+
+    with pytest.raises(CollectionError, match="live fa-t14"):
+        collect_and_shutdown(
+            args,
+            copy_file=copy,
+            lifecycle=lambda action, instance: actions.append((action, instance)),
+            resolve_instance=lambda _name: "wronginstance",
+        )
+
+    assert copies == []
+    assert actions == []
+    assert not args.destination.exists()
+
+
+def test_brev_resolver_accepts_measured_workspaces_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    command = ["brev", "ls", "--json"]
+    payload = {"workspaces": [{"name": "fa-t14", "id": INSTANCE_ID, "status": "RUNNING"}]}
+    result = subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(
+        "perception.brev.t14_collect_and_shutdown.subprocess.run",
+        lambda *args, **kwargs: result,
+    )
+
+    assert _brev_resolve_instance_id("fa-t14") == INSTANCE_ID
+
+
+@pytest.mark.parametrize("payload", [[], {"instances": []}, {"workspaces": "fa-t14"}])
+def test_brev_resolver_rejects_unsupported_json_shapes(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: object,
+) -> None:
+    result = subprocess.CompletedProcess([], 0, stdout=json.dumps(payload), stderr="")
+    monkeypatch.setattr(
+        "perception.brev.t14_collect_and_shutdown.subprocess.run",
+        lambda *args, **kwargs: result,
+    )
+
+    with pytest.raises(CollectionError, match="workspaces list"):
+        _brev_resolve_instance_id("fa-t14")
