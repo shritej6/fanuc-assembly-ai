@@ -63,10 +63,12 @@ def main() -> None:
     env = gym.make(args.task, cfg=cfg).unwrapped
     if args.list_colliders:
         from pxr import UsdPhysics
+        from scene import OBJECTS_ROOT, ROBOT_PATH, env_path
 
+        skip = (env_path(ROBOT_PATH), env_path(OBJECTS_ROOT))
         for p in env.scene.stage.Traverse():
             path = str(p.GetPath())
-            if p.HasAPI(UsdPhysics.CollisionAPI) and not path.startswith(("/World/ER4iA", "/World/Objects")):
+            if p.HasAPI(UsdPhysics.CollisionAPI) and not path.startswith(skip):
                 print(f"[check] collider {path}", flush=True)
         env.close()
         return

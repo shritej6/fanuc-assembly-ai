@@ -28,6 +28,7 @@ import layout as L
 import sampler
 import tcp
 from cell_env import AssemblyCellEnv, CellEnvCfg
+from grip_load import closing_axis_world, grip_point_world_m, load_step, part_in_tcp, pivot_deg
 
 TOL_MM = 0.05
 AXIAL_N = 15.0          # insertion force guard
@@ -35,17 +36,8 @@ LATERAL_N = 4.5         # lateral force guard
 SLIP_MM = 0.1
 PIVOT_DEG = 1.0
 TILT_DEG = 3.0
-
-
-def part_in_tcp(env, part: str, obs) -> np.ndarray:
-    tcp_tf = L.translation(*obs["tcp_pose"][:3])
-    tcp_tf[:3, :3] = L.fanuc_rotation(*obs["tcp_pose"][3:6])
-    return np.linalg.inv(tcp_tf) @ env.env.object_poses_mm()[part]
-
-
-def pivot_deg(a: np.ndarray, b: np.ndarray) -> float:
-    r = a[:3, :3].T @ b[:3, :3]
-    return float(np.degrees(np.arccos(np.clip((np.trace(r) - 1) / 2, -1, 1))))
+PUSH_SLIP_MM = 0.05     # no slip beyond this under the axial / lateral guard loads
+TORSION_NM = (0.05, 0.1, 0.15, 0.2, 0.3, 0.4)
 
 
 def carry_test(env, part: str) -> tuple[float, float]:
@@ -73,7 +65,7 @@ def carry_test(env, part: str) -> tuple[float, float]:
         print(f"[carry] {part} {name}: slip {s_:.3f} mm pivot {p_:.2f} deg", flush=True)
     f = env.env.scene["robot"].root_view.get_dof_projected_joint_forces()
     f = np.asarray(f.numpy() if hasattr(f, "numpy") else f.cpu())[0].reshape(-1)[env.term.jaw_ids]
-    sensor = env.env.scene["robot_contact"]
+    sensor = env.env._metrics.robot
     pad = sensor.data.net_forces_w.torch[0].cpu().numpy()
     pads = [round(float(np.linalg.norm(pad[sensor.body_names.index(n)])), 2) for n in ("JawL", "JawR")]
     print(f"[carry] {part}: pad normal per finger N={pads} transmitted jaw force N={np.round(f, 2).tolist()} "
@@ -81,60 +73,46 @@ def carry_test(env, part: str) -> tuple[float, float]:
     return worst_s, worst_p
 
 
-def push(env, part: str, f) -> None:
-    import torch
-
-    e = env.env
-    ids = torch.tensor([0], device=e.device)
-    force = torch.tensor([[list(f)]], dtype=torch.float32, device=e.device)
-    e.scene[e.names[e.pool.index(part)]].permanent_wrench_composer.set_forces_and_torques_index(
-        forces=force, torques=torch.zeros_like(force), body_ids=ids, env_ids=ids, is_global=True)
-
-
 def grip_tests(env, part: str, hold_row: list) -> float:
-    """Pinch per finger, then slip of the part in the gripper under 15 N pushes and a 3 deg wrist tilt."""
-    obs = env.step_tcp([hold_row], 0.5)
+    """Pinch per finger, then slip of the part in the gripper: 15 N axial / 4.5 N lateral pushes at the CAD grip
+    point (friction) and at the part's CoM (adds torque r x F about the grip), a 3 deg wrist tilt, and a torsion
+    ramp about the closing axis (the grip's torque capacity)."""
+    env.step_tcp([hold_row], 0.5)
     q = env.env.scene["robot"].data
-    tau = q.applied_torque.torch[0].cpu().numpy()[env.term.jaw_ids]
     jaw = q.joint_pos.torch[0].cpu().numpy()[env.term.jaw_ids] * 1000.0
-    print(f"[grip] {part}: jaw drive force N={np.round(tau, 2).tolist()} jaws_mm={np.round(jaw, 3).tolist()}"
-          f" asymmetry_mm={abs(jaw[0] + jaw[1]) / 2:.3f}", flush=True)
     robot = env.env.scene["robot"]
-    view = robot.root_physx_view
     as_np = lambda a: a.cpu().numpy() if hasattr(a, "cpu") else np.asarray(a.numpy())
-    proj = as_np(view.get_dof_projected_joint_forces())[0].reshape(-1)
-    print(f"[grip] {part}: PhysX projected jaw joint forces N={np.round(proj[env.term.jaw_ids], 2).tolist()}", flush=True)
-    sensor = env.env.scene["robot_contact"]
-    fm = sensor.data.force_matrix_w.torch[0][:, env.env.names.index(env.env.names[env.env.pool.index(part)])].cpu().numpy()
-    for name, f in zip(sensor.body_names, fm):
-        if np.linalg.norm(f) > 0.01:
-            print(f"[grip] {part}: normal force on {name} {np.round(f, 2).tolist()} N", flush=True)
-    net = sensor.data.net_forces_w.torch[0].cpu().numpy()
-    for name, f in zip(sensor.body_names, net):
-        if np.linalg.norm(f) > 0.01:
-            print(f"[grip] net normal force on {name} (all contacts) {np.round(f, 2).tolist()} N", flush=True)
-    ref = part_in_tcp(env, part, obs)
+    proj = as_np(robot.root_physx_view.get_dof_projected_joint_forces())[0].reshape(-1)[env.term.jaw_ids]
+    sensor = env.env._metrics.robot
+    fm = sensor.data.force_matrix_w.torch[0][:, env.env.pool.index(part)].cpu().numpy()
+    pads = [round(float(np.linalg.norm(fm[sensor.body_names.index(n)])), 2) for n in ("JawL", "JawR")]
+    print(f"[grip] {part}: pinch on the part per finger N={pads} transmitted jaw force N={np.round(proj, 2).tolist()}"
+          f" jaws_mm={np.round(jaw, 3).tolist()} asymmetry_mm={abs(jaw[0] + jaw[1]) / 2:.3f}", flush=True)
     worst = 0.0
-    tests = [(f"push {v}", v, hold_row) for v in ([0, 0, AXIAL_N], [0, 0, -AXIAL_N], [LATERAL_N, 0, 0],
-                                                  [-LATERAL_N, 0, 0], [0, LATERAL_N, 0], [0, -LATERAL_N, 0])]
+    loads = ([0, 0, AXIAL_N], [0, 0, -AXIAL_N], [LATERAL_N, 0, 0], [-LATERAL_N, 0, 0], [0, LATERAL_N, 0],
+             [0, -LATERAL_N, 0])
+    for v in loads:
+        s_, _ = load_step(env, part, hold_row, f"push {v} at grip point", f=v, at_m=grip_point_world_m(env, part))
+        worst = max(worst, s_)
     for k in (3, 4):
         tilted = list(hold_row)
         tilted[k] += TILT_DEG
-        tests.append((f"tilt {'wp'[k - 3]} +{TILT_DEG}", None, tilted))
-    for name, f, row in tests:
-        if f is not None:
-            push(env, part, f)
-        obs = env.step_tcp([row], 1.0)
-        during = part_in_tcp(env, part, obs)
-        if f is not None:
-            push(env, part, (0.0, 0.0, 0.0))
-        obs = env.step_tcp([hold_row], 1.0)
-        after = part_in_tcp(env, part, obs)
-        d_dur = float(np.linalg.norm(during[:3, 3] - ref[:3, 3]))
-        d_aft = float(np.linalg.norm(after[:3, 3] - ref[:3, 3]))
-        worst = max(worst, d_aft)
-        print(f"[grip] {part} {name}: shift during {d_dur:.3f} mm, after {d_aft:.3f} mm, pivot after "
-              f"{pivot_deg(ref, after):.2f} deg", flush=True)
+        s_, _ = load_step(env, part, hold_row, f"tilt {'wp'[k - 3]} +{TILT_DEG}", row=tilted)
+        worst = max(worst, s_)
+    print(f"[grip] {part}: worst slip, grip-point loads + tilt {worst:.3f} mm -> "
+          f"{'PASS' if worst <= PUSH_SLIP_MM else 'FAIL'} (<= {PUSH_SLIP_MM} mm)", flush=True)
+    com_worst = 0.0
+    for v in loads:
+        s_, _ = load_step(env, part, hold_row, f"push {v} at CoM", f=v)
+        com_worst = max(com_worst, s_)
+    print(f"[grip] {part}: worst slip, CoM loads {com_worst:.3f} mm -> "
+          f"{'PASS' if com_worst <= PUSH_SLIP_MM else 'FAIL'} (<= {PUSH_SLIP_MM} mm)", flush=True)
+    axis = closing_axis_world(env)
+    for t in TORSION_NM:
+        _, piv = load_step(env, part, hold_row, f"torque {t} N m about the closing axis", f=(0.0, 0.0, 0.0),
+                           torque=tuple(t * axis))
+        if piv > PIVOT_DEG:
+            break
     return worst
 
 
@@ -143,14 +121,14 @@ def report(env, tag: str) -> float:
     robot = e.scene["robot"]
     q = robot.data.joint_pos.torch[0].cpu().double().numpy()
     q_arm = q[term.arm_ids]
-    err = np.rad2deg(q_arm - np.asarray(term.q_cmd))
+    err = np.rad2deg(q_arm - np.asarray(term.q_cmd[0]))
     fk = np.asarray(tcp.tcp_pose(q_arm))
-    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd)))
-    d = fk[:3] - np.asarray(term.tcp_cmd[:3])
+    cmd_fk = np.asarray(tcp.tcp_pose(np.asarray(term.q_cmd[0])))
+    d = fk[:3] - np.asarray(term.tcp_cmd[0, :3])
     jaw = q[term.jaw_ids] * 1000.0
     from scene import ARM_STIFFNESS
     print(f"[track] {tag}: dq_deg={np.round(err, 4).tolist()} torque_Nm={np.round(np.deg2rad(err) * ARM_STIFFNESS, 1).tolist()}"
-          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[:3], 3).tolist()}"
+          f" tcp_err_mm={np.round(d, 3).tolist()} |xy|={np.hypot(*d[:2]):.3f} fk(q_cmd)-cmd={np.round(cmd_fk[:3] - term.tcp_cmd[0, :3], 3).tolist()}"
           f" jaws_mm={np.round(jaw, 3).tolist()}", flush=True)
     return float(np.linalg.norm(d))
 
@@ -194,8 +172,7 @@ def episode(env, p: int) -> list[float]:
     env.step_tcp([[*up(seat, 10.0), 1]], 1.0)
     env.step_tcp([[*up(seat, 10.0), 1]], 1.0)
     out.append(report(env, f"P{p} seat+10 holding"))
-    slip = grip_tests(env, part, [*up(g, 60), 1])
-    print(f"[grip] {part}: worst slip after load {slip:.3f} mm -> {'PASS' if slip <= SLIP_MM else 'FAIL'}", flush=True)
+    grip_tests(env, part, [*up(g, 60), 1])
     return out
 
 

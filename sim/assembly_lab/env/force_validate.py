@@ -108,7 +108,7 @@ def run_group(products: list[int], push: list[str]):
         d = yaw0[u][:3, :3].T @ yaw1[u][:3, :3]
         r["turned_deg"] = round(float(np.degrees(np.arctan2(d[1, 0], d[0, 0]))), 3)    # > 0.1: the part slipped
         k = env.env.pool.index(u)
-        r["env_force_xyz_N"] = [round(float(x), 4) for x in env.env._metrics.env_net[k]]   # expect (-1, 0, +m g + 5)
+        r["env_force_xyz_N"] = [round(float(x), 4) for x in env.env._metrics.env_net[0, k]]   # expect (-1, 0, +m g + 5)
         r["sign_ok"] = r["env_force_xyz_N"][0] < 0 < r["env_force_xyz_N"][2]
         r["normal_ok"] = within(n, w + PUSH["down_N"], args.tol)
         r["lateral_ok"] = within(lat, PUSH["side_N"], args.tol)
