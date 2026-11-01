@@ -128,7 +128,7 @@ class FakeChunkPolicy:
 
 def test_server_drives_grootpolicy_through_the_guard():
     zmq = pytest.importorskip("zmq")
-    from policy_learn.deploy.groot_policy import GrootPolicy
+    from policy_learn.deploy.cell_groot_policy import GrootPolicy
     from policy_learn.groot.groot_client import PolicyServerError
 
     with zmq.Context() as ctx, ctx.socket(zmq.REP) as probe:

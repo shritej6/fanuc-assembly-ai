@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from policy_learn.deploy.groot_policy import GrootPolicy
+from policy_learn.deploy.cell_groot_policy import GrootPolicy
 from policy_learn.groot.prepare_dataset import CAMERAS
 from policy_learn.groot.tcp_convert import eef9d_to_tcp, rot6d_to_matrix, wpr_to_matrix
 

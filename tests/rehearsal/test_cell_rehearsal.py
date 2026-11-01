@@ -52,7 +52,7 @@ def test_saturday_tilt_cone_allows_three_plus_two_degree_wiggle() -> None:
     import numpy as np
 
     from assembly.cell_runtime import _saturday_limits
-    from policy_learn.deploy.guards import ChunkGuard
+    from policy_learn.deploy.cell_guards import ChunkGuard
 
     guard = ChunkGuard(_saturday_limits())
     start = [400.0, 0.0, -250.0, -180.0, 0.0, 0.0]

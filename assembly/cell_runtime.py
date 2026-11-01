@@ -18,8 +18,8 @@ from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
 from assembly.groot_controller import GrootAssemblyController, GrootControllerAuthority
 from assembly.safety import SafetySupervisor
 from policy_learn.deploy.cell_executor import T09GrootExecutor
-from policy_learn.deploy.groot_policy import GrootPolicy
-from policy_learn.deploy.guards import GuardLimits
+from policy_learn.deploy.cell_groot_policy import GrootPolicy
+from policy_learn.deploy.cell_guards import GuardLimits
 from robot import Controller
 
 CELL_FACTORY_ENV = "FANUC_T09_CELL_FACTORY"

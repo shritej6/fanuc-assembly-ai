@@ -19,7 +19,7 @@ from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionChunk, MotionPhase, Waypoint
 from assembly.motion_intent import MotionIntent, SemanticSkill, semantic_instruction
 from assembly.safety import MotionOwner, SafetySupervisor, SafetyViolation
-from policy_learn.deploy.guards import ContactTarget, GuardResult, UnsafeHoldError, observed_gripper_state
+from policy_learn.deploy.cell_guards import ContactTarget, GuardResult, UnsafeHoldError, observed_gripper_state
 
 
 class CellExecutionError(RuntimeError):

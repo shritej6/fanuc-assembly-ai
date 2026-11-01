@@ -22,8 +22,8 @@ import zmq
 
 from assembly.catalog import TRUSTED_GRASP_SOURCE, load_catalog
 from policy_learn.deploy.attestation import REQUIRED_CELL_SKILLS
-from policy_learn.deploy.groot_policy import DT_S
-from policy_learn.deploy.guards import GuardLimits
+from policy_learn.deploy.cell_groot_policy import DT_S
+from policy_learn.deploy.cell_guards import GuardLimits
 from policy_learn.groot.groot_client import ATTESTATION_PROTOCOL, pack, unpack
 from policy_learn.groot.tcp_convert import eef9d_to_tcp, tcp_to_eef9d
 

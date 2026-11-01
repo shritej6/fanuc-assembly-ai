@@ -13,8 +13,8 @@ from assembly.motion import MotionPhase
 from assembly.motion_intent import ContactEnvelope, MotionIntent, SemanticSkill
 from assembly.safety import SafetySupervisor
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
-from policy_learn.deploy.groot_policy import GrootPolicy
-from policy_learn.deploy.guards import GuardLimits, GuardResult
+from policy_learn.deploy.cell_groot_policy import GrootPolicy
+from policy_learn.deploy.cell_guards import GuardLimits, GuardResult
 
 
 def _intent(**changes) -> MotionIntent:

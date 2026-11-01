@@ -10,9 +10,9 @@ from assembly.execution import EndpointSettleLimits, GrootWatchdogLimits
 from assembly.fixed_inspection import FixedInspectionMove
 from assembly.motion import MotionPhase, Waypoint
 from policy_learn.deploy.cell_executor import CellExecutionError, T09GrootExecutor
-from policy_learn.deploy.groot_policy import CellPolicySafetyError, GrootPolicy
+from policy_learn.deploy.cell_groot_policy import CellPolicySafetyError, GrootPolicy
 from policy_learn.deploy.groot_queue import GrootMotionQueue
-from policy_learn.deploy.guards import GuardLimits
+from policy_learn.deploy.cell_guards import GuardLimits
 
 SETTLE = EndpointSettleLimits(2.0, 3.0, "PRELIMINARY", "fixed inspection test fixture")
 WATCHDOG = GrootWatchdogLimits(

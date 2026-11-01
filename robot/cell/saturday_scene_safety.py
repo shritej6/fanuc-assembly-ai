@@ -29,8 +29,8 @@ from assembly.safety import (
     SafetyViolation,
     TableClearanceViolation,
 )
-from policy_learn.deploy.groot_policy import DT_S
-from policy_learn.deploy.guards import GuardLimits
+from policy_learn.deploy.cell_groot_policy import DT_S
+from policy_learn.deploy.cell_guards import GuardLimits
 from robot.adapter import ActionValidationError, guard_tcp_action
 
 CELL_LAYOUT_PATH = Path(__file__).resolve().parents[2] / "sdg" / "configs" / "cell_layout.yaml"

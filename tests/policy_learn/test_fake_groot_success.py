@@ -9,7 +9,7 @@ from assembly.final_views import FinalViewPose, FinalViewRegistry
 from assembly.motion_intent import MotionIntent, SemanticSkill
 from assembly.state_machine import PackMLState
 from policy_learn.deploy.cell_executor import T09GrootExecutor
-from policy_learn.deploy.groot_policy import GrootPolicy
+from policy_learn.deploy.cell_groot_policy import GrootPolicy
 from robot.cell.t09_mock_runtime import MockPerception, build_groot_mock_controller
 
 

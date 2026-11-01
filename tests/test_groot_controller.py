@@ -28,7 +28,7 @@ from assembly.recovery import PullOutTarget
 from assembly.state_machine import PackMLState
 from assembly.verification import VerificationReason
 from policy_learn.deploy.cell_executor import GrootExecutionResult
-from policy_learn.deploy.guards import ChunkGuard, ContactTarget
+from policy_learn.deploy.cell_guards import ChunkGuard, ContactTarget
 from robot.adapter import CellAdapter
 from robot.cell.t09_mock_runtime import build_groot_mock_controller
 
