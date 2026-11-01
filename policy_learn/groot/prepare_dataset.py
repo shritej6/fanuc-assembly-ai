@@ -26,7 +26,7 @@ from policy_learn.groot.tcp_convert import tcp_to_eef9d
 
 CAMERAS = ("table", "side", "wrist")
 STATE_DIM, ACTION_DIM = 13, 7  # [J1..J6, gripper, x, y, z, w, p, r] and act_tcp [x, y, z, w, p, r, gripper]
-FPS = 5  # the demos' fixed control step: sim/assembly_lab/skills/motion.py DT_S = 0.2 s
+FPS = 5  # one exported row per runtime step (deploy/groot_policy.py DT_S = 0.2 s; export_lerobot.FPS)
 WORKSPACE = ((150.0, 650.0), (-450.0, 450.0), (-334.0, 300.0))  # PLAN 3.1, mm
 BOX_TOL_MM = 1.0
 CHUNK = 1000
