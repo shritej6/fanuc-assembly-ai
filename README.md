@@ -1,6 +1,6 @@
 # Self-Inspecting Robotic Assembly Cell
 
-(Team V)
+Shritej Gunda (Team V)
 
 Rockwell Automation and NVIDIA Physical AI Hackathon 2026, Challenge 3, FANUC ER-4iA cell.
 
@@ -10,6 +10,22 @@ each one, rejects parts that are defective, fallen or from another product, and 
 bases in assembly-sheet order. Motion comes from NVIDIA GR00T N1.7 fine-tuned on simulated demonstrations, combined
 with a CAD-based grasp and insertion planner, and every motion passes through an independent safety guard before it
 reaches the robot.
+
+![Real cell: the arm grips M5_01, carries it and places it on the F05 base](docs/media/real_cell_pick_place.gif)
+
+*Real FANUC ER-4iA cell, side and overhead cameras, 2x speed: the planner-driven runtime grips M5_01, carries it and
+places it on the F05 base.*
+
+## Media
+
+| | |
+|---|---|
+| ![Product designs](docs/media/products_cad.png) | ![Custom fingers](docs/media/gripper_fingers.png) |
+| Product designs and wrong-part variants (CAD) | Custom printed fingers on the SMC MHZL2-16D2 gripper |
+| ![Isaac Lab cell](docs/media/sim_three_cameras.png) | ![Synthetic scenes](docs/media/synthetic_variety.png) |
+| Isaac Lab cell seen by the table, side and wrist cameras | Synthetic test-bed scenes with randomised lighting and table |
+| ![Labelled synthetic images](docs/media/synthetic_labels.png) | |
+| Synthetic training images with detection labels | |
 
 ## 1. Problem and business case
 
