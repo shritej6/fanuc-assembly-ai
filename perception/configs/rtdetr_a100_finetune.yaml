@@ -1,0 +1,56 @@
+# RT-DETR detector fine-tune config for 40 GB A100 GPUs.
+# Authored by Shritej Gunda.
+task: detector
+hardware_profile: h100
+model:
+  name: PekingU/rtdetr_r50vd
+  revision: df939e661d8c52e80608d1ec566561aabd25a4e7
+  image_size: 1280
+  # Fine-tune: continue from the trained detector (main/full/detector, trained on N R Q) on N R Q
+  # plus the weak-spot set S; the driver copies that run to runs/detector_init. The hash pins exactly those weights.
+  init_from: runs/detector_init
+  init_sha256: b054f9aa224f56081998a77b778ff6336985a65bfbc2bb658b1036fc0d3fd785
+training:
+  seed: 1337
+  num_train_epochs: 3    # continuing from a converged run: a few passes over S mixed with N R Q
+  max_steps: -1
+  max_train_samples: null
+  max_eval_samples: null
+  learning_rate: 0.00002  # lower than the 5e-5 of the original run so the learned classes are not overwritten
+  weight_decay: 0.0001
+  warmup_ratio: 0.05
+  # The H100 recipe on 40 GB A100s: H100 batch 20 was measured only as below 85% of 80 GB, so 5 x 4 accumulation keeps
+  # 20 images per GPU step with headroom; learning rate, warmup and step count are unchanged. The "h100" profile is
+  # the BF16 / 1280 px precision class, which the A100 supports.
+  per_device_train_batch_size: 5
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  # Eight workers were within 0.55% of the best measured median on 208 logical CPUs.
+  dataloader_num_workers: 8
+  fp16: false
+  bf16: true
+  tf32: false
+  remove_unused_columns: false
+  eval_do_concat_batches: false
+  eval_strategy: epoch
+  save_strategy: epoch
+  logging_strategy: steps
+  logging_steps: 50
+  load_best_model_at_end: true
+  metric_for_best_model: eval_map
+  greater_is_better: true
+  save_total_limit: 3
+smoke:
+  num_train_epochs: 1
+  max_steps: 2
+  max_train_samples: 16
+  max_eval_samples: 8
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  dataloader_num_workers: 0
+  eval_strategy: steps
+  save_strategy: steps
+  logging_strategy: steps
+  eval_steps: 1
+  save_steps: 1
+  logging_steps: 1

@@ -1,0 +1,472 @@
+"""DirectGrootRuntime fallback runtime.
+Authored by Shritej Gunda.
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from policy_learn.deploy.direct_plan import load_placement, plan_rollout
+from policy_learn.deploy.direct_runtime import RETREAT_MM, Budgets, DirectGrootRuntime
+from policy_learn.deploy.groot_policy import GrootPolicy
+from sim.assembly_lab.mimic.catalog import encode_plan_ids
+from sim.assembly_lab.mimic.instructions import instruction
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from direct_fakes import HOME_TCP, ScriptedGroot, TinyCell
+
+REPO = Path(__file__).resolve().parents[2]
+ROLLOUTS = load_placement()
+PROMPT_1 = ROLLOUTS[0].prompt
+
+
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+class Fixed:
+    def __init__(self, chunk):
+        self.chunk, self.calls, self.resets = np.asarray(chunk, float), 0, 0
+
+    def reset(self):
+        self.resets += 1
+
+    def predict(self, model_obs):
+        self.calls += 1
+        return self.chunk.copy()
+
+
+class Echo(Fixed):
+    """Proposes standing still: the tests below move the arm themselves through the observations."""
+
+    def __init__(self):
+        super().__init__([HOME_TCP + [0.0]])
+
+    def predict(self, model_obs):
+        self.calls += 1
+        grip = 1.0 if float(model_obs["joints"][6]) >= 0.5 else 0.0
+        return np.array([[*model_obs["tcp_pose"][:6], grip]])
+
+
+def runtime(model=None, **kw) -> tuple[DirectGrootRuntime, Clock]:
+    clock = Clock()
+    pol = DirectGrootRuntime(model=model or Echo(), clock=clock, **kw)
+    pol.reset()
+    return pol, clock
+
+
+def obs(tcp, grip=0.0, prompt=PROMPT_1, index=0, **extra) -> dict:
+    o = TinyCell(prompt, index, tcp).obs()
+    o["joints"][6] = grip
+    return o | extra
+
+
+def ended(pol) -> str | None:
+    return pol.progress.ended
+
+
+def test_official_policy_interface():
+    assert issubclass(DirectGrootRuntime, GrootPolicy)
+    assert DirectGrootRuntime.ACTION == "tcp" and DirectGrootRuntime.PREFETCH is False
+    assert DirectGrootRuntime.CAMERAS == ["table", "side", "wrist"] and DirectGrootRuntime.IMAGE_SIZE == (640, 360)
+
+
+def test_every_rollout_plans_in_prompt_then_sheet_order():
+    for r in ROLLOUTS:
+        steps = plan_rollout(r)
+        assert [s.object_id for s in steps] == [f"M{p}_0{k}" for p in r.products for k in range(1, 5)]
+        assert r.products == (5,) and len(steps) == 4  # product 5 alone, like the training scenes
+
+
+def test_rollout_1_first_step_is_product_5_part_1():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    step = pol.progress.step
+    assert pol.progress.rollout.index == 0 and (step.product, step.object_id, step.base_id) == (5, "M5_01", "F05")
+
+
+def test_instruction_is_the_training_format():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    step = pol.progress.step
+    want = instruction(encode_plan_ids("pick_insert", "M5_01", "F05", 0, "nominal"), list(step.plan_target))
+    assert pol.instruction == want
+    assert want == "pick M5_01 at (354, 195, -30) gripping Y at roll 150, insert on F05 at (275, -123, -34)"
+
+
+def test_identical_prompts_fall_back_to_the_trial_index_then_resets(monkeypatch):
+    """All 3 rollouts have the same prompt and layout."""
+    assert len({r.prompt for r in ROLLOUTS}) == 1 and len({tuple(r.objects.items()) for r in ROLLOUTS}) == 1
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP, index=1))
+    assert pol.progress.rollout.index == 1 and ended(pol) is None
+    o = obs(HOME_TCP)
+    del o["trial"]["index"]
+    pol.reset()                                              # second reset: rollout 2 by count
+    pol.act(o)
+    assert pol.progress.rollout.index == 1 and ended(pol) is None
+    pol.act(obs(HOME_TCP, index=7))                          # an index past the file still gets the one layout
+    pol.reset()
+    pol.act(obs(HOME_TCP, index=7))
+    assert pol.progress.rollout.index == 0 and ended(pol) is None
+    monkeypatch.setenv("DIRECT_ROLLOUT", "3")
+    pol, _ = runtime()                                       # read and validated at construction
+    pol.act(obs(HOME_TCP, index=0))
+    assert pol.progress.rollout.index == 2
+
+
+def test_guard_contact_target_follows_the_step():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    g, s = pol.progress.step.grasp_tcp, pol.progress.step.seat_tcp
+    assert (pol.guard.target.x_mm, pol.guard.target.z_contact_mm) == (g[0], g[2])
+    pol.act(obs(list(g), grip=1.0))
+    assert pol.progress.phase == "insert" and (pol.guard.target.x_mm, pol.guard.target.z_contact_mm) == (s[0], s[2])
+
+
+def test_step_advances_on_grasp_release_at_seat_and_retreat():
+    model = Echo()
+    pol, _ = runtime(model)
+    pol.act(obs(HOME_TCP))
+    g, s = pol.progress.step.grasp_tcp, pol.progress.step.seat_tcp
+    pol.act(obs(list(g), grip=1.0))                          # closed on the pad: grasped
+    pol.act(obs(list(s), grip=1.0))                          # on the seat, still closed (Echo commands the seat)
+    pol.act(obs(list(s), grip=0.0))                          # opened on the seat: released
+    assert pol.progress.phase == "retreat" and pol.progress.index == 0
+    pol.act(obs([s[0], s[1], s[2] + RETREAT_MM - 1, *s[3:]]))
+    assert pol.progress.index == 0                           # not yet RETREAT_MM above the seat
+    pol.act(obs([s[0], s[1], s[2] + RETREAT_MM, *s[3:]]))
+    assert pol.progress.index == 1 and pol.progress.phase == "pick"
+    assert pol.instruction.startswith("pick M5_02 ") and model.resets == 3  # trial reset + step 1 + step 2
+    assert ended(pol) is None
+
+
+def test_guard_refusal_holds_and_three_in_a_row_end_the_trial():
+    model = Fixed([[700.0, 0.0, -90.0, -180.0, 0.0, 0.0, 0.0]])   # outside the workspace box
+    pol, _ = runtime(model)
+    tcp = [310.0, 5.0, -100.0, -180.0, 0.0, 0.0]
+    for k in range(3):
+        rows = pol.act(obs(tcp))
+        np.testing.assert_allclose(rows, [tcp + [0.0]])
+    assert "stuck" in ended(pol)
+    rows = pol.act(obs(tcp))
+    np.testing.assert_allclose(rows, [tcp + [0.0]])
+    assert model.calls == 3                                  # held: the model is no longer asked
+
+
+def test_pick_time_budget_holds():
+    model = Fixed([HOME_TCP + [0.0]])
+    pol, clock = runtime(model)
+    pol.act(obs(HOME_TCP))
+    clock.t = Budgets().pick_s + 0.1
+    rows = pol.act(obs(HOME_TCP))
+    assert "pick budget" in ended(pol) and model.calls == 1
+    np.testing.assert_allclose(rows, [HOME_TCP + [0.0]])
+
+
+def test_insert_time_budget_holds_with_the_part_still_held():
+    pol, clock = runtime()
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    pol.act(obs(g, grip=1.0))
+    clock.t = Budgets().insert_s + 0.1
+    rows = pol.act(obs(g, grip=1.0))
+    assert "insert budget" in ended(pol)
+    np.testing.assert_allclose(rows, [g + [1.0]])            # gripper stays closed: a held part stays held
+
+
+def test_release_away_from_the_seat_is_a_drop():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    pol.act(obs(g, grip=1.0))
+    pol.act(obs([g[0] + 30, g[1], g[2] + 40, *g[3:]], grip=0.0))
+    assert "not seated" in ended(pol)
+
+
+def test_closing_away_from_the_pad_ends_the_trial():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    pol.act(obs([g[0] + 20, g[1], g[2], *g[3:]], grip=1.0))
+    assert "off the grasp pad" in ended(pol)
+
+
+def test_closed_but_empty_gripper_is_a_drop():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    pol.act(obs(g, grip=1.0))
+    pol.act(obs([g[0], g[1], g[2] + 20, *g[3:]], grip=1.0, gripper_width_mm=3.0))
+    assert "closed but empty" in ended(pol)
+
+
+def test_tcp_far_from_the_plan_ends_the_trial():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP))
+    pol.act(obs([300.0, 250.0, -90.0, -180.0, 0.0, 0.0]))
+    assert "left the path" in ended(pol)
+
+
+def test_missing_tcp_pose_holds_without_planning():
+    model = Fixed([HOME_TCP + [0.0]])
+    pol, _ = runtime(model)
+    o = obs(HOME_TCP)
+    o["tcp_pose"] = None
+    rows = pol.act(o)
+    assert rows.shape == (1, 7) and model.calls == 0 and pol.progress.rollout is None
+
+
+def test_full_product_5_with_a_scripted_groot_in_process():
+    fake = ScriptedGroot()
+    pol, _ = runtime(fake)
+    fake.runtime = pol
+    cell = TinyCell(PROMPT_1)
+    while not ended(pol):
+        cell.play(pol.act(cell.obs()))
+    done = [e["part"] for e in pol.events if e["type"] == "step_done"]
+    assert done == ["M5_01", "M5_02", "M5_03", "M5_04"] and ended(pol) == "done"
+    assert [e for e in pol.guard_log if e["held"]] == []     # the nominal path never needed a hold
+    assert len(set(fake.instructions)) == 4                  # one training-format instruction per step
+    calls = len(fake.instructions)
+    np.testing.assert_allclose(pol.act(cell.obs()), [[*cell.tcp, cell.grip]])  # done: hold, the model is not asked
+    assert len(fake.instructions) == calls
+
+
+def test_full_product_5_through_run_py_mock(tmp_path):
+    report = tmp_path / "report.json"
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("DIRECT_", "VIRTUAL_ENV", "GROOT_"))}
+    proc = subprocess.run(["uv", "run", "--project", str(REPO / "robot" / "cell"), "python",
+                           str(Path(__file__).with_name("direct_mock_driver.py")), "60", str(report)],
+                          cwd=REPO / "robot" / "cell", capture_output=True, text=True, timeout=300, env=env, check=False)
+    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
+    assert "Ready for the real robot" in proc.stdout
+    data = json.loads(report.read_text())[0]
+    done = [e["part"] for e in data["events"] if e["type"] == "step_done"]
+    assert done[:4] == ["M5_01", "M5_02", "M5_03", "M5_04"], proc.stdout[-3000:]
+    holds = [g for g in data["guard_log"] if g["held"] and "tcp_pose missing" not in g["reasons"][0]]
+    assert holds == []
+
+
+def test_a_chunk_that_closes_on_the_pad_then_lifts_is_a_grasp():
+    """GR00T chunks run ~3 s: the close row is on the pad, the rows after it already lift the part."""
+    g = None
+
+    class CloseThenLift(Echo):
+        def predict(self, model_obs):
+            if g is None:
+                return super().predict(model_obs)
+            self.calls += 1
+            lift = [[g[0], g[1], g[2] + dz, *g[3:6], 1.0] for dz in (2.0, 4.0, 6.0, 26.0, 46.0)]  # slow, then fast
+            return np.array([[*g[:6], 0.0], [*g[:6], 1.0], *lift])
+
+    pol, _ = runtime(CloseThenLift())
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    rows = pol.act(obs(g))                                    # at the pad, open: the model closes, then lifts
+    assert pol.guard_log == [] and rows[-1, 2] == g[2] + 46.0
+    pol.act(obs(list(rows[-1, :6]), grip=1.0))                # observed 46 mm above the pad, closed
+    assert ended(pol) is None and pol.progress.phase == "insert"
+
+
+def test_exec_horizon_cuts_the_chunk_and_a_close_inside_it_is_still_a_grasp():
+    """GROOT_EXEC_HORIZON=3: only rows 0-2 of the 7-row chunk go out (open, close, lift 2 mm), and the close inside them is still found as the grasp."""
+    g = None
+
+    class CloseThenLift(Echo):
+        def predict(self, model_obs):
+            if g is None:
+                return super().predict(model_obs)
+            self.calls += 1
+            lift = [[g[0], g[1], g[2] + dz, *g[3:6], 1.0] for dz in (2.0, 4.0, 6.0, 26.0, 46.0)]
+            return np.array([[*g[:6], 0.0], [*g[:6], 1.0], *lift])
+
+    pol, _ = runtime(CloseThenLift(), exec_horizon=3)
+    assert pol.exec_horizon == 3
+    pol.act(obs(HOME_TCP))
+    g = list(pol.progress.step.grasp_tcp)
+    rows = pol.act(obs(g))
+    assert len(rows) == 3 and rows[-1, 2] == g[2] + 2.0 and rows[-1, 6] == 1.0
+    pol.act(obs(list(rows[-1, :6]), grip=1.0))
+    assert ended(pol) is None and pol.progress.phase == "insert"
+
+
+def test_exec_horizon_from_the_environment_caps_every_chunk(monkeypatch):
+    monkeypatch.setenv("GROOT_EXEC_HORIZON", "8")
+    pol, _ = runtime(Fixed([[*HOME_TCP[:2], HOME_TCP[2] - 1.0 * (k + 1), *HOME_TCP[3:], 0.0] for k in range(16)]))
+    assert pol.exec_horizon == 8 and len(pol.act(obs(HOME_TCP))) == 8
+
+
+def test_a_chunk_that_opens_on_the_seat_then_rises_finishes_the_step():
+    s = None
+
+    class OpenThenRise(Echo):
+        def predict(self, model_obs):
+            self.calls += 1
+            if float(model_obs["joints"][6]) < 0.5:
+                return super().predict(model_obs) if s is None else np.array([[*model_obs["tcp_pose"][:6], 0.0]])
+            return np.array([[*s[:6], 1.0], [*s[:6], 0.0]]
+                            + [[s[0], s[1], s[2] + 2.0 * k, *s[3:6], 0.0] for k in range(1, 7)])
+
+    pol, _ = runtime(OpenThenRise())
+    pol.act(obs(HOME_TCP))
+    g, s = list(pol.progress.step.grasp_tcp), list(pol.progress.step.seat_tcp)
+    pol.act(obs(g, grip=1.0))
+    rows = pol.act(obs(s, grip=1.0))                          # on the seat, closed: open, then rise 12 mm
+    pol.act(obs(list(rows[-1, :6]), grip=0.0))
+    assert ended(pol) is None and pol.progress.index == 1
+
+
+def test_cell_entry_point_fits_both_run_py_versions():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("policy_direct", REPO / "robot" / "cell" / "policy_direct.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert issubclass(mod.Policy, DirectGrootRuntime) and mod.Policy.ACTION == "tcp"
+    pol = mod.Policy(None, runtime="cell", model=Echo())
+    pol.close()
+    assert pol.runtime == "cell" and mod.INSTANCES[-1] is pol
+
+
+class SeatThenOpen(Echo):
+    """Once `seat` is set and the part is held."""
+
+    def __init__(self, dxy=0.0, dz=0.0):
+        super().__init__()
+        self.seat, self.dxy, self.dz = None, dxy, dz
+
+    def predict(self, model_obs):
+        if self.seat is None or float(model_obs["joints"][6]) < 0.5:
+            return super().predict(model_obs)
+        self.calls += 1
+        s, here = self.seat, np.asarray(model_obs["tcp_pose"][:6], float)
+        at = np.array([s[0] + self.dxy, s[1], s[2] + self.dz, *s[3:6]])
+        n = max(1, int(np.ceil(np.linalg.norm(at[:3] - here[:3]) / 1.5)))
+        rows = [[*(here + (at - here) * k / n), 1.0] for k in range(1, n + 1)]
+        return np.array([*rows, [*at, 0.0]])
+
+
+def _grasp_then_release(model, reported_dz=None):
+    pol, clock = runtime(model)
+    pol.act(obs(HOME_TCP))
+    g, s = list(pol.progress.step.grasp_tcp), list(pol.progress.step.seat_tcp)
+    pol.act(obs(g, grip=1.0))                                 # grasped
+    model.seat = s
+    pol.act(obs(s, grip=1.0))                                 # carried to the seat: this chunk opens at seat + offset
+    sent = pol.progress.last_rows[-1]
+    dz = sent[2] - s[2] if reported_dz is None else reported_dz
+    pol.act(obs([sent[0], sent[1], s[2] + dz, *s[3:]], grip=0.0))
+    return pol, clock, s
+
+
+def test_jam_3_mm_above_the_seat_holds_instead_of_step_done():
+    """Commanded to the seat and opened there, but the arm reports 3 mm higher: the part stopped on something."""
+    pol, _, _ = _grasp_then_release(SeatThenOpen(), reported_dz=3.0)
+    assert "jammed" in ended(pol)
+    assert not [e for e in pol.events if e["type"] in ("released", "step_done")]
+
+
+def test_release_commanded_above_the_seated_height_is_not_seated():
+    pol, _, s = _grasp_then_release(SeatThenOpen(dz=3.0))     # opened 3 mm up: inside first contact, not seated
+    step = pol.progress.step
+    assert step.contact_z - s[2] > 2.0 and "not seated" in ended(pol)
+
+
+def test_seated_release_on_a_base_placed_3_mm_off_completes_the_step():
+    """Seat depth is reached only when the part is aligned with the ACTUAL base, so a base hand-placed 3 mm off is fine as long as the release is at seat depth and the arm was not blocked."""
+    pol, _, s = _grasp_then_release(SeatThenOpen(dxy=3.0))
+    assert ended(pol) is None and pol.progress.phase == "retreat"
+    pol.act(obs([s[0] + 3.0, s[1], s[2] + RETREAT_MM, *s[3:]]))
+    assert ended(pol) is None and [e["part"] for e in pol.events if e["type"] == "step_done"] == ["M5_01"]
+
+
+def test_release_beyond_the_hand_placement_tolerance_holds():
+    pol, _, _ = _grasp_then_release(SeatThenOpen(dxy=6.0))    # HAND_PLACE_XY_MM = 5.0
+    assert "not seated" in ended(pol) and "hand-placement limit 5.0" in ended(pol)
+
+
+def test_grasp_tolerance_comes_from_the_pad_geometry():
+    step = plan_rollout(ROLLOUTS[0])[0]                        # M5_01: pad 7 mm, contact height 8 mm
+    assert (step.grasp_xy_tol_mm, step.grasp_z_tol_mm) == ((16.5 - 7.0) / 2, 4.0)
+    for dx, want_end in ((4.5, False), (5.0, True)):
+        pol, _ = runtime()
+        pol.act(obs(HOME_TCP))
+        g = list(pol.progress.step.grasp_tcp)
+        pol.act(obs([g[0] + dx, g[1], g[2], *g[3:]], grip=1.0))
+        assert (ended(pol) is not None) == want_end, dx
+
+
+def test_retreat_has_its_own_budget_after_a_late_release():
+    pol, clock = runtime(SeatThenOpen())
+    pol.act(obs(HOME_TCP))
+    g, s = list(pol.progress.step.grasp_tcp), list(pol.progress.step.seat_tcp)
+    pol.act(obs(g, grip=1.0))                                 # grasped at t = 0
+    pol.model.seat = s
+    clock.t = 89.0
+    pol.act(obs(s, grip=1.0))                                 # at the seat: this chunk opens
+    clock.t = 89.5
+    pol.act(obs(s, grip=0.0))                                 # released at 89.5 s, inside the 90 s insert budget
+    assert pol.progress.phase == "retreat"
+    clock.t = 90.5
+    pol.act(obs([s[0], s[1], s[2] + RETREAT_MM, *s[3:]]))     # past 90 s from the grasp, 1 s into the retreat
+    assert ended(pol) is None and pol.progress.index == 1
+
+
+def test_retreat_budget_runs_out():
+    pol, clock, s = _grasp_then_release(SeatThenOpen())
+    assert pol.progress.phase == "retreat"
+    clock.t = Budgets().retreat_s + 0.1
+    pol.act(obs(s, grip=0.0))
+    assert "retreat budget" in ended(pol)
+
+
+def test_gripper_closed_at_trial_start_holds_with_a_reason():
+    model = Echo()
+    pol, _ = runtime(model)
+    rows = pol.act(obs(HOME_TCP, grip=1.0))
+    assert "gripper closed at start" in ended(pol) and model.calls == 0
+    np.testing.assert_allclose(rows, [HOME_TCP + [1.0]])
+
+
+def test_bad_direct_rollout_fails_at_construction(monkeypatch):
+    for bad in ("4", "0", "two"):
+        monkeypatch.setenv("DIRECT_ROLLOUT", bad)
+        with pytest.raises(ValueError, match="DIRECT_ROLLOUT"):
+            DirectGrootRuntime(model=Echo())
+
+
+def test_every_rollout_is_planned_at_construction_and_a_refusal_only_holds(monkeypatch):
+    import policy_learn.deploy.direct_runtime as dr
+    from policy_learn.deploy.direct_plan import PlacementError
+
+    real, calls = dr.plan_rollout, []
+
+    def plan(r):
+        calls.append(r.index)
+        if r.index == 1:
+            raise PlacementError("test: planner refuses rollout 2")
+        return real(r)
+
+    monkeypatch.setattr(dr, "plan_rollout", plan)
+    pol, _ = runtime()
+    assert calls == [0, 1, 2]
+    pol.act(obs(HOME_TCP, index=1))
+    assert "plan refused" in ended(pol) and calls == [0, 1, 2]  # nothing is planned inside the trial loop
+
+
+def test_trial_start_event_keeps_the_trial_counter_and_names_the_placement_rollout():
+    pol, _ = runtime()
+    pol.act(obs(HOME_TCP, index=2))
+    start = next(e for e in pol.events if e["type"] == "trial_start")
+    assert start["rollout"] == 0 and start["placement_rollout"] == 3

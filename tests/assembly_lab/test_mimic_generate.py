@@ -1,0 +1,330 @@
+"""Tests for mimic generate.
+Authored by Shritej Gunda.
+"""
+
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+h5py = pytest.importorskip("h5py")
+
+from sim.assembly_lab.mimic import generate as GEN
+from sim.assembly_lab.mimic import mimicgen as M
+
+Z_OFF_M = 1.23  # world z of UF0 (table top + 0.33 m), as measured in recorder files
+
+
+def _quat_xyzw(rot: np.ndarray) -> np.ndarray:
+    from sim.assembly_lab.env.layout import quat_xyzw
+
+    return np.asarray(quat_xyzw(rot))
+
+
+def _pose7_world(t_mm: np.ndarray) -> np.ndarray:
+    return np.r_[t_mm[:3, 3] / 1000.0 + (0, 0, Z_OFF_M), _quat_xyzw(t_mm[:3, :3])]
+
+
+def _write_episode(g, part_path: list[np.ndarray], tcp_rows: np.ndarray, frames: dict, marks: dict | None,
+                   meta_attrs: bool, kept: bool) -> dict:
+    """One recorder episode: states/ post-step (row t = after action t), obs/ pre-step, quats x, y, z, w."""
+    n = len(tcp_rows)
+    g["actions"] = np.c_[tcp_rows, np.r_[np.zeros(n // 2), np.ones(n - n // 2)]].astype(np.float32)
+    g["obs/tcp_pose"] = tcp_rows.astype(np.float32)
+    for name, t in frames.items():
+        g[f"obs/{name}_pos"] = np.tile(t[:3, 3] / 1000.0, (n, 1)).astype(np.float32)
+        g[f"obs/{name}_quat"] = np.tile(_quat_xyzw(t[:3, :3]), (n, 1)).astype(np.float32)
+        g[f"states/rigid_object/{name}/root_pose"] = np.tile(_pose7_world(t), (n, 1)).astype(np.float32)
+    poses = np.stack([_pose7_world(t) for t in part_path])
+    g["initial_state/rigid_object/M4_01/root_pose"] = poses[:1].astype(np.float32)
+    g["states/rigid_object/M4_01/root_pose"] = poses[1:].astype(np.float32)
+    g.attrs["success"] = False  # what the recorder writes after its reset-time overwrite
+    meta = {"steps": n, "kept": kept, "case": "nominal", "object_id": "M4_01", "product": 4,
+            "marks": marks or {}, "seat_tries": [{"ok": True}]}
+    if meta_attrs:
+        for k, v in meta.items():
+            g.attrs[k] = v if isinstance(v, (int, str, bool)) else json.dumps(v)
+    return meta
+
+
+@pytest.fixture
+def recorded(tmp_path):
+    """A pick-and-carry episode where the part sits 12 mm below the TCP, rolled 10 deg in the fingers."""
+    n = 40
+    hand = M.pose_to_matrix([0.0, 0.0, -12.0, 0.0, 0.0, 10.0])
+    tcp = np.array([[300.0 + 2 * k, -40.0, -280.0 + (5.0 if k > 20 else 0.0), -180.0, 0.0, 30.0] for k in range(n)])
+    seen = np.r_[tcp, tcp[-1:]]  # part[t] = what observation t saw; states row t = after action t = part[t + 1]
+    part = [M.pose_to_matrix(r) @ hand for r in seen]
+    grasp = M.pose_to_matrix(tcp[0])
+    seat = M.pose_to_matrix([420.0, 60.0, -300.0, -180.0, 0.0, 75.0])
+    frames = {"grasp_frame": grasp, "seat_frame": seat, "spot_frame": seat}
+    path = tmp_path / "product_4_build_x.hdf5"
+    with h5py.File(path, "w") as f:
+        _write_episode(f.create_group("data/demo_0"), part, tcp, frames, {"grasped": 10, "seated": 30}, True, True)
+        _write_episode(f.create_group("data/demo_1"), part, tcp, frames, {"grasped": 10, "seated": 30}, True, False)
+        m2 = _write_episode(f.create_group("data/demo_2"), part, tcp, frames, None, False, True)
+    m2["marks"] = {"grasped": 11, "seated": 31}
+    metas = [{"steps": n, "kept": True}, {"steps": n, "kept": False}, m2]
+    path.with_name(path.name + ".meta.jsonl").write_text("".join(json.dumps(m) + "\n" for m in metas))
+    return path, hand, part, frames
+
+
+def _identity_local(uid, body):
+    return body
+
+
+def test_read_recorded_uses_kept_and_meta_fallback(recorded):
+    path, hand, part, _ = recorded
+    demos = M.read_recorded(str(path), to_local=_identity_local)
+    assert [d.key for d in demos] == ["demo_0", "demo_2"]          # demo_1 not kept; success attr ignored
+    assert demos[1].marks == {"grasped": 11, "seated": 31}         # from meta.jsonl (file not annotated yet)
+    d = demos[0]
+    assert np.allclose(d.part[0], part[0], atol=1e-3)               # world m -> UF0 mm, z shift recovered
+    assert np.allclose(M.in_hand_at(d, 25), hand, atol=1e-3)        # obs[t] pairs with states[t - 1]
+
+
+def test_held_segment_frame_is_the_planned_seated_part_pose(recorded):
+    path, hand, part, frames = recorded
+    d = M.read_recorded(str(path), to_local=_identity_local)[0]
+    segs = M.demo_segments(d, ["grasped", "seated"], ["grasp_frame", "seat_frame", "seat_frame"], [False, True, True])
+    want = frames["seat_frame"] @ np.linalg.inv(frames["grasp_frame"]) @ part[0]
+    assert np.allclose(segs[1].frame_pose, want, atol=1e-3) and np.allclose(segs[1].in_hand, hand, atol=1e-3)
+    assert segs[0].in_hand is None and len(segs[0].rows) == 10
+
+
+def test_transform_held_moves_the_part_not_just_the_tcp():
+    rng = np.random.default_rng(1)
+    src_frame = M.pose_to_matrix([400.0, 0.0, -320.0, 0.0, 0.0, 20.0])
+    new_frame = M.pose_to_matrix([300.0, 150.0, -320.0, 0.0, 0.0, -100.0])
+    h_src = M.pose_to_matrix([0.4, -0.3, -12.0, 1.0, -0.5, 3.0])
+    h_new = M.pose_to_matrix([-0.6, 0.2, -11.5, -0.8, 0.4, 183.0])  # other pad, part pivoted the other way
+    rows = np.c_[np.tile([400.0, 0.0, -300.0], (5, 1)) + rng.normal(0, 3, (5, 3)), np.tile([-180.0, 0.0, 20.0], (5, 1)),
+                 np.ones(5)]
+    out = M.transform_held(rows, src_frame, new_frame, h_src, h_new)
+    for a, b in zip(rows, out):
+        part_src = np.linalg.inv(src_frame) @ M.pose_to_matrix(a[:6]) @ h_src
+        part_new = np.linalg.inv(new_frame) @ M.pose_to_matrix(b[:6]) @ h_new
+        assert np.allclose(part_src, part_new, atol=1e-9)
+
+
+def _rows(xyz, grip):
+    xyz = np.asarray(xyz, float)
+    return np.c_[xyz, np.tile([-180.0, 0.0, 0.0], (len(xyz), 1)), grip]
+
+
+def test_trim_to_corridor_drops_the_source_travel():
+    travel = [[87.0 + 40 * k, 0.0, 100.0] for k in range(8)]            # from home across the table
+    corridor = [[400.0, 5.0, 100.0 - 20 * k] for k in range(6)]          # down onto the pad
+    rows = _rows(travel + corridor + [[400.0, 5.0, 0.0]] * 3, np.r_[np.zeros(14), np.ones(3)])
+    out = GEN.trim_to_corridor(rows)
+    assert np.allclose(out[0, :3], [400.0, 5.0, 100.0]) and len(out) == 9
+
+
+def test_split_after_close_and_retreat_trim():
+    rows = _rows([[0, 0, 10], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 5]], [0, 0, 1, 1, 1])
+    head, tail = GEN.split_after_close(rows)
+    assert len(head) == 4 and len(tail) == 1
+    rel = _rows([[0, 0, 0], [0, 0, 0], [0, 0, 3], [0, 0, 6], [50, 0, 6]], [1, 0, 0, 0, 0])
+    assert len(GEN.trim_after_retreat(rel)) == 4                      # the move home is re-planned live
+
+
+def test_align_r_lands_on_the_planned_roll():
+    rows = _rows([[0, 0, 0]] * 3, [0, 0, 0])
+    rows[:, 5] = [170.0, 175.0, 178.0]
+    out = GEN.align_r(rows, -182.0, at=2)
+    assert np.allclose(out[:, 5], [-190.0, -185.0, -182.0])
+
+
+def test_reason_buckets_drop_numbers():
+    a = GEN.reason_key("EpisodeFailed: force guard: M4_02 normal_N 25.44 > 15.00 at step 270")
+    b = GEN.reason_key("EpisodeFailed: force guard: M4_02 normal_N 19.10 > 15.00 at step 12")
+    assert a == b and "25" not in a
+    assert GEN.reason_key("TcpError: no IK solution for TCP [1.0, 2.0]") == "TcpError: no IK solution for TCP"
+
+
+def test_export_accepts_on_agent3_kept():
+    pytest.importorskip("pandas")
+    from sim.assembly_lab.mimic.export_lerobot import accepted_attr
+
+    assert accepted_attr({"kept": "True", "success": False})
+    assert not accepted_attr({"kept": False, "success": True})
+    assert accepted_attr({"success": True}) and not accepted_attr({})
+
+
+def test_sources_skip_drop_tags_and_carry_drift(recorded, tmp_path):
+    path, *_ = recorded
+    sig, refs, held = ["grasped", "seated"], ["grasp_frame", "seat_frame", "seat_frame"], [False, True, True]
+    segs, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
+    assert counts["used"] == 2 and len(segs[1]) == 2
+    path.with_name(path.name + ".drop.json").write_text("[2]")
+    segs, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
+    assert counts["used"] == 1 and counts["skipped"] == {"drop tag": 1}
+    with h5py.File(path, "a") as f:
+        f["data/demo_0"].attrs["in_hand_drift_mm"] = json.dumps({"carry": 0.6, "contact": 0.1})
+    _, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
+    assert counts["used"] == 0 and counts["skipped"]["carry drift"] == 1
+    with h5py.File(path, "a") as f:
+        f["data/demo_0"].attrs["in_hand_drift_mm"] = json.dumps({"carry": 0.2, "pull": 2.0})
+    _, counts = M.load_sources([path], sig, refs, held, to_local=_identity_local)
+    assert counts["skipped"]["pull drift"] == 1
+
+
+def test_stage_seeds_copies_only_closed_files_with_drop_lists(tmp_path):
+    from sim.assembly_lab.mimic.stage_seeds import stage
+
+    demos = tmp_path / "demos"
+    (demos / "pick_insert").mkdir(parents=True)
+    for name in ("product_4_build_a_M4_01.hdf5", "product_4_build_b_M4_02.hdf5"):
+        (demos / "pick_insert" / name).write_bytes(b"x")
+        (demos / "pick_insert" / f"{name}.meta.jsonl").write_text(
+            json.dumps({"kept": True, "product": 4, "case": "nominal"}) + "\n"
+            + json.dumps({"kept": True, "product": 4, "case": "nominal"}) + "\n")
+    (demos / "run10_closed.txt").write_text("demos/pick_insert/product_4_build_a_M4_01.hdf5\n")
+    (demos / "run10_drop_tags.jsonl").write_text(json.dumps(
+        {"file": "demos/pick_insert/product_4_build_a_M4_01.hdf5", "meta_line": 1}) + "\n")
+    counts = stage(demos, tmp_path / "out", "run10_closed.txt", "run10_drop_tags.jsonl")
+    staged = sorted(p.name for p in (tmp_path / "out/pick_insert").iterdir())
+    assert staged == ["product_4_build_a_M4_01.hdf5", "product_4_build_a_M4_01.hdf5.drop.json",
+                      "product_4_build_a_M4_01.hdf5.meta.jsonl"]
+    assert json.loads((tmp_path / "out/pick_insert/product_4_build_a_M4_01.hdf5.drop.json").read_text()) == [1]
+    assert counts == {"pick_insert:4:nominal": 1}
+
+
+def test_chunk_paths_keep_worker_stats_at_the_base_name(tmp_path):
+    out = tmp_path / "pick_insert/p4/host_g3_w0.hdf5"
+    assert GEN.chunk_path(out, 0).name == "host_g3_w0_c000.hdf5"
+    assert GEN.chunk_path(out, 12).name == "host_g3_w0_c012.hdf5"
+    assert GEN.chunk_path(out, 3).stem.rsplit("_c", 1)[1] == "003"
+
+
+def test_pull_out_trims_only_free_space_subtasks():
+    from sim.assembly_lab.mimic.generate import SCENARIO, free_space_starts, plan_roll
+    from sim.assembly_lab.mimic.spec import load_spec
+
+    spec = load_spec()
+    assert free_space_starts(spec.skills["pull_out"].subtasks) == [True, False, True, False]
+    assert free_space_starts(spec.skills["pick_insert"].subtasks) == [True, True, False]
+    assert SCENARIO["pull_out"] == "fix_above" and SCENARIO["defect_drop"] == "defect"
+    assert free_space_starts(spec.skills["defect_drop"].subtasks) == [True, True, False]
+
+    plans = (SimpleNamespace(grasp_tcp=[0, 0, 0, 180, 0, 33.0]), SimpleNamespace(spot_tcp=[0, 0, 0, 180, 0, -90.0]))
+    assert plan_roll(plans, "grasp_frame") == 33.0 and plan_roll(plans, "spot_frame") == -90.0
+
+
+def test_validator_counts_frames_without_ffprobe(monkeypatch, tmp_path):
+    pytest.importorskip("pandas")
+    import sys
+
+    from sim.assembly_lab.mimic import validate_lerobot as V
+
+    monkeypatch.setattr(V.shutil, "which", lambda name: None)
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", SimpleNamespace(count_frames_and_secs=lambda p: (151, 30.2)))
+    assert V._video_frames(tmp_path / "x.mp4") == 151
+
+
+def test_env_manifest_md5_is_stamped_from_the_repo_copy(tmp_path):
+    from sim.assembly_lab.mimic.generate import env_manifest_md5
+
+    assert env_manifest_md5(tmp_path) == "unverified"
+    (tmp_path / "ENV_MANIFEST_MD5").write_text("dbcfe5fd48d73cde763ffdc4316291a5\n")
+    assert env_manifest_md5(tmp_path) == "dbcfe5fd48d73cde763ffdc4316291a5"
+
+
+def test_pull_drift_is_the_worst_slide_in_the_fingers():
+    from sim.assembly_lab.mimic.generate import pull_drift_mm
+
+    def obs(tcp_z, part_z):
+        return {"tcp_pose": [300, 0, tcp_z, 180, 0, 0], "sim": {"object_poses": {"M1_01": [300, 0, part_z, 0, 0, 0]}}}
+
+    before = obs(100, 50)
+    assert pull_drift_mm(before, [obs(110, 60), obs(120, 68), obs(130, 80)], "M1_01") == 2.0
+
+
+def test_closed_chunks_skip_the_one_a_running_worker_writes(tmp_path):
+    from sim.assembly_lab.mimic.run_generation import closed_chunks
+
+    d = tmp_path / "pick_insert" / "p4"
+    d.mkdir(parents=True)
+    for w in ("h_g0_w0", "h_g1_w0"):
+        (d / f"{w}.hdf5.stats.json").write_text("{}")
+        for k in range(3):
+            (d / f"{w}_c{k:03d}.hdf5").write_bytes(b"")
+            (d / f"{w}_c{k:03d}.hdf5.meta.jsonl").write_text("")
+    running = f"[--out {d / 'h_g0_w0.hdf5'} --target 5]"
+    got = [p.split("/")[-1] for p in closed_chunks(tmp_path, running)]
+    assert got == ["h_g0_w0_c000.hdf5", "h_g0_w0_c001.hdf5",
+                   "h_g1_w0_c000.hdf5", "h_g1_w0_c001.hdf5", "h_g1_w0_c002.hdf5"]
+
+
+def test_low_force_sources_are_preferred():
+    eye = np.eye(4)
+    low = M.SourceSegment("low", "M4_01", 4, 1, np.zeros((2, 7)), eye, None, 0.2)
+    high = M.SourceSegment("high", "M4_01", 4, 1, np.zeros((2, 7)), eye, None, 0.99)
+    rng = np.random.default_rng(0)
+    picks = [M.select_source([low, high], eye, "M4_01", 2, rng).demo for _ in range(400)]
+    assert 0.9 < picks.count("low") / 400 < 0.97          # weights 0.8 vs 0.05
+    peaks = np.array([[3.0, 1.0, 0.01, 0], [12.0, 2.25, 0.02, 0], [1.0, 4.5, 0.0, 0]])
+    assert M.force_ratio(peaks, 0, 2) == 0.8 and M.force_ratio(peaks, 0, 3) == 1.0 and M.force_ratio(None, 0, 3) == 0.0
+
+
+def test_rank_sources_tries_every_source_once():
+    eye = np.eye(4)
+    far = eye.copy()
+    far[0, 3] = 500.0
+    segs = [M.SourceSegment(f"d{i}", "M4_01", 4, 1, np.zeros((2, 7)), eye if i < 3 else far, None, 0.1 * i)
+            for i in range(5)]
+    order = [s.demo for s in M.rank_sources(segs, eye, "M4_01", 3, np.random.default_rng(1))]
+    assert sorted(order[:3]) == ["d0", "d1", "d2"] and sorted(order[3:]) == ["d3", "d4"]
+
+
+def test_stop_files_end_a_worker_between_attempts(tmp_path):
+    from sim.assembly_lab.mimic.generate import stop_requested
+
+    out = tmp_path / "g1" / "pick_insert" / "p4" / "h_g0_w0.hdf5"
+    out.parent.mkdir(parents=True)
+    assert not stop_requested(out)
+    out.with_name(out.name + ".stop").write_text("")
+    assert stop_requested(out)
+    out.with_name(out.name + ".stop").unlink()
+    (tmp_path / "g1" / "STOP").write_text("")
+    assert stop_requested(out)
+
+
+def test_loop_counts_attempts_and_rotates(tmp_path):
+    from sim.assembly_lab.mimic.generate import loop
+
+    outcomes = iter([{"status": "no_case", "reason": "x"}, {"status": "kept", "reason": "ok"},
+                     {"status": "failed", "reason": "GateFailed: precision gate: seat_xy_mm=1.2"},
+                     {"status": "kept", "reason": "ok"}])
+
+    class FakeGen:
+        source_counts, rotations = {}, 0
+
+        def parts(self):
+            return ["M4_01"]
+
+        def attempt(self, part):
+            return next(outcomes)
+
+        def rotate(self):
+            self.rotations += 1
+
+    a = SimpleNamespace(skill="pick_insert", product=4, target=2, max_attempts=10, out=tmp_path / "g1/x/p4/w.hdf5")
+    gen = FakeGen()
+    stats = loop(gen, a, tmp_path / "w_e00.hdf5", rotate_every=1)
+    assert (stats["attempts"], stats["accepted"], stats["no_case"], gen.rotations) == (3, 2, 1, 3)
+    assert json.loads((tmp_path / "w_e00.hdf5.stats.json").read_text())["accepted"] == 2
+
+
+def test_seat_rows_get_the_runner_seat_phase():
+    from sim.assembly_lab.mimic.generate import split_seat_rows
+
+    z = np.array([60.0, 40.0, 20.0, 10.6, 10.2, 11.5, 10.05, 9.95])  # seated TCP z = 10; one bounce back up
+    rows = np.zeros((len(z), 7))
+    rows[:, 2] = z
+    head, tail = split_seat_rows(rows, 10.0)
+    assert list(head[:, 2]) == [60.0, 40.0, 20.0, 10.6, 10.2, 11.5] and list(tail[:, 2]) == [10.05, 9.95]
+    assert len(split_seat_rows(rows[:3], 10.0)[1]) == 0

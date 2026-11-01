@@ -36,7 +36,7 @@
             "items": {
               "$ref": "common.schema.json#/$defs/object_id"
             },
-            "description": "objects whose shape differs by <= 2 mm (wrist close-up needed)"
+            "description": "visually confusable objects that require a wrist close-up, including near-surface matches and same-envelope size twins"
           }
         }
       }

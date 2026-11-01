@@ -1,13 +1,5 @@
-"""Camera geometry for the cell (numpy only): base-frame points <-> pixels with the real cameras' calibration.
-
-    from calibration.geometry import load, project, pixel_to_base
-    cams = load()
-    uv = project(cams["table"], [[0.42, -0.10, -0.005]])          # base metres -> pixels
-    xyz = pixel_to_base(cams["table"], (960, 540), z=-0.0051)      # pixel -> point on the plane z (base metres)
-    pts = depth_to_base(cams["table_depth"], obs["depth"]["table"])  # depth image (mm) -> (N, 3) base metres
-    pts = depth_to_base(cams["wrist_depth"], obs["depth"]["wrist"], joints=obs["joints"])  # the wrist moves: needs the joints
-
-UF0 (the frame of obs["tcp_pose"] and "tcp" actions) is the base frame shifted down 330 mm: x, y equal, z_uf0 = z_base - 330 mm.
+"""Camera geometry for the cell: map base-frame points to pixels and back.
+Authored by Shritej Gunda.
 """
 from __future__ import annotations
 

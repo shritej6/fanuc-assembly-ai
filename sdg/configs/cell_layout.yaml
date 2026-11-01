@@ -1,0 +1,30 @@
+# Table zones for synthetic scenes and the real cell, in the UF0 frame (mm, deg).
+# Authored by Shritej Gunda.
+
+frame: UF0
+table_z: -335.0            # table surface in UF0 (z_UF0 = z_base - 330; base face ~5 mm above the table)
+reach_radius_max: 490.0    # keep every object centre inside this radius from the robot base
+reach_radius_min: 180.0    # too close to the base -> awkward wrist / J1 shadow
+
+work_area:                 # bases and loose parts
+  x: [220.0, 470.0]
+  y: [-270.0, 270.0]
+
+spare_store:               # 6 fixed slots on the -y side (high-risk spares only)
+  slot_pitch: 50.0
+  slots:
+    - {id: S1, x: 195.0, y: -330.0}
+    - {id: S2, x: 245.0, y: -330.0}
+    - {id: S3, x: 295.0, y: -330.0}
+    - {id: S4, x: 195.0, y: -380.0}
+    - {id: S5, x: 245.0, y: -380.0}
+    - {id: S6, x: 295.0, y: -380.0}
+
+reject_zone:               # +y side; rejected parts are dropped here
+  x: [190.0, 310.0]
+  y: [320.0, 390.0]
+
+clearance:
+  base_gap_mm: 25.0        # bases never touch each other (fingers need room around a base)
+  part_gap_mm: 0.0         # loose parts may touch (clustered scenes)
+  base_to_part_gap_mm: 8.0

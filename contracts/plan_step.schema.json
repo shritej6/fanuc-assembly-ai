@@ -73,11 +73,22 @@
         "number",
         "null"
       ],
-      "description": "90 for the connector housings"
+      "description": "T29 grasp-frame offset added to measured part yaw for TCP r; closing-axis X uses 90 and Y uses 0. Null when the action has no part grasp."
     },
     "attempt": {
       "type": "integer",
       "minimum": 1
+    },
+    "error_code": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/error_code"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "why the step was planned (move_to_reject, take_spare, andon); null otherwise"
     }
   }
 }

@@ -23,11 +23,13 @@ from pathlib import Path
 
 from cell_client import CellClient, run_all
 from policy import Policy
+from trial_runner import run_cell_trials
 
 HERE = Path(__file__).resolve().parent
 SUBMISSION = HERE / "submission" / "submission.yaml"
 PLACEMENT = HERE / "submission" / "placement.yaml"  # each rollout's objects and prompt, when they change
 REQUEST = HERE / ".request.json"  # the request id and its secret, written by --submit (keep it private)
+LOG = logging.getLogger(__name__)
 
 
 def start_mock(trials: int, trial_s: float, instruction: str):
@@ -95,7 +97,11 @@ def verdict(mock, checked: Checked) -> int:
     if n_act == 0:
         print("✗ Not ready: no action reached the cell. Does act() return a target?")
         return 1
-    print("✓ Ready for the real robot")
+    if getattr(checked.policy, "mock_only", False):
+        print("✓ T09 local-mock orchestration completed")
+        print("  Mock-only perception and calibration were used; this is not real-robot readiness.")
+    else:
+        print("✓ Ready for the real robot")
     took = "" if act_s is None else (" · act() takes " + ("under 1 ms" if act_s < 0.001 else f"{act_s * 1000:.0f} ms"
                                                           if act_s < 1 else f"{act_s:.1f} s (fine: the arm waits for it)"))
     print(f"  {len(mock.rollouts)} rollouts · {n_act} actions · 0 rejected{took}")
@@ -152,7 +158,7 @@ def status(url: str, ca: str | None, wait: bool) -> dict:
         st = cell.request_status(req["request_id"], req["secret"])
         if st["status"] != "pending" or not wait:
             return st
-        logging.info("request %s is waiting for the operator's approval ...", req["request_id"])
+        LOG.info("request %s is waiting for the operator's approval ...", req["request_id"])
         time.sleep(15)
 
 
@@ -183,8 +189,7 @@ def download(url: str, ca: str | None) -> None:
             sys.exit("no recorded rollouts to download yet")
         r.raise_for_status()
         with open(tmp, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
+            f.writelines(r.iter_content(1 << 20))
     if dest.exists():
         shutil.rmtree(dest)  # the run's latest recording replaces the older copy
     with tarfile.open(tmp) as tar:
@@ -192,7 +197,7 @@ def download(url: str, ca: str | None) -> None:
             tar.extractall(root, filter="data")
         except TypeError:  # Python before 3.10.12: no filters; accept only plain files inside the run's folder
             names = tar.getmembers()
-            if any(not (m.isfile() or m.isdir()) or not Path(m.name).parts[:1] == (st["run_id"],) or ".." in Path(m.name).parts
+            if any(not (m.isfile() or m.isdir()) or Path(m.name).parts[:1] != (st["run_id"],) or ".." in Path(m.name).parts
                    for m in names):
                 sys.exit("the download looks wrong; ask us in Slack")
             tar.extractall(root, members=names)
@@ -230,12 +235,15 @@ def main() -> None:
         url, mock = start_mock(args.trials, args.trial_s, args.instruction)
         logging.getLogger().setLevel(logging.ERROR)  # the summary below says what matters
         print(f"Checking your policy on a local mock of the cell ({args.trials} rollouts, no robot) ...")
-        checked = Checked(Policy(args.checkpoint))
+        policy = Policy(args.checkpoint, runtime="mock")
+        checked = Checked(policy)
         try:
             run_all(CellClient(url, "mock", args.ca), checked)
-        except Exception:  # noqa: BLE001  (reported by verdict)
+        except Exception:  # reported by verdict
             if checked.error is None:
                 raise
+        finally:
+            policy.close()
         sys.exit(verdict(mock, checked))
     if args.token:
         url, token = args.url, args.token
@@ -244,10 +252,18 @@ def main() -> None:
         if st["status"] != "approved":
             sys.exit(f"request {st['request_id']} was {st['status']}: {st.get('reason') or 'ask us in Slack'}")
         url, token = json.loads(REQUEST.read_text()).get("url", args.url), st["token"]
-        logging.info("request %s approved: run %s", st["request_id"], st["run_id"])
+        LOG.info("request %s approved: run %s", st["request_id"], st["run_id"])
         if st.get("view_key"):
-            logging.info(results_link(st))
-    run_all(CellClient(url, token, args.ca), Policy(args.checkpoint))
+            LOG.info(results_link(st))
+    policy = Policy(args.checkpoint, runtime="cell")
+    try:
+        run_cell_trials(
+            CellClient(url, token, args.ca),
+            policy,
+            run_all_fn=run_all,
+        )
+    finally:
+        policy.close()
 
 
 if __name__ == "__main__":

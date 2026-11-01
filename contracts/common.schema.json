@@ -128,6 +128,22 @@
         "side",
         "wrist"
       ]
+    },
+    "error_code": {
+      "description": "Team V error outcomes: the system reports one of these instead of guessing. Meanings in contracts/README.md.",
+      "enum": [
+        "WRONG_MODEL",
+        "WRONG_PART",
+        "WRONG_ORIENTATION",
+        "WRONG_FRONT_BACK",
+        "LOOKALIKE_UNRESOLVED",
+        "GUARD_TOPPLED",
+        "GRIP_FEATURE_INACCESSIBLE",
+        "HOUSING_NOT_SEATED",
+        "OCCLUDED",
+        "COLLISION_RISK",
+        "UNVERIFIED_MODEL3_GEOMETRY"
+      ]
     }
   }
 }

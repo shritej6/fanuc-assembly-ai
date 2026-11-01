@@ -76,6 +76,14 @@
           ]
         }
       }
+    },
+    "error_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/error_code"
+      },
+      "description": "every error outcome that applies; empty or absent when the part is verified"
     }
   }
 }

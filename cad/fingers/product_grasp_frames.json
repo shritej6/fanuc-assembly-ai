@@ -1,0 +1,626 @@
+{
+  "M1_01_Housing": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -19.2619,
+      94.5
+    ],
+    "contact_centre_world": "(0.00, -21.06, 10.25)"
+  },
+  "M1_02_Spindle_Carrier": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      104.5
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.25)"
+  },
+  "M1_03_Rotary_Knob": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      118.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 33.75)"
+  },
+  "M1_04_Rear_Guard": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.3,
+      118.0
+    ],
+    "contact_centre_world": "(0.00, 17.50, 33.75)"
+  },
+  "M2_01_Housing": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -19.2619,
+      94.5
+    ],
+    "contact_centre_world": "(0.00, -21.06, 10.25)"
+  },
+  "M2_02_Diffuser_Carrier": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      104.5
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.25)"
+  },
+  "M2_03_Indicator_Cap": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      116.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 31.75)"
+  },
+  "M2_04_Rear_Guard": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.3,
+      118.0
+    ],
+    "contact_centre_world": "(0.00, 17.50, 33.75)"
+  },
+  "M3_01_Housing": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -19.2619,
+      94.5
+    ],
+    "contact_centre_world": "(0.00, -21.06, 10.25)"
+  },
+  "M3_02_Actuator_Stem": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      104.5
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.25)"
+  },
+  "M3_03_Button_Cap": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      114.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 29.75)"
+  },
+  "M3_04_Rear_Guard": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.3,
+      118.0
+    ],
+    "contact_centre_world": "(0.00, 17.50, 33.75)"
+  },
+  "M4_01_Housing": {
+    "closing_axis": "Y",
+    "rotation_gripper_to_world": [
+      [
+        -1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      22.2619,
+      0.0,
+      96.5
+    ],
+    "contact_centre_world": "(24.06, 0.00, 12.25)"
+  },
+  "M4_02_Sensor_Insert": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      105.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.75)"
+  },
+  "M4_03_Upper_Guide": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.8057,
+      111.0
+    ],
+    "contact_centre_world": "(0.00, 18.01, 26.75)"
+  },
+  "M4_04_Top_Lock": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -9.6963,
+      115.5
+    ],
+    "contact_centre_world": "(0.00, -11.50, 31.25)"
+  },
+  "M5_01_Housing": {
+    "closing_axis": "Y",
+    "rotation_gripper_to_world": [
+      [
+        -1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      22.2619,
+      0.0,
+      96.5
+    ],
+    "contact_centre_world": "(24.06, 0.00, 12.25)"
+  },
+  "M5_02_IO_Insert": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      105.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.75)"
+  },
+  "M5_03_Alignment_Guide": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.8057,
+      111.0
+    ],
+    "contact_centre_world": "(0.00, 18.01, 26.75)"
+  },
+  "M5_04_Service_Lock": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -9.6963,
+      115.5
+    ],
+    "contact_centre_world": "(0.00, -11.50, 31.25)"
+  },
+  "M6_01_Housing": {
+    "closing_axis": "Y",
+    "rotation_gripper_to_world": [
+      [
+        -1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      22.2619,
+      0.0,
+      96.5
+    ],
+    "contact_centre_world": "(24.06, 0.00, 12.25)"
+  },
+  "M6_02_Power_Insert": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      1.8,
+      105.0
+    ],
+    "contact_centre_world": "(0.00, 0.00, 20.75)"
+  },
+  "M6_03_Power_Guide": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      19.8057,
+      111.0
+    ],
+    "contact_centre_world": "(0.00, 18.01, 26.75)"
+  },
+  "M6_04_Power_Lock": {
+    "closing_axis": "X",
+    "rotation_gripper_to_world": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        -1
+      ]
+    ],
+    "translation_mm": [
+      0.0,
+      -9.6963,
+      115.5
+    ],
+    "contact_centre_world": "(0.00, -11.50, 31.25)"
+  }
+}
