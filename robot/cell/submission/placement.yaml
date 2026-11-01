@@ -7,21 +7,21 @@
 rollouts:
 - objects:
     F05 base (IO Connector Fixture, product 5): [275, -123, -34]
-    M5_01 Housing: [358, 193, -30]
+    M5_01 Housing: [358, 193, 0]
     M5_02 IO Insert: [305, 36, -86]
     M5_03 Alignment Guide: [302, 115, -92]
     M5_04 Service Lock: [383, 12, -79]
   prompt: Assemble product 5 on its base. Reject any part that is defective, fallen or not in this product, and use a spare from the store instead.
 - objects:
     F05 base (IO Connector Fixture, product 5): [275, -123, -34]
-    M5_01 Housing: [358, 193, -30]
+    M5_01 Housing: [358, 193, 0]
     M5_02 IO Insert: [305, 36, -86]
     M5_03 Alignment Guide: [302, 115, -92]
     M5_04 Service Lock: [383, 12, -79]
   prompt: Assemble product 5 on its base. Reject any part that is defective, fallen or not in this product, and use a spare from the store instead.
 - objects:
     F05 base (IO Connector Fixture, product 5): [275, -123, -34]
-    M5_01 Housing: [358, 193, -30]
+    M5_01 Housing: [358, 193, 0]
     M5_02 IO Insert: [305, 36, -86]
     M5_03 Alignment Guide: [302, 115, -92]
     M5_04 Service Lock: [383, 12, -79]
