@@ -324,6 +324,8 @@ def _load_model(config: dict[str, Any], labels: list[str]):
         label2id=label2id,
         **common,
     )
+    if model_config.get("init_from"):
+        return processor, _init_model(model_config, id2label), id2label
     model = RTDetrForObjectDetection.from_pretrained(
         model_config["name"],
         config=architecture,
@@ -331,6 +333,23 @@ def _load_model(config: dict[str, Any], labels: list[str]):
         **common,
     )
     return processor, model, id2label
+
+
+def _init_model(model_config: dict[str, Any], id2label: dict[int, str]):
+    """Continue from a trained detector (fine-tune): its weights must hash to init_sha256 and keep the same classes."""
+    import hashlib
+
+    from transformers import RTDetrForObjectDetection
+
+    init = Path(model_config["init_from"])
+    weights = init / "model.safetensors"
+    digest = hashlib.sha256(weights.read_bytes()).hexdigest() if weights.is_file() else "missing"
+    if digest != model_config["init_sha256"]:
+        raise DetectorTrainError(f"{weights}: sha256 {digest} is not init_sha256 {model_config['init_sha256']}")
+    model = RTDetrForObjectDetection.from_pretrained(init)
+    if {int(k): v for k, v in model.config.id2label.items()} != id2label:
+        raise DetectorTrainError(f"{init} was trained on different classes than this manifest")
+    return model
 
 
 def _load_datasets(args: argparse.Namespace, config: dict[str, Any], processor: Any):
