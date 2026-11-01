@@ -1,0 +1,2631 @@
+{
+ "env_audit": "pip-audit --strict: no known vulnerabilities (torch 2.14.1+cu126, anomalib 2.7.0)",
+ "parts": {
+  "M1_01": {
+   "counts": {
+    "test_bad": 38,
+    "test_good": 96,
+    "val_bad": 41,
+    "val_good": 84
+   },
+   "max_val_fpr": 0.02,
+   "part": "M1_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7299890350877193,
+    "bad": 38,
+    "caught": 1,
+    "false_alarms": 4,
+    "fpr": 0.041666666666666664,
+    "good": 96,
+    "tpr": 0.02631578947368421
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.02702702702702703,
+     "good": 74
+    },
+    "U": {
+     "fpr": 0.09090909090909091,
+     "good": 22
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 38,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 96,
+     "threshold": 57.105648040771484,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 38,
+     "caught": 1,
+     "false_alarms": 4,
+     "fpr": 0.041666666666666664,
+     "good": 96,
+     "threshold": 53.08784484863281,
+     "tpr": 0.02631578947368421
+    },
+    "0.05": {
+     "bad": 38,
+     "caught": 3,
+     "false_alarms": 7,
+     "fpr": 0.07291666666666667,
+     "good": 96,
+     "threshold": 51.65309143066406,
+     "tpr": 0.07894736842105263
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.68125,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8318452380952381,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.8184523809523809,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.7621527777777778,
+     "bad": 6,
+     "tpr": 0.16666666666666666
+    },
+    "snapped_tab": {
+     "auroc": 0.7333333333333333,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.5677083333333334,
+     "bad": 8,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 53.08784484863281,
+   "train_good": 590,
+   "val": {
+    "bad": 41,
+    "caught": 0,
+    "false_alarms": 1,
+    "fpr": 0.011904761904761904,
+    "good": 84,
+    "tpr": 0.0
+   },
+   "val_auroc": 0.6422764227642277
+  },
+  "M1_02": {
+   "counts": {
+    "test_bad": 35,
+    "test_good": 85,
+    "val_bad": 42,
+    "val_good": 97
+   },
+   "max_val_fpr": 0.02,
+   "part": "M1_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6900840336134454,
+    "bad": 35,
+    "caught": 1,
+    "false_alarms": 3,
+    "fpr": 0.03529411764705882,
+    "good": 85,
+    "tpr": 0.02857142857142857
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.03125,
+     "good": 64
+    },
+    "U": {
+     "fpr": 0.047619047619047616,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 35,
+     "caught": 0,
+     "false_alarms": 2,
+     "fpr": 0.023529411764705882,
+     "good": 85,
+     "threshold": 53.13982391357422,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 35,
+     "caught": 1,
+     "false_alarms": 3,
+     "fpr": 0.03529411764705882,
+     "good": 85,
+     "threshold": 50.845497131347656,
+     "tpr": 0.02857142857142857
+    },
+    "0.05": {
+     "bad": 35,
+     "caught": 5,
+     "false_alarms": 8,
+     "fpr": 0.09411764705882353,
+     "good": 85,
+     "threshold": 44.487060546875,
+     "tpr": 0.14285714285714285
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6453781512605042,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9411764705882353,
+     "bad": 5,
+     "tpr": 0.2
+    },
+    "scale_103": {
+     "auroc": 0.6470588235294118,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5617647058823529,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8773109243697479,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.4264705882352941,
+     "bad": 4,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 50.845497131347656,
+   "train_good": 578,
+   "val": {
+    "bad": 42,
+    "caught": 2,
+    "false_alarms": 1,
+    "fpr": 0.010309278350515464,
+    "good": 97,
+    "tpr": 0.047619047619047616
+   },
+   "val_auroc": 0.7415316642120766
+  },
+  "M1_03": {
+   "counts": {
+    "test_bad": 43,
+    "test_good": 91,
+    "val_bad": 37,
+    "val_good": 78
+   },
+   "max_val_fpr": 0.02,
+   "part": "M1_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6825964732941477,
+    "bad": 43,
+    "caught": 0,
+    "false_alarms": 4,
+    "fpr": 0.04395604395604396,
+    "good": 91,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.041666666666666664,
+     "good": 72
+    },
+    "U": {
+     "fpr": 0.05263157894736842,
+     "good": 19
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 43,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 91,
+     "threshold": 57.34193420410156,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 43,
+     "caught": 0,
+     "false_alarms": 4,
+     "fpr": 0.04395604395604396,
+     "good": 91,
+     "threshold": 51.773643493652344,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 43,
+     "caught": 0,
+     "false_alarms": 4,
+     "fpr": 0.04395604395604396,
+     "good": 91,
+     "threshold": 51.42949295043945,
+     "tpr": 0.0
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6527472527472528,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9076923076923077,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.5934065934065934,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6230769230769231,
+     "bad": 10,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8069073783359497,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.612942612942613,
+     "bad": 9,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 51.773643493652344,
+   "train_good": 581,
+   "val": {
+    "bad": 37,
+    "caught": 3,
+    "false_alarms": 1,
+    "fpr": 0.01282051282051282,
+    "good": 78,
+    "tpr": 0.08108108108108109
+   },
+   "val_auroc": 0.7130977130977131
+  },
+  "M1_04": {
+   "counts": {
+    "test_bad": 74,
+    "test_good": 206,
+    "val_bad": 94,
+    "val_good": 179
+   },
+   "max_val_fpr": 0.02,
+   "part": "M1_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7442928365258462,
+    "bad": 74,
+    "caught": 2,
+    "false_alarms": 0,
+    "fpr": 0.0,
+    "good": 206,
+    "tpr": 0.02702702702702703
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 93
+    },
+    "T": {
+     "fpr": 0.0,
+     "good": 99
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 14
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 74,
+     "caught": 2,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 206,
+     "threshold": 58.570125579833984,
+     "tpr": 0.02702702702702703
+    },
+    "0.02": {
+     "bad": 74,
+     "caught": 2,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 206,
+     "threshold": 57.59556579589844,
+     "tpr": 0.02702702702702703
+    },
+    "0.05": {
+     "bad": 74,
+     "caught": 5,
+     "false_alarms": 6,
+     "fpr": 0.02912621359223301,
+     "good": 206,
+     "threshold": 54.18886184692383,
+     "tpr": 0.06756756756756757
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.8936084142394822,
+     "bad": 12,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.6619593998234775,
+     "bad": 11,
+     "tpr": 0.09090909090909091
+    },
+    "scale_103": {
+     "auroc": 0.6881067961165048,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5634304207119741,
+     "bad": 15,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.9432412247946228,
+     "bad": 13,
+     "tpr": 0.07692307692307693
+    },
+    "warp": {
+     "auroc": 0.7642163661581137,
+     "bad": 7,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 57.59556579589844,
+   "train_good": 569,
+   "val": {
+    "bad": 94,
+    "caught": 1,
+    "false_alarms": 3,
+    "fpr": 0.01675977653631285,
+    "good": 179,
+    "tpr": 0.010638297872340425
+   },
+   "val_auroc": 0.6765719719481754
+  },
+  "M2_01": {
+   "counts": {
+    "test_bad": 34,
+    "test_good": 103,
+    "val_bad": 48,
+    "val_good": 100
+   },
+   "max_val_fpr": 0.02,
+   "part": "M2_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7227298686464877,
+    "bad": 34,
+    "caught": 2,
+    "false_alarms": 6,
+    "fpr": 0.05825242718446602,
+    "good": 103,
+    "tpr": 0.058823529411764705
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.07407407407407407,
+     "good": 81
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 22
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 34,
+     "caught": 2,
+     "false_alarms": 4,
+     "fpr": 0.038834951456310676,
+     "good": 103,
+     "threshold": 53.94784164428711,
+     "tpr": 0.058823529411764705
+    },
+    "0.02": {
+     "bad": 34,
+     "caught": 2,
+     "false_alarms": 6,
+     "fpr": 0.05825242718446602,
+     "good": 103,
+     "threshold": 52.95040512084961,
+     "tpr": 0.058823529411764705
+    },
+    "0.05": {
+     "bad": 34,
+     "caught": 2,
+     "false_alarms": 8,
+     "fpr": 0.07766990291262135,
+     "good": 103,
+     "threshold": 51.745121002197266,
+     "tpr": 0.058823529411764705
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.683495145631068,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8543689320388349,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6158113730929264,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6148867313915858,
+     "bad": 3,
+     "tpr": 0.3333333333333333
+    },
+    "snapped_tab": {
+     "auroc": 0.7766990291262136,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.7682038834951457,
+     "bad": 8,
+     "tpr": 0.125
+    }
+   },
+   "threshold": 52.95040512084961,
+   "train_good": 562,
+   "val": {
+    "bad": 48,
+    "caught": 1,
+    "false_alarms": 2,
+    "fpr": 0.02,
+    "good": 100,
+    "tpr": 0.020833333333333332
+   },
+   "val_auroc": 0.68625
+  },
+  "M2_02": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 43,
+    "test_good": 81,
+    "val_bad": 39,
+    "val_good": 85
+   },
+   "max_val_fpr": 0.02,
+   "part": "M2_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7117427505024404,
+    "bad": 43,
+    "caught": 0,
+    "false_alarms": 4,
+    "fpr": 0.04938271604938271,
+    "good": 81,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.034482758620689655,
+     "good": 58
+    },
+    "U": {
+     "fpr": 0.08695652173913043,
+     "good": 23
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 43,
+     "caught": 0,
+     "false_alarms": 4,
+     "fpr": 0.04938271604938271,
+     "good": 81,
+     "threshold": 52.01966094970703,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 43,
+     "caught": 0,
+     "false_alarms": 4,
+     "fpr": 0.04938271604938271,
+     "good": 81,
+     "threshold": 51.7432746887207,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 43,
+     "caught": 7,
+     "false_alarms": 5,
+     "fpr": 0.06172839506172839,
+     "good": 81,
+     "threshold": 48.42024230957031,
+     "tpr": 0.16279069767441862
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6024691358024692,
+     "bad": 10,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9453262786596119,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6450617283950617,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6735253772290809,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8847736625514403,
+     "bad": 3,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.6810699588477366,
+     "bad": 6,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 51.7432746887207,
+   "train_good": 589,
+   "val": {
+    "bad": 39,
+    "caught": 3,
+    "false_alarms": 1,
+    "fpr": 0.011764705882352941,
+    "good": 85,
+    "tpr": 0.07692307692307693
+   },
+   "val_auroc": 0.7318250377073906
+  },
+  "M2_03": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 35,
+    "test_good": 92,
+    "val_bad": 43,
+    "val_good": 85
+   },
+   "max_val_fpr": 0.02,
+   "part": "M2_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7546583850931677,
+    "bad": 35,
+    "caught": 1,
+    "false_alarms": 0,
+    "fpr": 0.0,
+    "good": 92,
+    "tpr": 0.02857142857142857
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 78
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 14
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 35,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 92,
+     "threshold": 60.83100891113281,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 35,
+     "caught": 1,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 92,
+     "threshold": 59.40141296386719,
+     "tpr": 0.02857142857142857
+    },
+    "0.05": {
+     "bad": 35,
+     "caught": 4,
+     "false_alarms": 1,
+     "fpr": 0.010869565217391304,
+     "good": 92,
+     "threshold": 53.8023567199707,
+     "tpr": 0.11428571428571428
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6231884057971014,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9875776397515528,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6130434782608696,
+     "bad": 5,
+     "tpr": 0.2
+    },
+    "scale_97": {
+     "auroc": 0.7934782608695652,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8351449275362319,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.6195652173913043,
+     "bad": 6,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 59.40141296386719,
+   "train_good": 598,
+   "val": {
+    "bad": 43,
+    "caught": 0,
+    "false_alarms": 1,
+    "fpr": 0.011764705882352941,
+    "good": 85,
+    "tpr": 0.0
+   },
+   "val_auroc": 0.6596443228454172
+  },
+  "M2_04": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 82,
+    "test_good": 198,
+    "val_bad": 82,
+    "val_good": 173
+   },
+   "max_val_fpr": 0.02,
+   "part": "M2_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6608770633160878,
+    "bad": 82,
+    "caught": 1,
+    "false_alarms": 4,
+    "fpr": 0.020202020202020204,
+    "good": 198,
+    "tpr": 0.012195121951219513
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.025974025974025976,
+     "good": 77
+    },
+    "T": {
+     "fpr": 0.02,
+     "good": 100
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 82,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 198,
+     "threshold": 60.16380310058594,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 82,
+     "caught": 1,
+     "false_alarms": 4,
+     "fpr": 0.020202020202020204,
+     "good": 198,
+     "threshold": 54.437400817871094,
+     "tpr": 0.012195121951219513
+    },
+    "0.05": {
+     "bad": 82,
+     "caught": 16,
+     "false_alarms": 16,
+     "fpr": 0.08080808080808081,
+     "good": 198,
+     "threshold": 47.87758255004883,
+     "tpr": 0.1951219512195122
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.7359963269054178,
+     "bad": 11,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.726010101010101,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.4738562091503268,
+     "bad": 17,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5450937950937951,
+     "bad": 14,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.9107744107744108,
+     "bad": 12,
+     "tpr": 0.08333333333333333
+    },
+    "warp": {
+     "auroc": 0.6553030303030303,
+     "bad": 12,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 54.437400817871094,
+   "train_good": 576,
+   "val": {
+    "bad": 82,
+    "caught": 1,
+    "false_alarms": 3,
+    "fpr": 0.017341040462427744,
+    "good": 173,
+    "tpr": 0.012195121951219513
+   },
+   "val_auroc": 0.7136613562667419
+  },
+  "M3_01": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 40,
+    "test_good": 94,
+    "val_bad": 39,
+    "val_good": 92
+   },
+   "max_val_fpr": 0.02,
+   "part": "M3_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6539893617021276,
+    "bad": 40,
+    "caught": 0,
+    "false_alarms": 3,
+    "fpr": 0.031914893617021274,
+    "good": 94,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0273972602739726,
+     "good": 73
+    },
+    "U": {
+     "fpr": 0.047619047619047616,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 40,
+     "caught": 0,
+     "false_alarms": 2,
+     "fpr": 0.02127659574468085,
+     "good": 94,
+     "threshold": 56.73881912231445,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 40,
+     "caught": 0,
+     "false_alarms": 3,
+     "fpr": 0.031914893617021274,
+     "good": 94,
+     "threshold": 55.889739990234375,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 40,
+     "caught": 0,
+     "false_alarms": 3,
+     "fpr": 0.031914893617021274,
+     "good": 94,
+     "threshold": 53.556785583496094,
+     "tpr": 0.0
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.5714285714285714,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8257978723404256,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6322188449848024,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5440729483282675,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8039513677811551,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.4228723404255319,
+     "bad": 4,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 55.889739990234375,
+   "train_good": 566,
+   "val": {
+    "bad": 39,
+    "caught": 2,
+    "false_alarms": 1,
+    "fpr": 0.010869565217391304,
+    "good": 92,
+    "tpr": 0.05128205128205128
+   },
+   "val_auroc": 0.6142697881828316
+  },
+  "M3_02": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 41,
+    "test_good": 83,
+    "val_bad": 36,
+    "val_good": 77
+   },
+   "max_val_fpr": 0.02,
+   "part": "M3_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6326770496620628,
+    "bad": 41,
+    "caught": 0,
+    "false_alarms": 2,
+    "fpr": 0.024096385542168676,
+    "good": 83,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.015625,
+     "good": 64
+    },
+    "U": {
+     "fpr": 0.05263157894736842,
+     "good": 19
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 41,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.012048192771084338,
+     "good": 83,
+     "threshold": 59.70284652709961,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 41,
+     "caught": 0,
+     "false_alarms": 2,
+     "fpr": 0.024096385542168676,
+     "good": 83,
+     "threshold": 57.07719039916992,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 41,
+     "caught": 1,
+     "false_alarms": 7,
+     "fpr": 0.08433734939759036,
+     "good": 83,
+     "threshold": 50.632747650146484,
+     "tpr": 0.024390243902439025
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.43029259896729777,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.7518072289156627,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.5281124497991968,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6894243641231593,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7969018932874354,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.6024096385542169,
+     "bad": 7,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 57.07719039916992,
+   "train_good": 601,
+   "val": {
+    "bad": 36,
+    "caught": 1,
+    "false_alarms": 1,
+    "fpr": 0.012987012987012988,
+    "good": 77,
+    "tpr": 0.027777777777777776
+   },
+   "val_auroc": 0.746031746031746
+  },
+  "M3_03": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 39,
+    "test_good": 88,
+    "val_bad": 38,
+    "val_good": 112
+   },
+   "max_val_fpr": 0.02,
+   "part": "M3_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6789044289044289,
+    "bad": 39,
+    "caught": 0,
+    "false_alarms": 0,
+    "fpr": 0.0,
+    "good": 88,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 70
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 18
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 39,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 88,
+     "threshold": 55.17143249511719,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 39,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 88,
+     "threshold": 54.436309814453125,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 39,
+     "caught": 2,
+     "false_alarms": 2,
+     "fpr": 0.022727272727272728,
+     "good": 88,
+     "threshold": 48.616825103759766,
+     "tpr": 0.05128205128205128
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.7992424242424242,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8598484848484849,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.5681818181818182,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.8522727272727273,
+     "bad": 3,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.5610795454545454,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.47045454545454546,
+     "bad": 5,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 54.436309814453125,
+   "train_good": 560,
+   "val": {
+    "bad": 38,
+    "caught": 2,
+    "false_alarms": 2,
+    "fpr": 0.017857142857142856,
+    "good": 112,
+    "tpr": 0.05263157894736842
+   },
+   "val_auroc": 0.650140977443609
+  },
+  "M3_04": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 81,
+    "test_good": 194,
+    "val_bad": 78,
+    "val_good": 198
+   },
+   "max_val_fpr": 0.02,
+   "part": "M3_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6582665139366171,
+    "bad": 81,
+    "caught": 2,
+    "false_alarms": 4,
+    "fpr": 0.020618556701030927,
+    "good": 194,
+    "tpr": 0.024691358024691357
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 78
+    },
+    "T": {
+     "fpr": 0.031578947368421054,
+     "good": 95
+    },
+    "U": {
+     "fpr": 0.047619047619047616,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 81,
+     "caught": 2,
+     "false_alarms": 4,
+     "fpr": 0.020618556701030927,
+     "good": 194,
+     "threshold": 57.65946960449219,
+     "tpr": 0.024691358024691357
+    },
+    "0.02": {
+     "bad": 81,
+     "caught": 2,
+     "false_alarms": 4,
+     "fpr": 0.020618556701030927,
+     "good": 194,
+     "threshold": 56.722503662109375,
+     "tpr": 0.024691358024691357
+    },
+    "0.05": {
+     "bad": 81,
+     "caught": 9,
+     "false_alarms": 17,
+     "fpr": 0.08762886597938144,
+     "good": 194,
+     "threshold": 50.530250549316406,
+     "tpr": 0.1111111111111111
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.8894616265750286,
+     "bad": 9,
+     "tpr": 0.1111111111111111
+    },
+    "missing_feature": {
+     "auroc": 0.6665592783505154,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6065292096219931,
+     "bad": 12,
+     "tpr": 0.08333333333333333
+    },
+    "scale_97": {
+     "auroc": 0.5391752577319587,
+     "bad": 15,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8509119746233148,
+     "bad": 13,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.5138530927835051,
+     "bad": 16,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 56.722503662109375,
+   "train_good": 565,
+   "val": {
+    "bad": 78,
+    "caught": 2,
+    "false_alarms": 3,
+    "fpr": 0.015151515151515152,
+    "good": 198,
+    "tpr": 0.02564102564102564
+   },
+   "val_auroc": 0.7513597513597513
+  },
+  "M4_01": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 38,
+    "test_good": 90,
+    "val_bad": 40,
+    "val_good": 99
+   },
+   "max_val_fpr": 0.02,
+   "part": "M4_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7564327485380117,
+    "bad": 38,
+    "caught": 2,
+    "false_alarms": 1,
+    "fpr": 0.011111111111111112,
+    "good": 90,
+    "tpr": 0.05263157894736842
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 67
+    },
+    "U": {
+     "fpr": 0.043478260869565216,
+     "good": 23
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 38,
+     "caught": 1,
+     "false_alarms": 1,
+     "fpr": 0.011111111111111112,
+     "good": 90,
+     "threshold": 56.280189514160156,
+     "tpr": 0.02631578947368421
+    },
+    "0.02": {
+     "bad": 38,
+     "caught": 2,
+     "false_alarms": 1,
+     "fpr": 0.011111111111111112,
+     "good": 90,
+     "threshold": 56.20816421508789,
+     "tpr": 0.05263157894736842
+    },
+    "0.05": {
+     "bad": 38,
+     "caught": 3,
+     "false_alarms": 1,
+     "fpr": 0.011111111111111112,
+     "good": 90,
+     "threshold": 54.638832092285156,
+     "tpr": 0.07894736842105263
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.7244444444444444,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8345679012345679,
+     "bad": 9,
+     "tpr": 0.1111111111111111
+    },
+    "scale_103": {
+     "auroc": 0.78,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6555555555555556,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8425925925925926,
+     "bad": 6,
+     "tpr": 0.16666666666666666
+    },
+    "warp": {
+     "auroc": 0.6822222222222222,
+     "bad": 5,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 56.20816421508789,
+   "train_good": 570,
+   "val": {
+    "bad": 40,
+    "caught": 1,
+    "false_alarms": 1,
+    "fpr": 0.010101010101010102,
+    "good": 99,
+    "tpr": 0.025
+   },
+   "val_auroc": 0.6035353535353535
+  },
+  "M4_02": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 33,
+    "test_good": 93,
+    "val_bad": 48,
+    "val_good": 91
+   },
+   "max_val_fpr": 0.02,
+   "part": "M4_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.5904203323558163,
+    "bad": 33,
+    "caught": 0,
+    "false_alarms": 1,
+    "fpr": 0.010752688172043012,
+    "good": 93,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 67
+    },
+    "U": {
+     "fpr": 0.038461538461538464,
+     "good": 26
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 33,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.010752688172043012,
+     "good": 93,
+     "threshold": 60.67726516723633,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 33,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.010752688172043012,
+     "good": 93,
+     "threshold": 57.253353118896484,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 33,
+     "caught": 0,
+     "false_alarms": 6,
+     "fpr": 0.06451612903225806,
+     "good": 93,
+     "threshold": 49.56503677368164,
+     "tpr": 0.0
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6738351254480287,
+     "bad": 3,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.5622119815668203,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.5349462365591398,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.4874551971326165,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.8100358422939068,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.5349462365591398,
+     "bad": 4,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 57.253353118896484,
+   "train_good": 556,
+   "val": {
+    "bad": 48,
+    "caught": 0,
+    "false_alarms": 1,
+    "fpr": 0.01098901098901099,
+    "good": 91,
+    "tpr": 0.0
+   },
+   "val_auroc": 0.7152014652014652
+  },
+  "M4_03": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 38,
+    "test_good": 101,
+    "val_bad": 39,
+    "val_good": 87
+   },
+   "max_val_fpr": 0.02,
+   "part": "M4_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7483064095883273,
+    "bad": 38,
+    "caught": 3,
+    "false_alarms": 2,
+    "fpr": 0.019801980198019802,
+    "good": 101,
+    "tpr": 0.07894736842105263
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0125,
+     "good": 80
+    },
+    "U": {
+     "fpr": 0.047619047619047616,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 38,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.009900990099009901,
+     "good": 101,
+     "threshold": 58.57589340209961,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 38,
+     "caught": 3,
+     "false_alarms": 2,
+     "fpr": 0.019801980198019802,
+     "good": 101,
+     "threshold": 50.487911224365234,
+     "tpr": 0.07894736842105263
+    },
+    "0.05": {
+     "bad": 38,
+     "caught": 4,
+     "false_alarms": 4,
+     "fpr": 0.039603960396039604,
+     "good": 101,
+     "threshold": 48.50933074951172,
+     "tpr": 0.10526315789473684
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.596039603960396,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9603960396039604,
+     "bad": 7,
+     "tpr": 0.14285714285714285
+    },
+    "scale_103": {
+     "auroc": 0.8391089108910891,
+     "bad": 4,
+     "tpr": 0.25
+    },
+    "scale_97": {
+     "auroc": 0.6856435643564357,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7634763476347635,
+     "bad": 9,
+     "tpr": 0.1111111111111111
+    },
+    "warp": {
+     "auroc": 0.6039603960396039,
+     "bad": 5,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 50.487911224365234,
+   "train_good": 566,
+   "val": {
+    "bad": 39,
+    "caught": 3,
+    "false_alarms": 1,
+    "fpr": 0.011494252873563218,
+    "good": 87,
+    "tpr": 0.07692307692307693
+   },
+   "val_auroc": 0.6545829649277926
+  },
+  "M4_04": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 538,
+    "test_good": 425,
+    "val_bad": 566,
+    "val_good": 417
+   },
+   "max_val_fpr": 0.02,
+   "part": "M4_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.8956789853487863,
+    "bad": 538,
+    "caught": 33,
+    "false_alarms": 10,
+    "fpr": 0.023529411764705882,
+    "good": 425,
+    "tpr": 0.06133828996282528
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.02666666666666667,
+     "good": 75
+    },
+    "T": {
+     "fpr": 0.031914893617021274,
+     "good": 94
+    },
+    "U": {
+     "fpr": 0.01953125,
+     "good": 256
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 538,
+     "caught": 10,
+     "false_alarms": 5,
+     "fpr": 0.011764705882352941,
+     "good": 425,
+     "threshold": 55.56471252441406,
+     "tpr": 0.01858736059479554
+    },
+    "0.02": {
+     "bad": 538,
+     "caught": 33,
+     "false_alarms": 10,
+     "fpr": 0.023529411764705882,
+     "good": 425,
+     "threshold": 53.65742874145508,
+     "tpr": 0.06133828996282528
+    },
+    "0.05": {
+     "bad": 538,
+     "caught": 362,
+     "false_alarms": 24,
+     "fpr": 0.05647058823529412,
+     "good": 425,
+     "threshold": 47.503883361816406,
+     "tpr": 0.6728624535315985
+    }
+   },
+   "test_per_defect": {
+    "cracked": {
+     "auroc": 0.9505779379585533,
+     "bad": 457,
+     "tpr": 0.0700218818380744
+    },
+    "layer_split": {
+     "auroc": 0.4180392156862745,
+     "bad": 9,
+     "tpr": 0.1111111111111111
+    },
+    "missing_feature": {
+     "auroc": 0.7371122994652406,
+     "bad": 11,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6363235294117647,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.4176470588235294,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7479411764705882,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.52,
+     "bad": 13,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 53.65742874145508,
+   "train_good": 571,
+   "val": {
+    "bad": 566,
+    "caught": 45,
+    "false_alarms": 8,
+    "fpr": 0.019184652278177457,
+    "good": 417,
+    "tpr": 0.07950530035335689
+   },
+   "val_auroc": 0.9162112006507868
+  },
+  "M5_01": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 39,
+    "test_good": 77,
+    "val_bad": 40,
+    "val_good": 88
+   },
+   "max_val_fpr": 0.02,
+   "part": "M5_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6160506160506161,
+    "bad": 39,
+    "caught": 0,
+    "false_alarms": 0,
+    "fpr": 0.0,
+    "good": 77,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 60
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 17
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 39,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 77,
+     "threshold": 66.33216857910156,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 39,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 77,
+     "threshold": 61.232479095458984,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 39,
+     "caught": 2,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 77,
+     "threshold": 57.853607177734375,
+     "tpr": 0.05128205128205128
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.4906204906204906,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.8404452690166976,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.4909090909090909,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6565656565656566,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7045454545454546,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.509090909090909,
+     "bad": 5,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 61.232479095458984,
+   "train_good": 587,
+   "val": {
+    "bad": 40,
+    "caught": 1,
+    "false_alarms": 1,
+    "fpr": 0.011363636363636364,
+    "good": 88,
+    "tpr": 0.025
+   },
+   "val_auroc": 0.6357954545454545
+  },
+  "M5_02": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 36,
+    "test_good": 92,
+    "val_bad": 43,
+    "val_good": 74
+   },
+   "max_val_fpr": 0.02,
+   "part": "M5_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6222826086956522,
+    "bad": 36,
+    "caught": 1,
+    "false_alarms": 3,
+    "fpr": 0.03260869565217391,
+    "good": 92,
+    "tpr": 0.027777777777777776
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.029850746268656716,
+     "good": 67
+    },
+    "U": {
+     "fpr": 0.04,
+     "good": 25
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 36,
+     "caught": 1,
+     "false_alarms": 3,
+     "fpr": 0.03260869565217391,
+     "good": 92,
+     "threshold": 54.17118835449219,
+     "tpr": 0.027777777777777776
+    },
+    "0.02": {
+     "bad": 36,
+     "caught": 1,
+     "false_alarms": 3,
+     "fpr": 0.03260869565217391,
+     "good": 92,
+     "threshold": 53.4616584777832,
+     "tpr": 0.027777777777777776
+    },
+    "0.05": {
+     "bad": 36,
+     "caught": 2,
+     "false_alarms": 5,
+     "fpr": 0.05434782608695652,
+     "good": 92,
+     "threshold": 51.67319869995117,
+     "tpr": 0.05555555555555555
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.4434782608695652,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.6603260869565217,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6847826086956522,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5900621118012422,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7839673913043478,
+     "bad": 8,
+     "tpr": 0.125
+    },
+    "warp": {
+     "auroc": 0.5054347826086957,
+     "bad": 6,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 53.4616584777832,
+   "train_good": 582,
+   "val": {
+    "bad": 43,
+    "caught": 2,
+    "false_alarms": 1,
+    "fpr": 0.013513513513513514,
+    "good": 74,
+    "tpr": 0.046511627906976744
+   },
+   "val_auroc": 0.6134506599622879
+  },
+  "M5_03": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 40,
+    "test_good": 101,
+    "val_bad": 39,
+    "val_good": 99
+   },
+   "max_val_fpr": 0.02,
+   "part": "M5_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7574257425742574,
+    "bad": 40,
+    "caught": 0,
+    "false_alarms": 0,
+    "fpr": 0.0,
+    "good": 101,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.0,
+     "good": 78
+    },
+    "U": {
+     "fpr": 0.0,
+     "good": 23
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 40,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 101,
+     "threshold": 61.14533996582031,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 40,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 101,
+     "threshold": 56.824405670166016,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 40,
+     "caught": 2,
+     "false_alarms": 1,
+     "fpr": 0.009900990099009901,
+     "good": 101,
+     "threshold": 54.02119064331055,
+     "tpr": 0.05
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.7747524752475248,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9678217821782178,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6376237623762376,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.7678767876787679,
+     "bad": 9,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.7584158415841584,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.6182618261826183,
+     "bad": 9,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 56.824405670166016,
+   "train_good": 562,
+   "val": {
+    "bad": 39,
+    "caught": 1,
+    "false_alarms": 1,
+    "fpr": 0.010101010101010102,
+    "good": 99,
+    "tpr": 0.02564102564102564
+   },
+   "val_auroc": 0.7125097125097125
+  },
+  "M5_04": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 75,
+    "test_good": 197,
+    "val_bad": 105,
+    "val_good": 161
+   },
+   "max_val_fpr": 0.02,
+   "part": "M5_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6944839255499154,
+    "bad": 75,
+    "caught": 4,
+    "false_alarms": 5,
+    "fpr": 0.025380710659898477,
+    "good": 197,
+    "tpr": 0.05333333333333334
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.013157894736842105,
+     "good": 76
+    },
+    "T": {
+     "fpr": 0.03,
+     "good": 100
+    },
+    "U": {
+     "fpr": 0.047619047619047616,
+     "good": 21
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 75,
+     "caught": 4,
+     "false_alarms": 3,
+     "fpr": 0.015228426395939087,
+     "good": 197,
+     "threshold": 51.37712478637695,
+     "tpr": 0.05333333333333334
+    },
+    "0.02": {
+     "bad": 75,
+     "caught": 4,
+     "false_alarms": 5,
+     "fpr": 0.025380710659898477,
+     "good": 197,
+     "threshold": 50.002410888671875,
+     "tpr": 0.05333333333333334
+    },
+    "0.05": {
+     "bad": 75,
+     "caught": 13,
+     "false_alarms": 9,
+     "fpr": 0.04568527918781726,
+     "good": 197,
+     "threshold": 45.62348175048828,
+     "tpr": 0.17333333333333334
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6068809926677947,
+     "bad": 9,
+     "tpr": 0.1111111111111111
+    },
+    "missing_feature": {
+     "auroc": 0.9160484185864897,
+     "bad": 13,
+     "tpr": 0.07692307692307693
+    },
+    "scale_103": {
+     "auroc": 0.6481598984771574,
+     "bad": 16,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6579949238578681,
+     "bad": 8,
+     "tpr": 0.125
+    },
+    "snapped_tab": {
+     "auroc": 0.877326565143824,
+     "bad": 12,
+     "tpr": 0.08333333333333333
+    },
+    "warp": {
+     "auroc": 0.5031352642579875,
+     "bad": 17,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 50.002410888671875,
+   "train_good": 589,
+   "val": {
+    "bad": 105,
+    "caught": 7,
+    "false_alarms": 3,
+    "fpr": 0.018633540372670808,
+    "good": 161,
+    "tpr": 0.06666666666666667
+   },
+   "val_auroc": 0.6393374741200828
+  },
+  "M6_01": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 41,
+    "test_good": 104,
+    "val_bad": 37,
+    "val_good": 102
+   },
+   "max_val_fpr": 0.02,
+   "part": "M6_01",
+   "status": "measured",
+   "test": {
+    "auroc": 0.576688555347092,
+    "bad": 41,
+    "caught": 5,
+    "false_alarms": 11,
+    "fpr": 0.10576923076923077,
+    "good": 104,
+    "tpr": 0.12195121951219512
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.1111111111111111,
+     "good": 81
+    },
+    "U": {
+     "fpr": 0.08695652173913043,
+     "good": 23
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 41,
+     "caught": 3,
+     "false_alarms": 6,
+     "fpr": 0.057692307692307696,
+     "good": 104,
+     "threshold": 56.36782455444336,
+     "tpr": 0.07317073170731707
+    },
+    "0.02": {
+     "bad": 41,
+     "caught": 5,
+     "false_alarms": 11,
+     "fpr": 0.10576923076923077,
+     "good": 104,
+     "threshold": 53.27545166015625,
+     "tpr": 0.12195121951219512
+    },
+    "0.05": {
+     "bad": 41,
+     "caught": 10,
+     "false_alarms": 17,
+     "fpr": 0.16346153846153846,
+     "good": 104,
+     "threshold": 49.386539459228516,
+     "tpr": 0.24390243902439024
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.75,
+     "bad": 4,
+     "tpr": 0.75
+    },
+    "missing_feature": {
+     "auroc": 0.7692307692307693,
+     "bad": 7,
+     "tpr": 0.14285714285714285
+    },
+    "scale_103": {
+     "auroc": 0.4110576923076923,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.49038461538461536,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.6167582417582418,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.532967032967033,
+     "bad": 7,
+     "tpr": 0.14285714285714285
+    }
+   },
+   "threshold": 53.27545166015625,
+   "train_good": 568,
+   "val": {
+    "bad": 37,
+    "caught": 2,
+    "false_alarms": 2,
+    "fpr": 0.0196078431372549,
+    "good": 102,
+    "tpr": 0.05405405405405406
+   },
+   "val_auroc": 0.7938526762056174
+  },
+  "M6_02": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 38,
+    "test_good": 93,
+    "val_bad": 41,
+    "val_good": 99
+   },
+   "max_val_fpr": 0.02,
+   "part": "M6_02",
+   "status": "measured",
+   "test": {
+    "auroc": 0.6819468024900962,
+    "bad": 38,
+    "caught": 3,
+    "false_alarms": 4,
+    "fpr": 0.043010752688172046,
+    "good": 93,
+    "tpr": 0.07894736842105263
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.04,
+     "good": 75
+    },
+    "U": {
+     "fpr": 0.05555555555555555,
+     "good": 18
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 38,
+     "caught": 1,
+     "false_alarms": 4,
+     "fpr": 0.043010752688172046,
+     "good": 93,
+     "threshold": 54.02778244018555,
+     "tpr": 0.02631578947368421
+    },
+    "0.02": {
+     "bad": 38,
+     "caught": 3,
+     "false_alarms": 4,
+     "fpr": 0.043010752688172046,
+     "good": 93,
+     "threshold": 52.3910026550293,
+     "tpr": 0.07894736842105263
+    },
+    "0.05": {
+     "bad": 38,
+     "caught": 3,
+     "false_alarms": 6,
+     "fpr": 0.06451612903225806,
+     "good": 93,
+     "threshold": 51.37761688232422,
+     "tpr": 0.07894736842105263
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.6559139784946236,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.5752688172043011,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6102150537634409,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.6177908113391984,
+     "bad": 11,
+     "tpr": 0.09090909090909091
+    },
+    "snapped_tab": {
+     "auroc": 0.8561827956989247,
+     "bad": 8,
+     "tpr": 0.125
+    },
+    "warp": {
+     "auroc": 0.7182795698924731,
+     "bad": 5,
+     "tpr": 0.2
+    }
+   },
+   "threshold": 52.3910026550293,
+   "train_good": 572,
+   "val": {
+    "bad": 41,
+    "caught": 1,
+    "false_alarms": 1,
+    "fpr": 0.010101010101010102,
+    "good": 99,
+    "tpr": 0.024390243902439025
+   },
+   "val_auroc": 0.6178861788617886
+  },
+  "M6_03": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 25,
+    "test_good": 116,
+    "val_bad": 54,
+    "val_good": 75
+   },
+   "max_val_fpr": 0.02,
+   "part": "M6_03",
+   "status": "measured",
+   "test": {
+    "auroc": 0.5496551724137931,
+    "bad": 25,
+    "caught": 0,
+    "false_alarms": 3,
+    "fpr": 0.02586206896551724,
+    "good": 116,
+    "tpr": 0.0
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.011111111111111112,
+     "good": 90
+    },
+    "U": {
+     "fpr": 0.07692307692307693,
+     "good": 26
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 25,
+     "caught": 0,
+     "false_alarms": 1,
+     "fpr": 0.008620689655172414,
+     "good": 116,
+     "threshold": 57.1256103515625,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 25,
+     "caught": 0,
+     "false_alarms": 3,
+     "fpr": 0.02586206896551724,
+     "good": 116,
+     "threshold": 53.14292526245117,
+     "tpr": 0.0
+    },
+    "0.05": {
+     "bad": 25,
+     "caught": 0,
+     "false_alarms": 3,
+     "fpr": 0.02586206896551724,
+     "good": 116,
+     "threshold": 51.97539520263672,
+     "tpr": 0.0
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.5660919540229885,
+     "bad": 3,
+     "tpr": 0.0
+    },
+    "missing_feature": {
+     "auroc": 0.9017241379310345,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.3810344827586207,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.40301724137931033,
+     "bad": 4,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.5206896551724138,
+     "bad": 5,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.47126436781609193,
+     "bad": 3,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 53.14292526245117,
+   "train_good": 571,
+   "val": {
+    "bad": 54,
+    "caught": 2,
+    "false_alarms": 1,
+    "fpr": 0.013333333333333334,
+    "good": 75,
+    "tpr": 0.037037037037037035
+   },
+   "val_auroc": 0.6592592592592592
+  },
+  "M6_04": {
+   "config": {
+    "coreset": 0.1,
+    "image_size": 256,
+    "layers": [
+     "layer2",
+     "layer3"
+    ]
+   },
+   "counts": {
+    "test_bad": 44,
+    "test_good": 98,
+    "val_bad": 32,
+    "val_good": 91
+   },
+   "max_val_fpr": 0.02,
+   "part": "M6_04",
+   "status": "measured",
+   "test": {
+    "auroc": 0.7333024118738405,
+    "bad": 44,
+    "caught": 1,
+    "false_alarms": 2,
+    "fpr": 0.02040816326530612,
+    "good": 98,
+    "tpr": 0.022727272727272728
+   },
+   "test_fpr_per_set": {
+    "O": {
+     "fpr": 0.011904761904761904,
+     "good": 84
+    },
+    "U": {
+     "fpr": 0.07142857142857142,
+     "good": 14
+    }
+   },
+   "test_operating_points": {
+    "0.01": {
+     "bad": 44,
+     "caught": 0,
+     "false_alarms": 0,
+     "fpr": 0.0,
+     "good": 98,
+     "threshold": 59.46548080444336,
+     "tpr": 0.0
+    },
+    "0.02": {
+     "bad": 44,
+     "caught": 1,
+     "false_alarms": 2,
+     "fpr": 0.02040816326530612,
+     "good": 98,
+     "threshold": 52.53247833251953,
+     "tpr": 0.022727272727272728
+    },
+    "0.05": {
+     "bad": 44,
+     "caught": 5,
+     "false_alarms": 7,
+     "fpr": 0.07142857142857142,
+     "good": 98,
+     "threshold": 46.393131256103516,
+     "tpr": 0.11363636363636363
+    }
+   },
+   "test_per_defect": {
+    "layer_split": {
+     "auroc": 0.7334183673469388,
+     "bad": 8,
+     "tpr": 0.125
+    },
+    "missing_feature": {
+     "auroc": 0.9052478134110787,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_103": {
+     "auroc": 0.6501457725947521,
+     "bad": 7,
+     "tpr": 0.0
+    },
+    "scale_97": {
+     "auroc": 0.5306122448979592,
+     "bad": 8,
+     "tpr": 0.0
+    },
+    "snapped_tab": {
+     "auroc": 0.814625850340136,
+     "bad": 6,
+     "tpr": 0.0
+    },
+    "warp": {
+     "auroc": 0.7971938775510204,
+     "bad": 8,
+     "tpr": 0.0
+    }
+   },
+   "threshold": 52.53247833251953,
+   "train_good": 579,
+   "val": {
+    "bad": 32,
+    "caught": 0,
+    "false_alarms": 1,
+    "fpr": 0.01098901098901099,
+    "good": 91,
+    "tpr": 0.0
+   },
+   "val_auroc": 0.6404532967032966
+  }
+ },
+ "source": "perception/anomaly/coverage_eval.py on fa-a6k-1 (RTX A6000), crops from perception/anomaly/coverage.py (O train; O/U/T held out), 2026-10-30"
+}
