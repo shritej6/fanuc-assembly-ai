@@ -2,7 +2,8 @@
 
 T13 trains two separate perception models from frozen synthetic manifests:
 
-- RT-DETR sees the 30 designed identities plus the three measured foreign distractor identities.
+- RT-DETR sees the 30 designed identities, three measured foreign distractors, and one fallen class for each of the
+  24 movable parts (57 labels total).
 - The wrist ResNet-18 classifier keeps the exact 30 designed identities and reports look-alike errors separately.
 
 Real-cell images are evaluation-only and must never be placed under the synthetic training root.
@@ -13,7 +14,7 @@ The scripts default to these paths and allow explicit environment overrides:
 
 ```text
 repository       ~/fanuc-assembly-ai
-source data      ~/fanuc-assembly-data/synthetic/{A,F,G,B,H,K}
+source data      ~/fanuc-testbed-data/synthetic/{N,R,Q,O}
 environment      ~/fanuc-t13-venv-secure
 prepared data    ~/fanuc-t13/artifacts/{smoke,full}
 training output  ~/fanuc-t13/runs/{smoke,full}/{detector,classifier}
@@ -40,12 +41,12 @@ the V100 nodes' measured driver `525.105.17` does not, so T13 must not be submit
 ## 2. Run the bounded native smoke gate
 
 Native-only preparation is legal only when `SMOKE=1`. To keep this gate bounded and avoid the known G completion-
-metadata mismatch, it validates and freezes the first 128 scenes from detector set A and classifier set B. Those
+metadata mismatch, it validates and freezes the first 128 scenes from detector set N and classifier set O. Those
 scenes contain train/validation/test assignments; the trainers select at most 16 training and 8 evaluation samples.
 Partial Cosmos files are explicitly excluded from this artifact.
 
 ```bash
-SMOKE=1 bash perception/rosie/prepare.sbatch
+PROFILE=testbed SMOKE=1 bash perception/rosie/prepare.sbatch
 
 sbatch --parsable --export=ALL,SMOKE=1 perception/rosie/detector.sbatch
 sbatch --parsable --export=ALL,SMOKE=1 perception/rosie/classifier.sbatch
@@ -74,10 +75,11 @@ SMOKE=1 DRY_RUN=1 bash perception/rosie/detector.sbatch
 ## 3. Freeze Cosmos-complete production inputs
 
 Wait for T11 to finish importing accepted Cosmos variants. Production preparation has no native-only override: it
-rejects any A/F/G/B/H/K set outside the measured 10-20% accepted Cosmos range.
+requires exactly 40 N chunks, 20 R chunks, 8 Q chunks, and 48 O chunks. It rejects missing/extra chunks and requires
+the measured Cosmos shares: 20-30% for N/R/Q and 45-55% for O.
 
 ```bash
-SMOKE=0 bash perception/rosie/prepare.sbatch
+PROFILE=testbed SMOKE=0 bash perception/rosie/prepare.sbatch
 python -m perception.rosie.gates ~/fanuc-t13/artifacts/full/manifests/metadata.json
 ```
 
@@ -93,6 +95,11 @@ The scripts request one T4 by default. A larger single-node DDP allocation can b
 sbatch --parsable --gres=gpu:t4:4 --export=ALL,SMOKE=0 perception/rosie/detector.sbatch
 sbatch --parsable --gres=gpu:t4:4 --export=ALL,SMOKE=0 perception/rosie/classifier.sbatch
 ```
+
+For the measured BF16/1280-pixel run, set `CONFIG=perception/configs/rtdetr_h100.yaml` on 80 GB H100s or
+`CONFIG=perception/configs/rtdetr_a100_40g.yaml` on 40 GB A100s. The A100 configuration preserves the measured
+effective batch of 20 as batch 5 x accumulation 4. The classifier uses
+`CONFIG=perception/configs/classifier_h100.yaml` and 30 epochs.
 
 To resume an interrupted production run, add `RESUME_FROM_CHECKPOINT=latest`. Resume is rejected when the frozen
 manifest, derived COCO/crop metadata, taxonomy, split seed, training configuration, installed package versions,
@@ -116,3 +123,22 @@ test split; smoke runs skip only this class-completeness gate.
 - observed Slurm job IDs, node/log paths, package versions, and the repository commit
 
 Do not call a run successful because Slurm says `COMPLETED`; verify the metric files and checkpoint/global-step gate.
+
+## Measured completion retained on Rosie
+
+The completed test-bed run is retained under
+`~/fanuc-t27-results/fanuc-t27-runs/main/full/{detector,classifier}`. These values were read from the retained metric,
+provenance, and model files on 2026-10-30:
+
+- RT-DETR (20 epochs): test mAP `0.715298`, mAP50 `0.776050`, mAR100 `0.922475`; model SHA-256
+  `b054f9aa224f56081998a77b778ff6336985a65bfbc2bb658b1036fc0d3fd785`.
+- Wrist classifier (30 epochs, 2,477 held-out samples): accuracy `0.8627371820750909`, macro F1
+  `0.8628792062852598`; model SHA-256
+  `3d0ec5eb28545de301101433af5ef7057d4e6ccc23083cf417b4d8bae472557f`.
+- The classifier report contains all 30 labels, a 30x30 confusion matrix, and explicit look-alike groups. Measured
+  group accuracy includes bases `0.716599`, rear guards `0.810219`, connector housings `0.921053`, guides
+  `0.974729`, and locks `0.718147`.
+
+The retained provenance binds the derived data and final models, but old source chunk metadata records
+`code_commits: ["unknown"]` and source-side transfer hashes were not retained. This limitation is recorded rather
+than silently upgraded into an immutable-source claim.
