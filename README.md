@@ -1,6 +1,6 @@
 # Self-Inspecting Robotic Assembly Cell
 
-Shritej Gunda (Team V)
+(Team V)
 
 Rockwell Automation and NVIDIA Physical AI Hackathon 2026, Challenge 3, FANUC ER-4iA cell.
 
