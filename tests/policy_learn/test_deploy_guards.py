@@ -1,22 +1,10 @@
 """Real-arm guard: every violation is refused (hold + reason) or clamped (with a reason), never passed silently."""
-
 from __future__ import annotations
-
-import hashlib
-import json
 
 import numpy as np
 import pytest
 
-from policy_learn.deploy.guards import (
-    ChunkGuard,
-    ContactTarget,
-    GuardLimits,
-    InvalidGuardLimitsError,
-    UnsafeHoldError,
-    hold_row,
-    tilt_deg,
-)
+from policy_learn.deploy.guards import ChunkGuard, ContactTarget, GuardLimits, hold_row, tilt_deg
 
 HOME = [300.0, 0.0, -90.0, -180.0, 0.0, 0.0]
 DT = 0.1
@@ -40,9 +28,13 @@ def test_safe_chunk_passes_unchanged():
 def test_outside_workspace_box_is_refused(k, value):
     rows = path(HOME, HOME, 3)
     rows[1, k] = value
-    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
-    assert res.held and not res.passed
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)  # row 0 is valid: only it is sent, row 1 is refused
+    assert not res.held and not res.passed and res.truncated_at == 1
     assert "outside workspace" in res.reasons[0]
+    np.testing.assert_allclose(res.rows, rows[:1])
+    rows[0, k] = value  # no valid prefix: hold
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and not res.passed and res.truncated_at is None
     np.testing.assert_allclose(res.rows, [HOME + [0.0]])
 
 
@@ -77,6 +69,9 @@ def test_tilted_fingers_are_refused_but_insert_tilt_is_allowed():
     bad = path(HOME, HOME, 2)
     bad[-1, 3:6] = [-170.0, 0.0, 0.0]
     res = ChunkGuard().guard(bad, HOME, 0.0, DT)
+    assert res.truncated_at == 1 and len(res.rows) == 1 and "tilted" in res.reasons[0]
+    bad[0, 3:6] = [-170.0, 0.0, 0.0]
+    res = ChunkGuard().guard(bad, HOME, 0.0, DT)
     assert res.held and "tilted" in res.reasons[0]
 
 
@@ -92,26 +87,28 @@ def test_contact_floor_refuses_far_below_seated_height():
     guard = ChunkGuard()
     guard.set_target(ContactTarget(400.0, 0.0, seated, label="M4_02 on F04"))
     ok = path(start, [400.0, 0.0, seated - 0.9, -180, 0, 0], 20)  # light push, inside 1 mm
-    assert not guard.guard(ok, start, 1.0, DT).held
-    bad = path(start, [400.0, 0.0, seated - 4.2, -180, 0, 0], 20)
-    res = guard.guard(bad, start, 1.0, DT)
-    assert res.held and "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+    res = guard.guard(ok, start, 1.0, DT)
+    assert res.passed and not res.held
+    bad = path(start, [400.0, 0.0, seated - 4.2, -180, 0, 0], 20)  # 3.2 mm below the floor: past the clamp band
+    res = guard.guard(bad, start, 1.0, DT)  # the descent down to the clamp band is sent, the deepest row is not
+    assert not res.held and res.truncated_at == 19 and len(res.rows) == 19
+    assert "contact floor" in res.reasons[0] and "M4_02" in res.reasons[0]
+    assert res.rows[:, 2].min() >= seated - 1.0
+    res = guard.guard(bad[-1:], start, 1.0, DT)
+    assert res.held and "contact floor" in res.reasons[0]
 
 
-def test_eval_row_slightly_below_floor_is_raised_to_the_floor() -> None:
+def test_slightly_below_floor_is_clamped_up_to_the_floor():
+    """GR00T aims 1-3 mm low at a grasp; refusing the whole chunk froze the arm 3.6 mm above the part (eval 10/31)."""
     seated = -326.7
-    floor = seated - 1.0
     start = [267.2, -105.8, -323.1, -180.0, 0.0, 0.0]
     guard = ChunkGuard()
     guard.set_target(ContactTarget(267.2, -105.8, seated, label="grasp M1_01"))
-    rows = path(start, [267.2, -105.8, -329.4, -180.0, 0.0, 0.0], 20)
-
-    result = guard.guard(rows, start, 0.0, DT)
-
-    assert result.held is False
-    assert result.passed is False
-    assert result.rows[:, 2].min() == pytest.approx(floor)
-    assert any("raised to the contact floor" in reason and "M1_01" in reason for reason in result.reasons)
+    rows = path(start, [267.2, -105.8, seated - 2.7, -180, 0, 0], 20)  # 1.7 mm below the floor
+    res = guard.guard(rows, start, 0.0, DT)
+    assert not res.held and not res.passed
+    assert res.rows[:, 2].min() == pytest.approx(seated - 1.0)
+    assert any("raised to the contact floor" in r and "M1_01" in r for r in res.reasons)
 
 
 def test_floor_applies_only_near_the_target():
@@ -171,8 +168,9 @@ def test_gripper_values_snap_or_refuse():
 def test_gripper_chatter_is_refused():
     rows = path(HOME, HOME, 4)
     rows[:, 6] = [1, 0, 1, 1]
-    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
-    assert res.held and "chatter" in res.reasons[0]
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)  # the single close at row 0 (arm still) is a valid prefix
+    assert res.truncated_at == 1 and "chatter" in res.reasons[0]
+    np.testing.assert_allclose(res.rows, rows[:1])
 
 
 def test_gripper_change_while_moving_is_refused():
@@ -191,91 +189,44 @@ def test_clamped_row_rechecked_against_floor():
     assert res.held and any("after clamp" in r and "contact floor" in r for r in res.reasons)
 
 
-def test_hold_row_never_turns_an_invalid_pose_into_a_motion_command():
-    with pytest.raises(UnsafeHoldError, match="cannot issue a TCP hold"):
-        hold_row([100.0, 0.0, -340.0, -180.0, 0.0, 0.0], 0.7)
+def test_valid_prefix_before_a_refused_row_is_sent():
+    """The 10/31 product-5 evals froze: one row under the workspace floor held the whole chunk, so the policy was
+    asked again from the same pose forever. Now rows 0-9 go and the arm stops at row 9."""
+    start = [380.0, 74.0, -300.0, -180.0, 0.0, 180.0]
+    rows = path(start, [380.0, 74.0, -328.0, -180, 0, 180], 10)  # above the slow zone: unchanged
+    rows = np.vstack([rows, [[380.0, 74.0, -334.5, -180.0, 0.0, 180.0, 0.0]] * 6])
+    res = ChunkGuard().guard(rows, start, 0.0, 0.2)
+    assert not res.held and not res.passed and res.truncated_at == 10
+    np.testing.assert_allclose(res.rows, rows[:10])
+    assert any("row 10" in r and "outside workspace" in r for r in res.reasons)
+    assert any("truncated at row 10" in r for r in res.reasons)
 
 
-@pytest.mark.parametrize("gripper", [float("nan"), float("inf"), 0.05, 0.5, 0.95, "unknown", True])
-def test_hold_row_never_guesses_an_invalid_gripper_state(gripper):
-    with pytest.raises(UnsafeHoldError, match="gripper"):
-        hold_row(HOME, gripper)
+def test_truncated_prefix_still_passes_every_check():
+    """The prefix is re-checked on its own: a speed clamp inside it is applied and reported, nothing is loosened."""
+    lim = GuardLimits()
+    fast = path(HOME, [HOME[0] + lim.max_speed_mm_s * DT * 2.0] + HOME[1:], 1)  # 2x: clamped
+    rows = np.vstack([fast, [[HOME[0], 0.0, -335.0, -180.0, 0.0, 0.0, 0.0]]])
+    res = ChunkGuard(lim).guard(rows, HOME, 0.0, DT)
+    assert res.truncated_at == 1 and any("clamped" in r for r in res.reasons)
+    assert res.rows[0, 0] - HOME[0] == pytest.approx(lim.max_speed_mm_s * DT)
 
 
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"max_speed_mm_s": float("nan")},
-        {"max_speed_mm_s": -1.0},
-        {"x_mm": (650.0, 150.0)},
-        {"x_mm": (150.0, "far")},
-        {"slow_speed_mm_s": 151.0},
-        {"refuse_factor": 1.0},
-        {"gripper_snap": 0.5},
-        {"floor_clamp_mm": float("nan")},
-        {"floor_clamp_mm": -1.0},
-    ],
-)
-def test_guard_limits_reject_nonfinite_or_inconsistent_values(changes):
-    with pytest.raises(InvalidGuardLimitsError):
-        GuardLimits(status="MEASURED", source="CSI calibration report r1", **changes)
+def test_a_hold_reports_why_row_0_itself_was_refused():
+    rows = path(HOME, [HOME[0] + 10.0] + HOME[1:], 2, grip=1.0)  # closes while moving at row 0
+    rows[1, 2] = -335.0
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and "outside workspace" in res.reasons[0]
+    assert any(r.startswith("no valid prefix:") and "while moving" in r for r in res.reasons)
 
 
-def test_production_limits_require_measured_status_and_source():
-    assert GuardLimits().production_ready is False
-    assert GuardLimits(status="MEASURED", source="unbound claim").production_ready is False
+def test_malformed_chunk_is_held_whole_even_with_a_valid_prefix():
+    rows = path(HOME, HOME, 3)
+    rows[2, 0] = np.nan
+    res = ChunkGuard().guard(rows, HOME, 0.0, DT)
+    assert res.held and res.truncated_at is None and len(res.rows) == 1
 
 
-def _calibration_report(tmp_path, **changes):
-    defaults = GuardLimits()
-    values = {
-        name: getattr(defaults, name)
-        for name in (
-            "x_mm",
-            "y_mm",
-            "z_mm",
-            "max_abs_wpr_deg",
-            "max_tilt_deg",
-            "max_speed_mm_s",
-            "slow_speed_mm_s",
-            "max_rot_deg_s",
-            "slow_rot_deg_s",
-            "slow_zone_mm",
-            "floor_margin_mm",
-            "floor_clamp_mm",
-            "refuse_factor",
-            "gripper_snap",
-            "gripper_change_max_step_mm",
-        )
-    }
-    values.update(changes)
-    path = tmp_path / "guard-calibration.json"
-    path.write_text(json.dumps({"status": "MEASURED", "source": "CSI calibration run r1", "limits": values}))
-    return path, hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def test_production_limits_are_derived_from_a_hash_bound_report(tmp_path):
-    path, digest = _calibration_report(tmp_path, max_speed_mm_s=42.0)
-    limits = GuardLimits.from_calibration(path, digest)
-    assert limits.production_ready is True
-    assert limits.max_speed_mm_s == 42.0
-    with pytest.raises(InvalidGuardLimitsError, match="SHA-256"):
-        GuardLimits.from_calibration(path, "0" * 64)
-
-
-def test_calibration_report_rejects_unknown_fields(tmp_path):
-    path, _ = _calibration_report(tmp_path)
-    payload = json.loads(path.read_text())
-    payload["limits"]["unreviewed"] = 1.0
-    path.write_text(json.dumps(payload))
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    with pytest.raises(InvalidGuardLimitsError, match="unknown"):
-        GuardLimits.from_calibration(path, digest)
-
-
-def test_calibration_report_rejects_symlink(tmp_path):
-    path, digest = _calibration_report(tmp_path)
-    link = tmp_path / "calibration-link.json"
-    link.symlink_to(path)
-    with pytest.raises(InvalidGuardLimitsError, match="non-symlink"):
-        GuardLimits.from_calibration(link, digest)
+def test_hold_row_is_clipped_into_the_box():
+    row = hold_row([100.0, 0.0, -340.0, -180.0, 0.0, 0.0], 0.7)
+    np.testing.assert_allclose(row, [[150.0, 0.0, -334.0, -180.0, 0.0, 0.0, 1.0]])

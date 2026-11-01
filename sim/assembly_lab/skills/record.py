@@ -13,6 +13,8 @@ Scenarios (docs/ROBOT_BRAIN.md section 3):
     fix_above  pull_out of an installed part to an empty test-bed spot (reverse sheet order)
     crowded    place_free of the planner's blocker to an empty remembered test-bed spot (move the blocker first)
     defect     defect_drop of a part into the defect area
+    align_insert  pick_insert, learned from a staged wrong pose above the base (correction demo, skills/correct.py)
+    align_grasp   pick_insert, learned from a staged wrong pose above the grip pad (correction demo)
 
 Every attempt is counted. Only episodes that pass every success check AND the force guard are written; the rest are
 counted with their reason in <out>/<seed_dir>/product_<n>_stats.json. Nothing is retried silently.
@@ -42,7 +44,8 @@ from .runner import EpisodeFailed, EpisodeRecorder, ResetInvalid
 
 DEMO_ROOT = Path.home() / "t12_data" / "demos"
 SEED_DIR = {"build": "pick_insert", "wont_seat": "pick_insert", "dropped": "pick_insert",
-            "fix_above": "pull_out", "crowded": "place_free", "defect": "defect_drop"}
+            "fix_above": "pull_out", "crowded": "place_free", "defect": "defect_drop",
+            "align_insert": "pick_insert", "align_grasp": "pick_insert"}
 STAGED_BEYOND_CAPTURE_MM = 1.0  # the staged first try misses by this much more than the part's chamfer capture
 
 
@@ -80,6 +83,9 @@ def _episode(backend, rec: EpisodeRecorder, rng, scenario: str, product: int, pa
         case = {"build": "nominal"}.get(scenario, scenario)
         miss = _staged(rng, ins.capture_mm) if scenario == "wont_seat" else (0.0, 0.0, 0.0)
         episodes.pick_insert(rec, pick, ins, case, miss)
+    elif scenario in ("align_insert", "align_grasp"):
+        pick, ins = backend.pick_insert(obs, part, base_of(product))
+        getattr(episodes, scenario)(rec, pick, ins, rng)
     elif scenario == "fix_above":
         pull, spot = backend.pull_out(obs, part, rng)
         episodes.pull_out(rec, pull, spot)
@@ -107,6 +113,7 @@ class Run:
     max_attempts: int
     allow_touch_proxy: bool = False
     measure_only: bool = False
+    give_up_after: int | None = None  # stop a part after this many robot failures in a row (no kept demo between)
     path: Path | None = None  # the HDF5 this run writes (kinematic: hdf5_io; isaac: the Isaac Lab recorder's file)
     metas: list = field(default_factory=list)  # one per recorder episode, in order (isaac)
 
@@ -119,9 +126,9 @@ def per_object_limits() -> dict:
 
 def record(backend, scenario: str, products: list[int], target: int, out: Path, seed: int, max_attempts: int,
            limits_path: Path | None = None, allow_touch_proxy: bool = False, measure_only: bool = False,
-           path: Path | None = None, parts: list[str] | None = None) -> dict:
+           path: Path | None = None, parts: list[str] | None = None, give_up_after: int | None = None) -> dict:
     limits = load_limits(limits_path) if limits_path else load_limits()
-    run = Run(limits, per_object_limits(), max_attempts, allow_touch_proxy, measure_only)
+    run = Run(limits, per_object_limits(), max_attempts, allow_touch_proxy, measure_only, give_up_after)
     rng = np.random.default_rng(seed)
     summary = {}
     for product in products:
@@ -145,8 +152,12 @@ def record(backend, scenario: str, products: list[int], target: int, out: Path, 
 def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dict:
     limits, max_attempts = run.limits, run.max_attempts
     saved, attempts, skipped, invalid, reasons, runs = 0, 0, 0, 0, Counter(), []
-    invalid_run, aborted = 0, None
+    invalid_run, aborted, failed_run = 0, None, 0
     while saved < target and attempts < max_attempts:
+        if run.give_up_after and failed_run >= run.give_up_after:
+            aborted = f"{failed_run} robot failures in a row (--give-up-after {run.give_up_after})"
+            print(f"[record] {scenario} {part}: stopping this part: {aborted}", flush=True)
+            break
         attempts += 1
         installed = _installed_before(backend, product, part)
         if scenario == "fix_above":  # the part to remove is installed, with everything below it
@@ -191,8 +202,9 @@ def _record_part(backend, scenario, product, part, target, rng, run: Run) -> dic
                          "seat_tries": rec.seat_tries, "twist_follow_deg": rec.twist_follow_deg, "in_hand_drift_mm": rec.in_hand_drift_mm, "pull_wiggle": list(wiggle()), "others_trace": rec.others_trace, "seat_contacts": rec.seat_contacts, "substep_trace": rec.substep_trace, "level_corrections": rec.level_corrections, "settled": rec.settled,
                          "s": round(time.time() - t0, 1)})
             _finish(backend, run, rec, False, scenario, str(e))
+            failed_run += 1
             continue
-        invalid_run = 0
+        invalid_run, failed_run = 0, 0
         key = _finish(backend, run, rec, True, scenario, "ok")
         saved += 1
         runs.append({"ok": True, "status": "kept" if not run.measure_only else "would_keep", "demo": key,
@@ -318,6 +330,8 @@ def _args(argv):
                     help="record only these parts of the product (short jobs that hand over cleanly); default all")
     ap.add_argument("--target", type=int, default=10, help="clean demos to keep per part")
     ap.add_argument("--max-attempts", type=int, default=40)
+    ap.add_argument("--give-up-after", type=int, default=None,
+                    help="stop a part after this many robot failures in a row (a part that keeps failing its gates)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path, default=None, help="default ~/t12_data/demos (~/t12_data/measure if "
                                                           "--measure-only)")
@@ -364,7 +378,7 @@ def main(argv=None) -> int:
     products = [p for p in a.products if p in backend.products]
     try:
         record(backend, a.scenario, products, a.target, a.out, a.seed, a.max_attempts, a.limits,
-               a.allow_touch_proxy, a.measure_only, path, a.parts)
+               a.allow_touch_proxy, a.measure_only, path, a.parts, a.give_up_after)
     except LimitsError as e:
         ap.error(str(e))
     except Exception:

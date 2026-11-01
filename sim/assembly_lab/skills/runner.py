@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import checks, frames, gates
+from .correct import insert_from_near, pick_from_near
 from .force_guard import ForceGuard
 from .geometry import matrix_to_pose, pose_to_matrix, wrap_deg
 from .insert import insert, release_and_retreat, retry_clear, retry_entry, retry_lift
@@ -274,10 +275,11 @@ class EpisodeRecorder:
             self.subtasks[-1].end = len(self.frames)
 
     # --- skills with feedback ---------------------------------------------------------------------------------
-    def do_pick(self, plan: PickPlan, learn: bool = True) -> None:
+    def do_pick(self, plan: PickPlan, learn: bool = True, near: bool = False) -> None:
+        """near: the open fingers already hover near the pad (a correction demo): line up there, then descend."""
         self.targets.add(plan.object_id)
         planned = self._planned_grip(plan.object_id, plan.grasp_tcp)
-        segs = pick(plan, self.pose, self.gripper, learn=learn)
+        segs = pick_from_near(plan, self.pose) if near else pick(plan, self.pose, self.gripper, learn=learn)
         rest = self.run(segs, stop_after="close")
         gates.grip_gates(self.gate_log, self.obs, plan.object_id, planned, plan.grasp_tcp[5])
         before = self.obs
@@ -323,11 +325,15 @@ class EpisodeRecorder:
         self.seat_tries.append({"ok": ok, **{k: round(float(v), 4) for k, v in err.items()}})
         return ok, err
 
-    def do_insert(self, plan: InsertPlan, misalign=(0.0, 0.0, 0.0), pull_plan: PullOutPlan | None = None) -> str:
-        """Returns "seated" or "needs_inspection" (pulled out after the retry failed)."""
+    def do_insert(self, plan: InsertPlan, misalign=(0.0, 0.0, 0.0), pull_plan: PullOutPlan | None = None,
+                  near: bool = False) -> str:
+        """Returns "seated" or "needs_inspection" (pulled out after the retry failed). near: the held part already
+        hovers near the base (a correction demo): line up there, then the normal entry."""
         staged = any(misalign)  # an injected first-attempt error is staging: masked out of training
-        self._entry_try(plan, insert(plan, self.pose, self.gripper, self._offset(plan, plan.object_id, misalign),
-                                     learn=not staged))
+        offset = self._offset(plan, plan.object_id, misalign)
+        first = (insert_from_near(plan, self.pose, self.gripper, offset) if near
+                 else insert(plan, self.pose, self.gripper, offset, learn=not staged))
+        self._entry_try(plan, first)
         ok, err = self._seated(plan)
         if not ok:
             self.events.append(f"{plan.object_id} not seated on try 1: {_fmt(err)}")

@@ -44,6 +44,15 @@ def _obs(spec_keys: dict) -> dict:
                                                                         spec_keys["images"].items()}}
 
 
+def meta_matches(demo) -> bool:
+    """The annotated meta belongs to this recorded episode: its step count equals the recorded rows and the plan obs
+    the annotation adds are there (a chunk with more meta lines than episodes gets them shifted onto the wrong demo)."""
+    steps = demo.attrs.get("steps")
+    if steps is not None and int(steps) != demo["actions"].shape[0]:
+        return False
+    return "plan_ids" in demo["obs"] and "plan_target" in demo["obs"]
+
+
 def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ...] = ("table_cam", "side_cam",
                                                                                      "wrist_cam")) -> tuple[list, dict]:
     """Cheap pass: success attr, force guard, no dry-run stamp, all 3 cameras. Returns accepted refs + counts."""
@@ -52,27 +61,40 @@ def screen(path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ..
     with h5py.File(path, "r") as f:
         for key in sorted(f["data"].keys(), key=lambda k: int(k.split("_")[-1])):
             counts["seen"] += 1
-            demo = f["data"][key]
-            if "actions" not in demo:  # a reset that never ran a step
-                counts["empty"] = counts.get("empty", 0) + 1
+            try:
+                ref = _screen_demo(f["data"][key], key, path, limits, contact_key, cams, counts)
+            except (KeyError, OSError):  # a worker stopped mid-write: links exist but objects never reached the disk
+                counts["unreadable"] = counts.get("unreadable", 0) + 1
                 continue
-            if not accepted_attr(demo.attrs):
-                counts["not_success"] += 1
-                continue
-            if bool(demo.attrs.get("KINEMATIC_DRY_RUN", False)):
-                counts["dry_run"] += 1
-                continue
-            if any(c not in demo["obs"] for c in cams):
-                counts["no_images"] += 1
-                continue
-            if contact_key not in demo["obs"]:
-                counts["no_contact_obs"] += 1
-                continue
-            if not check_trace(demo["obs"][contact_key][()][:, :3], limits).ok:  # col 3 = robot_touch_N (env)
-                counts["force"] += 1
-                continue
-            accepted.append(EpisodeRef(path, key))
+            if ref is not None:
+                accepted.append(ref)
     return accepted, counts
+
+
+def _screen_demo(demo, key: str, path: str, limits: ForceLimits, contact_key: str, cams: tuple[str, ...],
+                 counts: dict) -> EpisodeRef | None:
+    """One demo of screen(): its EpisodeRef when it passes, else None with the reject counted."""
+    reject = None
+    if "actions" not in demo:  # a reset that never ran a step
+        reject = "empty"
+    elif not accepted_attr(demo.attrs):
+        reject = "not_success"
+    elif not meta_matches(demo):  # agent 3's annotate paired this demo with another attempt's meta line
+        reject = "meta_mismatch"
+    elif bool(demo.attrs.get("KINEMATIC_DRY_RUN", False)):
+        reject = "dry_run"
+    elif any(c not in demo["obs"] for c in cams):
+        reject = "no_images"
+    elif contact_key not in demo["obs"]:
+        reject = "no_contact_obs"
+    elif not check_trace(demo["obs"][contact_key][()][:, :3], limits).ok:  # col 3 = robot_touch_N (env)
+        reject = "force"
+    else:
+        for name in ("plan_ids", "plan_target", *cams):  # read from every object the converter needs
+            _ = demo["obs"][name][0]
+        return EpisodeRef(path, key)
+    counts[reject] = counts.get(reject, 0) + 1
+    return None
 
 
 def _truthy(v) -> bool:
@@ -162,7 +184,7 @@ def convert_episode(job: dict) -> dict:
         ids, target = demo["obs"][keys["plan_ids"]][0], demo["obs"][keys["plan_target"]][0]
         stats = {}
         for cam in W.CAMERAS:
-            frames = _resize(demo["obs"][keys[f"img_{cam}"]][obs_idx], job["size"])
+            frames = _resize(demo["obs"][keys[f"img_{cam}"]][()][obs_idx], job["size"])  # h5py fancy index is slow
             W.encode_mp4(frames, W.video_path(root, ep, cam), job["fps"])
             stats[f"observation.images.{cam}"] = W.image_stats(frames)
         peak = demo["obs"][job["contact_key"]][()].max(axis=0).tolist()
@@ -218,7 +240,7 @@ def export(inputs: list[str], out: Path, sim_dt: float, fps: int, size: tuple[in
     jobs = [{"ref": (r.file, r.key), "episode_index": i, "keys": keys, "root": str(out), "sim_dt": sim_dt,
              "fps": fps, "size": size, "contact_key": contact_key} for i, r in enumerate(refs)]
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        records = list(pool.map(convert_episode, jobs, chunksize=4))
+        records = list(pool.map(convert_episode, jobs, chunksize=1))  # ~minutes per episode: spread them all
     return _finish(out, records, fps, size, report)
 
 

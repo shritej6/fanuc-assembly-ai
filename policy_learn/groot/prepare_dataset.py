@@ -230,11 +230,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--val-fraction", type=float, default=0.02)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--no-val-prefix", default="", help="sources whose folder name starts with this keep every "
+                    "episode for training (small correction sets); empty = none")
     args = ap.parse_args(argv)
     names = [s.name for s in args.src]
     if len(set(names)) != len(names):
         raise DatasetError(f"source dataset folder names must be unique: {names}")
-    reports = [prepare(s.expanduser(), args.out.expanduser(), args.val_fraction, args.seed) for s in args.src]
+    def val_fraction(src: Path) -> float:
+        return 0.0 if args.no_val_prefix and src.name.startswith(args.no_val_prefix) else args.val_fraction
+
+    reports = [prepare(s.expanduser(), args.out.expanduser(), val_fraction(s), args.seed) for s in args.src]
     args.out.expanduser().joinpath("prepare_report.json").write_text(json.dumps(reports, indent=2))
     print(json.dumps(reports))
 
