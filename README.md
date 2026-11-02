@@ -173,8 +173,6 @@ Isaac Lab cell -> Mimic demonstrations -> LeRobot export (5 Hz, 0.2 s actions)
 5. **Serving.** The checkpoint is served over ZMQ and queried by the runtime in action chunks.
 6. **Evaluation.** `sim/assembly_lab/eval/` and `eval/` replay scenarios, including injected faults, and score them.
 
-Datasets and checkpoints are hosted on Hugging Face.
-
 ## 7. Results
 
 All numbers below were measured.
@@ -210,7 +208,6 @@ Isaac Lab, GR00T and the perception models need GPU environments; their install 
 
 - NVIDIA Isaac Lab and Isaac Lab Mimic: https://github.com/isaac-sim/IsaacLab
 - NVIDIA Isaac GR00T N1.7: https://github.com/NVIDIA/Isaac-GR00T
-- LeRobot (ACT and SmolVLA baselines, dataset format): https://github.com/huggingface/lerobot
 - NVIDIA Cosmos Reason 2 (build check)
 - anomalib (PatchCore): https://github.com/openvinotoolkit/anomalib
 - FoundationPose: https://github.com/NVlabs/FoundationPose
