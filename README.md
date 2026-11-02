@@ -208,6 +208,7 @@ Isaac Lab, GR00T and the perception models need GPU environments; their install 
 
 - NVIDIA Isaac Lab and Isaac Lab Mimic: https://github.com/isaac-sim/IsaacLab
 - NVIDIA Isaac GR00T N1.7: https://github.com/NVIDIA/Isaac-GR00T
+- Hugging Face: LeRobot (ACT and SmolVLA baselines, dataset format), Transformers (RT-DETR) and the Hub (datasets and checkpoints)
 - NVIDIA Cosmos Reason 2 (build check)
 - anomalib (PatchCore): https://github.com/openvinotoolkit/anomalib
 - FoundationPose: https://github.com/NVlabs/FoundationPose
